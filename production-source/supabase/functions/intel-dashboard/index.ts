@@ -32,7 +32,7 @@ Deno.serve(async (req) => {
         // Fall back to the base columns if it isn't applied yet, so the dashboard
         // never hard-breaks on deploy order — it just loses authority ranking.
         const base = 'id, title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol'
-        let r = await supabase.from('intel_global_news').select(`${base}, source_quality, authority_level`).order('created_at', { ascending: false }).limit(60)
+        let r = await supabase.from('intel_global_news').select(`${base}, source_quality, authority_level, news_category`).order('created_at', { ascending: false }).limit(60)
         if (r.error) r = await supabase.from('intel_global_news').select(base).order('created_at', { ascending: false }).limit(60)
         return r
       })(),
@@ -121,7 +121,7 @@ Deno.serve(async (req) => {
     }
     const rawCandidates = [
       ...(customRes.data || []).map((n: any) => ({ title: n.title, url: n.url, source: n.source_name, sentiment: n.sentiment, published_at: n.published_at || n.created_at, chains: n.entity ? [chainIdFor(n.entity.chain_namespace, n.entity.chain_id)].filter(Boolean) : [], symbol: n.entity?.display_symbol || null, custom: true, origin: 'custom' })),
-      ...(globalRes.data || []).map((n: any) => ({ title: n.title, url: n.url, source: n.source_name, sentiment: n.sentiment, published_at: n.published_at || n.created_at, chains: n.chains || [], symbol: n.entity_symbol || null, custom: false, origin: 'global', source_quality: n.source_quality ?? null, authority_tier: n.authority_level ?? null })),
+      ...(globalRes.data || []).map((n: any) => ({ title: n.title, url: n.url, source: n.source_name, sentiment: n.sentiment, published_at: n.published_at || n.created_at, chains: n.chains || [], symbol: n.entity_symbol || null, custom: false, origin: 'global', source_quality: n.source_quality ?? null, authority_tier: n.authority_level ?? null, news_category: n.news_category ?? null })),
     ]
     const sigOpts = { wlSymbols, wlChains, moverBySymbol, scope, chain }
     const { notable, allCards } = buildNotable(rawCandidates, sigOpts)
