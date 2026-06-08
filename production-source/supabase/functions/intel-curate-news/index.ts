@@ -34,9 +34,11 @@ Deno.serve(async (req) => {
     const hours = Math.min(Math.max(Number(body?.hours) || 48, 6), 168)
 
     const since = new Date(Date.now() - hours * 3_600_000).toISOString()
-    const { data: rows } = await admin.from('intel_global_news')
-      .select('title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol, source_quality, authority_level')
-      .gte('created_at', since).order('created_at', { ascending: false }).limit(300)
+    // Enriched select needs migration 176; fall back to base columns if not applied.
+    const baseSel = 'title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol'
+    let rowsRes = await admin.from('intel_global_news').select(`${baseSel}, source_quality, authority_level`).gte('created_at', since).order('created_at', { ascending: false }).limit(300)
+    if (rowsRes.error) rowsRes = await admin.from('intel_global_news').select(baseSel).gte('created_at', since).order('created_at', { ascending: false }).limit(300)
+    const rows = rowsRes.data
 
     const rawCandidates = (rows || []).map((n: any) => ({ title: n.title, url: n.url, source: n.source_name, sentiment: n.sentiment, published_at: n.published_at || n.created_at, chains: n.chains || [], symbol: n.entity_symbol || null, custom: false, origin: 'global', source_quality: n.source_quality ?? null, authority_tier: n.authority_level ?? null }))
     const { allCards } = buildNotable(rawCandidates, { wlSymbols: new Set(), wlChains: new Set(), moverBySymbol: new Map(), scope: 'all' })

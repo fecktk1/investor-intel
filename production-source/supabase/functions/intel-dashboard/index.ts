@@ -27,7 +27,15 @@ Deno.serve(async (req) => {
       supabase.from('watchlist_items').select('item_type, label, entity:entities(id, display_symbol, canonical_ref_key, chain_namespace, chain_id, contract_address)').eq('org_id', orgId),
       supabase.from('intel_user_profiles').select('chains_of_interest').eq('org_id', orgId).maybeSingle(),
       supabase.from('news_items').select('id, title, url, source_name, sentiment, published_at, created_at, entity:entities(display_symbol, canonical_ref_key, chain_namespace, chain_id)').eq('org_id', orgId).order('created_at', { ascending: false }).limit(20),
-      supabase.from('intel_global_news').select('id, title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol, source_quality, authority_level').order('created_at', { ascending: false }).limit(60),
+      (async () => {
+        // Enriched select needs migration 176 (source_quality/authority_level).
+        // Fall back to the base columns if it isn't applied yet, so the dashboard
+        // never hard-breaks on deploy order — it just loses authority ranking.
+        const base = 'id, title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol'
+        let r = await supabase.from('intel_global_news').select(`${base}, source_quality, authority_level`).order('created_at', { ascending: false }).limit(60)
+        if (r.error) r = await supabase.from('intel_global_news').select(base).order('created_at', { ascending: false }).limit(60)
+        return r
+      })(),
       supabase.from('tracked_narratives').select('id, title, status, last_signal_at').eq('org_id', orgId).order('updated_at', { ascending: false }).limit(10),
       supabase.from('intel_alert_events').select('id, fired_at, payload, read_at').eq('org_id', orgId).order('fired_at', { ascending: false }).limit(8),
       supabase.from('intel_briefs').select('period_date, brief_type, artifact:research_artifacts(structured)').eq('org_id', orgId).order('period_date', { ascending: false }).limit(1).maybeSingle(),
