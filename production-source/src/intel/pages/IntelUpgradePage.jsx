@@ -23,7 +23,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import {
   ArrowLeft, Loader2, ShieldCheck, CreditCard, CheckCircle2, Coins, Star,
 } from 'lucide-react'
@@ -135,8 +135,13 @@ export default function IntelUpgradePage() {
   const navigate = useNavigate()
   const { session } = useAuth() ?? {}
   const { org, profileLoading, paymentStatus, refreshProfile } = useProfile() ?? {}
+  const [searchParams] = useSearchParams()
 
-  const [tierId, setTierId] = useState('pro')
+  // ?plan= preselects a tier (paid-intent funnel from /investors → /intel/signup).
+  const [tierId, setTierId] = useState(() => {
+    const p = searchParams.get('plan')
+    return INTEL_TIERS.some((t2) => t2.id === p) ? p : 'pro'
+  })
   const [method, setMethod] = useState('card') // 'card' | 'crypto'
   // 'form' → 'tokenizing' → 'paying' → 'success' (card)
   // 'form' → 'crypto_paying' → 'crypto_confirming' → 'success' (crypto)
@@ -543,7 +548,10 @@ export default function IntelUpgradePage() {
           <p className="text-sm text-gray-400 mb-6">
             {t('intel_upgrade.signin_body', { defaultValue: 'Please sign in to manage your Investor Intel plan.' })}
           </p>
-          <Link to="/login" className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-[oklch(22%_0.02_80)] text-sm font-semibold hover:bg-[var(--accent-hi)]">
+          <Link
+            to={`/login?next=${encodeURIComponent(`/intel/upgrade${tierId !== 'pro' ? `?plan=${tierId}` : ''}`)}`}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-[var(--accent)] text-[oklch(22%_0.02_80)] text-sm font-semibold hover:bg-[var(--accent-hi)]"
+          >
             {t('completed.sign_in', { defaultValue: 'Sign in' })}
           </Link>
         </div>
