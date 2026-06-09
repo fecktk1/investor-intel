@@ -31,6 +31,7 @@ export default function NarrativeRadarPage() {
   const [chain, setChain] = useState('')
   const [category, setCategory] = useState('')
   const [followBusy, setFollowBusy] = useState(null)
+  const [followErr, setFollowErr] = useState(null)
 
   const load = useCallback(async (soft = false) => {
     if (!org?.id) return
@@ -44,10 +45,15 @@ export default function NarrativeRadarPage() {
   const onOpen = useCallback((slug) => navigate(`/intel/narratives/${slug}`), [navigate])
   const onFollow = useCallback(async (slug, next) => {
     setFollowBusy(slug)
+    setFollowErr(null)
     // optimistic
     setData((d) => ({ ...d, narratives: d.narratives.map((n) => n.slug === slug ? { ...n, is_followed: next } : n) }))
     try { next ? await followNarrative(supabase, slug) : await unfollowNarrative(supabase, slug) }
-    catch { setData((d) => ({ ...d, narratives: d.narratives.map((n) => n.slug === slug ? { ...n, is_followed: !next } : n) })) }
+    catch (e) {
+      setData((d) => ({ ...d, narratives: d.narratives.map((n) => n.slug === slug ? { ...n, is_followed: !next } : n) }))
+      // Surface intel_limit_reached:narrative_follows with the upgrade link.
+      setFollowErr(e?.message || '')
+    }
     finally { setFollowBusy(null) }
   }, [supabase])
 
@@ -102,6 +108,7 @@ export default function NarrativeRadarPage() {
       </div>
 
       {err && <div className="card--flat p-3 text-[13px] text-amber-400 flex items-center gap-2"><Info className="h-4 w-4" /> {t('narratives.degraded', { defaultValue: 'Some data is unavailable right now — showing what we have.' })}</div>}
+      <IntelErrorNotice error={followErr} />
 
       {tab === 'custom' ? (
         <CustomNarratives onOpen={onOpen} />

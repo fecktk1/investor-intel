@@ -7,6 +7,7 @@ import { listSources, addSource, removeSource, listNews, refreshNews, usageSumma
 import { getIntelProfile } from '../lib/intel-api'
 import { toPlainText, cleanNewsTitle } from '../lib/text-clean'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelErrorNotice from '../components/IntelErrorNotice'
 
 const SOURCE_TYPES = ['x_account', 'keyword', 'rss', 'website']
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
@@ -49,8 +50,9 @@ export default function NewsPage() {
       await addSource(supabase, org.id, user?.id, { sourceType: form.sourceType, value: form.value })
       setForm((f) => ({ ...f, value: '' })); await load()
     } catch (e2) {
-      setErr(e2.message === 'LIMIT_NEWS_SOURCES' ? t('news.limit', { defaultValue: 'Source limit reached for your plan — upgrade for more.' })
-        : e2.message === 'DUPLICATE' ? t('news.dup', { defaultValue: 'Already tracking that source.' }) : e2.message)
+      // Limit tokens stay raw — IntelErrorNotice maps them to friendly copy
+      // plus the /intel/upgrade link.
+      setErr(e2.message === 'DUPLICATE' ? t('news.dup', { defaultValue: 'Already tracking that source.' }) : e2.message)
     }
   }, [form, org?.id, supabase, user?.id, load, t])
 
@@ -58,7 +60,7 @@ export default function NewsPage() {
     if (!org?.id) return
     setRefreshing(true); setErr(null)
     try { await refreshNews(supabase, org.id); await load() }
-    catch (e) { setErr(e.message === 'news_refreshes_per_day' ? t('news.rate', { defaultValue: 'Daily news refresh limit reached for your plan.' }) : e.message) }
+    catch (e) { setErr(e.message) }
     finally { setRefreshing(false) }
   }, [org?.id, supabase, load, t])
 
@@ -102,7 +104,7 @@ export default function NewsPage() {
         </div>
       )}
 
-      {err && <div className="card--flat p-3 text-[13px] text-red-400">{err}</div>}
+      <IntelErrorNotice error={err} />
 
       {loading ? (
         <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>

@@ -10,6 +10,7 @@ import { ensureDefaultPortfolio, addTransaction } from '../lib/portfolio-api'
 import { loadMarketContextBySymbols } from '../lib/markets-api'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelErrorNotice from '../components/IntelErrorNotice'
 
 const ITEM_TYPES = ['token', 'wallet', 'narrative', 'protocol', 'defi']
 const HAS_HOLDING = new Set(['token', 'defi'])
@@ -72,9 +73,9 @@ export default function WatchlistPage() {
       setForm((f) => ({ ...f, value: '', label: '' }))
       await load()
     } catch (e) {
-      const m = e.message || ''
-      setError(/intel_limit_reached:tracked_wallets/.test(m) ? t('watchlist.limit_wallets', { defaultValue: 'Wallet limit reached for your plan.' })
-        : /intel_limit_reached:watchlist_items/.test(m) ? t('watchlist.limit_items', { defaultValue: 'Watchlist limit reached for your plan — upgrade for more.' }) : m)
+      // Raw message on purpose — IntelErrorNotice maps intel_limit_reached:*
+      // to friendly copy + the /intel/upgrade link.
+      setError(e.message || '')
     }
     finally { setAdding(false) }
   }, [form, org?.id, supabase, user?.id, load])
@@ -150,7 +151,7 @@ export default function WatchlistPage() {
         </button>
       </form>
 
-      {error && <div className="card--flat p-3 text-[13px] text-red-400">{error}</div>}
+      <IntelErrorNotice error={error} />
 
       {positions.length > 0 && (
         <div className="card--flat p-3 text-[12px] text-[var(--fg-3)] flex items-center gap-2 flex-wrap">

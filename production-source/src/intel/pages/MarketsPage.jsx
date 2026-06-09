@@ -138,6 +138,12 @@ export default function MarketsPage() {
   const dtotal = degenData?.total || 0
   const dMaxPage = Math.max(0, Math.ceil(dtotal / degenParams.limit) - 1)
 
+  // Chain browser cards: only chains with real perf data (price or 24h move).
+  const chainCards = useMemo(() => CHAINS
+    .map((c) => ({ chain: c, perf: perf[c.id] }))
+    .filter(({ perf: p }) => p && (p.price != null || p.change_24h != null)),
+  [perf])
+
   return (
     <div className="space-y-5">
       <div className="flex items-end justify-between flex-wrap gap-2">
@@ -184,25 +190,26 @@ export default function MarketsPage() {
             </div>
           )}
 
-          {/* 3. Chains */}
+          {/* 3. Chains — only chains with tracked native performance. The full
+              CHAINS registry includes chains without an intel_chain_perf row,
+              which would render as empty shells (no price, no 24h change). */}
           {marketsData?.chainHeatmap?.length > 0 && <ChainHeatmap chains={marketsData.chainHeatmap} />}
-          <section className="space-y-2">
-            <div className="eyebrow">{t('markets.chains', { defaultValue: 'Chains' })}</div>
-            <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-              {CHAINS.map((c) => {
-                const p = perf[c.id]
-                return (
+          {chainCards.length > 0 && (
+            <section className="space-y-2">
+              <div className="eyebrow">{t('markets.chains', { defaultValue: 'Chains' })}</div>
+              <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                {chainCards.map(({ chain: c, perf: p }) => (
                   <Link key={c.id} to={`/intel/asset/${encodeURIComponent('native:' + c.id)}`} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-[var(--fg-1)] truncate">{c.label}</span>
-                      {p?.change_24h != null && <span className={`text-[12px] font-semibold flex items-center gap-0.5 ${pctClass(p.change_24h)}`}>{p.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{fmtPct(p.change_24h)}</span>}
+                      {p.change_24h != null && <span className={`text-[12px] font-semibold flex items-center gap-0.5 ${pctClass(p.change_24h)}`}>{p.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{fmtPct(p.change_24h)}</span>}
                     </div>
-                    <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{c.nativeSymbol}{p?.price != null ? ` · ${fmtPrice(p.price)}` : ''}</div>
+                    <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{c.nativeSymbol}{p.price != null ? ` · ${fmtPrice(p.price)}` : ''}</div>
                   </Link>
-                )
-              })}
-            </div>
-          </section>
+                ))}
+              </div>
+            </section>
+          )}
 
           {/* 4. Crypto markets table */}
           <section className="space-y-2">

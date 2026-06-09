@@ -116,12 +116,13 @@
     "comment_king": "Comment King",
     "research": "Hulumtime të ruajtura",
     "settings": "Cilësimet",
-    "portfolio": "Portfolio"
+    "portfolio": "Portfolio",
+    "markets": "Tregjet"
   },
   "pages": {
     "market_pulse_sub": "Çfarë ndryshoi që kur mungoje dhe çfarë ka rëndësi tani.",
     "watchlist_sub": "Ndiq token-e, wallet-e, narrativa, ekosisteme, protokolle dhe tregje DeFi.",
-    "narratives_sub": "Cilat narrativa po nxehen, po ftohen, janë të hershme ose të mbipopulluara.",
+    "narratives_sub": "Cilat narrativa kripto po nxehen, po ftohen, janë të hershme, të mbipopulluara, rritëse apo me rrezik të lartë — të zbuluara automatikisht.",
     "wallets_sub": "Ndiq wallet-et e balenave, të mençurave, dev-eve dhe influencerëve — me shpjegime të thjeshta.",
     "defi_sub": "Protokolle, vault-e, yield-e dhe rrezik kolaterali — me historikun TVL/APY.",
     "execution_sub": "A mund të ekzekutohet ky tregti pa probleme? Slippage, ndikim çmimi dhe cilësia e rrugës — jo këshillë.",
@@ -332,7 +333,10 @@
     "ai_il": "Humbje e përkohshme / rrezik i kolateralit",
     "ai_risk": "Vlerësimi i rrezikut",
     "ai_who": "Për kë është i përshtatshëm",
-    "ai_compare": "Si krahasohet"
+    "ai_compare": "Si krahasohet",
+    "copy": "Kopjo adresën",
+    "open_app": "Hap aplikacionin e protokollit",
+    "sample_report": "Raport IA shembull (demo vetëm-lexim)"
   },
   "macro": {
     "title": "Inteligjencë makro",
@@ -404,7 +408,8 @@
     "brief_b2": "Ndikimi makro + regjimi i tregut",
     "brief_b3": "Ndikimi në watchlist dhe tezë",
     "brief_b4": "Çfarë të monitorosh më pas",
-    "gen_brief": "Gjenero Brifing Ditor"
+    "gen_brief": "Gjenero Brifing Ditor",
+    "refresh": "Rifresko"
   },
   "briefs": {
     "today": "Brifingu i sotëm",
@@ -441,7 +446,32 @@
   "narratives": {
     "add_label": "Ndiq një narrativë",
     "ph": "p.sh. agjentë AI, RWAs, Solana DeFi",
-    "empty": "Asnjë narrativë e gjurmuar ende. Shto një më lart."
+    "empty": "Asnjë narrativë e gjurmuar ende. Shto një më lart.",
+    "tab": {
+      "all": "Të gjitha",
+      "heating_up": "Po nxehen",
+      "early": "Të hershme",
+      "crowded": "Të mbipopulluara",
+      "cooling": "Po ftohen",
+      "dormant": "Në gjumë",
+      "bullish": "Rritëse",
+      "bearish": "Rënëse",
+      "mine": "Interesat e mia",
+      "followed": "Të ndjekura",
+      "custom": "Të personalizuara"
+    },
+    "all_categories": "Të gjitha kategoritë",
+    "all_chains": "Të gjithë zinxhirët",
+    "none_in_filter": "Asnjë narrativë nuk përputhet me këtë filtër tani. Provo një skedë tjetër.",
+    "degraded": "Disa të dhëna nuk janë të disponueshme tani — po tregojmë çfarë kemi.",
+    "custom_hint": "E avancuar. Shumica e narrativave zbulohen automatikisht — kërko aty fillimisht. Krijimi i një narrative të personalizuar provon ta lidhë idenë me një ekzistuese para se të krijojë një private.",
+    "no_custom": "Ende asnjë narrativë e personalizuar.",
+    "private": "private",
+    "mapped_to": "Kjo përputhet me një narrativë ekzistuese",
+    "open": "Hap",
+    "created_private": "U krijua një narrativë private e personalizuar.",
+    "follow": "Ndiq",
+    "following": "Duke ndjekur"
   },
   "research": {
     "empty": "Asnjë hulumtim i ruajtur ende. Ruaj një analizë ose brifing për ta mbajtur këtu."
@@ -449,7 +479,10 @@
   "settings": {
     "beginner": "Mbrojtja për fillestarët — paralajmërime rreziku më të forta dhe shpjegime më të thjeshta.",
     "saved": "U ruajt",
-    "save": "Ruaj ndryshimet"
+    "save": "Ruaj ndryshimet",
+    "plan_heading": "Plani",
+    "plan_current": "Niveli aktual: {{tier}}",
+    "plan_manage": "Përmirëso / menaxho planin"
   },
   "comment": {
     "placeholder": "Ngjit një postim X ose kontekst token-i…",
@@ -792,5 +825,25 @@
     "incomplete": "Partial",
     "updating": "updating…",
     "refreshing": "Building this token’s profile… check back in a moment."
+  },
+  "limits": {
+    "watchlist_items": "U arrit kufiri i watchlist-ës i planit tënd.",
+    "tracked_wallets": "U arrit kufiri i portofoleve të ndjekura i planit tënd.",
+    "alerts_active": "U arrit kufiri i sinjalizimeve aktive i planit tënd.",
+    "news_sources": "U arrit kufiri i burimeve të lajmeve i planit tënd.",
+    "news_refreshes_per_day": "U arrit kufiri ditor i rifreskimit të lajmeve.",
+    "portfolio_wallets": "U arrit kufiri i portofoleve të sinkronizuara.",
+    "narrative_follows": "U arrit kufiri i narrativave të ndjekura i planit tënd.",
+    "breakdowns_per_day": "U arrit kufiri ditor i analizave me AI i planit tënd.",
+    "briefs_per_day": "U arrit kufiri ditor i përmbledhjeve i planit tënd.",
+    "comparisons_per_day": "U arrit kufiri ditor i krahasimeve i planit tënd.",
+    "explain_per_day": "U arrit kufiri ditor i Explain This i planit tënd.",
+    "comment_king_per_day": "U arrit kufiri ditor i Comment King i planit tënd.",
+    "generic": "Ke arritur një kufi të planit tënd aktual.",
+    "upgrade_cta": "Përmirëso planin"
+  },
+  "common": {
+    "refresh": "Rifresko",
+    "back": "Kthehu"
   }
 }

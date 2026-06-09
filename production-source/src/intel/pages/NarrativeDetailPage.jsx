@@ -12,6 +12,7 @@ import { displayStatus, displayStatusMeta, stageMeta, signalMeta, onchainMeta, c
 import NarrativeScorecard from '../components/NarrativeScorecard'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelErrorNotice from '../components/IntelErrorNotice'
 
 const pct = (v) => (typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}%` : '—')
 const chgCls = (v) => (typeof v !== 'number' ? 'text-[var(--fg-4)]' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-[var(--fg-3)]')
@@ -56,22 +57,30 @@ export default function NarrativeDetailPage() {
   }, [org?.id, slug, supabase])
   useEffect(() => { load() }, [load])
 
+  // Action errors (follow/alert limits) render inline — they must NOT feed
+  // `err`, which replaces the whole page with the not-found view.
+  const [actionErr, setActionErr] = useState(null)
   const toggleFollow = useCallback(async () => {
     setBusy(true)
+    setActionErr(null)
     const next = !detail?.is_followed
     setDetail((d) => ({ ...d, is_followed: next }))
     try { next ? await followNarrative(supabase, slug) : await unfollowNarrative(supabase, slug) }
-    catch { setDetail((d) => ({ ...d, is_followed: !next })) } finally { setBusy(false) }
+    catch (e) {
+      setDetail((d) => ({ ...d, is_followed: !next }))
+      setActionErr(e?.message || '')
+    } finally { setBusy(false) }
   }, [detail?.is_followed, slug, supabase])
 
   const [alertOn, setAlertOn] = useState(false)
   useEffect(() => { setAlertOn(false) }, [slug])
   const toggleAlert = useCallback(async () => {
     setBusy(true)
+    setActionErr(null)
     try {
       if (!alertOn) { await setNarrativeAlert(supabase, slug, { stage_change: true, momentum_delta: 10, risk_spike: true }); setAlertOn(true); setDetail((d) => ({ ...d, is_followed: true })) }
       else { await clearNarrativeAlert(supabase, slug); setAlertOn(false) }
-    } catch (e) { setErr(e.message) } finally { setBusy(false) }
+    } catch (e) { setActionErr(e.message) } finally { setBusy(false) }
   }, [alertOn, slug, supabase])
 
   const openDebug = useCallback(async () => {
@@ -120,6 +129,8 @@ export default function NarrativeDetailPage() {
           </button>
         </div>
       </div>
+
+      <IntelErrorNotice error={actionErr} />
 
       {tax.description && <p className="text-[13px] text-[var(--fg-3)] -mt-2">{tax.description}</p>}
 

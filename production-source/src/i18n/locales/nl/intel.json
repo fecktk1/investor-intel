@@ -116,12 +116,13 @@
     "comment_king": "Comment King",
     "research": "Opgeslagen research",
     "settings": "Instellingen",
-    "portfolio": "Portfolio"
+    "portfolio": "Portfolio",
+    "markets": "Markten"
   },
   "pages": {
     "market_pulse_sub": "Wat er is veranderd terwijl je weg was, en wat er nu toe doet.",
     "watchlist_sub": "Volg tokens, wallets, narratives, ecosystemen, protocollen en DeFi-markten.",
-    "narratives_sub": "Welke narratives aan het opwarmen zijn, afkoelen, vroeg zijn of al druk bezet.",
+    "narratives_sub": "Welke crypto-narratieven warmen op, koelen af, zijn vroeg, druk, bullish of risicovol — automatisch gedetecteerd.",
     "wallets_sub": "Volg whale-, smart-, dev- en influencer-wallets in begrijpelijk Nederlands.",
     "defi_sub": "Protocollen, vaults, yields en onderpandrisico — met TVL/APY-geschiedenis.",
     "execution_sub": "Kan deze trade schoon uitgevoerd worden? Slippage, prijsimpact en routekwaliteit — geen advies.",
@@ -332,7 +333,10 @@
     "ai_il": "Impermanent verlies / onderpandsrisico",
     "ai_risk": "Risicobeoordeling",
     "ai_who": "Voor wie het geschikt is",
-    "ai_compare": "Hoe het zich verhoudt"
+    "ai_compare": "Hoe het zich verhoudt",
+    "copy": "Adres kopiëren",
+    "open_app": "Protocol-app openen",
+    "sample_report": "Voorbeeld AI-rapport (read-only demo)"
   },
   "macro": {
     "title": "Macro Intelligence",
@@ -404,7 +408,8 @@
     "brief_b2": "Macro-impact + marktregime",
     "brief_b3": "Watchlist- & these-impact",
     "brief_b4": "Wat je nu in de gaten moet houden",
-    "gen_brief": "Dagelijkse brief genereren"
+    "gen_brief": "Dagelijkse brief genereren",
+    "refresh": "Vernieuwen"
   },
   "briefs": {
     "today": "Brief van vandaag",
@@ -441,7 +446,32 @@
   "narratives": {
     "add_label": "Een narrative volgen",
     "ph": "bv. AI agents, RWAs, Solana DeFi",
-    "empty": "Nog geen narratives gevolgd. Voeg er een toe hierboven."
+    "empty": "Nog geen narratives gevolgd. Voeg er een toe hierboven.",
+    "tab": {
+      "all": "Alle",
+      "heating_up": "Warmt op",
+      "early": "Vroeg",
+      "crowded": "Druk",
+      "cooling": "Koelt af",
+      "dormant": "Slapend",
+      "bullish": "Bullish",
+      "bearish": "Bearish",
+      "mine": "Mijn interesses",
+      "followed": "Gevolgd",
+      "custom": "Eigen"
+    },
+    "all_categories": "Alle categorieën",
+    "all_chains": "Alle chains",
+    "none_in_filter": "Geen narratieven passen nu bij dit filter. Probeer een ander tabblad.",
+    "degraded": "Sommige data is momenteel niet beschikbaar — we tonen wat we hebben.",
+    "custom_hint": "Geavanceerd. De meeste narratieven worden automatisch gedetecteerd — zoek daar eerst. Een eigen narratief wordt eerst aan een bestaand narratief gekoppeld voordat er een privé-narratief wordt gemaakt.",
+    "no_custom": "Nog geen eigen narratieven.",
+    "private": "privé",
+    "mapped_to": "Dat komt overeen met een bestaand narratief",
+    "open": "Openen",
+    "created_private": "Privé eigen narratief aangemaakt.",
+    "follow": "Volgen",
+    "following": "Gevolgd"
   },
   "research": {
     "empty": "Nog geen opgeslagen research. Sla een analyse of brief op om deze hier te bewaren."
@@ -449,7 +479,10 @@
   "settings": {
     "beginner": "Beginnersbescherming — sterkere risicowaarschuwingen en eenvoudigere uitleg.",
     "saved": "Opgeslagen",
-    "save": "Wijzigingen opslaan"
+    "save": "Wijzigingen opslaan",
+    "plan_heading": "Plan",
+    "plan_current": "Huidig niveau: {{tier}}",
+    "plan_manage": "Plan upgraden / beheren"
   },
   "comment": {
     "placeholder": "Plak een X-post of tokencontext…",
@@ -792,5 +825,25 @@
     "incomplete": "Partial",
     "updating": "updating…",
     "refreshing": "Building this token’s profile… check back in a moment."
+  },
+  "limits": {
+    "watchlist_items": "Watchlist-limiet van je plan bereikt.",
+    "tracked_wallets": "Limiet voor gevolgde wallets van je plan bereikt.",
+    "alerts_active": "Limiet voor actieve alerts van je plan bereikt.",
+    "news_sources": "Limiet voor nieuwsbronnen van je plan bereikt.",
+    "news_refreshes_per_day": "Dagelijkse limiet voor nieuws verversen bereikt.",
+    "portfolio_wallets": "Limiet voor gesynchroniseerde portfolio-wallets bereikt.",
+    "narrative_follows": "Limiet voor gevolgde narratieven van je plan bereikt.",
+    "breakdowns_per_day": "Dagelijkse limiet voor AI-analyses van je plan bereikt.",
+    "briefs_per_day": "Dagelijkse brieflimiet van je plan bereikt.",
+    "comparisons_per_day": "Dagelijkse vergelijkingslimiet van je plan bereikt.",
+    "explain_per_day": "Dagelijkse Explain This-limiet van je plan bereikt.",
+    "comment_king_per_day": "Dagelijkse Comment King-limiet van je plan bereikt.",
+    "generic": "Je hebt een limiet van je huidige plan bereikt.",
+    "upgrade_cta": "Upgrade je plan"
+  },
+  "common": {
+    "refresh": "Vernieuwen",
+    "back": "Terug"
   }
 }

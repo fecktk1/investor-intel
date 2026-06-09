@@ -116,12 +116,13 @@
     "comment_king": "Comment King",
     "research": "Gespeichertes Research",
     "settings": "Einstellungen",
-    "portfolio": "Portfolio"
+    "portfolio": "Portfolio",
+    "markets": "Märkte"
   },
   "pages": {
     "market_pulse_sub": "Was sich seit deinem letzten Besuch verändert hat — und was jetzt zählt.",
     "watchlist_sub": "Tokens, Wallets, Narrative, Ökosysteme, Protokolle und DeFi-Märkte im Blick behalten.",
-    "narratives_sub": "Welche Narrative gerade heiß laufen, abkühlen, sich früh entwickeln oder bereits überfüllt sind.",
+    "narratives_sub": "Welche Krypto-Narrative heizen sich auf, kühlen ab, sind früh, überlaufen, bullisch oder riskant — automatisch erkannt.",
     "wallets_sub": "Whale-, Smart-, Dev- und Influencer-Wallets auf Deutsch verfolgen.",
     "defi_sub": "Protokolle, Vaults, Renditen und Sicherheitenrisiken — mit TVL/APY-Verlauf.",
     "execution_sub": "Lässt sich dieser Trade sauber ausführen? Slippage, Price-Impact und Routenqualität — keine Anlageberatung.",
@@ -332,7 +333,10 @@
     "ai_il": "Impermanenter Verlust / Sicherheitenrisiko",
     "ai_risk": "Risikobewertung",
     "ai_who": "Für wen es geeignet ist",
-    "ai_compare": "Im Vergleich"
+    "ai_compare": "Im Vergleich",
+    "copy": "Adresse kopieren",
+    "open_app": "Protokoll-App öffnen",
+    "sample_report": "Beispiel-KI-Report (Read-only-Demo)"
   },
   "macro": {
     "title": "Makro-Intelligence",
@@ -404,7 +408,8 @@
     "brief_b2": "Makro-Auswirkung + Marktregime",
     "brief_b3": "Watchlist & Thesen-Auswirkung",
     "brief_b4": "Was als Nächstes zu beobachten ist",
-    "gen_brief": "Daily Brief erstellen"
+    "gen_brief": "Daily Brief erstellen",
+    "refresh": "Aktualisieren"
   },
   "briefs": {
     "today": "Brief von heute",
@@ -441,7 +446,32 @@
   "narratives": {
     "add_label": "Narrativ verfolgen",
     "ph": "z. B. AI agents, RWAs, Solana DeFi",
-    "empty": "Noch keine Narrative verfolgt. Oben eines hinzufügen."
+    "empty": "Noch keine Narrative verfolgt. Oben eines hinzufügen.",
+    "tab": {
+      "all": "Alle",
+      "heating_up": "Heizt auf",
+      "early": "Früh",
+      "crowded": "Überlaufen",
+      "cooling": "Kühlt ab",
+      "dormant": "Ruhend",
+      "bullish": "Bullisch",
+      "bearish": "Bärisch",
+      "mine": "Meine Interessen",
+      "followed": "Gefolgt",
+      "custom": "Eigene"
+    },
+    "all_categories": "Alle Kategorien",
+    "all_chains": "Alle Chains",
+    "none_in_filter": "Keine Narrative passen gerade zu diesem Filter. Probier einen anderen Tab.",
+    "degraded": "Einige Daten sind gerade nicht verfügbar — wir zeigen, was wir haben.",
+    "custom_hint": "Fortgeschritten. Die meisten Narrative werden automatisch erkannt — such zuerst dort. Ein eigenes Narrativ wird zuerst auf ein bestehendes gemappt, bevor ein privates erstellt wird.",
+    "no_custom": "Noch keine eigenen Narrative.",
+    "private": "privat",
+    "mapped_to": "Das entspricht einem bestehenden Narrativ",
+    "open": "Öffnen",
+    "created_private": "Privates eigenes Narrativ erstellt.",
+    "follow": "Folgen",
+    "following": "Gefolgt"
   },
   "research": {
     "empty": "Noch kein gespeichertes Research. Speichere eine Analyse oder einen Brief, um ihn hier zu behalten."
@@ -449,7 +479,10 @@
   "settings": {
     "beginner": "Einsteigerschutz — stärkere Risikowarnungen und einfachere Erklärungen.",
     "saved": "Gespeichert",
-    "save": "Änderungen speichern"
+    "save": "Änderungen speichern",
+    "plan_heading": "Plan",
+    "plan_current": "Aktuelle Stufe: {{tier}}",
+    "plan_manage": "Plan upgraden / verwalten"
   },
   "comment": {
     "placeholder": "X-Post oder Token-Kontext einfügen…",
@@ -792,5 +825,25 @@
     "incomplete": "Partial",
     "updating": "updating…",
     "refreshing": "Building this token’s profile… check back in a moment."
+  },
+  "limits": {
+    "watchlist_items": "Watchlist-Limit deines Plans erreicht.",
+    "tracked_wallets": "Wallet-Tracking-Limit deines Plans erreicht.",
+    "alerts_active": "Limit für aktive Alerts deines Plans erreicht.",
+    "news_sources": "News-Quellen-Limit deines Plans erreicht.",
+    "news_refreshes_per_day": "Tägliches News-Aktualisierungslimit deines Plans erreicht.",
+    "portfolio_wallets": "Limit für synchronisierte Portfolio-Wallets deines Plans erreicht.",
+    "narrative_follows": "Limit für gefolgte Narrative deines Plans erreicht.",
+    "breakdowns_per_day": "Tägliches KI-Analyse-Limit deines Plans erreicht.",
+    "briefs_per_day": "Tägliches Brief-Limit deines Plans erreicht.",
+    "comparisons_per_day": "Tägliches Vergleichslimit deines Plans erreicht.",
+    "explain_per_day": "Tägliches Explain-This-Limit deines Plans erreicht.",
+    "comment_king_per_day": "Tägliches Comment-King-Limit deines Plans erreicht.",
+    "generic": "Du hast ein Limit deines aktuellen Plans erreicht.",
+    "upgrade_cta": "Plan upgraden"
+  },
+  "common": {
+    "refresh": "Aktualisieren",
+    "back": "Zurück"
   }
 }

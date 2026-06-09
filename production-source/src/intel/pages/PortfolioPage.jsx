@@ -11,6 +11,7 @@ import { shortenId } from '../lib/canonical'
 import { fmtPrice, fmtPct, fmtVol, pctClass, timeAgo } from '../lib/market-format'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelErrorNotice from '../components/IntelErrorNotice'
 import WalletSyncPanel from '../components/WalletSyncPanel'
 import PortfolioPerformanceChart from '../components/PortfolioPerformanceChart'
 import * as api from '../lib/portfolio-api'
@@ -428,7 +429,7 @@ export default function PortfolioPage() {
         )}
       </div>
 
-      {error && <div className="card--flat p-3 text-[13px] text-red-400">{error}</div>}
+      <IntelErrorNotice error={error} />
 
       {portfolios.length === 0 ? (
         <div className="card p-10 text-center space-y-3">

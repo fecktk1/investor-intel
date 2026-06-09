@@ -183,13 +183,14 @@
     "news": "News",
     "comment_king": "Comment King",
     "research": "Saved Research",
-    "settings": "Settings"
+    "settings": "Settings",
+    "markets": "Markets"
   },
   "pages": {
     "market_pulse_sub": "What changed since you were gone, and what matters right now.",
     "watchlist_sub": "Track tokens, wallets, narratives, ecosystems, protocols and DeFi markets.",
     "portfolio_sub": "Your holdings, P&L, performance, and grounded AI context — read-only, not financial or tax advice.",
-    "narratives_sub": "Which narratives are heating up, cooling down, early or crowded.",
+    "narratives_sub": "Which crypto narratives are heating up, cooling, early, crowded, bullish or high-risk — detected automatically.",
     "wallets_sub": "Follow whale, smart, dev and influencer wallets in plain English.",
     "defi_sub": "Protocols, vaults, yields and collateral risk — with TVL/APY history.",
     "execution_sub": "Can this trade clean? Slippage, price impact and route quality — not advice.",
@@ -578,7 +579,10 @@
     "ai_il": "Impermanent loss / collateral risk",
     "ai_risk": "Risk assessment",
     "ai_who": "Who it suits",
-    "ai_compare": "How it compares"
+    "ai_compare": "How it compares",
+    "copy": "Copy address",
+    "open_app": "Open protocol app",
+    "sample_report": "Sample AI report (read-only demo)"
   },
   "macro": {
     "title": "Macro Intelligence",
@@ -650,7 +654,8 @@
     "brief_b2": "Macro impact + market regime",
     "brief_b3": "Watchlist & thesis impact",
     "brief_b4": "What to monitor next",
-    "gen_brief": "Generate Daily Brief"
+    "gen_brief": "Generate Daily Brief",
+    "refresh": "Refresh"
   },
   "briefs": {
     "today": "Today's brief",
@@ -687,7 +692,32 @@
   "narratives": {
     "add_label": "Track a narrative",
     "ph": "e.g. AI agents, RWAs, Solana DeFi",
-    "empty": "No narratives tracked yet. Add one above."
+    "empty": "No narratives tracked yet. Add one above.",
+    "tab": {
+      "all": "All",
+      "heating_up": "Heating Up",
+      "early": "Early",
+      "crowded": "Crowded",
+      "cooling": "Cooling",
+      "dormant": "Dormant",
+      "bullish": "Bullish",
+      "bearish": "Bearish",
+      "mine": "My Interests",
+      "followed": "Followed",
+      "custom": "Custom"
+    },
+    "all_categories": "All categories",
+    "all_chains": "All chains",
+    "none_in_filter": "No narratives match this filter right now. Try another tab.",
+    "degraded": "Some data is unavailable right now — showing what we have.",
+    "custom_hint": "Advanced. Most narratives are detected automatically — search those first. Creating a custom narrative tries to map your idea to an existing one before creating a private one.",
+    "no_custom": "No custom narratives yet.",
+    "private": "private",
+    "mapped_to": "That maps to an existing narrative",
+    "open": "Open",
+    "created_private": "Created a private custom narrative.",
+    "follow": "Follow",
+    "following": "Following"
   },
   "research": {
     "empty": "No saved research yet. Save a breakdown or brief to keep it here."
@@ -695,7 +725,10 @@
   "settings": {
     "beginner": "Beginner Protection — stronger risk warnings and simpler explanations.",
     "saved": "Saved",
-    "save": "Save changes"
+    "save": "Save changes",
+    "plan_heading": "Plan",
+    "plan_current": "Current tier: {{tier}}",
+    "plan_manage": "Upgrade / manage plan"
   },
   "comment": {
     "placeholder": "Paste an X post or token context…",
@@ -792,5 +825,25 @@
       "narrative": "Narrative",
       "risk_only": "Risk only"
     }
+  },
+  "limits": {
+    "watchlist_items": "Watchlist limit reached for your plan.",
+    "tracked_wallets": "Tracked wallet limit reached for your plan.",
+    "alerts_active": "Active alert limit reached for your plan.",
+    "news_sources": "News source limit reached for your plan.",
+    "news_refreshes_per_day": "Daily news refresh limit reached for your plan.",
+    "portfolio_wallets": "Synced portfolio wallet limit reached for your plan.",
+    "narrative_follows": "Narrative follow limit reached for your plan.",
+    "breakdowns_per_day": "Daily AI breakdown limit reached for your plan.",
+    "briefs_per_day": "Daily brief limit reached for your plan.",
+    "comparisons_per_day": "Daily comparison limit reached for your plan.",
+    "explain_per_day": "Daily Explain This limit reached for your plan.",
+    "comment_king_per_day": "Daily Comment King limit reached for your plan.",
+    "generic": "You have reached a limit on your current plan.",
+    "upgrade_cta": "Upgrade your plan"
+  },
+  "common": {
+    "refresh": "Refresh",
+    "back": "Back"
   }
 }

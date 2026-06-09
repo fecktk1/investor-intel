@@ -228,11 +228,12 @@ export default function MarketPulsePage() {
             </section>
           )}
 
-          {(dash?.chain_perf || []).length > 0 && (
+          {(dash?.chain_perf || []).filter((c) => c.price != null || c.change_24h != null).length > 0 && (
             <section className="space-y-2">
               <div className="eyebrow">{t('pulse.chains_followed', { defaultValue: 'Chains you follow' })}</div>
               <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                {dash.chain_perf.map((c) => (
+                {/* skip rows without data — they'd render as empty shells */}
+                {dash.chain_perf.filter((c) => c.price != null || c.change_24h != null).map((c) => (
                   <Link key={c.chain_id} to={assetHref(c.ref || `native:${c.chain_id}`)} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-[var(--fg-1)] truncate">{c.label}</span>

@@ -1,5 +1,6 @@
 import React, { useEffect, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
+import { Link } from 'react-router-dom'
 import { Settings, Check } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -59,6 +60,22 @@ export default function IntelSettingsPage() {
         <div className="eyebrow flex items-center gap-1.5"><Settings className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
         <h1 className="page-title">{t('nav.settings', { defaultValue: 'Settings' })}</h1>
         <p className="page-sub">{t('pages.settings_sub', { defaultValue: 'Risk profile, chains, topics, explanation style and Beginner Protection.' })}</p>
+      </div>
+
+      {/* plan & billing */}
+      <div className="card p-4 flex items-center justify-between gap-3 flex-wrap">
+        <div>
+          <div className="text-sm font-medium text-[var(--fg-1)]">{t('settings.plan_heading', { defaultValue: 'Plan' })}</div>
+          <p className="text-[13px] text-[var(--fg-3)] capitalize">
+            {t('settings.plan_current', {
+              defaultValue: 'Current tier: {{tier}}',
+              tier: org?.plan_overrides?.intel_tier || 'trial',
+            })}
+          </p>
+        </div>
+        <Link to="/intel/upgrade" className="btn btn--quiet btn--sm">
+          {t('settings.plan_manage', { defaultValue: 'Upgrade / manage plan' })}
+        </Link>
       </div>
 
       <div className="card p-4 space-y-2"><div className="text-sm font-medium text-[var(--fg-1)]">{t('onboarding.q_experience', { defaultValue: 'Experience' })}</div><Single k="experience_level" options={EXPERIENCE} scope="experience" /></div>

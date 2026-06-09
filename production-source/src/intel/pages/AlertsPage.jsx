@@ -9,6 +9,7 @@ import { listAlertRules, createAlertRule, deleteAlertRule, listAlertEvents } fro
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelErrorNotice from '../components/IntelErrorNotice'
 
 const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift']
 
@@ -44,7 +45,9 @@ export default function AlertsPage() {
       await createAlertRule(supabase, org.id, user?.id, { entity_id: ent.id, trigger_type: form.trigger, config: { threshold_pct: Number(form.threshold) || null } })
       setForm((f) => ({ ...f, value: '' })); await load()
     } catch (ex) {
-      setErr(/intel_limit_reached:alerts_active/.test(ex.message || '') ? t('alerts.limit', { defaultValue: 'Active alert limit reached for your plan — upgrade for more.' }) : ex.message)
+      // Raw message — IntelErrorNotice maps intel_limit_reached:* to friendly
+      // copy + the /intel/upgrade link.
+      setErr(ex.message || '')
     } finally { setBusy(false) }
   }, [form, org?.id, supabase, user?.id, load])
 
@@ -72,7 +75,7 @@ export default function AlertsPage() {
         <button type="submit" disabled={busy || !form.value.trim()} className="btn btn--primary disabled:opacity-50"><Plus className="h-4 w-4" /> {t('alerts.add', { defaultValue: 'Add rule' })}</button>
       </form>
 
-      {err && <div className="card--flat p-3 text-[13px] text-red-400">{err}</div>}
+      <IntelErrorNotice error={err} />
 
       <div className="card--flat p-3 flex items-start gap-2 text-[12px] text-[var(--fg-4)]">
         <Info className="h-3.5 w-3.5 mt-0.5" /> {t('alerts.note', { defaultValue: 'Alert evaluation and the AI "why it matters" explanation run on a schedule server-side.' })}
