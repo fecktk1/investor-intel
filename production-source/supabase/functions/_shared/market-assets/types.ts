@@ -1,0 +1,70 @@
+// Market Assets — shared types for the canonical Top-N-by-market-cap layer.
+//
+// The canonical universe is provider-agnostic: CoinGecko (primary) or
+// CoinMarketCap (optional) implement MarketAssetsProvider and return a
+// normalized CanonicalAsset[]. The Markets page NEVER depends on a specific
+// provider — it reads the `market_assets` table written by market-assets-refresh.
+
+export type MarketAssetsProviderId = 'coingecko' | 'coinmarketcap'
+
+/** One canonical asset (a row in `market_assets`), provider-normalized. */
+export interface CanonicalAsset {
+  sourceProvider: MarketAssetsProviderId
+  providerId: string                 // provider's stable id (coingecko id / cmc id)
+  providerSlug: string | null
+  symbol: string
+  name: string | null
+  normalizedSymbol: string | null    // UPPER, $-stripped — CEX enrichment join key (low confidence)
+  primaryChain: string | null
+  marketCapRank: number | null
+  currentPrice: number | null
+  marketCap: number | null
+  fdv: number | null
+  circulatingSupply: number | null
+  totalSupply: number | null
+  maxSupply: number | null
+  volume24h: number | null
+  change1hPct: number | null
+  change24hPct: number | null
+  change7dPct: number | null
+  categories: string[] | null
+  platforms: Record<string, string> | null   // { chain: contract_address }
+  imageUrl: string | null
+  imageSource: string | null
+  asOf: number                       // epoch ms
+}
+
+export interface MarketAssetsContext {
+  // deno-lint-ignore no-explicit-any
+  supabase?: any                     // service-role client for DB cache + usage logs
+  jobName?: string
+  caller?: string
+  requestId?: string | null
+  kind?: 'job' | 'request' | 'render'
+  maxCalls?: number                  // explicit per-run budget override
+  _calls?: number                    // internal counter
+}
+
+export interface MarketAssetsProvider {
+  readonly id: MarketAssetsProviderId
+  /** Operational enable flag (env breaker + key presence). */
+  enabled(): boolean
+  /**
+   * Fetch the top `limit` assets by market cap, descending. Returns null on
+   * total failure; omits assets it cannot normalize. Never fabricates data.
+   */
+  fetchTopAssets(limit: number, ctx?: MarketAssetsContext): Promise<CanonicalAsset[] | null>
+}
+
+/** UPPER-case, $-stripped symbol for the (low-confidence) CEX join key. */
+export function normSymbol(raw: string | null | undefined): string | null {
+  if (!raw) return null
+  const s = String(raw).trim().toUpperCase().replace(/^\$/, '')
+  return s || null
+}
+
+export const num = (v: unknown): number | null => {
+  if (v == null) return null
+  const n = Number(v)
+  return Number.isFinite(n) ? n : null
+}

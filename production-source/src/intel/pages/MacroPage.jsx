@@ -1,0 +1,136 @@
+import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { Landmark, CalendarClock, Newspaper, TrendingUp, TrendingDown, Minus } from 'lucide-react'
+import { useSupabase } from '../../lib/useSupabase'
+import { loadMacroNews, loadMacroIndicators, loadMacroCalendar } from '../lib/macro-api'
+import WhyImportant from '../components/WhyImportant'
+import IntelDisclaimer from '../components/IntelDisclaimer'
+
+const trendIcon = (tr) => tr === 'up' ? <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> : tr === 'down' ? <TrendingDown className="h-3.5 w-3.5 text-red-400" /> : <Minus className="h-3.5 w-3.5 text-[var(--fg-4)]" />
+const fmtWhen = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }
+const fmtDay = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
+const sentClass = (s) => s === 'bullish' ? 'text-emerald-400' : s === 'bearish' ? 'text-red-400' : 'text-[var(--fg-4)]'
+
+// Macro Intelligence — market-wide context for retail investors. Reuses the
+// shared global macro store (indicators + calendar) and the high-signal macro
+// news every org already retains. Every item has a "Why is this important?"
+// button that runs the same Explain This generation.
+export default function MacroPage() {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  const { supabase } = useSupabase()
+  const [indicators, setIndicators] = useState([])
+  const [calendar, setCalendar] = useState([])
+  const [news, setNews] = useState([])
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      setLoading(true)
+      const [ind, cal, nw] = await Promise.all([
+        loadMacroIndicators(supabase).catch(() => []),
+        loadMacroCalendar(supabase, { days: 21 }).catch(() => []),
+        loadMacroNews(supabase, { limit: 40 }).catch(() => []),
+      ])
+      if (!alive) return
+      setIndicators(ind); setCalendar(cal); setNews(nw); setLoading(false)
+    })()
+    return () => { alive = false }
+  }, [supabase])
+
+  return (
+    <div className="space-y-6">
+      <div>
+        <div className="eyebrow flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
+        <h1 className="page-title">{t('macro.title', { defaultValue: 'Macro Intelligence' })}</h1>
+        <p className="page-sub">{t('macro.sub', { defaultValue: 'The big picture: market-moving news, key economic data and what’s coming up.' })}</p>
+      </div>
+
+      {loading && <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>}
+
+      {!loading && (
+        <>
+          {/* Economic data */}
+          <section className="space-y-2">
+            <div className="eyebrow flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> {t('macro.data', { defaultValue: 'Economic data' })}</div>
+            {indicators.length === 0 ? (
+              <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.no_data', { defaultValue: 'Economic indicators will appear here once the daily macro refresh has run.' })}</div>
+            ) : (
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+                {indicators.map((m) => (
+                  <div key={m.metric_key} className="card p-3">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[11px] text-[var(--fg-4)] leading-tight">{m.label}</div>
+                      {trendIcon(m.trend)}
+                    </div>
+                    <div className="text-lg font-semibold text-[var(--fg-1)] mt-1">{m.value}{m.unit ? <span className="text-[12px] text-[var(--fg-4)] ml-0.5">{m.unit}</span> : null}</div>
+                    {(m.as_of || m.period) && <div className="text-[10px] text-[var(--fg-5)] mt-0.5">{m.period || m.as_of}</div>}
+                    <WhyImportant topic={`${m.label}${m.value ? ` is currently ${m.value}${m.unit || ''}` : ''}`} context="A macroeconomic indicator." />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Economic calendar */}
+          <section className="space-y-2">
+            <div className="eyebrow flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" /> {t('macro.calendar', { defaultValue: 'Economic calendar' })}</div>
+            {calendar.length === 0 ? (
+              <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.no_calendar', { defaultValue: 'Upcoming economic events will appear here once the daily macro refresh has run.' })}</div>
+            ) : (
+              <div className="space-y-2">
+                {calendar.map((e) => (
+                  <div key={e.id} className="card p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-[13px] font-medium text-[var(--fg-1)]">{e.title}</span>
+                          {e.importance && <span className={`chip ${e.importance === 'high' ? 'text-red-400' : e.importance === 'medium' ? 'text-amber-400' : 'text-[var(--fg-4)]'}`}>{e.importance}</span>}
+                          {e.country && <span className="text-[10px] text-[var(--fg-5)]">{e.country}</span>}
+                        </div>
+                        <div className="text-[11px] text-[var(--fg-4)] mt-0.5">
+                          {fmtWhen(e.scheduled_at)}
+                          {e.forecast ? ` · ${t('macro.forecast', { defaultValue: 'forecast' })} ${e.forecast}` : ''}
+                          {e.previous ? ` · ${t('macro.previous', { defaultValue: 'prev' })} ${e.previous}` : ''}
+                        </div>
+                      </div>
+                      <div className="text-[11px] text-[var(--fg-4)] whitespace-nowrap">{fmtDay(e.scheduled_at)}</div>
+                    </div>
+                    <WhyImportant topic={`${e.title} (scheduled ${fmtWhen(e.scheduled_at)})`} context="An upcoming scheduled macroeconomic event." />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+
+          {/* Big macro news */}
+          <section className="space-y-2">
+            <div className="eyebrow flex items-center gap-1.5"><Newspaper className="h-3.5 w-3.5" /> {t('macro.news', { defaultValue: 'Big macro news' })}</div>
+            {news.length === 0 ? (
+              <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.no_news', { defaultValue: 'High-signal macro headlines will appear here as sources are crawled.' })}</div>
+            ) : (
+              <div className="space-y-2">
+                {news.map((n, i) => (
+                  <div key={n.url || i} className="card p-3">
+                    <a href={n.url || '#'} target="_blank" rel="noopener noreferrer" className="block">
+                      <div className="text-[13px] text-[var(--fg-1)] leading-snug hover:text-[var(--accent)] transition-colors">{n.title}</div>
+                      <div className="text-[11px] text-[var(--fg-4)] mt-0.5">
+                        {n.source_name}
+                        {n.corroboration > 1 ? <span className="ml-1.5 text-[var(--accent)]">· {n.corroboration} {t('macro.sources', { defaultValue: 'sources' })}</span> : null}
+                        {n.sentiment ? <span className={`ml-1.5 ${sentClass(n.sentiment)}`}>· {n.sentiment}</span> : null}
+                        {n.published_at ? ` · ${fmtDay(n.published_at)}` : ''}
+                      </div>
+                    </a>
+                    <WhyImportant topic={n.title} context={n.summary || 'A macro / market-moving news headline.'} />
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        </>
+      )}
+
+      <IntelDisclaimer variant="block" />
+    </div>
+  )
+}

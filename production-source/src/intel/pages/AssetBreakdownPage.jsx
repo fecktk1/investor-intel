@@ -5,7 +5,7 @@ import { Scale, HelpCircle, Star, RefreshCw, TrendingUp, TrendingDown, Newspaper
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { getEntityByRef } from '../lib/artifact-api'
-import { addEntityToWatchlist } from '../lib/watchlist-api'
+import { addEntityToWatchlist, resolveEntity } from '../lib/watchlist-api'
 import { loadTokenChart, loadWalletPortfolio } from '../lib/chart-api'
 import { listEntityNews, listGlobalNews } from '../lib/news-api'
 import { getChain } from '../lib/chains'
@@ -16,7 +16,9 @@ import TokenChart from '../components/TokenChart'
 import WalletHoldingsChart from '../components/WalletHoldingsChart'
 import IntelActionButton from '../components/IntelActionButton'
 import MarketContextCard from '../components/MarketContextCard'
-import { loadMarketContextBySymbols } from '../lib/markets-api'
+import ProfilePanel from '../components/ProfilePanel'
+import DegenSignalsCard from '../components/DegenSignalsCard'
+import { loadMarketContextBySymbols, loadTokenProfile, loadDegenToken } from '../lib/markets-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 
 const TIMEFRAMES = ['1H', '4H', '1D', '1W']
@@ -43,6 +45,9 @@ export default function AssetBreakdownPage() {
   const [walletPf, setWalletPf] = useState(null)
   const [walletLoading, setWalletLoading] = useState(false)
   const [marketCtx, setMarketCtx] = useState(null)
+  const [profile, setProfile] = useState(null)
+  const [profileState, setProfileState] = useState(null)
+  const [degenSignals, setDegenSignals] = useState(null)
   const breakdown = useArtifact()
   const risk = useArtifact()
   const isWallet = entity?.entity_kind === 'wallet'
@@ -59,6 +64,13 @@ export default function AssetBreakdownPage() {
         if (!e && decoded.startsWith('native:')) {
           const cid = decoded.slice('native:'.length); const ch = getChain(cid)
           if (ch) e = { id: null, canonical_ref_key: decoded, entity_kind: 'asset', asset_type: 'native', display_symbol: ch.nativeSymbol, chain_namespace: ch.label, _native: true, _chain: cid }
+        }
+        // Contract token by app `chain:address` (Degen rows + non-CoinGecko top-1000).
+        // Synthetic entity — NO org `entities` row until Add to watchlist. id:null +
+        // _synthetic signal every hook this is temporary (entity-scoped features guard on id).
+        if (!e && !decoded.startsWith('native:') && decoded.includes(':') && !decoded.includes('/')) {
+          const idx = decoded.indexOf(':'); const cid = decoded.slice(0, idx); const addr = decoded.slice(idx + 1); const ch = getChain(cid)
+          if (ch && addr) e = { id: null, canonical_ref_key: decoded, entity_kind: 'asset', asset_type: ch.namespace === 'eip155' ? 'erc20' : (cid === 'solana' ? 'spl' : 'token'), contract_address: addr, chain_id: cid, chain_namespace: ch.label, display_symbol: null, _contract: true, _synthetic: true, _chain: cid, _address: addr }
         }
         if (alive) setEntity(e)
       } catch { /* */ } finally { if (alive) setLoadingEntity(false) }
@@ -92,6 +104,10 @@ export default function AssetBreakdownPage() {
         } catch { /* */ }
       })()
       ;(async () => { try { const m = await loadMarketContextBySymbols(supabase, [entity.display_symbol]); setMarketCtx(m[String(entity.display_symbol || '').toUpperCase()] || null) } catch { /* */ } })()
+      // Global cached token/project profile (shared across users; lazy on open).
+      ;(async () => { try { const ident = entity._native ? { symbol: entity.display_symbol } : (entity._chain && entity._address) ? { chain: entity._chain, tokenAddress: entity._address } : { ref: entity.canonical_ref_key }; const pr = await loadTokenProfile(supabase, ident); if (pr) { setProfile(pr.profile); setProfileState(pr.state) } } catch { /* */ } })()
+      // Free cached Degen signals (contract tokens) — useful before watchlist add.
+      if (entity._chain && entity._address) ;(async () => { try { const d = await loadDegenToken(supabase, entity._chain, entity._address); if (d) setDegenSignals(d) } catch { /* */ } })()
     } else {
       ;(async () => { setWalletLoading(true); try { setWalletPf(await loadWalletPortfolio(supabase, org.id, { entityId: entity.id })) } catch { /* */ } finally { setWalletLoading(false) } })()
     }
@@ -99,7 +115,17 @@ export default function AssetBreakdownPage() {
 
   const onSave = useCallback(async () => {
     if (!entity || !org?.id) return
-    try { await addEntityToWatchlist(supabase, org.id, user?.id, entity, isWallet ? 'wallet' : 'token'); setSaved(true) } catch { /* */ }
+    try {
+      let ent = entity
+      // Synthetic contract entity → resolve a real org entity first, then swap
+      // state in place (no manual refresh, keep chart/profile/signals loaded).
+      if (entity._synthetic && entity._chain && entity._address) {
+        const resolved = await resolveEntity(supabase, org.id, { kind: 'asset', chain: entity._chain, value: entity._address })
+        ent = { ...resolved, _chain: entity._chain, _address: entity._address, _contract: true }
+        setEntity(ent)   // canonical_ref_key changes → effect re-enables AI/persisted features
+      }
+      await addEntityToWatchlist(supabase, org.id, user?.id, ent, isWallet ? 'wallet' : 'token'); setSaved(true)
+    } catch { /* */ }
   }, [entity, org?.id, supabase, user?.id, isWallet])
 
   if (loadingEntity) return <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
@@ -122,7 +148,7 @@ export default function AssetBreakdownPage() {
         <div>
           <div className="eyebrow">{entity.chain_namespace || 'asset'}</div>
           <div className="flex items-center gap-3">
-            <h1 className="page-title">{entity.display_symbol || entity.asset_id}</h1>
+            <h1 className="page-title">{entity.display_symbol || chart?.entity?.symbol || profile?.symbol || degenSignals?.symbol || (entity._address ? `${entity._address.slice(0, 4)}…${entity._address.slice(-4)}` : entity.asset_id)}</h1>
             {!isWallet && ov?.price != null && (
               <div className="flex items-baseline gap-2">
                 <span className="text-xl font-semibold text-[var(--fg-1)]">{fmtPrice(ov.price)}</span>
@@ -156,6 +182,12 @@ export default function AssetBreakdownPage() {
 
           {marketCtx && <MarketContextCard ctx={marketCtx} variant="card" />}
 
+          {/* Free cached Degen risk & quality signals (contract tokens) */}
+          {entity._contract && degenSignals && <DegenSignalsCard token={degenSignals} />}
+
+          {/* Rich, globally-cached project profile */}
+          <ProfilePanel profile={profile} state={profileState} />
+
           {/* Chart + timeframe */}
           <div className="space-y-2">
             <div className="flex items-center justify-between">
@@ -167,7 +199,15 @@ export default function AssetBreakdownPage() {
               </div>
             </div>
             <TokenChart candles={chart?.candles} loading={chartLoading} />
-            {chart?.unsupported && <div className="card--flat p-2 text-[12px] text-[var(--fg-4)]">{t('breakdown.chart_unsupported', { defaultValue: 'Live market data is not available for this chain yet.' })}</div>}
+            {chart?.unsupported ? (
+              <div className="card--flat p-2 text-[12px] text-[var(--fg-4)]">{
+                chart.state === 'pre_liquidity' ? t('breakdown.chart_pre_liquidity', { defaultValue: 'Pre-liquidity / no verified pool yet.' })
+                : chart.state === 'pool_pending' ? t('breakdown.chart_pool_pending', { defaultValue: 'Pool not found yet / retrying.' })
+                : t('breakdown.chart_unsupported', { defaultValue: 'Live chart is not available for this token yet.' })
+              }</div>
+            ) : chart?.source ? (
+              <div className="text-[10px] text-[var(--fg-5)] flex items-center gap-1">{t('breakdown.chart_via', { defaultValue: 'Chart via' })} {chart.source_label || chart.source}{chart.pair_url && <> · <a href={chart.pair_url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline">{chart.dex_id || t('breakdown.pool', { defaultValue: 'pool' })}</a></>}</div>
+            ) : null}
           </div>
         </>
       )}
@@ -191,6 +231,8 @@ export default function AssetBreakdownPage() {
         </section>
       ) : entity._native ? (
         <div className="card--flat p-3 text-[12px] text-[var(--fg-4)]">{t('breakdown.native_note', { defaultValue: 'Showing live price and news for this chain’s native coin. Add a specific token to your watchlist for a full AI breakdown and risk panel.' })}</div>
+      ) : entity._contract ? (
+        <div className="card--flat p-3 text-[12px] text-[var(--fg-4)]">{t('breakdown.contract_note', { defaultValue: 'Add to watchlist to unlock the AI breakdown and deeper (Birdeye) holder/security enrichment. Free chart, profile and signals are shown above.' })}</div>
       ) : null}
 
       {!isWallet && entity.id && (
