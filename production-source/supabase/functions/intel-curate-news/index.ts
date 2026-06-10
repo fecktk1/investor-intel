@@ -88,7 +88,41 @@ Deno.serve(async (req) => {
     // reusable Intel Signal store. Best-effort; cache-only (no provider calls).
     let producer: unknown = null
     try { producer = await produceSignalState(admin, { now: Date.now() }) } catch (e) { console.error('produceSignalState failed', (e as Error)?.message) }
-    return json({ ok: true, candidates: pool.length, survivors: survivors.length, evaluated: todo.length, surfaced: out.filter((r: any) => r.should_surface).length, producer })
+
+    // ── Long-memory enrichment (deterministic; reuses ALREADY-stored AI output) ──
+    // Persist validation history (Gemini/Grok evals we just computed), story-hash
+    // memory (survives prunes), and promote major/historic events — all from data
+    // we already have. No new provider/AI calls. Best-effort; pre-migration → skip.
+    let memory: Record<string, unknown> = {}
+    try {
+      // validation history: one row per curated story carrying a stored eval
+      // deno-lint-ignore no-explicit-any
+      const vh = out.filter((r: any) => r.gemini_eval || r.grok_eval).map((r: any) => ({
+        subject_kind: 'curated_news', subject_ref: r.cluster_hash,
+        validator: r.grok_eval ? 'grok' : 'gemini', model: null,
+        score: r.importance_score ?? r.credibility_score ?? null,
+        classification: r.news_category || null, reason: r.reason_to_suppress || null,
+        new_state: r.should_surface ? 'surfaced' : 'suppressed', metadata: { signal: r.signal, final_score: r.final_score },
+      }))
+      for (let i = 0; i < vh.length; i += 100) { try { await admin.from('intel_validation_history').insert(vh.slice(i, i + 100)) } catch { /* table optional */ } }
+      // story-hash memory (dedupe survives row prunes)
+      // deno-lint-ignore no-explicit-any
+      for (const r of out) {
+        try {
+          await admin.rpc('intel_hash_memory_upsert', {
+            p_kind: 'story', p_value: r.cluster_hash, p_url: r.primary_url || null,
+            p_title: r.cleaned_title || r.title || null, p_source: r.source_type || null, p_cluster: null,
+            p_categories: r.sectors || [], p_assets: r.tokens || [], p_chains: r.chains || [], p_narratives: r.narratives || [],
+            p_seen_at: r.published_at || new Date().toISOString(),
+          })
+        } catch { /* function optional pre-migration */ break }
+      }
+      // promote major/historic events from stored importance (no AI)
+      try { const { data: ev } = await admin.rpc('intel_promote_events', { p_min_importance: 78, p_lookback_days: 14 }); memory.events = ev } catch { /* optional */ }
+      memory.validation_rows = vh.length
+    } catch (e) { console.error('long-memory enrichment skipped', (e as Error)?.message) }
+
+    return json({ ok: true, candidates: pool.length, survivors: survivors.length, evaluated: todo.length, surfaced: out.filter((r: any) => r.should_surface).length, producer, memory })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'curate_failed' }, 500)
   }

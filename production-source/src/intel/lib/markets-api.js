@@ -81,3 +81,11 @@ export async function loadMarketContextBySymbols(supabase, symbols = []) {
     return out
   } catch { return {} }
 }
+
+// Long-memory "year in review" for an asset (migration 228). Deterministic
+// rollup series + major events + top narratives over the last ~15 months.
+export async function loadAssetYearInReview(supabase, symbol, months = 15) {
+  const { data, error } = await supabase.rpc('intel_asset_year_in_review', { p_symbol: String(symbol || '').toUpperCase().replace(/^\$/, ''), p_months: months })
+  if (error) throw error
+  return data
+}

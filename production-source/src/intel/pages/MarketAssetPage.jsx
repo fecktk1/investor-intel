@@ -17,6 +17,7 @@ import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import ThesisDriftCard from '../components/ThesisDriftCard'
+import AssetYearInReview from '../components/AssetYearInReview'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
 const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 'bg-amber-400', neutral: 'bg-[var(--fg-5)]' }
@@ -215,6 +216,8 @@ export default function MarketAssetPage() {
       </section>
 
       <ThesisDriftCard symbol={symbol} />
+
+      <AssetYearInReview symbol={sym} />
 
       <IntelDisclaimer variant="block" />
     </div>
