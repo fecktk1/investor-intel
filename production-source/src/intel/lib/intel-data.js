@@ -39,6 +39,11 @@ export async function createAlertRule(supabase, orgId, userId, r) {
 export async function deleteAlertRule(supabase, id) {
   const { error } = await supabase.from('intel_alert_rules').delete().eq('id', id); if (error) throw error
 }
+// Patch a rule (threshold tuning, per-rule cooldown, clearing the noisy flag).
+export async function updateAlertRule(supabase, id, patch) {
+  const { data, error } = await supabase.from('intel_alert_rules').update(patch).eq('id', id).select('*, entity:entities(*)').single()
+  if (error) throw error; return data
+}
 export async function listAlertEvents(supabase, orgId) {
   const { data, error } = await supabase.from('intel_alert_events').select('*, artifact:research_artifacts(*)').eq('org_id', orgId).order('fired_at', { ascending: false }).limit(50)
   if (error) throw error; return data || []

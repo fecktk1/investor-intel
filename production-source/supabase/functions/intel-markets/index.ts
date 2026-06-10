@@ -13,6 +13,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/exchange-market/provider-registry.ts'
 import { buildSymbolCounts, matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
+import { computeRowFlags, categoryLeaders } from '../_shared/intel/market-derived.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -55,6 +56,7 @@ Deno.serve(async (req) => {
     const marketCapAvailability = body.marketCapAvailability ? String(body.marketCapAvailability) : null
     const exchangeAvailability = body.exchangeAvailability ? String(body.exchangeAvailability) : null // 'available' | 'none'
     const watchlistOnly = !!body.watchlistOnly
+    const view = body.view ? String(body.view) : null // unusual_volume|vol_up_price_flat|price_up_liq_weak|multi_exchange|thin_liquidity
 
     // ── Read canonical base + all enrichment sources (cache-only) ──
     const [assetsR, profilesR, tickersR, sigsR, spreadsR, mapsR, chainsR, provR] = await Promise.all([
@@ -93,9 +95,10 @@ Deno.serve(async (req) => {
     })
     const anyProviderDegraded = providerStatus.some((p) => p.degraded)
 
-    // watchlist symbols
+    // watchlist symbols — loaded whenever an org is known (powers the
+    // watchlistMovers panel; the watchlistOnly toggle still gates filtering).
     let watchSet: Set<string> | null = null
-    if (watchlistOnly && orgId) {
+    if (orgId) {
       const { data: wl } = await admin.from('watchlist_items').select('entity:entities(display_symbol)').eq('org_id', orgId)
       watchSet = new Set((wl || []).map((w) => String((w.entity as { display_symbol?: string })?.display_symbol || '').toUpperCase().replace(/^\$/, '')).filter(Boolean))
     }
@@ -164,15 +167,19 @@ Deno.serve(async (req) => {
         // enrichment
         cex, dex, enrichmentConfidence: conf,
         // backward-compatible fields for MarketsTable / movers
-        signalDirection: cex ? (cex.signalDirection ?? null) : null,
+        signalDirection: cex ? ((cex.signalDirection as string | null) ?? null) : null,
         providers: cex ? cex.providers : [],
         confirmingProviders: cex && cex.marketContext ? (cex.marketContext as Record<string, unknown>).confirmingProviders || [] : [],
         marketContext: cex ? cex.marketContext : null,
         // attribution
         sourceLabel: a.source_label, sourceUrl: a.source_url, attributionLabel: a.attribution_label, lastRefreshedAt: a.last_refreshed_at,
         detailHref, asOf: a.as_of, freshness: freshness(a.as_of, anyProviderDegraded),
+        // derived views — precomputed baseline math (mig 220) + cheap per-row flags
+        derived: (a as Record<string, unknown>).derived || {},
+        flags: null as unknown as ReturnType<typeof computeRowFlags>,
       }
     })
+    for (const r of rows) r.flags = computeRowFlags(r)
 
     // ── filters ──
     let filtered = rows
@@ -184,7 +191,14 @@ Deno.serve(async (req) => {
     if (chain) filtered = filtered.filter((r) => (r.chain || '').toLowerCase() === chain || Object.keys(r.platforms || {}).some((c) => c.toLowerCase() === chain))
     if (category) filtered = filtered.filter((r) => Array.isArray(r.categories) && r.categories.includes(category))
     if (signalDirection) filtered = filtered.filter((r) => r.signalDirection === signalDirection)
-    if (watchSet) filtered = filtered.filter((r) => watchSet!.has(String(r.normalizedSymbol || '').toUpperCase()))
+    if (watchlistOnly && watchSet) filtered = filtered.filter((r) => watchSet!.has(String(r.normalizedSymbol || '').toUpperCase()))
+    // Derived views — deterministic, fewer-better-clearer: each view narrows to
+    // rows where the flag actually fired (caution flags always travel with rows).
+    if (view === 'unusual_volume') filtered = filtered.filter((r) => r.flags.unusualVolume)
+    else if (view === 'vol_up_price_flat') filtered = filtered.filter((r) => r.flags.volUpPriceFlat)
+    else if (view === 'price_up_liq_weak') filtered = filtered.filter((r) => r.flags.priceUpLiquidityWeak)
+    else if (view === 'multi_exchange') filtered = filtered.filter((r) => r.flags.multiExchangeStrength)
+    else if (view === 'thin_liquidity') filtered = filtered.filter((r) => r.flags.thinLiquidity)
     if (marketCapAvailability === 'available') filtered = filtered.filter((r) => r.marketCap != null)
     else if (marketCapAvailability === 'unavailable') filtered = filtered.filter((r) => r.marketCap == null)
     if (exchangeAvailability === 'available') filtered = filtered.filter((r) => r.cex && Number((r.cex as Record<string, unknown>).availableCount) > 0)
@@ -204,6 +218,8 @@ Deno.serve(async (req) => {
       exchange_availability: (a, b) => avail(b) - avail(a) || n(b.marketCap) - n(a.marketCap),
       arbitrage: (a, b) => arb(b) - arb(a) || n(b.marketCap) - n(a.marketCap),
       recently_updated: (a, b) => String(b.lastRefreshedAt || '').localeCompare(String(a.lastRefreshedAt || '')),
+      unusual_volume: (a, b) => n(b.flags?.volumeRatio) - n(a.flags?.volumeRatio) || n(b.volumeQuote24h) - n(a.volumeQuote24h),
+      multi_exchange_strength: (a, b) => avail(b) - avail(a) || n(b.change24hPct) - n(a.change24hPct),
     }
     filtered = filtered.slice().sort(sorters[sort] || sorters.market_cap)
 
@@ -240,9 +256,23 @@ Deno.serve(async (req) => {
 
     const availableCategories = [...new Set(rows.flatMap((r) => Array.isArray(r.categories) ? r.categories as string[] : []))].sort()
 
+    // Derived sections (computed over ALL canonical rows; capped, quality-gated).
+    const watchlistMovers = watchSet && watchSet.size
+      ? rows.filter((r) => watchSet!.has(String(r.normalizedSymbol || '').toUpperCase()) && typeof r.change24hPct === 'number')
+        .sort((a, b) => Math.abs(b.change24hPct!) - Math.abs(a.change24hPct!)).slice(0, 10)
+      : []
+    const derivedCounts = {
+      unusual_volume: rows.filter((r) => r.flags.unusualVolume).length,
+      vol_up_price_flat: rows.filter((r) => r.flags.volUpPriceFlat).length,
+      price_up_liq_weak: rows.filter((r) => r.flags.priceUpLiquidityWeak).length,
+      multi_exchange: rows.filter((r) => r.flags.multiExchangeStrength).length,
+      thin_liquidity: rows.filter((r) => r.flags.thinLiquidity).length,
+    }
+
     return json({
       snapshot, rows: pageRows, total, page, limit,
       marketCapPanel, topGainers, topLosers, availableCategories,
+      categoryLeaders: categoryLeaders(rows), watchlistMovers, derivedCounts,
       chainHeatmap: chainsR.data || [], crossExchangeSpreads: spreadsR.data || [],
       providerStatus, lastUpdated: snapshot.lastUpdated,
     })

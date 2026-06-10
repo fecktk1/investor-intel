@@ -26,5 +26,10 @@ export function useArtifact() {
     }
   }, [org?.id, supabase])
 
-  return { result, setResult, loading, error, generate }
+  // "Refresh analysis" — force a fresh generation, bypassing staleness only.
+  // Plan-limited server-side (force_refresh_per_day + 30-min cooldown); a 429
+  // force_refresh_limited error surfaces via the error state.
+  const refresh = useCallback((params) => generate({ ...(params || {}), force: true }), [generate])
+
+  return { result, setResult, loading, error, generate, refresh }
 }

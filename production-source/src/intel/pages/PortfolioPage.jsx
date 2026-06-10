@@ -12,6 +12,9 @@ import { fmtPrice, fmtPct, fmtVol, pctClass, timeAgo } from '../lib/market-forma
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
+import RelevantSignals from '../components/RelevantSignals'
+import PortfolioExposureCards from '../components/PortfolioExposureCards'
+import { markSurfaceSeen } from '../lib/changes-api'
 import WalletSyncPanel from '../components/WalletSyncPanel'
 import PortfolioPerformanceChart from '../components/PortfolioPerformanceChart'
 import * as api from '../lib/portfolio-api'
@@ -381,6 +384,7 @@ export default function PortfolioPage() {
 
   useEffect(() => { loadList() }, [loadList])
   useEffect(() => { if (activeId) loadPortfolio(activeId) }, [activeId, loadPortfolio])
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'portfolio') }, [org?.id, supabase])
 
   const createPortfolio = useCallback(async () => {
     try { const p = await api.createPortfolio(supabase, org.id, user?.id, { name: 'My Portfolio', isDefault: portfolios.length === 0 }); await loadList(); setActiveId(p.id) }
@@ -491,6 +495,10 @@ export default function PortfolioPage() {
           </div>
         </>
       )}
+
+      {activeId && <PortfolioExposureCards portfolioId={activeId} />}
+
+      <RelevantSignals title={t('portfolio.relevant_signals', { defaultValue: 'Signals affecting your holdings' })} seeAllHref="/intel" />
 
       <IntelDisclaimer variant="block" />
       <div className="card--flat p-3 text-[11px] text-[var(--fg-5)] leading-relaxed">{t('portfolio.disclaimer', { defaultValue: 'Portfolio calculations are informational only and are not tax, accounting, investment, or financial advice. Cost basis and P&L may be incomplete when transaction history is missing, unclassified, or manually edited.' })}</div>

@@ -16,6 +16,8 @@ import ProfilePanel from '../components/ProfilePanel'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import ThesisDriftCard from '../components/ThesisDriftCard'
+import AssetYearInReview from '../components/AssetYearInReview'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
 const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 'bg-amber-400', neutral: 'bg-[var(--fg-5)]' }
@@ -55,10 +57,11 @@ export default function MarketAssetPage() {
   }, [org?.id, supabase, sym])
 
   const sig = d?.signal
-  const explain = useCallback(() => {
+  const explain = useCallback((force = false) => {
     if (!d) return
     analysis.generate({
       artifactType: 'explain',
+      force: force === true,
       extra: { title: `${sym} market read`, question: `Explain the current exchange market read for ${sym}: why is it ${sig?.direction || 'mixed'}? Cover price action, volume confirmation, liquidity/spread, and multi-exchange agreement in plain English. Research context only — not advice.` },
       context: { exchange_market: { symbol: sym, signal: sig, providers: d.providers, marketCap: d.marketCap, rollups: d.rollups, price: d.price, change24h: d.change24h, change7d: d.change7d, volume24h: d.volume24h } },
     })
@@ -209,8 +212,12 @@ export default function MarketAssetPage() {
           <div className="eyebrow">{t('markets.aiExplain', { defaultValue: 'AI explanation' })}</div>
           {!analysis.result && <button onClick={explain} disabled={analysis.loading} className="btn btn--primary btn--sm disabled:opacity-50">{analysis.loading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Sparkles className="h-4 w-4" /> {t('markets.explainWhy', { defaultValue: 'Explain why' })}</>}</button>}
         </div>
-        {analysis.result && <ArtifactView result={analysis.result} loading={analysis.loading} />}
+        {analysis.result && <ArtifactView result={analysis.result} loading={analysis.loading} onRefresh={explain ? () => explain(true) : undefined} />}
       </section>
+
+      <ThesisDriftCard symbol={symbol} />
+
+      <AssetYearInReview symbol={sym} />
 
       <IntelDisclaimer variant="block" />
     </div>

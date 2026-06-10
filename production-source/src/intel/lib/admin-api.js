@@ -3,6 +3,42 @@
 export async function adminOverview(supabase) {
   const { data, error } = await supabase.rpc('intel_admin_overview'); if (error) throw error; return data
 }
+// Intelligence quality audit (218): cache hit rate, AI avoided, deltas, alert noise.
+export async function adminQualityAudit(supabase, hours = 24) {
+  const { data, error } = await supabase.rpc('intel_admin_quality_audit', { p_hours: hours }); if (error) throw error; return data
+}
+export async function adminCardRanking(supabase, artifactId) {
+  const { data, error } = await supabase.rpc('intel_admin_card_ranking', { p_artifact_id: artifactId }); if (error) throw error; return data
+}
+export async function adminNewsInclusion(supabase, artifactId) {
+  const { data, error } = await supabase.rpc('intel_admin_news_inclusion', { p_artifact_id: artifactId }); if (error) throw error; return data
+}
+// Long-memory observability (migrations 224-230). All self-gate on is_super_admin.
+export async function adminPrunePreview(supabase, table = null) {
+  const { data, error } = await supabase.rpc('intel_prune_preview', { p_table: table }); if (error) throw error; return data
+}
+export async function adminClusterInspect(supabase, clusterId) {
+  const { data, error } = await supabase.rpc('intel_cluster_inspect', { p_cluster_id: clusterId }); if (error) throw error; return data
+}
+// Rollup health + source reliability are plain selects (RLS-gated).
+export async function adminMemoryHealth(supabase) {
+  const [rollups, reliability, events] = await Promise.all([
+    supabase.from('intel_rollups').select('subject_type', { count: 'exact', head: true }),
+    supabase.from('intel_source_reliability').select('source_id', { count: 'exact', head: true }),
+    supabase.from('intel_event_memory').select('id', { count: 'exact', head: true }),
+  ])
+  return {
+    rollup_rows: rollups.count ?? null,
+    reliability_rows: reliability.count ?? null,
+    event_rows: events.count ?? null,
+  }
+}
+export async function adminTopNoisySources(supabase, limit = 10) {
+  const { data, error } = await supabase.from('intel_source_reliability')
+    .select('source_name, source_type, sample_count, distinct_clusters, early_score, noise_score')
+    .order('noise_score', { ascending: false }).limit(limit)
+  if (error) throw error; return data || []
+}
 export async function adminListWorkspaces(supabase, search) {
   const { data, error } = await supabase.rpc('intel_admin_list_workspaces', { p_search: search || null, p_limit: 200 })
   if (error) throw error; return data || []

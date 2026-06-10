@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { NotebookPen, Plus, Trash2 } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
-import { listTheses, createThesis, deleteThesis } from '../lib/intel-data'
+import { listTheses, createThesis, deleteThesis, createAlertRule } from '../lib/intel-data'
 import { resolveEntity } from '../lib/watchlist-api'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
@@ -93,6 +93,19 @@ export default function ThesisPage() {
         </form>
       )}
 
+      {/* Theses needing review — deterministic drift flagged by the alerts cron */}
+      {!loading && list.some((th) => th.needs_review) && (
+        <div className="card--flat p-3 border-l-2 border-amber-400 space-y-1">
+          <div className="eyebrow">{t('theses.needs_review', { defaultValue: 'Theses needing review' })}</div>
+          {list.filter((th) => th.needs_review).map((th) => (
+            <div key={th.id} className="text-[12px] text-[var(--fg-2)]">
+              <b>{th.title}</b> — {t('theses.drift_' + (th.drift_state || 'unknown'), { defaultValue: th.drift_state === 'weakens' ? 'current data weakens this thesis' : th.drift_state === 'supports' ? 'current data supports this thesis' : 'data shifted materially' })}
+            </div>
+          ))}
+          <div className="text-[11px] text-[var(--fg-5)]">{t('theses.review_note', { defaultValue: 'Research context to help you review your own reasoning — not advice.' })}</div>
+        </div>
+      )}
+
       {loading ? (
         <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
       ) : list.length === 0 ? (
@@ -112,13 +125,35 @@ export default function ThesisPage() {
                   <button onClick={() => deleteThesis(supabase, th.id).then(load)} className="p-1.5 rounded-lg text-[var(--fg-4)] hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
                 </div>
               </div>
-              <div className="text-[11px] text-[var(--fg-4)]">{th.thesis_date}</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="text-[11px] text-[var(--fg-4)]">{th.thesis_date}</div>
+                {th.drift_state && (
+                  <span className={`chip text-[10px] ${th.drift_state === 'supports' ? 'chip--ok' : th.drift_state === 'weakens' ? 'chip--err' : ''}`}
+                    title={t('theses.drift_tip', { defaultValue: 'Deterministic comparison of current stored signals vs your thesis — research context, not advice.' })}>
+                    {t(`theses.drift_chip_${th.drift_state}`, { defaultValue: th.drift_state === 'supports' ? 'Data currently supports' : th.drift_state === 'weakens' ? 'Data currently weakens' : th.drift_state === 'no_effect' ? 'No material effect' : 'Drift unknown' })}
+                  </span>
+                )}
+                {Array.isArray(th.drift_detail?.drivers) && th.drift_detail.drivers.slice(0, 2).map((d, i) => <span key={i} className="chip text-[9px] text-[var(--fg-4)]">{d}</span>)}
+              </div>
               <div className="grid gap-2 sm:grid-cols-3 text-[12px]">
                 {th.bull_thesis && <div><b className="text-[var(--ok)]">Bull:</b> <span className="text-[var(--fg-3)]">{th.bull_thesis}</span></div>}
                 {th.neutral_thesis && <div><b className="text-[var(--fg-2)]">Neutral:</b> <span className="text-[var(--fg-3)]">{th.neutral_thesis}</span></div>}
                 {th.bear_thesis && <div><b className="text-red-400">Bear:</b> <span className="text-[var(--fg-3)]">{th.bear_thesis}</span></div>}
               </div>
-              {reviewId === th.id && review.result && <ArtifactView result={review.result} loading={review.loading} />}
+              {/* Suggested alert rules parsed from confirm/invalidate — created ONLY on accept */}
+              {th.entity_id && Array.isArray(th.suggested_rules) && th.suggested_rules.length > 0 && (
+                <div className="flex items-center gap-2 flex-wrap text-[12px] text-[var(--fg-3)]">
+                  <span className="text-[var(--fg-5)]">{t('theses.suggested_alerts', { defaultValue: 'Suggested alerts from your conditions' })}:</span>
+                  {th.suggested_rules.map((sr, i) => (
+                    <button key={i} className="chip text-[11px] hover:bg-[var(--bg-2)]"
+                      title={sr.phrase}
+                      onClick={() => createAlertRule(supabase, org.id, user?.id, { entity_id: th.entity_id, trigger_type: sr.trigger_type, config: sr.config }).then(load).catch((e) => setErr(e.message))}>
+                      + {t(`alerts.triggers.${sr.trigger_type}`, { defaultValue: sr.trigger_type.replace(/_/g, ' ') })}{sr.config?.threshold_pct ? ` ${sr.config.threshold_pct}%` : ''}
+                    </button>
+                  ))}
+                </div>
+              )}
+              {reviewId === th.id && review.result && <ArtifactView result={review.result} loading={review.loading} onRefresh={() => review.refresh({ artifactType: 'thesis_review', entityId: th.entity_id, extra: { title: 'Thesis review', baseline: th.baseline_metrics, thesis: { bull_thesis: th.bull_thesis, bear_thesis: th.bear_thesis, neutral_thesis: th.neutral_thesis, what_would_confirm: th.what_would_confirm, what_would_invalidate: th.what_would_invalidate } } })} />}
             </div>
           ))}
         </div>

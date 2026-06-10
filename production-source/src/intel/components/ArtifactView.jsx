@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ShieldAlert, TrendingUp, TrendingDown, Minus, Eye, CheckCircle2, XCircle, Bookmark, Check } from 'lucide-react'
+import { ShieldAlert, TrendingUp, TrendingDown, Minus, Eye, CheckCircle2, XCircle, Bookmark, Check, RefreshCw, History } from 'lucide-react'
 import SourcesFreshnessFooter from './SourcesFreshnessFooter'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -16,7 +16,9 @@ const CONSENSUS_LABEL = { strong_consensus: 'Strong model consensus', moderate_c
 // Renders a research_artifact's structured output uniformly across every Intel
 // feature: summary, risk context, bull/bear/neutral, what-to-watch, thesis
 // confirm/invalidate, and the provenance footer. Honors the safety block.
-export default function ArtifactView({ result, loading }) {
+// `onRefresh` (optional) enables the "Refresh analysis" affordance shown on
+// reused / delta artifacts (force regeneration; plan-limited server-side).
+export default function ArtifactView({ result, loading, onRefresh }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { supabase } = useSupabase()
   const { org } = useProfile()
@@ -28,6 +30,29 @@ export default function ArtifactView({ result, loading }) {
   if (!result?.artifact) return null
   const a = result.artifact
   const s = a.structured || {}
+
+  // Reuse / delta provenance banner — honest about what was reused and why,
+  // with deterministic change drivers as chips + an optional force refresh.
+  const reuseKind = a.reuse_kind || (result.reused ? 'reuse_stale_unchanged' : result.delta ? 'delta' : null)
+  const drivers = result.change_drivers || s.change_drivers || a.validator_outcome?.drivers || []
+  const reuseBanner = (reuseKind === 'reuse_stale_unchanged' || reuseKind === 'delta' || reuseKind === 'explain_similar') ? (
+    <div className="card--flat p-2.5 flex items-center gap-2 flex-wrap text-[12px]">
+      <History className="h-3.5 w-3.5 text-[var(--accent)] flex-shrink-0" />
+      <span className="text-[var(--fg-3)]">
+        {reuseKind === 'delta'
+          ? t('artifact.reuse_delta', { defaultValue: 'Updated since the last analysis — only what changed was re-analyzed.' })
+          : reuseKind === 'explain_similar'
+            ? t('artifact.reuse_similar', { defaultValue: 'Reused a recent answer to a very similar question.' })
+            : t('artifact.reuse_unchanged', { defaultValue: 'Reused — underlying data unchanged since the last analysis.' })}
+      </span>
+      {Array.isArray(drivers) && drivers.slice(0, 3).map((d, i) => <span key={i} className="chip text-[10px] text-[var(--fg-4)]">{d}</span>)}
+      {onRefresh && (
+        <button onClick={onRefresh} className="btn btn--quiet btn--sm ml-auto">
+          <RefreshCw className="h-3.5 w-3.5" /> {t('artifact.refresh', { defaultValue: 'Refresh analysis' })}
+        </button>
+      )}
+    </div>
+  ) : null
 
   if (result.blocked) {
     return (
@@ -58,6 +83,7 @@ export default function ArtifactView({ result, loading }) {
     const Field = ({ label, children }) => children ? <div><div className="eyebrow">{label}</div><p className="text-[13px] text-[var(--fg-2)] mt-1 leading-relaxed">{children}</p></div> : null
     return (
       <div className="space-y-4">
+        {reuseBanner}
         {s.summary && <div className="card p-4"><p className="text-[14px] text-[var(--fg-1)] leading-relaxed whitespace-pre-wrap">{s.summary}</p></div>}
         {po.what_it_is && <div className="card p-4"><Field label={t('defi.ai_what', { defaultValue: 'What this is' })}>{po.what_it_is}</Field></div>}
 
@@ -127,7 +153,21 @@ export default function ArtifactView({ result, loading }) {
 
   return (
     <div className="space-y-4">
+      {reuseBanner}
       {s.summary && <div className="card p-4"><p className="text-[14px] text-[var(--fg-1)] leading-relaxed whitespace-pre-wrap">{s.summary}</p></div>}
+
+      {/* Delta-mode sections — what changed / still holds / now different */}
+      {(s.what_changed || s.still_holds || s.now_different) && (
+        <div className="card p-4 space-y-3">
+          {s.what_changed && <div><div className="eyebrow">{t('artifact.what_changed', { defaultValue: 'What changed' })}</div><p className="text-[13px] text-[var(--fg-2)] mt-1 leading-relaxed">{s.what_changed}</p></div>}
+          {s.still_holds && <div><div className="eyebrow">{t('artifact.still_holds', { defaultValue: 'Still holds' })}</div><p className="text-[13px] text-[var(--fg-2)] mt-1 leading-relaxed">{s.still_holds}</p></div>}
+          {s.now_different && <div><div className="eyebrow">{t('artifact.now_different', { defaultValue: 'Now different' })}</div><p className="text-[13px] text-[var(--fg-2)] mt-1 leading-relaxed">{s.now_different}</p></div>}
+          {Array.isArray(s.updated_what_to_watch) && s.updated_what_to_watch.length > 0 && (
+            <div><div className="eyebrow">{t('artifact.watch_next', { defaultValue: 'What to watch next' })}</div>
+              <ul className="text-[13px] text-[var(--fg-2)] mt-1 space-y-0.5">{s.updated_what_to_watch.slice(0, 5).map((w, i) => <li key={i}>· {w}</li>)}</ul></div>
+          )}
+        </div>
+      )}
 
       {(s.what_happened || s.why_it_matters || s.crypto_market_impact) && (
         <div className="card p-4 space-y-3">

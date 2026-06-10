@@ -16,7 +16,7 @@ import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
-const SORTS = ['market_cap', 'volume', 'gainers', 'losers', 'change_1h', 'change_24h', 'change_7d', 'exchange_availability', 'arbitrage', 'recently_updated']
+const SORTS = ['market_cap', 'volume', 'gainers', 'losers', 'change_1h', 'change_24h', 'change_7d', 'exchange_availability', 'arbitrage', 'unusual_volume', 'multi_exchange_strength', 'recently_updated']
 // Degen mode: multi-chain memecoin terminal.
 const DEGEN_SORTS = ['trending', 'volume', 'gainers', 'losers', 'liquidity', 'new', 'market_cap']
 const DEGEN_BUCKETS = ['hot', 'new', 'pumpfun', 'migrated', 'trending', 'takeovers', 'established', 'high_volume', 'high_liquidity', 'high_risk', 'watchlist']
@@ -43,7 +43,7 @@ export default function MarketsPage() {
   const [err, setErr] = useState(null)
   const [marketsData, setMarketsData] = useState(null)
   const [marketsLoading, setMarketsLoading] = useState(true)
-  const [params, setParams] = useState({ sort: 'market_cap', search: '', category: '', signalDirection: '', watchlistOnly: false, page: 0, limit: PAGE_SIZE })
+  const [params, setParams] = useState({ sort: 'market_cap', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: PAGE_SIZE })
 
   const [degenData, setDegenData] = useState(null)
   const [degenLoading, setDegenLoading] = useState(true)
@@ -80,6 +80,7 @@ export default function MarketsPage() {
         if (params.category) body.category = params.category
         if (params.signalDirection) body.signalDirection = params.signalDirection
         if (params.watchlistOnly) body.watchlistOnly = true
+        if (params.view) body.view = params.view
         const d = await loadMarkets(supabase, org.id, body)
         if (alive) setMarketsData(d)
       } catch { if (alive) setMarketsData(null) }
@@ -187,6 +188,61 @@ export default function MarketsPage() {
             <div className="grid gap-4 lg:grid-cols-2">
               <MarketMoverCards title={t('markets.topMovers', { defaultValue: 'Top movers' })} items={marketsData.topGainers} icon={TrendingUp} hrefFor={(sym) => `/intel/markets/${encodeURIComponent(sym)}`} />
               <MarketMoverCards title={t('markets.topLosers', { defaultValue: 'Top losers' })} items={marketsData.topLosers} icon={TrendingDown} hrefFor={(sym) => `/intel/markets/${encodeURIComponent(sym)}`} />
+            </div>
+          )}
+
+          {/* 2b. Derived views — deterministic computed sections over cached data.
+              Counts come from the server; selecting a chip filters the table. */}
+          {marketsData?.derivedCounts && (
+            <section className="space-y-2">
+              <div className="eyebrow">{t('markets.derived_views', { defaultValue: 'Derived views' })}</div>
+              <div className="flex items-center gap-2 flex-wrap">
+                <button onClick={() => setParam({ view: '' })} className={!params.view ? 'chip chip--accent text-[11px]' : 'chip text-[11px]'}>{t('markets.view_all', { defaultValue: 'All' })}</button>
+                {[
+                  ['unusual_volume', t('markets.view_unusual_volume', { defaultValue: 'Unusual volume' }), 'unusual_volume'],
+                  ['vol_up_price_flat', t('markets.view_vol_up_price_flat', { defaultValue: 'Volume up · price flat' }), null],
+                  ['price_up_liq_weak', t('markets.view_price_up_liq_weak', { defaultValue: 'Price up · thin liquidity ⚠' }), null],
+                  ['multi_exchange', t('markets.view_multi_exchange', { defaultValue: 'Multi-exchange strength' }), 'multi_exchange_strength'],
+                  ['thin_liquidity', t('markets.view_thin_liquidity', { defaultValue: 'Thin liquidity ⚠' }), null],
+                ].map(([key, label, sortKey]) => (
+                  <button key={key}
+                    onClick={() => setParam(params.view === key ? { view: '' } : { view: key, ...(sortKey ? { sort: sortKey } : {}) })}
+                    className={params.view === key ? 'chip chip--accent text-[11px]' : 'chip text-[11px]'}
+                    disabled={!marketsData.derivedCounts[key]}>
+                    {label} · {marketsData.derivedCounts[key] ?? 0}
+                  </button>
+                ))}
+              </div>
+              {(params.view === 'thin_liquidity' || params.view === 'price_up_liq_weak') && (
+                <p className="text-[11px] text-amber-400">{t('markets.thin_liq_caution', { defaultValue: 'Caution: thin liquidity amplifies slippage and price impact — moves here are less reliable. Research context, not advice.' })}</p>
+              )}
+            </section>
+          )}
+
+          {/* 2c. Watchlist movers + Category leaders (computed server-side) */}
+          {(marketsData?.watchlistMovers?.length > 0 || marketsData?.categoryLeaders?.length > 0) && (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {marketsData?.watchlistMovers?.length > 0 && (
+                <MarketMoverCards title={t('markets.watchlist_movers', { defaultValue: 'Watchlist movers' })} items={marketsData.watchlistMovers} icon={TrendingUp} hrefFor={(sym) => `/intel/markets/${encodeURIComponent(sym)}`} />
+              )}
+              {marketsData?.categoryLeaders?.length > 0 && (
+                <section className="card p-4 space-y-2">
+                  <div className="eyebrow">{t('markets.category_leaders', { defaultValue: 'Category leaders' })}</div>
+                  <div className="space-y-1.5">
+                    {marketsData.categoryLeaders.slice(0, 6).map((c) => (
+                      <div key={c.category} className="flex items-center gap-2 text-[12px] flex-wrap">
+                        <button onClick={() => setParam({ category: c.category })} className="chip text-[10px]">{c.category}</button>
+                        {c.leaders.map((l) => (
+                          <Link key={l.symbol} to={`/intel/markets/${encodeURIComponent(l.symbol)}`} className="inline-flex items-center gap-1 hover:text-[var(--accent)]">
+                            <span className="text-[var(--fg-2)] font-medium">{l.symbol}</span>
+                            <span className={`tabular-nums ${(l.change24hPct ?? 0) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{(l.change24hPct ?? 0) >= 0 ? '+' : ''}{Number(l.change24hPct ?? 0).toFixed(1)}%</span>
+                          </Link>
+                        ))}
+                      </div>
+                    ))}
+                  </div>
+                </section>
+              )}
             </div>
           )}
 
