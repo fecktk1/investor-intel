@@ -40,6 +40,20 @@ export async function loadDegenToken(supabase, chain, address) {
   } catch { return null }
 }
 
+// Resolve an EVM contract address to the chain(s) it trades on (DexScreener
+// multichain search, restricted to enrichable chains). Returns candidates sorted
+// by liquidity desc: [{ chain, symbol, liquidityUsd, fdv }]. [] on miss/error so
+// the caller degrades to a not-found message. EVM-only — Solana mints are
+// unambiguous and skip this.
+export async function locateToken(supabase, address) {
+  if (!address) return []
+  try {
+    const { data, error } = await supabase.functions.invoke('intel-token-locate', { body: { address } })
+    if (error || data?.error) return []
+    return Array.isArray(data?.candidates) ? data.candidates : []
+  } catch { return [] }
+}
+
 // Global cached token/project profile (M5). Flexible identifiers; returns the
 // cached profile instantly and enqueues a background refresh when stale.
 export async function loadTokenProfile(supabase, ident = {}) {

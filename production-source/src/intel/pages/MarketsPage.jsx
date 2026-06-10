@@ -4,9 +4,9 @@ import { useTranslation } from 'react-i18next'
 import { Compass, Search, TrendingUp, TrendingDown, Star, ArrowRight, ExternalLink, BarChart3, Activity, AlertTriangle, ArrowLeftRight, Dices } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
-import { CHAINS } from '../lib/chains'
-import { resolveEntity, entityHref, listWatchlist } from '../lib/watchlist-api'
-import { loadMarkets, loadDegenMarkets } from '../lib/markets-api'
+import { CHAINS, detectAddressKind, assetRef } from '../lib/chains'
+import { entityHref, listWatchlist } from '../lib/watchlist-api'
+import { loadMarkets, loadDegenMarkets, locateToken } from '../lib/markets-api'
 import { fmtPrice, fmtPct, fmtVol, timeAgo, pctClass } from '../lib/market-format'
 import MarketsTable from '../components/MarketsTable'
 import MemecoinTable from '../components/MemecoinTable'
@@ -38,9 +38,10 @@ export default function MarketsPage() {
 
   const [perf, setPerf] = useState({})
   const [watch, setWatch] = useState([])
-  const [form, setForm] = useState({ chain: 'solana', value: '' })
+  const [form, setForm] = useState({ chain: '', value: '' })
   const [opening, setOpening] = useState(false)
   const [err, setErr] = useState(null)
+  const [candidates, setCandidates] = useState(null)
   const [marketsData, setMarketsData] = useState(null)
   const [marketsLoading, setMarketsLoading] = useState(true)
   const [params, setParams] = useState({ sort: 'market_cap', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: PAGE_SIZE })
@@ -113,18 +114,35 @@ export default function MarketsPage() {
   const setParam = useCallback((patch, keepPage = false) => setParams((p) => ({ ...p, ...patch, page: keepPage ? (patch.page ?? p.page) : 0 })), [])
   const setDegenParam = useCallback((patch, keepPage = false) => setDegenParams((p) => ({ ...p, ...patch, page: keepPage ? (patch.page ?? p.page) : 0 })), [])
 
+  // Open the rich token detail page for a pasted address. Navigates to the synthetic
+  // app-style `chain:address` ref (NOT resolveEntity/CAIP) — same as the Degen/markets
+  // drill-in — so no entities row is created until the user hits Add to watchlist, and
+  // the page takes the working _contract synthetic path. assetRef lowercases EVM.
+  const goToAsset = useCallback((chain, value) => navigate('/intel/asset/' + encodeURIComponent(assetRef(chain, value))), [navigate])
+
   const onOpen = useCallback(async (e) => {
     e.preventDefault()
     const value = form.value.trim()
-    if (!value || !org?.id) return
-    setOpening(true); setErr(null)
-    try {
-      const entity = await resolveEntity(supabase, org.id, { kind: 'asset', chain: form.chain, value })
-      navigate(entityHref(entity, 'token'))
-    } catch {
-      setErr(t('markets.resolve_failed', { defaultValue: 'Could not find that asset. Check the address and chain.' }))
-    } finally { setOpening(false) }
-  }, [form, org?.id, supabase, navigate, t])
+    if (!value) return
+    setErr(null); setCandidates(null)
+    // Explicit chain selected → honor it (most explicit intent).
+    if (form.chain) { goToAsset(form.chain, value); return }
+    // Auto-detect from the address shape.
+    const kind = detectAddressKind(value)
+    if (kind === 'solana') { goToAsset('solana', value); return } // unambiguous mint
+    if (kind === 'evm') { // chain-ambiguous → resolve via DexScreener multichain search
+      setOpening(true)
+      try {
+        const cands = await locateToken(supabase, value)
+        if (!cands.length) { setErr(t('markets.locate_not_found', { defaultValue: "Couldn't find that token on any supported chain. Pick a chain and try again." })); return }
+        // Auto-open a single match, or the top when it clearly dominates (≥5× runner-up liquidity); else let the user choose.
+        if (cands.length === 1 || cands[0].liquidityUsd >= 5 * (cands[1]?.liquidityUsd || 0)) goToAsset(cands[0].chain, value)
+        else setCandidates(cands)
+      } finally { setOpening(false) }
+      return
+    }
+    setErr(t('markets.pick_chain', { defaultValue: 'Select a chain for this identifier, then try again.' }))
+  }, [form, supabase, t, goToAsset])
 
   const snap = marketsData?.snapshot || {}
   const rows = marketsData?.rows || []
@@ -314,23 +332,36 @@ export default function MarketsPage() {
             </section>
           )}
 
-          {/* Front-door tools */}
+          {/* Front-door tools — paste any EVM/SOL token address */}
           <form onSubmit={onOpen} className="card p-4 flex flex-wrap items-end gap-3">
             <label className="block">
               <span className="text-[11px] text-[var(--fg-4)]">{t('watchlist.chain', { defaultValue: 'Chain' })}</span>
-              <select className="select" value={form.chain} onChange={(e) => setForm((f) => ({ ...f, chain: e.target.value }))}>
+              <select className="select" value={form.chain} onChange={(e) => { setForm((f) => ({ ...f, chain: e.target.value })); setCandidates(null) }}>
+                <option value="">{t('markets.auto_detect', { defaultValue: 'Auto-detect chain' })}</option>
                 {CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
             </label>
             <label className="block flex-1 min-w-[220px]">
               <span className="text-[11px] text-[var(--fg-4)]">{t('markets.open_label', { defaultValue: 'Token address / mint' })}</span>
-              <input className="input w-full" placeholder={t('markets.open_ph', { defaultValue: 'Paste a contract address or mint…' })} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
+              <input className="input w-full" placeholder={t('markets.open_ph', { defaultValue: 'Paste a contract address or mint…' })} value={form.value} onChange={(e) => { setForm((f) => ({ ...f, value: e.target.value })); if (candidates) setCandidates(null); if (err) setErr(null) }} />
             </label>
             <button type="submit" className="btn btn--primary" disabled={opening || !form.value.trim()}>
               {opening ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Search className="h-4 w-4" /> {t('markets.open', { defaultValue: 'Open chart' })}</>}
             </button>
             <Link to="/intel/watchlist" className="btn btn--ghost btn--sm"><Star className="h-4 w-4" /> {t('markets.manage', { defaultValue: 'Manage watchlist' })}</Link>
           </form>
+          {candidates && candidates.length > 0 && (
+            <div className="card--flat p-3 space-y-2">
+              <div className="text-[12px] text-[var(--fg-3)]">{t('markets.locate_choose', { defaultValue: 'Found on multiple chains — pick one:' })}</div>
+              <div className="flex flex-wrap gap-1.5">
+                {candidates.map((c) => (
+                  <button key={c.chain} type="button" onClick={() => goToAsset(c.chain, form.value.trim())} className="chip text-[11px]">
+                    {(c.symbol || form.value.trim().slice(0, 6))} · {(CHAINS.find((x) => x.id === c.chain)?.label) || c.chain}{c.liquidityUsd ? ` · ${fmtVol(c.liquidityUsd)}` : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
           {err && <div className="card--flat p-3 text-[13px] text-red-400">{err}</div>}
 
           {watch.length > 0 && (

@@ -8,7 +8,7 @@ import { getEntityByRef } from '../lib/artifact-api'
 import { addEntityToWatchlist, resolveEntity } from '../lib/watchlist-api'
 import { loadTokenChart, loadWalletPortfolio } from '../lib/chart-api'
 import { listEntityNews, listGlobalNews } from '../lib/news-api'
-import { getChain } from '../lib/chains'
+import { getChain, chainIdFor, normalizeAddressForChain, assetRef } from '../lib/chains'
 import { cleanNewsTitle } from '../lib/text-clean'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
@@ -69,8 +69,18 @@ export default function AssetBreakdownPage() {
         // Synthetic entity — NO org `entities` row until Add to watchlist. id:null +
         // _synthetic signal every hook this is temporary (entity-scoped features guard on id).
         if (!e && !decoded.startsWith('native:') && decoded.includes(':') && !decoded.includes('/')) {
-          const idx = decoded.indexOf(':'); const cid = decoded.slice(0, idx); const addr = decoded.slice(idx + 1); const ch = getChain(cid)
-          if (ch && addr) e = { id: null, canonical_ref_key: decoded, entity_kind: 'asset', asset_type: ch.namespace === 'eip155' ? 'erc20' : (cid === 'solana' ? 'spl' : 'token'), contract_address: addr, chain_id: cid, chain_namespace: ch.label, display_symbol: null, _contract: true, _synthetic: true, _chain: cid, _address: addr }
+          const idx = decoded.indexOf(':'); const cid = decoded.slice(0, idx); const ch = getChain(cid)
+          const addr = ch ? normalizeAddressForChain(cid, decoded.slice(idx + 1)) : decoded.slice(idx + 1) // EVM lowercased so the case-sensitive Degen read + profile lookup hit
+          if (ch && addr) e = { id: null, canonical_ref_key: assetRef(cid, addr), entity_kind: 'asset', asset_type: ch.namespace === 'eip155' ? 'erc20' : (cid === 'solana' ? 'spl' : 'token'), contract_address: addr, chain_id: cid, chain_namespace: ch.label, display_symbol: null, _contract: true, _synthetic: true, _chain: cid, _address: addr }
+        }
+        // DB-loaded contract entity (post-watchlist-save / "Open chart"): the real
+        // entities row carries no _chain/_address/_contract synthetic flags, so
+        // reconstruct them from its CAIP columns (chain_id is the CAIP ref → map via
+        // chainIdFor). Without this the page looks the profile up by canonical_ref_key
+        // and skips the Degen signals — losing the rich data the synthetic view had.
+        if (e && e.id && !e._synthetic && !e._native && e.contract_address && e.asset_type !== 'native') {
+          const appId = chainIdFor(e.chain_namespace, e.chain_id)
+          if (appId) e = { ...e, _chain: appId, _address: e.contract_address, _contract: true }
         }
         if (alive) setEntity(e)
       } catch { /* */ } finally { if (alive) setLoadingEntity(false) }
@@ -92,6 +102,7 @@ export default function AssetBreakdownPage() {
 
   useEffect(() => {
     if (!entity) return
+    let alive = true
     if (entity.id) run(false)
     if (!isWallet) {
       loadChart(timeframe)
@@ -104,13 +115,29 @@ export default function AssetBreakdownPage() {
         } catch { /* */ }
       })()
       ;(async () => { try { const m = await loadMarketContextBySymbols(supabase, [entity.display_symbol]); setMarketCtx(m[String(entity.display_symbol || '').toUpperCase()] || null) } catch { /* */ } })()
-      // Global cached token/project profile (shared across users; lazy on open).
-      ;(async () => { try { const ident = entity._native ? { symbol: entity.display_symbol } : (entity._chain && entity._address) ? { chain: entity._chain, tokenAddress: entity._address } : { ref: entity.canonical_ref_key }; const pr = await loadTokenProfile(supabase, ident); if (pr) { setProfile(pr.profile); setProfileState(pr.state) } } catch { /* */ } })()
+      // Global cached token/project profile (shared across users; lazy on open). A
+      // freshly-seen small token may first return state:'enqueued' (profile still
+      // building) — poll a couple of times so it fills in without a manual refresh.
+      ;(async () => {
+        const ident = entity._native ? { symbol: entity.display_symbol } : (entity._chain && entity._address) ? { chain: entity._chain, tokenAddress: entity._address } : { ref: entity.canonical_ref_key }
+        for (const wait of [0, 4000, 10000]) {
+          if (!alive) return
+          if (wait) await new Promise((r) => setTimeout(r, wait))
+          if (!alive) return
+          try {
+            const pr = await loadTokenProfile(supabase, ident)
+            if (!alive) return
+            if (pr) { setProfile(pr.profile); setProfileState(pr.state) }
+            if (pr?.profile && pr.state !== 'enqueued') return // real profile in hand — stop polling
+          } catch { /* keep trying the remaining delays */ }
+        }
+      })()
       // Free cached Degen signals (contract tokens) — useful before watchlist add.
-      if (entity._chain && entity._address) ;(async () => { try { const d = await loadDegenToken(supabase, entity._chain, entity._address); if (d) setDegenSignals(d) } catch { /* */ } })()
+      if (entity._chain && entity._address) ;(async () => { try { const d = await loadDegenToken(supabase, entity._chain, entity._address); if (d && alive) setDegenSignals(d) } catch { /* */ } })()
     } else {
       ;(async () => { setWalletLoading(true); try { setWalletPf(await loadWalletPortfolio(supabase, org.id, { entityId: entity.id })) } catch { /* */ } finally { setWalletLoading(false) } })()
     }
+    return () => { alive = false }
   }, [entity?.canonical_ref_key]) // eslint-disable-line
 
   const onSave = useCallback(async () => {
