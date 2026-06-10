@@ -1,7 +1,7 @@
 import React from 'react'
 import { Star, ArrowRight, Sparkles } from 'lucide-react'
 import NarrativeScorecard from './NarrativeScorecard'
-import { displayStatus, displayStatusMeta, signalMeta, onchainMeta, confirmationMeta } from '../lib/narrative-ui'
+import { displayStatus, displayStatusMeta, signalMeta, onchainMeta, confirmationMeta, mergeLabels, clarityMeta } from '../lib/narrative-ui'
 
 const pct = (v) => (typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}%` : '—')
 const chgCls = (v) => (typeof v !== 'number' ? 'text-[var(--fg-4)]' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-[var(--fg-3)]')
@@ -25,6 +25,7 @@ export default function NarrativeCard({ n, onOpen, onFollow, busy }) {
   const leaders = Array.isArray(n.leaders) ? n.leaders.slice(0, 4) : []
   const changed = whatChanged(n.score_delta)
   const isDynamic = n.origin === 'dynamic'
+  const labels = mergeLabels(n, 2)   // derived clarity + per-user relevance, capped on the card
 
   return (
     <div className="card p-4 space-y-3">
@@ -53,6 +54,11 @@ export default function NarrativeCard({ n, onOpen, onFollow, busy }) {
             )}
             {(n.related_chains || n.chains || []).slice(0, 3).map((c) => <span key={c} className="text-[10px] text-[var(--fg-4)]">#{c}</span>)}
           </div>
+          {labels.length > 0 && (
+            <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
+              {labels.map((l) => { const m = clarityMeta(l.key); return <span key={l.key} className={`chip text-[10px] ${m.cls}`} title={m.why}>{m.label}</span> })}
+            </div>
+          )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
           <button onClick={() => onFollow(n.slug, !n.is_followed)} disabled={busy}

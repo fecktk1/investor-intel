@@ -37,11 +37,15 @@ export default function ExplainPage() {
     return () => { alive = false }
   }, [refParam, org?.id, supabase])
 
-  const ask = useCallback((q) => {
+  const [lastQ, setLastQ] = useState(null)
+  const ask = useCallback((q, force = false) => {
     const question_ = (q ?? question).trim()
     if (!question_) return
-    ex.generate({ artifactType: 'explain', entityId: entity?.id || null, entity: entity || null, extra: { question: question_ } })
+    setLastQ(question_)
+    ex.generate({ artifactType: 'explain', entityId: entity?.id || null, entity: entity || null, force: force === true, extra: { question: question_ } })
   }, [question, entity, ex])
+
+  const SURFACE_LABEL = { watchlist: 'your watchlist', theses: 'your theses', alerts: 'your recent alerts', saved_research: 'your saved research', narratives: 'narratives', signals: 'stored signals' }
 
   return (
     <div className="space-y-5">
@@ -64,7 +68,14 @@ export default function ExplainPage() {
         </div>
       </form>
 
-      <ArtifactView result={ex.result} loading={ex.loading} />
+      {/* Context-routing provenance: which of YOUR cached surfaces grounded the answer */}
+      {Array.isArray(ex.result?.matched_surfaces) && ex.result.matched_surfaces.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap text-[12px] text-[var(--fg-4)]">
+          <span>{t('explain.answered_using', { defaultValue: 'Answered using' })}:</span>
+          {ex.result.matched_surfaces.map((s) => <span key={s} className="chip text-[10px] chip--accent">{SURFACE_LABEL[s] || s}</span>)}
+        </div>
+      )}
+      <ArtifactView result={ex.result} loading={ex.loading} onRefresh={lastQ ? () => ask(lastQ, true) : undefined} />
       {ex.error && <div className="card--flat p-3 text-[13px] text-red-400">{ex.error}</div>}
       <IntelDisclaimer variant="block" />
     </div>

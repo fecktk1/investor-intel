@@ -11,6 +11,8 @@ import { loadMarketContextBySymbols } from '../lib/markets-api'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
+import RelevantSignals from '../components/RelevantSignals'
+import { markSurfaceSeen } from '../lib/changes-api'
 
 const ITEM_TYPES = ['token', 'wallet', 'narrative', 'protocol', 'defi']
 const HAS_HOLDING = new Set(['token', 'defi'])
@@ -49,6 +51,7 @@ export default function WatchlistPage() {
   }, [org?.id, supabase])
 
   useEffect(() => { load() }, [load])
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'watchlist') }, [org?.id, supabase])
 
   // Hydrate exchange market context for tracked symbols (cached tables; no live calls).
   useEffect(() => {
@@ -196,6 +199,8 @@ export default function WatchlistPage() {
           })}
         </div>
       )}
+
+      <RelevantSignals title={t('watchlist.relevant_signals', { defaultValue: 'Signals on your watchlist & holdings' })} seeAllHref="/intel" />
 
       <IntelDisclaimer variant="block" />
     </div>

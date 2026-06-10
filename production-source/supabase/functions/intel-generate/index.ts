@@ -8,7 +8,7 @@
 //   persist research_artifacts -> record telemetry.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { buildPrompt, requiredFieldsFor, CONTRACT_VERSION, GUARDRAIL_VERSION } from '../_shared/intel-prompts.ts'
+import { buildPrompt, buildDeltaPrompt, requiredFieldsFor, DELTA_REQUIRED_FIELDS, CONTRACT_VERSION, GUARDRAIL_VERSION } from '../_shared/intel-prompts.ts'
 import { validateSafeLanguage, validateArtifactContract, SAFE_LANGUAGE_RULES } from '../_shared/intel-guardrails.ts'
 import { recordIntelEvent } from '../_shared/intel-events.ts'
 import { recordAIUsage } from '../_shared/usage.ts'
@@ -17,6 +17,10 @@ import { chainIdFor } from '../_shared/chains.ts'
 import { buildEvidence } from '../_shared/intel-evidence.ts'
 import { multiModelAnalyze } from '../_shared/intel-models.ts'
 import { buildMarketMemoryPromptBlock } from '../_shared/exchange-market/memory.ts'
+import { materialityVerdict } from '../_shared/core-intel/materiality.ts'
+import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
+import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
+import { routeExplainContext, similarRecentExplain, computeQuestionHashes } from '../_shared/intel/intel-context-adapters.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -40,6 +44,10 @@ function textOfArtifact(structured: any): string {
     // defi_report (pool-framed) prose — scanned by the safety guardrail too.
     po.what_it_is, ya.apy_read, ya.base_vs_reward, ya.sustainability, tl.tvl_read, tl.depth_note,
     structured?.collateral_or_il, structured?.who_its_for,
+    // delta-mode prose — the safety guardrail must cover updates too.
+    structured?.what_changed, structured?.still_holds, structured?.now_different,
+    ...(Array.isArray(structured?.change_drivers) ? structured.change_drivers : []),
+    ...(Array.isArray(structured?.updated_what_to_watch) ? structured.updated_what_to_watch : []),
     ...(Array.isArray(structured?.comparisons) ? structured.comparisons : []),
     ...(Array.isArray(structured?.what_to_watch) ? structured.what_to_watch : [])]
   return parts.filter((x) => typeof x === 'string').join('\n')
@@ -81,7 +89,26 @@ function orgArtifactRow(p: any) {
     validator_outcome: p.validatorOutcome || {},
     status: p.validationStatus === 'blocked' ? 'blocked' : 'ready',
     stale_after: p.staleAfter,
+    // reuse / delta / similarity lineage (migration 215). insertArtifact strips
+    // these when the columns don't exist yet (deploy-order safety).
+    evidence_hash: p.evidenceHash ?? null, source_set_hash: p.sourceSetHash ?? null,
+    signal_snapshot: p.signalSnapshot ?? {}, base_artifact_id: p.baseArtifactId ?? null,
+    reuse_kind: p.reuseKind ?? 'fresh',
+    question_norm_hash: p.questionNormHash ?? null, question_shingles: p.questionShingles ?? null,
   }
+}
+
+// Columns added by migration 215 — stripped on insert when the migration hasn't
+// been applied yet so a function-first deploy degrades instead of hard-breaking.
+const M215_COLS = ['evidence_hash', 'source_set_hash', 'signal_snapshot', 'base_artifact_id', 'reuse_kind', 'question_norm_hash', 'question_shingles']
+async function insertArtifact(supabase: any, row: any) {
+  let res = await supabase.from('research_artifacts').insert(row).select('*').single()
+  if (res.error && /column|schema cache/i.test(String(res.error.message))) {
+    const legacy = { ...row }
+    for (const c of M215_COLS) delete legacy[c]
+    res = await supabase.from('research_artifacts').insert(legacy).select('*').single()
+  }
+  return res
 }
 
 Deno.serve(async (req) => {
@@ -117,6 +144,13 @@ Deno.serve(async (req) => {
     }
     const { data: profile } = await supabase.from('intel_user_profiles').select('*').eq('org_id', orgId).maybeSingle()
 
+    // Service-role client (shared artifacts, force log, cost ledger) + the precise
+    // ledger emitter — every cost-relevant DECISION below records exactly one event.
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const costWriter = makeCostWriter(admin)
+    // deno-lint-ignore no-explicit-any
+    const logCost = (ev: any) => recordCostEvent(costWriter, { feature: artifactType, orgId, artifactType, subjectRef: ent?.canonical_ref_key || null, ...ev }, { precision: 'exact', nowMs: Date.now() })
+
     const inputHash = hashStr(JSON.stringify({ artifactType, ref: ent?.canonical_ref_key || null, context: context || null, extra: extra || null }))
     const cacheKey = `${artifactType}:${inputHash}:v1`
 
@@ -129,8 +163,30 @@ Deno.serve(async (req) => {
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       if (cached && (!cached.stale_after || new Date(cached.stale_after).getTime() > Date.now())) {
         await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: cached.id, model: cached.model, metadata: { cache: 'hit' } })
+        void logCost({ cacheStatus: 'hit', reuseKind: cached.reuse_kind || null, model: null, evidenceHash: cached.evidence_hash || null, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
         return json({ artifact: cached, cached: true })
       }
+    }
+
+    // ── Explain This: deterministic context routing + similarity reuse (no AI) ──
+    // The question is HMAC-hashed (server secret + org salt) — raw questions, raw
+    // shingles, and unsalted hashes are never stored. routed_context is in-memory
+    // grounding only.
+    // deno-lint-ignore no-explicit-any
+    let explainHashes: any = null
+    // deno-lint-ignore no-explicit-any
+    let explainRouted: any = null
+    if (artifactType === 'explain') {
+      try { explainHashes = await computeQuestionHashes(extra?.question || JSON.stringify(extra || {}), orgId) } catch { /* hashing unavailable → no similarity */ }
+      if (!force && explainHashes) {
+        const hit = await similarRecentExplain(supabase, { orgId, entityId: ent?.id || null, hashes: explainHashes })
+        if (hit) {
+          await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: hit.artifact.id, model: hit.artifact.model, metadata: { cache: 'explain_similar', similarity: hit.similarity, kind: hit.kind } })
+          void logCost({ cacheStatus: 'explain_similar', reuseKind: 'explain_similar', model: null, providerCallsAvoided: 1, allowReason: 'n/a_no_ai', usage: { similarity: hit.similarity } })
+          return json({ artifact: hit.artifact, cached: true, similar: hit.similarity, reuse_kind: 'explain_similar' })
+        }
+      }
+      try { explainRouted = await routeExplainContext(supabase, { orgId, question: extra?.question, entity: ent }) } catch { /* routing best-effort */ }
     }
 
     // Deterministic evidence package (cheap, no AI) — drives reuse keying + the
@@ -152,16 +208,77 @@ Deno.serve(async (req) => {
     // ONCE and reused across all users. On a fresh hit, copy the shared structured
     // into an org artifact (no AI) so the user keeps history + Save. Exempt from
     // gate/rate because it incurs no new AI cost.
-    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const sharedKey = pkg ? { artifact_type: artifactType, entity_ref: ent?.canonical_ref_key || '', evidence_hash: pkg.evidence_hash, contract_version: CONTRACT_VERSION, guardrail_version: GUARDRAIL_VERSION } : null
     if (!force && pkg?.reusable && sharedKey) {
       const { data: shared } = await admin.from('intel_shared_artifacts').select('*').match(sharedKey).order('created_at', { ascending: false }).limit(1).maybeSingle()
       if (shared && (!shared.stale_after || new Date(shared.stale_after).getTime() > Date.now())) {
-        const orgRow = orgArtifactRow({ orgId, userId, artifactType, ent, extra, structured: shared.structured, inputHash, cacheKey, staleAfter: shared.stale_after, model: (shared.models || []).join('+') || 'shared', validationStatus: shared.validation_status || 'passed', sources: shared.sources, validatorOutcome: { reused_shared: shared.id, consensus: shared.consensus } })
-        const { data: copy } = await supabase.from('research_artifacts').insert(orgRow).select('*').single()
+        const orgRow = orgArtifactRow({ orgId, userId, artifactType, ent, extra, structured: shared.structured, inputHash, cacheKey, staleAfter: shared.stale_after, model: (shared.models || []).join('+') || 'shared', validationStatus: shared.validation_status || 'passed', sources: shared.sources, validatorOutcome: { reused_shared: shared.id, consensus: shared.consensus }, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, reuseKind: 'shared_copy' })
+        const { data: copy } = await insertArtifact(supabase, orgRow)
         await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: copy?.id, model: (shared.models || []).join('+'), metadata: { cache: 'shared_hit', shared_id: shared.id, consensus: shared.consensus, evidence_items: pkg.final_count } })
+        void logCost({ cacheStatus: 'shared_hit', reuseKind: 'shared_copy', model: null, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
         return json({ artifact: copy || shared, cached: true, shared: true, consensus: shared.consensus })
       }
+    }
+
+    // ── Force refresh: an expensive override, plan-limited + cooled down (215) ──
+    // Bypasses STALENESS ONLY — the kill switch, monthly cap, and per-artifact
+    // daily rate limits below still apply.
+    if (force) {
+      try {
+        const { data: fr } = await supabase.rpc('intel_force_refresh_allowed', { p_artifact_type: artifactType, p_entity_ref: ent?.canonical_ref_key || null })
+        if (fr && fr.allowed === false) return json({ error: 'force_refresh_limited', reason: fr.reason, used: fr.used, limit: fr.limit, cooldown_until: fr.cooldown_until }, 429)
+        if (fr) void admin.from('intel_force_refresh_log').insert({ org_id: orgId, user_id: userId, artifact_type: artifactType, entity_ref: ent?.canonical_ref_key || null })
+      } catch { /* RPC absent pre-migration → allow (normal gates still apply) */ }
+    }
+
+    // Current stored Intel Signal for the subject (cached read; absent table → null).
+    // deno-lint-ignore no-explicit-any
+    let signalSnap: any = null
+    if (ent?.display_symbol) {
+      try {
+        const sym = String(ent.display_symbol).toUpperCase().replace(/^\$/, '')
+        const { data: sig } = await supabase.from('intel_signal_state')
+          .select('direction, global_score, source_count, severity, score_delta, generated_at')
+          .eq('subject_type', 'asset').eq('display_symbol', sym)
+          .order('generated_at', { ascending: false }).limit(1).maybeSingle()
+        signalSnap = sig || null
+      } catch { /* signal store not deployed yet */ }
+    }
+
+    // ── Reuse decision vs the most-recent prior artifact for these EXACT inputs ──
+    // magnitude none → extend stale_after and return (zero AI — today this case
+    // re-runs the full multi-model synthesis). minor/material → cheap DELTA below.
+    const DELTA_TYPES = ['token_breakdown', 'risk_panel', 'narrative_report', 'defi_report', 'execution_report', 'wallet_summary', 'token_comparison', 'thesis_review']
+    // deno-lint-ignore no-explicit-any
+    let deltaPlan: any = null
+    if (!force && pkg) {
+      try {
+        const { data: prior } = await supabase.from('research_artifacts')
+          .select('id, structured, evidence_hash, signal_snapshot, stale_after, created_at')
+          .eq('org_id', orgId).eq('cache_key', cacheKey).eq('status', 'ready').not('evidence_hash', 'is', null)
+          .gte('created_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        if (prior) {
+          // deno-lint-ignore no-explicit-any
+          const ss: any = prior.signal_snapshot || {}
+          const verdict = materialityVerdict({
+            prevEvidenceHash: prior.evidence_hash, newEvidenceHash: pkg.evidence_hash,
+            prevSignal: ss.direction ? { polarity: ss.direction, score: ss.global_score, source_count: ss.source_count } : null,
+            newSignal: signalSnap ? { polarity: signalSnap.direction, score: signalSnap.global_score, source_count: signalSnap.source_count } : null,
+          })
+          if (verdict.magnitude === 'none') {
+            const newStale = new Date(Date.now() + staleMinutes * 60_000).toISOString()
+            await supabase.from('research_artifacts').update({ stale_after: newStale, reuse_kind: 'reuse_stale_unchanged' }).eq('id', prior.id)
+            const { data: full } = await supabase.from('research_artifacts').select('*').eq('id', prior.id).maybeSingle()
+            await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: prior.id, metadata: { cache: 'reuse_unchanged' } })
+            void logCost({ cacheStatus: 'reuse_unchanged', reuseKind: 'reuse_stale_unchanged', model: null, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
+            return json({ artifact: full || prior, cached: true, reused: true, reuse_kind: 'reuse_stale_unchanged' })
+          }
+          if (DELTA_TYPES.includes(artifactType) && typeof prior.structured?.summary === 'string') {
+            deltaPlan = { prior, drivers: verdict.drivers.length ? verdict.drivers : ['evidence set changed'], magnitude: verdict.magnitude }
+          }
+        }
+      } catch { /* 215 columns absent → fresh path */ }
     }
 
     // Governance gate: global kill switch + monthly cost cap (cache hits above
@@ -181,6 +298,63 @@ Deno.serve(async (req) => {
     if (rateKey) {
       const { data: rate } = await supabase.rpc('intel_rate_check', { p_limit_key: rateKey })
       if (rate && rate.allowed === false) return json({ error: 'rate_limited', reason: rateKey, used: rate.used, limit: rate.limit }, 429)
+    }
+
+    // ── DELTA path: cheap single-model UPDATE of the prior artifact ──────────────
+    // Evidence changed (minor/material) vs a recent full answer → narrate the diff
+    // with gpt-5.4-mini instead of redoing the full (multi-model) analysis. Skips
+    // live provider grounding entirely; gated by the same kill switch + rate above.
+    if (deltaPlan) {
+      const dp = buildDeltaPrompt({
+        artifactType, entity: ent, profile,
+        priorSummary: deltaPlan.prior.structured?.summary || '',
+        priorNetSignal: deltaPlan.prior.structured?.net_signal || null,
+        drivers: deltaPlan.drivers,
+        context: { evidence_package: pkg?.items || [], evidence_coverage: pkg?.coverage || null, current_signal: signalSnap },
+      })
+      const r = await callOpenAI(dp.model, dp.system, dp.user, apiKey)
+      // deno-lint-ignore no-explicit-any
+      let structuredD: any
+      try { structuredD = JSON.parse(r.content) } catch { structuredD = { summary: r.content, confidence: 'low', sources: [] } }
+      let usageD = r.usage
+      void recordAIUsage(supabase, { orgId, userId, provider: 'openai', model: dp.model, surface: 'investor_intel', subMode: `${artifactType}:delta`, providerUsage: usageD, status: 'success' })
+
+      let validationD = validateSafeLanguage(textOfArtifact(structuredD))
+      let outcomeD: 'pass' | 'rewrite' | 'block' = 'pass'
+      if (!validationD.ok) {
+        const fixSystem = `${dp.system}\n\nYour previous answer used advice-style language (${validationD.hits.map((h) => h.label).join(', ')}). Rewrite it to be strictly research/risk context. ${SAFE_LANGUAGE_RULES}`
+        const retry = await callOpenAI(dp.model, fixSystem, `${dp.user}\n\nPrevious JSON to fix:\n${JSON.stringify(structuredD).slice(0, 8000)}`, apiKey)
+        try { structuredD = JSON.parse(retry.content) } catch { /* keep prior */ }
+        usageD = retry.usage
+        validationD = validateSafeLanguage(textOfArtifact(structuredD))
+        outcomeD = validationD.ok ? 'rewrite' : 'block'
+      }
+      const contractD = validateArtifactContract(structuredD, DELTA_REQUIRED_FIELDS)
+      const blockedD = !validationD.ok
+      const validationStatusD = blockedD ? 'blocked' : (outcomeD === 'rewrite' ? 'rewritten' : 'passed')
+      const staleAfterD = new Date(Date.now() + staleMinutes * 60_000).toISOString()
+      const rowD = orgArtifactRow({
+        orgId, userId, artifactType, ent, extra, structured: structuredD, inputHash, cacheKey, staleAfter: staleAfterD,
+        model: dp.model, validationStatus: validationStatusD, sources: ['Delta update on prior analysis'],
+        validatorOutcome: { hits: validationD.hits, contract_missing: contractD.missing, base_artifact_id: deltaPlan.prior.id, drivers: deltaPlan.drivers },
+        evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, signalSnapshot: signalSnap || {},
+        baseArtifactId: deltaPlan.prior.id, reuseKind: 'delta',
+      })
+      const { data: artifactD, error: errD } = await insertArtifact(supabase, rowD)
+      if (errD) throw errD
+      await recordIntelEvent(supabase, {
+        orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key,
+        artifactId: artifactD.id, model: dp.model, tokensIn: usageD?.prompt_tokens, tokensOut: usageD?.completion_tokens,
+        validatorOutcome: outcomeD, metadata: { cache: 'delta', magnitude: deltaPlan.magnitude, base_artifact_id: deltaPlan.prior.id },
+      })
+      void logCost({
+        cacheStatus: 'delta', reuseKind: 'delta', model: dp.model,
+        evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash,
+        allowReason: deltaPlan.magnitude === 'material' ? 'evidence_changed_material' : 'evidence_changed_minor',
+        usage: { tokens_in: usageD?.prompt_tokens, tokens_out: usageD?.completion_tokens },
+      })
+      if (blockedD) return json({ artifact: artifactD, blocked: true, reason: 'safety_validation_failed' }, 200)
+      return json({ artifact: artifactD, cached: false, delta: true, base_artifact_id: deltaPlan.prior.id, change_drivers: deltaPlan.drivers })
     }
 
     // Ground artifacts in live provider data (graceful: null → missing_context).
@@ -260,6 +434,13 @@ Deno.serve(async (req) => {
       } catch { /* best-effort grounding */ }
     }
 
+    // Explain This: ground the answer in the user's OWN cached context (routed
+    // deterministically above) — in memory only, never persisted.
+    if (artifactType === 'explain' && explainRouted && Object.keys(explainRouted.routed_context || {}).length) {
+      genContext = { ...(genContext || context || {}), user_context: explainRouted.routed_context }
+      sourcesUsed.push('Your watchlist / theses / alerts / signals context')
+    }
+
     const required = requiredFieldsFor(artifactType)
     const { system, user, model } = buildPrompt(artifactType, { entity: ent, context: genContext, profile, extra })
 
@@ -294,7 +475,7 @@ Deno.serve(async (req) => {
         providerMeta = { providers: mm.providersUsed, statuses: mm.statuses, consensus: mm.consensus, synth_failed: !!mm.synthFailed }
         for (const [prov, u] of Object.entries(mm.usage || {})) {
           const pmodel = prov === 'grok' ? (Deno.env.get('GROK_MODEL') || 'grok-4.3') : prov === 'gemini' ? (Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash') : prov === 'synth' ? 'gpt-5.5' : 'gpt-5.4-mini'
-          void recordAIUsage(supabase, { orgId, userId, provider: prov === 'grok' ? 'xai' : prov === 'gemini' ? 'google' : 'openai', model: pmodel, surface: 'investor_intel', subMode: `${artifactType}:${prov}`, providerUsage: u, status: 'success' })
+          void recordAIUsage(supabase, { orgId, userId, provider: prov === 'grok' ? 'grok' : prov === 'gemini' ? 'gemini' : 'openai', model: pmodel, surface: 'investor_intel', subMode: `${artifactType}:${prov}`, providerUsage: u, status: 'success' })
         }
       }
     }
@@ -328,9 +509,18 @@ Deno.serve(async (req) => {
       orgId, userId, artifactType, ent, extra, structured, inputHash, cacheKey, staleAfter, model: modelUsed,
       validationStatus, sources: sourcesUsed,
       validatorOutcome: { hits: validation.hits, contract_missing: contract.missing, consensus, providers: providerMeta?.providers || [] },
+      evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, signalSnapshot: signalSnap || {},
+      reuseKind: 'fresh',
+      questionNormHash: explainHashes?.question_norm_hash || null, questionShingles: explainHashes?.question_shingles || null,
     })
-    const { data: artifact, error } = await supabase.from('research_artifacts').insert(row).select('*').single()
+    const { data: artifact, error } = await insertArtifact(supabase, row)
     if (error) throw error
+    void logCost({
+      cacheStatus: 'fresh', reuseKind: 'fresh', model: modelUsed,
+      evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash,
+      allowReason: force ? 'force_refresh' : 'no_prior_artifact',
+      usage: { tokens_in: usage?.prompt_tokens, tokens_out: usage?.completion_tokens, multi_model: useMulti && !!consensus },
+    })
 
     // Store the reusable SHARED artifact when the package is PUBLIC and a
     // multi-model synthesis produced it — generated once, reused across users.
@@ -352,7 +542,7 @@ Deno.serve(async (req) => {
     })
 
     if (blocked) return json({ artifact, blocked: true, reason: 'safety_validation_failed' }, 200)
-    return json({ artifact, cached: false, consensus, multi_model: !!consensus })
+    return json({ artifact, cached: false, consensus, multi_model: !!consensus, matched_surfaces: explainRouted?.matched_surfaces || undefined })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'generate_failed' }, 400)
   }

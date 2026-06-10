@@ -8,6 +8,8 @@ import { getIntelProfile } from '../lib/intel-api'
 import { toPlainText, cleanNewsTitle } from '../lib/text-clean'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
+import RelevantSignals from '../components/RelevantSignals'
+import { markSurfaceSeen } from '../lib/changes-api'
 
 const SOURCE_TYPES = ['x_account', 'keyword', 'rss', 'website']
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
@@ -41,6 +43,7 @@ export default function NewsPage() {
     } catch (e) { setErr(e.message) } finally { setLoading(false) }
   }, [org?.id, supabase])
   useEffect(() => { load() }, [load])
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'news') }, [org?.id, supabase])
 
   const onAdd = useCallback(async (e) => {
     e.preventDefault()
@@ -144,6 +147,8 @@ export default function NewsPage() {
           ))}
         </div>
       )}
+
+      <RelevantSignals title={t('news.relevant_signals', { defaultValue: 'Signals relevant to you' })} seeAllHref="/intel" />
 
       <IntelDisclaimer variant="block" />
     </div>

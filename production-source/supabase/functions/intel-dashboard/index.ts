@@ -8,6 +8,8 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { birdeyeChainFor, birdeyeOverview } from '../_shared/intel-providers.ts'
 import { chainIdFor, getChain, CHAINS } from '../_shared/chains.ts'
 import { buildNotable, buildSignalRadar } from '../_shared/intel-signals.ts'
+import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
+import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -32,7 +34,7 @@ Deno.serve(async (req) => {
         // Fall back to the base columns if it isn't applied yet, so the dashboard
         // never hard-breaks on deploy order — it just loses authority ranking.
         const base = 'id, title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol'
-        let r = await supabase.from('intel_global_news').select(`${base}, source_quality, authority_level, news_category`).order('created_at', { ascending: false }).limit(60)
+        let r: any = await supabase.from('intel_global_news').select(`${base}, source_quality, authority_level, news_category`).order('created_at', { ascending: false }).limit(60)
         if (r.error) r = await supabase.from('intel_global_news').select(base).order('created_at', { ascending: false }).limit(60)
         return r
       })(),
@@ -125,7 +127,7 @@ Deno.serve(async (req) => {
     ]
     const sigOpts = { wlSymbols, wlChains, moverBySymbol, scope, chain }
     const { notable, allCards } = buildNotable(rawCandidates, sigOpts)
-    const signals = buildSignalRadar(allCards, sigOpts)
+    let signals = buildSignalRadar(allCards, sigOpts)   // deterministic fallback; reused from the store below when available
 
     // Attach reusable SHARED story analysis (AI) when a fresh one exists — no AI on page load.
     if (notable.length) {
@@ -202,6 +204,63 @@ Deno.serve(async (req) => {
       projects = [...followedTokens, ...[...seen.values()].slice(0, 12)]
     }
 
+    // ── Reusable Intel Signal store (Phase 1): personalized rails + "what changed" ──
+    // Primary Signal Radar reuses the stored, snapshotted signals (generated once by
+    // the producer, ranked per-user at read time by signal_feed_v2). The deterministic
+    // buildSignalRadar above stays as the cold-start fallback when the store is empty.
+    const storeRowToCard = (r: any) => {
+      const kind = r.subject_type === 'chain' ? 'chain' : r.subject_type === 'narrative' ? 'narrative' : r.subject_type === 'news' ? 'news' : 'token'
+      const asset_symbol = r.subject_type === 'asset' ? String(r.display_symbol || '').toUpperCase() || null : null
+      const card: any = {
+        id: r.signal_key, name: r.display_symbol || r.subject_id, kind, asset_symbol,
+        chain: r.chain || null, ref: (r.subject_type === 'asset' || r.subject_type === 'chain') ? r.subject_id : null,
+        signal_type: r.signal_type || 'Signal', signal_scope: kind === 'token' ? 'token_specific' : kind === 'chain' ? 'chain_specific' : kind,
+        direction: r.direction, confidence: r.confidence, time_window: 'last 24h',
+        mention_count: r.source_count, source_count: r.source_count, source_diversity: r.source_diversity,
+        headlines: r.headlines || [], why_it_matters: r.why_it_matters, what_to_watch_next: r.what_to_watch_next,
+        change_24h: (r.metrics && typeof r.metrics.change_24h === 'number') ? r.metrics.change_24h : null,
+        supporting_facts: [], related_news_ids: (r.evidence_refs || []).map((e: any) => e.id).filter(Boolean),
+        severity: r.severity, global_score: r.global_score, score_delta: r.score_delta || {},
+        reasons: r.reasons || [], on_watchlist: !!r.on_watchlist, affects_holding: !!r.affects_holding,
+        generated_at: r.generated_at, stale_after: r.stale_after,
+      }
+      const mc = marketContextFor(card.asset_symbol); if (mc) card.market_context = mc
+      return card
+    }
+
+    let for_you: any[] = [], affects_holdings: any[] = [], followed_signals: any[] = [], outside_bubble: any[] = []
+    let what_changed: any[] = []
+    let signals_source = 'fallback_radar'
+    try {
+      const { data: feed } = await supabase.rpc('signal_feed_v2', { p_org_id: orgId, p_subject_type: null, p_chains: (scope === 'chain' && chain) ? [chain] : null, p_limit: 48 })
+      if (Array.isArray(feed) && feed.length) {
+        const cards = feed.map(storeRowToCard)
+        for_you = cards.filter((c: any) => (c.reasons || []).length).slice(0, 6)
+        affects_holdings = cards.filter((c: any) => c.affects_holding).slice(0, 6)
+        followed_signals = cards.filter((c: any) => (c.reasons || []).includes('followed narrative') || c.on_watchlist).slice(0, 6)
+        outside_bubble = cards.filter((c: any) => !(c.reasons || []).length).slice(0, 3)
+        const primary = scope === 'following' ? cards.filter((c: any) => (c.reasons || []).length) : cards
+        if (primary.length) signals = primary.slice(0, scope === 'chain' ? 8 : 6)
+        signals_source = 'signal_store'
+      }
+    } catch { /* store not deployed yet → keep deterministic fallback radar */ }
+    try {
+      const { data: wc } = await supabase.rpc('what_changed', { p_surface: 'market_pulse', p_since: null })
+      if (Array.isArray(wc)) what_changed = wc
+    } catch { /* what_changed not deployed → empty */ }
+
+    // Bucketed cost-ledger event (no write-amplification): this render made ZERO
+    // provider calls (cacheOnly + maxCalls:0). Record the avoidance, collapsed per
+    // org+hour. Uses a service-role client ONLY for the ledger write — never for reads.
+    try {
+      const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+      await recordCostEvent(makeCostWriter(admin), {
+        feature: 'dashboard', orgId, cacheStatus: signals_source === 'signal_store' ? 'no_ai' : 'fallback',
+        allowReason: signals_source === 'signal_store' ? 'n/a_no_ai' : 'fallback',
+        providerCallsMade: 0, providerCallsAvoided: tokenItems.length,
+      }, { precision: 'bucketed', nowMs: Date.now() })
+    } catch { /* ledger best-effort */ }
+
     return json({
       scope, chain,
       counts, total_following: wl.length,
@@ -215,6 +274,12 @@ Deno.serve(async (req) => {
       news: notableOut,
       developing,
       signals,
+      signals_source,
+      for_you,
+      affects_holdings,
+      followed_signals,
+      outside_bubble,
+      what_changed,
       narratives: scope === 'following' ? [] : (narrRes.data || []),
       alerts: alertRes.data || [],
       unread_alerts: (alertRes.data || []).filter((a: any) => !a.read_at).length,

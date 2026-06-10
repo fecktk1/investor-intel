@@ -57,6 +57,32 @@ export const ONCHAIN_META = {
 }
 export function onchainMeta(st) { return ONCHAIN_META[st] || ONCHAIN_META.not_checked }
 
+// ── Derived clarity labels (deterministic, stored with the snapshot) ─────────
+// Global labels come from narrative_state.clarity_labels ([{key,severity}]);
+// relevance labels (text[]) are per-user, computed at read time in narrative_feed.
+export const CLARITY_META = {
+  early_unconfirmed:      { label: 'Early but unconfirmed',     cls: 'chip--info', why: 'Fresh attention is building but price/volume/on-chain have not confirmed it yet.' },
+  heating_confirmed:      { label: 'Heating with confirmation', cls: 'chip--ok',   why: 'Attention is rising AND market data (price/volume) confirms it.' },
+  crowded_risky:          { label: 'Crowded & risky',           cls: 'chip--err',  why: 'Attention is crowded and risk indicators are elevated.' },
+  cooling_strong_onchain: { label: 'Cooling, strong on-chain',  cls: 'chip--info', why: 'Social attention is cooling but on-chain activity remains strong.' },
+  mostly_social_hype:     { label: 'Mostly social hype',        cls: 'chip--err',  why: 'High chatter with little market or on-chain confirmation.' },
+  needs_more_evidence:    { label: 'Needs more evidence',       cls: '',           why: 'Low confidence, few sources, or unverified on-chain — treat as a watch item.' },
+  portfolio_relevant:     { label: 'Portfolio relevant',        cls: 'chip--accent', why: 'Includes assets you hold.' },
+  watchlist_relevant:     { label: 'Watchlist relevant',        cls: 'chip--accent', why: 'Includes assets on your watchlist.' },
+  chain_relevant:         { label: 'Your chain',                cls: 'chip--accent', why: 'On a chain you selected in onboarding.' },
+}
+const CLARITY_SEV_ORDER = { warn: 0, ok: 1, info: 2, neutral: 3 }
+export function clarityMeta(key) { return CLARITY_META[key] || { label: key, cls: '' } }
+// Merge stored global labels + per-user relevance labels; dedupe, severity-sort, cap.
+export function mergeLabels(n, cap = 3) {
+  const global = Array.isArray(n?.clarity_labels) ? n.clarity_labels : []
+  const rel = Array.isArray(n?.relevance_labels) ? n.relevance_labels.map((k) => ({ key: k, severity: 'rel' })) : []
+  const seen = new Set()
+  const all = [...rel, ...global].filter((l) => l?.key && !seen.has(l.key) && seen.add(l.key))
+  all.sort((a, b) => (a.severity === 'rel' ? -1 : CLARITY_SEV_ORDER[a.severity] ?? 9) - (b.severity === 'rel' ? -1 : CLARITY_SEV_ORDER[b.severity] ?? 9))
+  return all.slice(0, cap)
+}
+
 // 0–100 score → color (red→amber→emerald). For mini-bars.
 export function scoreColor(v) {
   const n = typeof v === 'number' ? v : 0
@@ -95,6 +121,8 @@ export const NARRATIVE_TABS = [
   { key: 'bullish', label: 'Bullish' },
   { key: 'bearish', label: 'Bearish' },
   { key: 'mine', label: 'My Interests' },
+  { key: 'portfolio', label: 'Portfolio relevant' },
+  { key: 'watchlist', label: 'Watchlist relevant' },
   { key: 'followed', label: 'Followed' },
   { key: 'custom', label: 'Custom' },
 ]
@@ -106,6 +134,8 @@ export function matchesTab(n, tab) {
     case 'bullish': return n.signal_class === 'bullish'
     case 'bearish': return n.signal_class === 'bearish'
     case 'mine': return !!(n.is_followed || n.from_user_source || (n.relevance_score || 0) > 0)
+    case 'portfolio': return Array.isArray(n.relevance_labels) && n.relevance_labels.includes('portfolio_relevant')
+    case 'watchlist': return Array.isArray(n.relevance_labels) && n.relevance_labels.includes('watchlist_relevant')
     case 'followed': return !!n.is_followed
     default: return displayStatus(n) === tab
   }

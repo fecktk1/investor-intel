@@ -11,6 +11,9 @@ import RegimeBanner from '../components/RegimeBanner'
 import MarketContextCard from '../components/MarketContextCard'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import SignalCard from '../components/SignalCard'
+import WhatChanged from '../components/WhatChanged'
+import { markSurfaceSeen } from '../lib/changes-api'
 
 const STATUS_CLS = { hot: 'chip--err', emerging: 'chip--ok', cooling: 'chip--info' }
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
@@ -61,36 +64,6 @@ function NotableCard({ c }) {
   )
 }
 
-const SIG_CONF = { high: 'High confidence', medium: 'Medium confidence', low: 'Lower confidence' }
-// One ranked Signal Radar card — the actual stories driving it, why it's emerging,
-// what to watch, and a jump to the chart. Never a bare token + "multiple sources".
-function SignalCard({ s }) {
-  return (
-    <div className="card--flat p-3 space-y-1.5">
-      <div className="flex items-center gap-2 flex-wrap">
-        <span className="text-[13px] font-semibold text-[var(--fg-1)]">{s.asset_symbol ? `$${s.asset_symbol}` : s.name}</span>
-        {s.kind === 'chain' && <span className="text-[11px] text-[var(--fg-4)]">chain</span>}
-        <span className={`chip text-[10px] ${SIG_CLS[s.direction] || ''}`}>{SIG_LABEL[s.direction] || s.direction}</span>
-        {s.has_official && <span className="chip text-[9px] chip--ok uppercase">Official</span>}
-        {typeof s.change_24h === 'number' && <span className={`text-[11px] font-semibold flex items-center gap-0.5 ${s.change_24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{s.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{fmtPct(s.change_24h)}</span>}
-        {s.ref && <Link to={assetHref(s.ref)} className="ml-auto text-[11px] text-[var(--accent)] flex items-center gap-0.5">Chart <ArrowRight className="h-3 w-3" /></Link>}
-      </div>
-      <div className="text-[11px]"><span className="text-[var(--accent)]">{s.signal_type}</span><span className="text-[var(--fg-4)]"> · {PSCOPE_LABEL[s.signal_scope] || s.signal_scope} · {s.time_window} · {SIG_CONF[s.confidence] || s.confidence}</span></div>
-      {s.categories?.length > 0 && <div className="flex flex-wrap gap-1">{s.categories.map((c, i) => <span key={i} className="chip text-[9px] uppercase text-[var(--fg-4)]">{c}</span>)}</div>}
-      <MarketContextCard ctx={s.market_context} variant="flat" />
-      {s.headlines?.length > 0 && (
-        <div className="text-[11px]">
-          <span className="text-[var(--fg-5)]">Driven by: </span>
-          <ul className="space-y-0.5 mt-0.5">{s.headlines.slice(0, 3).map((h, i) => <li key={i} className="text-[var(--fg-2)] leading-snug">· {h}</li>)}</ul>
-        </div>
-      )}
-      <div className="text-[11px] text-[var(--fg-4)]">{s.mention_count} mention{s.mention_count > 1 ? 's' : ''} · {s.source_diversity} source type{s.source_diversity > 1 ? 's' : ''}{s.custom ? ' · incl. a source you added' : ''}</div>
-      {s.why_it_matters && <p className="text-[12px] text-[var(--fg-2)] leading-snug"><span className="text-[var(--fg-5)]">Why it matters: </span>{s.why_it_matters}</p>}
-      {s.what_to_watch_next && <p className="text-[12px] text-[var(--fg-3)] leading-snug"><span className="text-[var(--fg-5)]">Watch next: </span>{s.what_to_watch_next}</p>}
-    </div>
-  )
-}
-
 // P3 — Scope-aware home dashboard: Everything / By chain / Following, with a
 // chain selector and a per-chain project sub-selector.
 export default function MarketPulsePage() {
@@ -111,6 +84,8 @@ export default function MarketPulsePage() {
     try { setDash(await loadDashboard(supabase, org.id, { scope: sc, chain: ch })) } catch (e) { setError(e.message) } finally { setLoading(false) }
   }, [org?.id, supabase])
   useEffect(() => { load(scope, chain) }, [scope, chain, load])
+  // Record the visit on unmount so next time "What changed" is measured since now.
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'market_pulse') }, [org?.id, supabase])
 
   const pickScope = (sc) => {
     setProject(null)
@@ -194,6 +169,9 @@ export default function MarketPulsePage() {
       {error && <div className="card--flat p-3 text-[13px] text-red-400">{error}</div>}
       {summary.result && <ArtifactView result={summary.result} loading={summary.loading} />}
 
+      {/* What changed since your last visit (deterministic; stored-data only) */}
+      <WhatChanged items={dash?.what_changed} title={t('pulse.what_changed', { defaultValue: 'What changed since your last visit' })} />
+
       {empty ? (
         <div className="card p-8 text-center text-[var(--fg-3)] text-sm">
           {t('pulse.empty_home', { defaultValue: 'Add tokens, wallets and narratives to your watchlist and follow some sources — your dashboard fills in automatically.' })}
@@ -208,6 +186,22 @@ export default function MarketPulsePage() {
               <Link to="/intel/narratives" className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{t('nav.narratives', { defaultValue: 'Narratives' })}</div><div className="text-2xl font-bold">{(dash?.narratives || []).length}</div></Link>
               <Link to="/intel/news" className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{t('nav.news', { defaultValue: 'News' })}</div><div className="text-2xl font-bold">{(dash?.news || []).length}</div></Link>
             </div>
+          )}
+
+          {(dash?.for_you?.length > 0) && (
+            <section className="card p-4 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <div className="eyebrow flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> {t('pulse.for_you', { defaultValue: 'For you' })}</div>
+                <span className="text-[11px] text-[var(--fg-5)]">{t('pulse.for_you_sub', { defaultValue: 'Ranked by your watchlist, holdings, narratives & chains' })}</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">{dash.for_you.map((s) => <SignalCard key={s.id} s={s} />)}</div>
+              {(dash?.outside_bubble?.length > 0) && (
+                <div className="pt-2 border-t border-[var(--border-subtle)]">
+                  <div className="text-[10px] uppercase tracking-wide text-[var(--fg-5)] mb-1.5">{t('pulse.outside_bubble', { defaultValue: 'Outside your watchlist · still notable' })}</div>
+                  <div className="grid gap-2 sm:grid-cols-2">{dash.outside_bubble.map((s) => <SignalCard key={s.id} s={s} />)}</div>
+                </div>
+              )}
+            </section>
           )}
 
           {movers.length > 0 && (

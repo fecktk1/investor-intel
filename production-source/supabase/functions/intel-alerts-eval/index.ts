@@ -1,10 +1,53 @@
 // Investor Intel — alert evaluation (pg_cron, service-role).
 // Walks active intel_alert_rules, checks live Birdeye data for the rule's token
-// against its threshold, and fires intel_alert_events (with a cooldown). The AI
-// "why it matters" is generated on demand from the Alerts page.
+// against its threshold, and fires intel_alert_events. Smarter-not-noisier:
+// DB-level duplicate suppression (dedup_key), per-rule cooldowns with noisy
+// escalation, deterministic quality scoring + suggested tuning, stored-signal
+// linking (no-AI "why this fired now"), grouped digests, and the thesis drift
+// pass — all on the SAME 15-min cadence with zero extra polling. The AI "why it
+// matters" is still generated on demand from the Alerts page.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getTokenOverview } from '../_shared/birdeye-client.ts'
+import { h32 } from '../_shared/core-intel/hashing.ts'
+import { materialityVerdict, MATERIAL_DELTA } from '../_shared/core-intel/materiality.ts'
+import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
+import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
+
+const DEFAULT_COOLDOWN_MIN = 720          // 12h (the historical hardcode, now per-rule)
+const NOISY_FIRES_48H = 4                 // ≥4 fires in 48h → cooldown ×2
+const NOISY_THRESHOLD = 40                // quality below this → noisy
+
+// Same rule + metric + 5% value band + day → one event (DB-enforced).
+function dedupKeyFor(ruleId: string, metric: string | null, value: number | null): string {
+  const band = value == null || !isFinite(value) ? 'na' : String(Math.round(value / 5) * 5)
+  return h32(`${ruleId}|${metric || 'na'}|${band}|${new Date().toISOString().slice(0, 10)}`)
+}
+
+// Per-rule cooldown with deterministic noisy escalation (×2 when ≥4 fires/48h).
+// deno-lint-ignore no-explicit-any
+async function cooledDown(admin: any, ruleId: string, cooldownMinutes: number | null): Promise<boolean> {
+  const base = Number(cooldownMinutes) > 0 ? Number(cooldownMinutes) : DEFAULT_COOLDOWN_MIN
+  const { data: recent48 } = await admin.from('intel_alert_events').select('id, fired_at')
+    .eq('rule_id', ruleId).gte('fired_at', new Date(Date.now() - 48 * 3600_000).toISOString())
+    .order('fired_at', { ascending: false }).limit(NOISY_FIRES_48H + 1)
+  const eff = (recent48?.length || 0) >= NOISY_FIRES_48H ? base * 2 : base
+  const last = recent48?.[0]?.fired_at ? new Date(recent48[0].fired_at).getTime() : 0
+  return last > Date.now() - eff * 60_000
+}
+
+// Stored Intel Signal for a symbol (cached read, no providers; absent table → null).
+// deno-lint-ignore no-explicit-any
+async function signalForSymbol(admin: any, symbol: string | null | undefined): Promise<any> {
+  if (!symbol) return null
+  try {
+    const { data } = await admin.from('intel_signal_state')
+      .select('signal_key, direction, confidence, global_score, source_count, why_it_matters, what_to_watch_next, score_delta')
+      .eq('subject_type', 'asset').eq('display_symbol', String(symbol).toUpperCase().replace(/^\$/, ''))
+      .order('generated_at', { ascending: false }).limit(1).maybeSingle()
+    return data || null
+  } catch { return null }
+}
 
 const BIRDEYE_CHAIN: Record<string, string> = { '1': 'ethereum', '8453': 'base', '42161': 'arbitrum', '56': 'bsc', '137': 'polygon', '43114': 'avalanche' }
 function birdeyeChainFor(ns: string, ref: string): string | null {
@@ -34,6 +77,7 @@ Deno.serve(async (req) => {
 
     const active = (rules || []).filter((r: any) => r.org?.product_mode === 'intel' && r.entity?.contract_address)
     let fired = 0, checked = 0
+    const firedThisRun: { id: string; org_id: string; direction: string | null }[] = []
 
     for (const r of active.slice(0, 400)) {
       const ent = r.entity
@@ -58,17 +102,56 @@ Deno.serve(async (req) => {
       }
       if (!triggered) continue
 
-      // Cooldown: skip if an event for this rule fired in the last 12h.
-      const { data: recent } = await admin.from('intel_alert_events').select('id').eq('rule_id', r.id).gte('fired_at', new Date(Date.now() - 12 * 3600_000).toISOString()).limit(1)
-      if (recent && recent.length) continue
+      // Per-rule cooldown (NULL → 720 min) with noisy ×2 escalation.
+      if (await cooledDown(admin, r.id, r.cooldown_minutes)) continue
 
-      await admin.from('intel_alert_events').insert({
+      // Link the stored Intel Signal — its why_it_matters / what_to_watch_next
+      // power the deterministic "why this fired now" with zero AI.
+      const sig = await signalForSymbol(admin, ov.symbol || ent.display_symbol)
+      const ins = await admin.from('intel_alert_events').upsert({
         org_id: r.org_id, rule_id: r.id,
-        payload: { trigger_type: r.trigger_type, metric, value, threshold_pct: thr, symbol: ov.symbol || ent.display_symbol, price: ov.price, ref: ent.canonical_ref_key },
-      })
-      fired++
+        dedup_key: dedupKeyFor(r.id, metric, typeof value === 'number' ? value : null),
+        signal_ref: sig?.signal_key || null,
+        payload: {
+          trigger_type: r.trigger_type, metric, value, threshold_pct: thr,
+          symbol: ov.symbol || ent.display_symbol, price: ov.price, ref: ent.canonical_ref_key,
+          signal_direction: sig?.direction || null,
+          why_now: sig?.why_it_matters || null, confirm_or_weaken: sig?.what_to_watch_next || null,
+        },
+      }, { onConflict: 'rule_id,dedup_key', ignoreDuplicates: true }).select('id')
+      if (!ins.error && (ins.data?.length || 0) > 0) { fired++; firedThisRun.push({ id: ins.data[0].id, org_id: r.org_id, direction: sig?.direction || null }) }
     }
-    return json({ ok: true, checked, fired, narrative_fired: narrativeFired })
+
+    // Grouped digest: ≥2 related events in one run for the same org share a group_id.
+    try {
+      const byOrg = new Map<string, { id: string; direction: string | null }[]>()
+      for (const f of firedThisRun) { const a = byOrg.get(f.org_id) || []; a.push(f); byOrg.set(f.org_id, a) }
+      for (const [, evs] of byOrg) {
+        if (evs.length < 2) continue
+        const gid = crypto.randomUUID()
+        await admin.from('intel_alert_events').update({ group_id: gid }).in('id', evs.map((e) => e.id))
+      }
+    } catch { /* grouping best-effort */ }
+
+    // Deterministic quality scoring + suggested tuning (refreshed at most daily per rule).
+    const tuned = await scoreRuleQuality(admin, active)
+
+    // Thesis drift pass — every ~6h window, same cron, no extra polling.
+    let thesisReviewed = 0
+    const h = new Date().getUTCHours(), m = new Date().getUTCMinutes()
+    if (h % 6 === 0 && m < 15) thesisReviewed = await evalThesisDrift(admin)
+
+    // Precise job ledger row: this run made provider calls only via the capped
+    // Birdeye client; suppressed/cooled rules are avoided work.
+    try {
+      await recordCostEvent(makeCostWriter(admin), {
+        feature: 'alerts_eval', orgId: null, cacheStatus: 'no_ai', allowReason: 'n/a_no_ai',
+        providerCallsMade: checked, providerCallsAvoided: Math.max(0, active.length - checked),
+        usage: { fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed },
+      }, { precision: 'exact', nowMs: Date.now() })
+    } catch { /* ledger best-effort */ }
+
+    return json({ ok: true, checked, fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'eval_failed' }, 500)
   }
@@ -128,4 +211,130 @@ async function evalNarrativeHeat(admin: any): Promise<number> {
     }
     return fired
   } catch (_e) { return 0 }
+}
+
+// ── Deterministic rule quality: 100 − noise penalty ──────────────────────────
+// Penalty rises with fire frequency + near-identical consecutive values; falls
+// with read/open rate. Noisy rules get a deterministic threshold suggestion
+// (75th percentile of recent trigger values) — applied only on user accept.
+// Refreshed at most once/day per rule. One grouped query — no provider calls.
+// deno-lint-ignore no-explicit-any
+async function scoreRuleQuality(admin: any, rules: any[]): Promise<number> {
+  try {
+    const staleBefore = new Date(Date.now() - 24 * 3600_000).toISOString()
+    const due = rules.filter((r) => !r.last_quality_at || r.last_quality_at < staleBefore).slice(0, 100)
+    if (!due.length) return 0
+    const since = new Date(Date.now() - 14 * 86_400_000).toISOString()
+    const { data: events } = await admin.from('intel_alert_events')
+      .select('rule_id, fired_at, read_at, payload').in('rule_id', due.map((r) => r.id)).gte('fired_at', since)
+      .order('fired_at', { ascending: true }).limit(2000)
+    // deno-lint-ignore no-explicit-any
+    const byRule = new Map<string, any[]>()
+    for (const e of (events || [])) { const a = byRule.get(e.rule_id) || []; a.push(e); byRule.set(e.rule_id, a) }
+    let tuned = 0
+    for (const r of due) {
+      const evs = byRule.get(r.id) || []
+      const fires = evs.length
+      const opened = evs.filter((e) => e.read_at).length
+      const openRate = fires ? opened / fires : 1
+      // near-identical consecutive values (within 10% of each other)
+      let nearDup = 0
+      for (let i = 1; i < evs.length; i++) {
+        const a = Number(evs[i - 1].payload?.value), b = Number(evs[i].payload?.value)
+        if (isFinite(a) && isFinite(b) && Math.abs(a - b) <= Math.abs(a) * 0.1) nearDup++
+      }
+      const freqPenalty = Math.min(50, fires * 3.5)            // 14d fire volume
+      const dupPenalty = Math.min(25, nearDup * 5)             // near-identical repeats
+      const unreadPenalty = Math.round((1 - openRate) * 20)    // fires nobody opens
+      const score = Math.max(0, Math.min(100, 100 - freqPenalty - dupPenalty - unreadPenalty))
+      const noisy = score < NOISY_THRESHOLD
+      // Suggested tuning: raise threshold_pct to the 75th percentile of recent
+      // trigger values (price_move / volume_spike only).
+      // deno-lint-ignore no-explicit-any
+      let suggested: any = {}
+      if (noisy && ['price_move', 'volume_spike'].includes(r.trigger_type) && fires >= 3) {
+        const vals = evs.map((e) => Math.abs(Number(e.payload?.value))).filter((v) => isFinite(v)).sort((a, b) => a - b)
+        if (vals.length >= 3) {
+          const p75 = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.75))]
+          suggested = { threshold_pct: Math.ceil(p75), reason: 'fires often near your current threshold — raising it would cut the noise' }
+        }
+      }
+      await admin.from('intel_alert_rules').update({
+        quality_score: score, noisy, suggested_config: suggested, last_quality_at: new Date().toISOString(),
+      }).eq('id', r.id)
+      tuned++
+    }
+    return tuned
+  } catch { return 0 }
+}
+
+// ── Thesis drift: deterministic supports / weakens / no_effect ────────────────
+// Compares the thesis side + baseline signal snapshot against the CURRENT stored
+// Intel Signal (cached, no providers). Sets needs_review + drift_detail, parses
+// confirm/invalidate phrases into suggested alert rules (created only on user
+// accept), and links the signal via intel_thesis_links. Research framing only.
+// deno-lint-ignore no-explicit-any
+async function evalThesisDrift(admin: any): Promise<number> {
+  try {
+    const { data: theses } = await admin.from('intel_theses')
+      .select('id, org_id, bull_thesis, bear_thesis, neutral_thesis, what_would_confirm, what_would_invalidate, baseline_metrics, drift_detail, entity:entities(display_symbol), org:orgs!inner(product_mode)')
+      .not('entity_id', 'is', null).limit(300)
+    // deno-lint-ignore no-explicit-any
+    const active = (theses || []).filter((t: any) => t.org?.product_mode === 'intel' && t.entity?.display_symbol)
+    let reviewed = 0
+    for (const t of active) {
+      const sig = await signalForSymbol(admin, t.entity.display_symbol)
+      if (!sig) continue
+      // Thesis side: directional only when exactly one of bull/bear is filled.
+      const hasBull = !!String(t.bull_thesis || '').trim(), hasBear = !!String(t.bear_thesis || '').trim()
+      const side = hasBull && !hasBear ? 'bullish' : hasBear && !hasBull ? 'bearish' : 'unknown'
+      const prev = (t.drift_detail || {}).signal || (t.baseline_metrics || {}).signal || null
+      const verdict = materialityVerdict({
+        prevEvidenceHash: 'baseline', newEvidenceHash: 'baseline', // hash not the driver here
+        prevSignal: prev ? { polarity: prev.direction, score: prev.global_score, source_count: prev.source_count } : null,
+        newSignal: { polarity: sig.direction, score: sig.global_score, source_count: sig.source_count },
+      })
+      let drift = 'unknown'
+      if (side !== 'unknown') {
+        if (sig.direction === side) drift = 'supports'
+        else if (sig.direction === (side === 'bullish' ? 'bearish' : 'bullish')) drift = 'weakens'
+        else drift = 'no_effect'
+      } else drift = verdict.magnitude === 'none' ? 'no_effect' : 'unknown'
+      const needsReview = drift === 'weakens' || Math.abs(Number(verdict.drivers.length ? (sig.global_score - (prev?.global_score ?? sig.global_score)) : 0)) >= MATERIAL_DELTA
+
+      // Deterministic alert suggestions from confirm/invalidate phrases.
+      const suggestions = parseThesisConditions(`${t.what_would_confirm || ''}\n${t.what_would_invalidate || ''}`)
+      await admin.from('intel_theses').update({
+        drift_state: drift, needs_review: needsReview, last_drift_at: new Date().toISOString(),
+        drift_detail: { signal: { direction: sig.direction, global_score: sig.global_score, source_count: sig.source_count }, drivers: verdict.drivers, side },
+        suggested_rules: suggestions,
+      }).eq('id', t.id)
+      // Link the signal (idempotent via the unique (thesis, kind, key) index).
+      try {
+        await admin.from('intel_thesis_links').upsert(
+          { org_id: t.org_id, thesis_id: t.id, link_kind: 'signal', ref_key: sig.signal_key },
+          { onConflict: 'thesis_id,link_kind,ref_key', ignoreDuplicates: true },
+        )
+      } catch { /* pre-217 schema */ }
+      reviewed++
+    }
+    return reviewed
+  } catch { return 0 }
+}
+
+// "drops below $X" / "liquidity under $Y" / "volume spikes" → alert-rule configs.
+// deno-lint-ignore no-explicit-any
+function parseThesisConditions(text: string): any[] {
+  // deno-lint-ignore no-explicit-any
+  const out: any[] = []
+  const t = String(text || '').toLowerCase()
+  const pricePct = t.match(/(?:price\s+)?(?:drops?|falls?|down|rises?|up|moves?)\s+(?:by\s+)?(\d{1,3})\s*%/)
+  if (pricePct) out.push({ trigger_type: 'price_move', config: { threshold_pct: Number(pricePct[1]) }, phrase: pricePct[0] })
+  const liq = t.match(/liquidity\s+(?:drops?\s+)?(?:under|below)\s+\$?([\d,.]+)\s*([km])?/)
+  if (liq) {
+    const mult = liq[2] === 'm' ? 1e6 : liq[2] === 'k' ? 1e3 : 1
+    out.push({ trigger_type: 'liquidity_drop', config: { min_liquidity_usd: parseFloat(liq[1].replace(/,/g, '')) * mult }, phrase: liq[0] })
+  }
+  if (/volume\s+(spikes?|surges?|doubles?|explodes?)/.test(t)) out.push({ trigger_type: 'volume_spike', config: { threshold_pct: 50 }, phrase: 'volume spikes' })
+  return out.slice(0, 4)
 }

@@ -3,6 +3,16 @@
 export async function adminOverview(supabase) {
   const { data, error } = await supabase.rpc('intel_admin_overview'); if (error) throw error; return data
 }
+// Intelligence quality audit (218): cache hit rate, AI avoided, deltas, alert noise.
+export async function adminQualityAudit(supabase, hours = 24) {
+  const { data, error } = await supabase.rpc('intel_admin_quality_audit', { p_hours: hours }); if (error) throw error; return data
+}
+export async function adminCardRanking(supabase, artifactId) {
+  const { data, error } = await supabase.rpc('intel_admin_card_ranking', { p_artifact_id: artifactId }); if (error) throw error; return data
+}
+export async function adminNewsInclusion(supabase, artifactId) {
+  const { data, error } = await supabase.rpc('intel_admin_news_inclusion', { p_artifact_id: artifactId }); if (error) throw error; return data
+}
 export async function adminListWorkspaces(supabase, search) {
   const { data, error } = await supabase.rpc('intel_admin_list_workspaces', { p_search: search || null, p_limit: 200 })
   if (error) throw error; return data || []

@@ -12,6 +12,8 @@ import { NARRATIVE_TABS, matchesTab } from '../lib/narrative-ui'
 import NarrativeCard from '../components/NarrativeCard'
 import NarrativeSummaryRow from '../components/NarrativeSummaryRow'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import RelevantSignals from '../components/RelevantSignals'
+import { markSurfaceSeen } from '../lib/changes-api'
 
 // Narrative Radar — AUTOMATIC discovery by default. A new user opens this page and
 // immediately sees which narratives are heating up / cooling / early / crowded /
@@ -41,6 +43,7 @@ export default function NarrativeRadarPage() {
     finally { setLoading(false); setRefreshing(false) }
   }, [org?.id, supabase])
   useEffect(() => { load() }, [load])
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'narratives') }, [org?.id, supabase])
 
   const onOpen = useCallback((slug) => navigate(`/intel/narratives/${slug}`), [navigate])
   const onFollow = useCallback(async (slug, next) => {
@@ -121,6 +124,8 @@ export default function NarrativeRadarPage() {
           {filtered.map((n) => <NarrativeCard key={n.slug} n={n} onOpen={onOpen} onFollow={onFollow} busy={followBusy === n.slug} />)}
         </div>
       )}
+
+      <RelevantSignals title={t('narratives.relevant_signals', { defaultValue: 'Signals relevant to you' })} seeAllHref="/intel" />
 
       <IntelDisclaimer variant="block" />
     </div>
