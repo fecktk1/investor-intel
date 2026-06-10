@@ -12,6 +12,7 @@ import { NARRATIVE_TABS, matchesTab } from '../lib/narrative-ui'
 import NarrativeCard from '../components/NarrativeCard'
 import NarrativeSummaryRow from '../components/NarrativeSummaryRow'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
 import { markSurfaceSeen } from '../lib/changes-api'
 
