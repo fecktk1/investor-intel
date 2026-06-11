@@ -1,5 +1,5 @@
 // Investor Intel — turn raw HTML/embeds (X oEmbed blockquotes, RSS content,
-// <br>/<a>/<script>) into clean plain-English text for display.
+// <br>/<a>/<script>) into clean, readable text for display.
 
 export function toPlainText(html) {
   if (!html) return ''

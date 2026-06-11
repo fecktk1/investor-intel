@@ -16,7 +16,7 @@ const QUICK = [
   ['risks', 'What are the key risks?'],
 ]
 
-// P11 — Explain This (plain-English Q&A over an entity / general crypto topic).
+// P11 — Explain This (easy-to-understand Q&A over an entity / general crypto topic).
 export default function ExplainPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const [sp] = useSearchParams()
@@ -52,7 +52,7 @@ export default function ExplainPage() {
       <div>
         <div className="eyebrow flex items-center gap-1.5"><HelpCircle className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
         <h1 className="page-title">{t('nav.explain', { defaultValue: 'Explain This' })}</h1>
-        <p className="page-sub">{t('pages.explain_sub', { defaultValue: 'Plain-English explanations for any token, wallet, chart or narrative.' })}</p>
+        <p className="page-sub">{t('pages.explain_sub', { defaultValue: 'Clear, easy-to-understand explanations for any token, wallet, chart or narrative.' })}</p>
       </div>
 
       <form onSubmit={(e) => { e.preventDefault(); ask() }} className="card p-4 space-y-3">

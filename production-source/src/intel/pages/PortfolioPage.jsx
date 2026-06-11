@@ -314,7 +314,7 @@ function IntelPanel({ intel, loading, onGenerate, t }) {
         <button onClick={onGenerate} disabled={loading} className="btn btn--primary btn--sm">{loading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : (s ? t('portfolio.refresh', { defaultValue: 'Refresh' }) : t('portfolio.generate', { defaultValue: 'Generate' }))}</button>
       </div>
       {intel?.blocked && <div className="card--flat p-3 text-[12px] text-amber-400">{s?.summary}</div>}
-      {!intel && !loading && <p className="text-[13px] text-[var(--fg-4)]">{t('portfolio.intel_prompt', { defaultValue: 'Generate grounded, plain-English context on what changed, what is driving it, signal exposure, and risks — based only on your real holdings and market data.' })}</p>}
+      {!intel && !loading && <p className="text-[13px] text-[var(--fg-4)]">{t('portfolio.intel_prompt', { defaultValue: 'Generate grounded, easy-to-understand context on what changed, what is driving it, signal exposure, and risks — based only on your real holdings and market data.' })}</p>}
       {s && !intel.blocked && (
         <div className="space-y-2.5 text-[13px] text-[var(--fg-2)] leading-relaxed">
           {s.summary && <p>{s.summary}</p>}

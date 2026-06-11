@@ -83,7 +83,7 @@ export default function IntelApp() {
 
           <Route path="narratives" element={<NarrativeRadarPage />} />
           <Route path="narratives/:slug" element={<NarrativeDetailPage />} />
-          <Route path="wallets" element={<AnalyzeInputPage artifactType="wallet_summary" titleKey="nav.wallets" defaultTitle="Wallet Watch" subKey="pages.wallets_sub" defaultSub="Follow whale, smart, dev and influencer wallets in plain English." kind="wallet" defaultPh="Wallet address" />} />
+          <Route path="wallets" element={<AnalyzeInputPage artifactType="wallet_summary" titleKey="nav.wallets" defaultTitle="Wallet Watch" subKey="pages.wallets_sub" defaultSub="Follow whale, smart, dev and influencer wallets in simple terms." kind="wallet" defaultPh="Wallet address" />} />
           <Route path="defi" element={<DefiPage />} />
           <Route path="execution" element={<ExecutionPage />} />
           <Route path="compare" element={<ComparePage />} />
