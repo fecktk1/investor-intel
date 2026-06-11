@@ -1,13 +1,14 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
-import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio } from 'lucide-react'
+import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio, Bug, Check } from 'lucide-react'
 import { useAuth } from '../../lib/auth-context'
 import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
 import { INTEL_NAV } from '../intelNav'
 import LanguageSwitcher from '../../components/LanguageSwitcher'
+import SubmitTicketModal from '../../components/support/SubmitTicketModal'
 import IntelDisclaimer from './IntelDisclaimer'
 
 // Investor Intel shell. Modeled on the demo shell (src/demo/components/
@@ -21,6 +22,15 @@ export default function IntelModeShell({ children }) {
   const { contentOrg, trialDaysRemaining } = useIntel()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [reportSent, setReportSent] = useState(false)
+
+  // Auto-dismiss the "report sent" confirmation toast.
+  useEffect(() => {
+    if (!reportSent) return
+    const id = setTimeout(() => setReportSent(false), 4000)
+    return () => clearTimeout(id)
+  }, [reportSent])
 
   // Super admins get the Intel control center in the Intel shell too, so they
   // never have to switch to a team workspace to manage Intel. Kept out of the
@@ -95,6 +105,13 @@ export default function IntelModeShell({ children }) {
         </nav>
 
         <div className="p-3 border-t border-[var(--border-subtle)] space-y-1">
+          <button
+            onClick={() => setReportOpen(true)}
+            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg-2)] w-full transition-colors"
+          >
+            <Bug className="h-4 w-4 flex-shrink-0" />
+            <span className="flex-1 min-w-0 truncate text-left">{t('shell.report_issue', { defaultValue: 'Report an issue' })}</span>
+          </button>
           {contentOrg && (
             <button
               onClick={() => switchOrg(contentOrg.id)}
@@ -127,6 +144,24 @@ export default function IntelModeShell({ children }) {
           <div className="max-w-6xl mx-auto">{children}</div>
         </main>
       </div>
+
+      {/* Report an issue / feedback / feature request — reuses the org-side
+          support flow. redirectOnSubmit is off because the /support ticket
+          view lives in the content app (RedirectIfIntel would bounce us); we
+          confirm inline with a toast instead. */}
+      <SubmitTicketModal
+        open={reportOpen}
+        onClose={() => setReportOpen(false)}
+        initialKind="bug"
+        redirectOnSubmit={false}
+        onSubmitted={() => setReportSent(true)}
+      />
+      {reportSent && (
+        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg bg-[var(--bg-1)] border border-[var(--accent)]/40 px-3.5 py-2.5 text-[13px] text-[var(--fg-1)] shadow-lg">
+          <Check className="h-4 w-4 text-[var(--accent)]" />
+          {t('shell.report_thanks', { defaultValue: 'Thanks — your report was sent.' })}
+        </div>
+      )}
     </div>
   )
 }

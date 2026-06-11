@@ -618,7 +618,7 @@
     "intel": "Portfolio intelligence",
     "generate": "Generate",
     "refresh": "Refresh",
-    "intel_prompt": "Generate grounded, plain-English context on what changed, what is driving it, signal exposure, and risks — based only on your real holdings and market data.",
+    "intel_prompt": "Generate grounded, easy-to-understand context on what changed, what is driving it, signal exposure, and risks — based only on your real holdings and market data.",
     "what_changed": "What changed",
     "contributors": "Top contributors",
     "signal_exposure": "Signal exposure",

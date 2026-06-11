@@ -1,7 +1,7 @@
 import React, { useMemo, useState, useCallback } from 'react'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
-import { Gauge, Check } from 'lucide-react'
+import { Gauge, Check, MessageSquare } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { CHAINS } from '../lib/chains'
@@ -139,6 +139,11 @@ export default function IntelOnboardingPage() {
           <button onClick={finish} disabled={!ack || busy} className="btn btn--primary btn--lg disabled:opacity-50">
             {busy ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : t('onboarding.finish', { defaultValue: 'Start exploring' })}
           </button>
+        </div>
+
+        <div className="card--flat p-3 text-[12px] text-[var(--fg-3)] flex items-start gap-2">
+          <MessageSquare className="h-4 w-4 text-[var(--accent)] flex-shrink-0 mt-0.5" />
+          <span>{t('onboarding.feedback', { defaultValue: 'Feedback welcome — TheContentForge is always improving. During your free trial, use Report an issue in the sidebar to send bug reports, feature requests, or ideas that would make the platform better.' })}</span>
         </div>
 
         <IntelDisclaimer variant="block" />

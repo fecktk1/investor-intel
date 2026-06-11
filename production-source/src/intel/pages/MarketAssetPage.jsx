@@ -62,7 +62,7 @@ export default function MarketAssetPage() {
     analysis.generate({
       artifactType: 'explain',
       force: force === true,
-      extra: { title: `${sym} market read`, question: `Explain the current exchange market read for ${sym}: why is it ${sig?.direction || 'mixed'}? Cover price action, volume confirmation, liquidity/spread, and multi-exchange agreement in plain English. Research context only — not advice.` },
+      extra: { title: `${sym} market read`, question: `Explain the current exchange market read for ${sym}: why is it ${sig?.direction || 'mixed'}? Cover price action, volume confirmation, liquidity/spread, and multi-exchange agreement in simple terms. Research context only — not advice.` },
       context: { exchange_market: { symbol: sym, signal: sig, providers: d.providers, marketCap: d.marketCap, rollups: d.rollups, price: d.price, change24h: d.change24h, change7d: d.change7d, volume24h: d.volume24h } },
     })
   }, [d, sig, sym, analysis])

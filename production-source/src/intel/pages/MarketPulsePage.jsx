@@ -188,6 +188,24 @@ export default function MarketPulsePage() {
             </div>
           )}
 
+          {(dash?.chain_perf || []).filter((c) => c.price != null || c.change_24h != null).length > 0 && (
+            <section className="space-y-2">
+              <div className="eyebrow">{t('pulse.chains_followed', { defaultValue: 'Chains you follow' })}</div>
+              <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
+                {/* skip rows without data — they'd render as empty shells */}
+                {dash.chain_perf.filter((c) => c.price != null || c.change_24h != null).map((c) => (
+                  <Link key={c.chain_id} to={assetHref(c.ref || `native:${c.chain_id}`)} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="text-sm font-medium text-[var(--fg-1)] truncate">{c.label}</span>
+                      {c.change_24h != null && <span className={`text-[13px] font-semibold flex items-center gap-0.5 ${c.change_24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{c.change_24h >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{fmtPct(c.change_24h)}</span>}
+                    </div>
+                    <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{c.symbol}{c.price != null ? ` · ${fmtPrice(c.price)}` : ''}</div>
+                  </Link>
+                ))}
+              </div>
+            </section>
+          )}
+
           {(dash?.for_you?.length > 0) && (
             <section className="card p-4 space-y-2">
               <div className="flex items-center justify-between mb-1">
@@ -216,24 +234,6 @@ export default function MarketPulsePage() {
                     </div>
                     <div className="text-[12px] text-[var(--fg-4)] mt-0.5">{fmtPrice(m.price)}</div>
                     {m.market_context?.direction && <div className="mt-1"><MarketSignalBadge direction={m.market_context.direction} size="sm" /></div>}
-                  </Link>
-                ))}
-              </div>
-            </section>
-          )}
-
-          {(dash?.chain_perf || []).filter((c) => c.price != null || c.change_24h != null).length > 0 && (
-            <section className="space-y-2">
-              <div className="eyebrow">{t('pulse.chains_followed', { defaultValue: 'Chains you follow' })}</div>
-              <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
-                {/* skip rows without data — they'd render as empty shells */}
-                {dash.chain_perf.filter((c) => c.price != null || c.change_24h != null).map((c) => (
-                  <Link key={c.chain_id} to={assetHref(c.ref || `native:${c.chain_id}`)} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
-                    <div className="flex items-center justify-between gap-2">
-                      <span className="text-sm font-medium text-[var(--fg-1)] truncate">{c.label}</span>
-                      {c.change_24h != null && <span className={`text-[13px] font-semibold flex items-center gap-0.5 ${c.change_24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{c.change_24h >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{fmtPct(c.change_24h)}</span>}
-                    </div>
-                    <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{c.symbol}{c.price != null ? ` · ${fmtPrice(c.price)}` : ''}</div>
                   </Link>
                 ))}
               </div>

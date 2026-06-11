@@ -84,7 +84,7 @@ export default function IntelStartPage() {
         <p className="text-[13px] text-[var(--fg-3)] leading-relaxed">
           {plan
             ? t('start.plan_body', { defaultValue: 'One moment — creating your Investor Intel workspace and taking you to checkout.' })
-            : t('start.body', { defaultValue: 'Research tokens, wallets, narratives, DeFi and execution quality — with plain-English explanations and risk context. 7-day free trial, no card required.' })}
+            : t('start.body', { defaultValue: 'Research tokens, wallets, narratives, DeFi and execution quality — with clear, easy-to-understand explanations and risk context. 7-day free trial, no card required.' })}
         </p>
 
         {error && <div className="card--flat p-3 text-[13px] text-red-400">{error}</div>}

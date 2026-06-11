@@ -4,7 +4,7 @@ import { Sparkles, ChevronUp } from 'lucide-react'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from './ArtifactView'
 
-// Inline "Why is this important?" — generates a plain-English explain artifact
+// Inline "Why is this important?" — generates an easy-to-understand explain artifact
 // for any headline / event / indicator, exactly like Explain This (same
 // intel-generate 'explain' path, same guardrails + cost controls). Lazy: only
 // generates on first expand.
@@ -17,7 +17,7 @@ export default function WhyImportant({ topic, context = '', entityId = null }) {
     if (open) { setOpen(false); return }
     setOpen(true)
     if (!ex.result && !ex.loading) {
-      const q = `Why is this important for a crypto investor, and what should they understand about it? "${topic}".${context ? ` Context: ${context}` : ''} Explain in plain English: what it means, why it matters, and what to watch. This is education, not financial advice.`
+      const q = `Why is this important for a crypto investor, and what should they understand about it? "${topic}".${context ? ` Context: ${context}` : ''} Explain in simple terms: what it means, why it matters, and what to watch. This is education, not financial advice.`
       ex.generate({ artifactType: 'explain', entityId, extra: { question: q } })
     }
   }
