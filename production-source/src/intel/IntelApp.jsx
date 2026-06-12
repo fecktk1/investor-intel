@@ -27,6 +27,8 @@ import SavedResearchPage from './pages/SavedResearchPage'
 import IntelSettingsPage from './pages/IntelSettingsPage'
 import CommentKingPage from './pages/CommentKingPage'
 import NewsPage from './pages/NewsPage'
+import SupportInboxPage from '../pages/SupportInboxPage'
+import SupportTicketPage from '../pages/SupportTicketPage'
 
 // Super-admin surfaces — the same pages the content app mounts at
 // /super-admin/intel and /super-admin/signals. Mounted here too so a super
@@ -101,6 +103,8 @@ export default function IntelApp() {
 
           <Route path="research" element={<SavedResearchPage />} />
           <Route path="settings" element={<IntelSettingsPage />} />
+          <Route path="support" element={<SupportInboxPage basePath="/intel/support" />} />
+          <Route path="support/:refCode" element={<SupportTicketPage basePath="/intel/support" />} />
 
           {/* Super-admin control center — also reachable from the content app at
               /super-admin/intel. Mounted here so a super admin can manage Intel

@@ -1,8 +1,8 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
-import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio, Bug, Check } from 'lucide-react'
+import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio, Bug } from 'lucide-react'
 import { useAuth } from '../../lib/auth-context'
 import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
@@ -23,14 +23,6 @@ export default function IntelModeShell({ children }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
-  const [reportSent, setReportSent] = useState(false)
-
-  // Auto-dismiss the "report sent" confirmation toast.
-  useEffect(() => {
-    if (!reportSent) return
-    const id = setTimeout(() => setReportSent(false), 4000)
-    return () => clearTimeout(id)
-  }, [reportSent])
 
   // Super admins get the Intel control center in the Intel shell too, so they
   // never have to switch to a team workspace to manage Intel. Kept out of the
@@ -145,23 +137,14 @@ export default function IntelModeShell({ children }) {
         </main>
       </div>
 
-      {/* Report an issue / feedback / feature request — reuses the org-side
-          support flow. redirectOnSubmit is off because the /support ticket
-          view lives in the content app (RedirectIfIntel would bounce us); we
-          confirm inline with a toast instead. */}
+      {/* Report an issue / feedback / feature request reuses the org-side
+          support flow, mounted inside Intel at /intel/support. */}
       <SubmitTicketModal
         open={reportOpen}
         onClose={() => setReportOpen(false)}
         initialKind="bug"
-        redirectOnSubmit={false}
-        onSubmitted={() => setReportSent(true)}
+        redirectBasePath="/intel/support"
       />
-      {reportSent && (
-        <div className="fixed bottom-6 right-6 z-50 flex items-center gap-2 rounded-lg bg-[var(--bg-1)] border border-[var(--accent)]/40 px-3.5 py-2.5 text-[13px] text-[var(--fg-1)] shadow-lg">
-          <Check className="h-4 w-4 text-[var(--accent)]" />
-          {t('shell.report_thanks', { defaultValue: 'Thanks — your report was sent.' })}
-        </div>
-      )}
     </div>
   )
 }

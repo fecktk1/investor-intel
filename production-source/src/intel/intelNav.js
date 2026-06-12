@@ -11,7 +11,7 @@
 
 import {
   Activity, Compass, Star, Radar, Wallet, BarChart3, LineChart, Scale,
-  NotebookPen, Newspaper, Bell, HelpCircle, MessageSquare, Bookmark, Settings, Rss, Landmark, Briefcase,
+  NotebookPen, Newspaper, Bell, HelpCircle, MessageSquare, Bookmark, Settings, Rss, Landmark, Briefcase, LifeBuoy,
 } from 'lucide-react'
 
 export const INTEL_NAV = [
@@ -60,6 +60,7 @@ export const INTEL_NAV = [
     sectionKey: 'section.me',
     items: [
       { to: '/intel/research', icon: Bookmark, labelKey: 'nav.research', defaultLabel: 'Saved Research' },
+      { to: '/intel/support', icon: LifeBuoy, labelKey: 'nav.support', defaultLabel: 'Support' },
       { to: '/intel/settings', icon: Settings, labelKey: 'nav.settings', defaultLabel: 'Settings' },
     ],
   },
