@@ -143,7 +143,7 @@ export default function IntelOnboardingPage() {
 
         <div className="card--flat p-3 text-[12px] text-[var(--fg-3)] flex items-start gap-2">
           <MessageSquare className="h-4 w-4 text-[var(--accent)] flex-shrink-0 mt-0.5" />
-          <span>{t('onboarding.feedback', { defaultValue: 'Feedback welcome — TheContentForge is always improving. During your free trial, use Report an issue in the sidebar to send bug reports, feature requests, or ideas that would make the platform better.' })}</span>
+          <span>{t('onboarding.feedback', { defaultValue: 'Feedback welcome — TheContentForge is always improving. During your free trial, use Report Issue in the sidebar to send bug reports, feature requests, or ideas that would make the platform better.' })}</span>
         </div>
 
         <IntelDisclaimer variant="block" />

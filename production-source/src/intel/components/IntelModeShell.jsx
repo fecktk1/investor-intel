@@ -102,7 +102,7 @@ export default function IntelModeShell({ children }) {
             className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg-2)] w-full transition-colors"
           >
             <Bug className="h-4 w-4 flex-shrink-0" />
-            <span className="flex-1 min-w-0 truncate text-left">{t('shell.report_issue', { defaultValue: 'Report an issue' })}</span>
+            <span className="flex-1 min-w-0 truncate text-left">{t('shell.report_issue', { defaultValue: 'Report Issue' })}</span>
           </button>
           {contentOrg && (
             <button
@@ -137,7 +137,7 @@ export default function IntelModeShell({ children }) {
         </main>
       </div>
 
-      {/* Report an issue / feedback / feature request reuses the org-side
+      {/* Report Issue / feedback / feature request reuses the org-side
           support flow, mounted inside Intel at /intel/support. */}
       <SubmitTicketModal
         open={reportOpen}
