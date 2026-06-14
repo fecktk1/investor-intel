@@ -13,6 +13,12 @@ import { h32 } from '../_shared/core-intel/hashing.ts'
 import { materialityVerdict, MATERIAL_DELTA } from '../_shared/core-intel/materiality.ts'
 import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
+import {
+  assembleIntelligenceContext,
+  persistApiIntelligence,
+  recordDecisionMemory,
+  type IntelligenceContextBlock,
+} from '../_shared/intelligence-core.ts'
 
 const DEFAULT_COOLDOWN_MIN = 720          // 12h (the historical hardcode, now per-rule)
 const NOISY_FIRES_48H = 4                 // ≥4 fires in 48h → cooldown ×2
@@ -56,6 +62,254 @@ function birdeyeChainFor(ns: string, ref: string): string | null {
   return null
 }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { 'Content-Type': 'application/json' } }) }
+
+function compactText(value: unknown, max = 600): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
+function stableHash(value: unknown): string {
+  const text = typeof value === 'string' ? value : JSON.stringify(value ?? '')
+  let hash = 2166136261
+  for (let i = 0; i < text.length; i++) {
+    hash ^= text.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return (hash >>> 0).toString(16)
+}
+
+function uniqueRefs(values: Array<string | number | null | undefined>, max = 40): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of values) {
+    const value = compactText(raw, 140)
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    out.push(value)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+function confidenceScore(label: unknown): number {
+  const normalized = String(label || '').toLowerCase()
+  if (normalized.includes('high')) return 0.85
+  if (normalized.includes('medium')) return 0.60
+  if (normalized.includes('low')) return 0.35
+  return 0.50
+}
+
+function contextRefs(blocks: IntelligenceContextBlock[]): Array<Record<string, unknown>> {
+  return blocks.slice(0, 8).map((b) => ({
+    memory_class: b.memory_class,
+    title: b.title,
+    entity_refs: b.entity_refs?.slice(0, 8) || [],
+    narrative_refs: b.narrative_refs?.slice(0, 8) || [],
+    confidence: b.confidence,
+    created_at: b.created_at,
+  }))
+}
+
+// deno-lint-ignore no-explicit-any
+async function recordTokenAlertIntelligence(admin: any, args: {
+  rule: any
+  entity: any
+  overview: any
+  signal: any
+  beChain: string
+  metric: string | null
+  value: number | null
+  threshold: number
+  alertEventId: string
+}) {
+  const { rule, entity, overview, signal, beChain, metric, value, threshold, alertEventId } = args
+  const symbol = overview?.symbol || entity?.display_symbol || entity?.symbol || entity?.contract_address
+  const entityRefs = uniqueRefs([
+    entity?.canonical_ref_key,
+    entity?.contract_address,
+    symbol,
+    overview?.address,
+    overview?.name,
+    signal?.signal_key,
+  ])
+  const sourceRefs = [
+    {
+      source: 'birdeye_token_overview',
+      chain: beChain,
+      contract_address: entity?.contract_address,
+      symbol,
+    },
+    {
+      source: 'intel_alert_events',
+      id: alertEventId,
+      rule_id: rule.id,
+    },
+    signal?.signal_key ? {
+      source: 'intel_signal_state',
+      signal_key: signal.signal_key,
+      direction: signal.direction,
+      confidence: signal.confidence,
+    } : null,
+  ].filter(Boolean) as Array<Record<string, unknown>>
+
+  try {
+    const query = `${symbol || ''} ${rule.trigger_type || ''} ${metric || ''} ${signal?.why_it_matters || ''}`
+    const ctx = await assembleIntelligenceContext(admin, {
+      surface: 'alerts',
+      orgId: rule.org_id,
+      query,
+      entityRefs,
+      includePrivateKnowledge: false,
+      limit: 6,
+    })
+
+    const hourBucket = new Date().toISOString().slice(0, 13)
+    await persistApiIntelligence(admin, {
+      visibility: 'org_private',
+      orgId: rule.org_id,
+      rawTable: 'birdeye_token_overview',
+      rawRecordId: `${beChain}:${entity?.contract_address || symbol}:${hourBucket}`,
+      rawHash: stableHash({
+        chain: beChain,
+        contract_address: entity?.contract_address,
+        price: overview?.price,
+        liquidity: overview?.liquidity,
+        price_change_24h_pct: overview?.price_change_24h_pct,
+        volume_change_24h_pct: overview?.volume_change_24h_pct,
+      }),
+      promotionStatus: 'linked',
+      promotionScore: Math.max(confidenceScore(signal?.confidence), Math.min(1, Math.abs(Number(value || 0)) / Math.max(1, Math.abs(threshold || 1)))),
+      validationStatus: 'alert_threshold_triggered',
+      entityRefs,
+      sourceRefs,
+      promotedMemoryType: 'execution_decision',
+      promotedMemoryRef: alertEventId,
+      derivedPayload: {
+        symbol,
+        chain: beChain,
+        contract_address: entity?.contract_address,
+        price: overview?.price,
+        liquidity: overview?.liquidity,
+        price_change_24h_pct: overview?.price_change_24h_pct,
+        volume_change_24h_pct: overview?.volume_change_24h_pct,
+        trigger_type: rule.trigger_type,
+        metric,
+        value,
+        threshold,
+        signal_key: signal?.signal_key || null,
+      },
+    })
+
+    await recordDecisionMemory(admin, {
+      visibility: 'org_private',
+      orgId: rule.org_id,
+      surface: 'alerts',
+      decisionKind: 'intel_alert_fired',
+      subjectType: 'alert_rule',
+      subjectRef: rule.id,
+      recommendation: compactText(`Alert fired for ${symbol || 'tracked token'}: ${metric || rule.trigger_type}`, 240),
+      conclusion: compactText(signal?.why_it_matters || `${metric || rule.trigger_type} crossed configured threshold ${threshold}.`, 900),
+      reasoningSummary: compactText(
+        `Investor Intel fired ${rule.trigger_type} because ${metric || 'configured metric'}=${value ?? 'n/a'} crossed threshold ${threshold}.`,
+        900,
+      ),
+      evidenceRefs: sourceRefs,
+      retrievedContextRefs: contextRefs(ctx.blocks),
+      sourceRefs,
+      entityRefs,
+      confidence: signal?.confidence || 'medium',
+      confidenceScore: confidenceScore(signal?.confidence || 'medium'),
+      assumptions: [
+        { type: 'configured_threshold', trigger_type: rule.trigger_type, metric, threshold },
+        { type: 'cooldown_checked', cooldown_minutes: rule.cooldown_minutes || DEFAULT_COOLDOWN_MIN },
+      ],
+      alternativesConsidered: [
+        'Suppress alert when the rule is inside its cooldown window.',
+        'Suppress alert when no configured metric crosses the threshold.',
+      ],
+      decisionHash: `intel_alert:${rule.id}:${alertEventId}`,
+      metadata: {
+        source_table: 'intel_alert_events',
+        source_id: alertEventId,
+        rule_id: rule.id,
+        metric,
+        value,
+        threshold,
+        signal_ref: signal?.signal_key || null,
+      },
+    })
+  } catch (err) {
+    console.warn('[intel-alerts-eval] token alert intelligence skipped:', (err as Error)?.message || err)
+  }
+}
+
+// deno-lint-ignore no-explicit-any
+async function recordNarrativeHeatDecision(admin: any, rule: any, state: any, reason: string, alertEventId: string | null) {
+  const slug = rule?.config?.slug || state?.slug || state?.narrative_key || state?.name
+  const narrativeRefs = uniqueRefs([slug, state?.name], 10)
+  const sourceRefs = [
+    {
+      source: 'narrative_state',
+      narrative_id: state?.narrative_id,
+      slug,
+      lifecycle_stage: state?.lifecycle_stage,
+    },
+    alertEventId ? {
+      source: 'intel_alert_events',
+      id: alertEventId,
+      rule_id: rule.id,
+    } : null,
+  ].filter(Boolean) as Array<Record<string, unknown>>
+
+  try {
+    const ctx = await assembleIntelligenceContext(admin, {
+      surface: 'alerts',
+      orgId: rule.org_id,
+      query: `${slug || ''} narrative heat ${reason}`,
+      narrativeRefs,
+      includePrivateKnowledge: false,
+      limit: 6,
+    })
+
+    await recordDecisionMemory(admin, {
+      visibility: 'org_private',
+      orgId: rule.org_id,
+      surface: 'alerts',
+      decisionKind: 'narrative_heat_alert_fired',
+      subjectType: 'alert_rule',
+      subjectRef: rule.id,
+      recommendation: compactText(`Narrative heat alert fired: ${state?.name || slug || 'tracked narrative'}`, 240),
+      conclusion: compactText(reason, 900),
+      reasoningSummary: compactText(
+        `Narrative heat changed for ${state?.name || slug || 'tracked narrative'}: ${reason}.`,
+        900,
+      ),
+      evidenceRefs: sourceRefs,
+      retrievedContextRefs: contextRefs(ctx.blocks),
+      sourceRefs,
+      narrativeRefs,
+      confidence: 'medium',
+      confidenceScore: 0.60,
+      assumptions: [
+        { type: 'narrative_heat_preferences', config: rule.config || {} },
+        { type: 'state_window', source: 'narrative_state' },
+      ],
+      alternativesConsidered: [
+        'Suppress alert when a recent narrative heat alert already fired.',
+        'Suppress alert when no stage change, momentum spike, or risk spike is present.',
+      ],
+      decisionHash: `narrative_heat:${rule.id}:${slug}:${alertEventId || new Date().toISOString().slice(0, 10)}`,
+      metadata: {
+        source_table: alertEventId ? 'intel_alert_events' : 'narrative_state',
+        source_id: alertEventId || String(state?.narrative_id || slug || rule.id),
+        rule_id: rule.id,
+        slug,
+        reason,
+      },
+    })
+  } catch (err) {
+    console.warn('[intel-alerts-eval] narrative heat decision skipped:', (err as Error)?.message || err)
+  }
+}
 
 Deno.serve(async (req) => {
   try {
@@ -119,7 +373,22 @@ Deno.serve(async (req) => {
           why_now: sig?.why_it_matters || null, confirm_or_weaken: sig?.what_to_watch_next || null,
         },
       }, { onConflict: 'rule_id,dedup_key', ignoreDuplicates: true }).select('id')
-      if (!ins.error && (ins.data?.length || 0) > 0) { fired++; firedThisRun.push({ id: ins.data[0].id, org_id: r.org_id, direction: sig?.direction || null }) }
+      if (!ins.error && (ins.data?.length || 0) > 0) {
+        const alertEventId = ins.data[0].id
+        fired++
+        firedThisRun.push({ id: alertEventId, org_id: r.org_id, direction: sig?.direction || null })
+        await recordTokenAlertIntelligence(admin, {
+          rule: r,
+          entity: ent,
+          overview: ov,
+          signal: sig,
+          beChain,
+          metric,
+          value: typeof value === 'number' ? value : null,
+          threshold: thr,
+          alertEventId,
+        })
+      }
     }
 
     // Grouped digest: ≥2 related events in one run for the same org share a group_id.
@@ -201,12 +470,13 @@ async function evalNarrativeHeat(admin: any): Promise<number> {
         .eq('rule_id', r.id).gte('fired_at', new Date(Date.now() - 12 * 3600_000).toISOString()).limit(1)
       if (recent && recent.length) continue
 
-      await admin.from('intel_alert_events').insert({
+      const ins = await admin.from('intel_alert_events').insert({
         org_id: r.org_id, rule_id: r.id,
         payload: { trigger_type: 'narrative_heat', slug: r.config.slug, name: st.name, reason,
           lifecycle_stage: st.lifecycle_stage, prev_stage: st.prev_stage, signal_class: st.signal_class,
           momentum: st.momentum_score, risk: st.risk_score },
-      })
+      }).select('id')
+      await recordNarrativeHeatDecision(admin, r, st, reason, ins.error ? null : ins.data?.[0]?.id || null)
       fired++
     }
     return fired

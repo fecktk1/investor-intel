@@ -21,6 +21,7 @@ import { materialityVerdict } from '../_shared/core-intel/materiality.ts'
 import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { routeExplainContext, similarRecentExplain, computeQuestionHashes } from '../_shared/intel/intel-context-adapters.ts'
+import { assembleIntelligenceContext, recordDecisionMemory } from '../_shared/intelligence-core.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -111,6 +112,44 @@ async function insertArtifact(supabase: any, row: any) {
   return res
 }
 
+async function recordArtifactDecisionMemory(supabase: any, p: any): Promise<void> {
+  const artifact = p.artifact || {}
+  const structured = artifact.structured || p.structured || {}
+  const summary = typeof structured.summary === 'string' ? structured.summary : artifact.body_md || null
+  const confidence = ['high', 'medium', 'low'].includes(structured.confidence) ? structured.confidence : artifact.confidence || null
+  const confidenceScore = confidence === 'high' ? 0.9 : confidence === 'medium' ? 0.6 : confidence === 'low' ? 0.35 : null
+  await recordDecisionMemory(supabase, {
+    visibility: p.visibility || 'org_private',
+    orgId: p.orgId,
+    userId: p.userId,
+    surface: 'investor_intel',
+    decisionKind: p.decisionKind || p.artifactType || 'artifact_generation',
+    subjectType: p.ent?.entity_kind || artifact.subject_kind || null,
+    subjectRef: p.ent?.canonical_ref_key || null,
+    recommendation: artifact.title || p.artifactType || null,
+    conclusion: summary,
+    reasoningSummary: p.reasoningSummary || summary,
+    evidenceRefs: Array.isArray(artifact.evidence) ? artifact.evidence : [],
+    sourceRefs: Array.isArray(artifact.sources) ? artifact.sources : [],
+    entityRefs: p.ent?.canonical_ref_key ? [p.ent.canonical_ref_key] : [],
+    narrativeRefs: p.ent?.entity_kind === 'narrative' && p.ent?.canonical_ref_key ? [p.ent.canonical_ref_key] : [],
+    confidence,
+    confidenceScore,
+    model: artifact.model || p.model || null,
+    artifactId: artifact.id || null,
+    sharedArtifactId: p.sharedArtifactId || null,
+    metadata: {
+      artifact_type: p.artifactType,
+      reuse_kind: artifact.reuse_kind || p.reuseKind || null,
+      evidence_hash: artifact.evidence_hash || p.evidenceHash || null,
+      source_set_hash: artifact.source_set_hash || p.sourceSetHash || null,
+      cache: p.cache || null,
+      validator_outcome: artifact.validator_outcome || null,
+      ...p.metadata,
+    },
+  })
+}
+
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
@@ -163,6 +202,7 @@ Deno.serve(async (req) => {
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
       if (cached && (!cached.stale_after || new Date(cached.stale_after).getTime() > Date.now())) {
         await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: cached.id, model: cached.model, metadata: { cache: 'hit' } })
+        await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact: cached, decisionKind: 'artifact_cache_hit', cache: 'hit' })
         void logCost({ cacheStatus: 'hit', reuseKind: cached.reuse_kind || null, model: null, evidenceHash: cached.evidence_hash || null, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
         return json({ artifact: cached, cached: true })
       }
@@ -215,6 +255,7 @@ Deno.serve(async (req) => {
         const orgRow = orgArtifactRow({ orgId, userId, artifactType, ent, extra, structured: shared.structured, inputHash, cacheKey, staleAfter: shared.stale_after, model: (shared.models || []).join('+') || 'shared', validationStatus: shared.validation_status || 'passed', sources: shared.sources, validatorOutcome: { reused_shared: shared.id, consensus: shared.consensus }, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, reuseKind: 'shared_copy' })
         const { data: copy } = await insertArtifact(supabase, orgRow)
         await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: copy?.id, model: (shared.models || []).join('+'), metadata: { cache: 'shared_hit', shared_id: shared.id, consensus: shared.consensus, evidence_items: pkg.final_count } })
+        await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact: copy || { ...orgRow, structured: shared.structured }, sharedArtifactId: shared.id, decisionKind: 'artifact_shared_reuse', cache: 'shared_hit', evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, metadata: { consensus: shared.consensus, evidence_items: pkg.final_count } })
         void logCost({ cacheStatus: 'shared_hit', reuseKind: 'shared_copy', model: null, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
         return json({ artifact: copy || shared, cached: true, shared: true, consensus: shared.consensus })
       }
@@ -271,6 +312,7 @@ Deno.serve(async (req) => {
             await supabase.from('research_artifacts').update({ stale_after: newStale, reuse_kind: 'reuse_stale_unchanged' }).eq('id', prior.id)
             const { data: full } = await supabase.from('research_artifacts').select('*').eq('id', prior.id).maybeSingle()
             await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: prior.id, metadata: { cache: 'reuse_unchanged' } })
+            await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact: full || prior, decisionKind: 'artifact_reuse_unchanged', cache: 'reuse_unchanged', evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, metadata: { drivers: verdict.drivers } })
             void logCost({ cacheStatus: 'reuse_unchanged', reuseKind: 'reuse_stale_unchanged', model: null, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
             return json({ artifact: full || prior, cached: true, reused: true, reuse_kind: 'reuse_stale_unchanged' })
           }
@@ -347,6 +389,7 @@ Deno.serve(async (req) => {
         artifactId: artifactD.id, model: dp.model, tokensIn: usageD?.prompt_tokens, tokensOut: usageD?.completion_tokens,
         validatorOutcome: outcomeD, metadata: { cache: 'delta', magnitude: deltaPlan.magnitude, base_artifact_id: deltaPlan.prior.id },
       })
+      await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact: artifactD, decisionKind: 'artifact_delta_update', cache: 'delta', reasoningSummary: structuredD?.summary || null, evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, metadata: { magnitude: deltaPlan.magnitude, base_artifact_id: deltaPlan.prior.id, drivers: deltaPlan.drivers } })
       void logCost({
         cacheStatus: 'delta', reuseKind: 'delta', model: dp.model,
         evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash,
@@ -440,6 +483,45 @@ Deno.serve(async (req) => {
       genContext = { ...(genContext || context || {}), user_context: explainRouted.routed_context }
       sourcesUsed.push('Your watchlist / theses / alerts / signals context')
     }
+
+    // Platform-wide derived memory. This prefers stored/derived intelligence
+    // (signals, events, decision memory) over raw feeds and respects the
+    // Investor Intel surface policy. Private KB stays opt-in elsewhere.
+    try {
+      const entityRefs = ent?.canonical_ref_key ? [ent.canonical_ref_key] : []
+      const narrativeRefs = ent?.entity_kind === 'narrative' && ent?.canonical_ref_key ? [ent.canonical_ref_key] : []
+      const ctx = await assembleIntelligenceContext(supabase, {
+        surface: 'investor_intel',
+        orgId,
+        query: `${artifactType} ${ent?.display_symbol || ent?.canonical_ref_key || ''}`.trim(),
+        entityRefs,
+        narrativeRefs,
+        includePrivateKnowledge: false,
+        limit: 8,
+      })
+      if (ctx.blocks.length) {
+        genContext = {
+          ...(genContext || context || {}),
+          platform_intelligence_context: ctx.blocks.map((b) => ({
+            memory_class: b.memory_class,
+            title: b.title,
+            summary: b.summary,
+            freshness_class: b.freshness_class,
+            confidence: b.confidence,
+            rank_score: b.rank_score,
+            entity_refs: b.entity_refs,
+            narrative_refs: b.narrative_refs,
+            source_refs: b.source_refs,
+          })),
+          platform_intelligence_policy: {
+            surface: ctx.policy.surface_key,
+            derived_over_raw: ctx.policy.derived_over_raw,
+            restricted_license_policy: ctx.policy.restricted_license_policy,
+          },
+        }
+        sourcesUsed.push('Platform intelligence memory')
+      }
+    } catch { /* best-effort memory grounding */ }
 
     const required = requiredFieldsFor(artifactType)
     const { system, user, model } = buildPrompt(artifactType, { entity: ent, context: genContext, profile, extra })
@@ -540,6 +622,7 @@ Deno.serve(async (req) => {
       validatorOutcome, validatorReason: blocked ? validation.hits.map((h) => h.label).join(',') : null,
       metadata: { cache: 'miss', multi_model: useMulti && !!consensus, consensus, providers: providerMeta?.providers || [], shared_eligible: !!pkg?.reusable, contract_missing: contract.missing, evidence_items: evidenceCount, raw_candidates: pkg?.raw_candidate_count || 0 },
     })
+    await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact, decisionKind: 'artifact_fresh_generation', cache: 'fresh', reasoningSummary: structured?.summary || null, evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, metadata: { multi_model: useMulti && !!consensus, consensus, providers: providerMeta?.providers || [], shared_eligible: !!pkg?.reusable, contract_missing: contract.missing, evidence_items: evidenceCount, raw_candidates: pkg?.raw_candidate_count || 0 } })
 
     if (blocked) return json({ artifact, blocked: true, reason: 'safety_validation_failed' }, 200)
     return json({ artifact, cached: false, consensus, multi_model: !!consensus, matched_surfaces: explainRouted?.matched_surfaces || undefined })

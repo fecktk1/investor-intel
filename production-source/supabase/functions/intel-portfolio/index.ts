@@ -3,9 +3,10 @@
 // Built LAST (after holdings math, pricing, cost basis, risk, and RLS are
 // trustworthy). Mirrors intel-generate's grounding + guardrail + rewrite/block
 // flow. Reads the user's REAL holdings + the exchange-market snapshot + global
-// public market memory + the user's PRIVATE portfolio memory. Persists ONLY to
-// investor_portfolio_memory. Never invents balances/prices/P&L; never financial
-// or tax advice.
+// public market memory + the user's PRIVATE portfolio memory. Raw holdings,
+// balances, addresses, amounts, and ownership facts only persist to private
+// portfolio memory; reusable decision/outcome memory must be private-user-scoped.
+// Never invents balances/prices/P&L; never financial or tax advice.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { validateSafeLanguage, SAFE_LANGUAGE_RULES } from '../_shared/intel-guardrails.ts'
@@ -15,6 +16,13 @@ import { computeTotals } from '../_shared/investor-portfolio/holdings.ts'
 import { computePortfolioRisk } from '../_shared/investor-portfolio/risk.ts'
 import { buildPortfolioMemoryRecords, writePortfolioMemory, buildPortfolioMemoryPromptBlock } from '../_shared/investor-portfolio/portfolio-memory.ts'
 import type { PortfolioHolding, PortfolioTotals, RiskResult } from '../_shared/investor-portfolio/types.ts'
+import {
+  assembleIntelligenceContext,
+  formatIntelligenceContextForPrompt,
+  recordDecisionMemory,
+  recordExecutionDecisionOutcome,
+  type IntelligenceContextBlock,
+} from '../_shared/intelligence-core.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -44,8 +52,9 @@ GROUNDING (hard requirement):
 
 PRIVACY (hard requirement):
 - This analysis is for a single user's private portfolio. NEVER write portfolio holdings, balances,
-  addresses, ownership, amounts, or user/org identifiers into any global/public store. Private
-  portfolio memory is the ONLY place this output may persist.
+  addresses, ownership, amounts, or user/org identifiers into any global/public store. Raw
+  portfolio facts may persist only in private portfolio memory; summaries and outcomes may persist
+  only as private-user-scoped Decision + Execution Intelligence.
 
 NOT ADVICE: Portfolio calculations are informational only and are not tax, accounting, investment,
 or financial advice. Cost basis and P&L may be incomplete when transaction history is missing,
@@ -58,6 +67,41 @@ If there is no portfolio-relevant news in the provided context, say so plainly i
 
 function textOf(s: any): string {
   return [s?.summary, s?.what_changed, s?.contributors, s?.signal_exposure, s?.risks, s?.news_that_matters].filter((x) => typeof x === 'string').join('\n')
+}
+
+function compactText(value: unknown, max = 600): string {
+  return String(value ?? '').replace(/\s+/g, ' ').trim().slice(0, max)
+}
+
+function uniqueRefs(values: Array<string | number | null | undefined>, max = 50): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const raw of values) {
+    const value = compactText(raw, 160)
+    if (!value || seen.has(value)) continue
+    seen.add(value)
+    out.push(value)
+    if (out.length >= max) break
+  }
+  return out
+}
+
+function confidenceScore(value: unknown): number {
+  const text = String(value ?? '').toLowerCase()
+  if (text.includes('high')) return 0.85
+  if (text.includes('low')) return 0.35
+  return 0.60
+}
+
+function contextRefs(blocks: IntelligenceContextBlock[]): Array<Record<string, unknown>> {
+  return blocks.slice(0, 8).map((b) => ({
+    memory_class: b.memory_class,
+    title: b.title,
+    entity_refs: b.entity_refs?.slice(0, 8) || [],
+    narrative_refs: b.narrative_refs?.slice(0, 8) || [],
+    confidence: b.confidence,
+    created_at: b.created_at,
+  }))
 }
 
 async function callOpenAI(model: string, system: string, user: string, apiKey: string) {
@@ -142,10 +186,30 @@ Deno.serve(async (req) => {
 
     const openaiKey = Deno.env.get('OPENAI_API_KEY') || ''
     const q = `portfolio ${portfolio.name} value ${Math.round(totals.totalValueUsd)} risk ${risk.band} top ${holdings.slice(0, 3).map((h) => h.assetSymbol).join(' ')}`
-    const [globalMem, privateMem] = await Promise.all([
+    const portfolioEntityRefs = uniqueRefs([
+      portfolioId,
+      portfolio.name,
+      ...holdings.flatMap((h) => [h.normalizedSymbol, h.assetSymbol, h.canonicalAssetKey]),
+    ], 80)
+    const [globalMem, privateMem, platformIntelligence] = await Promise.all([
       buildMarketMemoryPromptBlock(serviceClient, { query: q, openaiKey }).catch(() => ''),
       buildPortfolioMemoryPromptBlock(db, { query: q, portfolioId, openaiKey }).catch(() => ''),
+      assembleIntelligenceContext(db, {
+        surface: 'portfolio_intelligence',
+        orgId: portfolio.org_id,
+        userId: portfolio.user_id,
+        query: q,
+        entityRefs: portfolioEntityRefs,
+        includePrivateKnowledge: false,
+        limit: 8,
+      }).catch(() => ({ blocks: [] as IntelligenceContextBlock[] })),
     ])
+    const platformContextRefs = contextRefs(platformIntelligence.blocks)
+    const platformMem = formatIntelligenceContextForPrompt(platformIntelligence.blocks, {
+      heading: 'PLATFORM PORTFOLIO INTELLIGENCE MEMORY',
+      maxBlocks: 8,
+      maxSummaryChars: 320,
+    })
 
     const factPack = {
       totals: { totalValue: totals.totalValueUsd, dayPnlPct: totals.dayPnlPct, unrealizedPnl: totals.unrealizedPnlUsd, realizedPnl: totals.realizedPnlUsd, stablecoinPct: totals.stablecoinPct, unpriced: totals.unpricedCount, stale: totals.staleCount, incompleteHistory: totals.incompleteHistory },
@@ -155,7 +219,7 @@ Deno.serve(async (req) => {
     }
 
     const system = `You are Investor Intel's portfolio analyst. Produce grounded, plain-English portfolio context for a retail crypto user.\n${SAFE_LANGUAGE_RULES}\n${GROUNDING_PRIVACY}\n${OUTPUT_CONTRACT}`
-    const userMsg = `PORTFOLIO FACTS (authoritative — do not contradict):\n${JSON.stringify(factPack)}\n\nHOLDINGS + MARKET SNAPSHOT:\n${marketBlock}\n\nRECENT ACTIVITY (classified deterministically — do not reinterpret types/assets):\n${activityBlock || 'none imported yet'}\n\n${globalMem}\n\n${privateMem}\n\nWrite the JSON now. Ground every number in the facts above; describe unpriced/stale/incomplete states honestly, and surface coverage limitations (incomplete cost basis, balance-only chains, beta history) plainly.`
+    const userMsg = `PORTFOLIO FACTS (authoritative — do not contradict):\n${JSON.stringify(factPack)}\n\nHOLDINGS + MARKET SNAPSHOT:\n${marketBlock}\n\nRECENT ACTIVITY (classified deterministically — do not reinterpret types/assets):\n${activityBlock || 'none imported yet'}\n\n${globalMem}\n\n${privateMem}\n\n${platformMem}\n\nWrite the JSON now. Ground every number in the facts above; describe unpriced/stale/incomplete states honestly, and surface coverage limitations (incomplete cost basis, balance-only chains, beta history) plainly.`
 
     let structured: any
     let blocked = false
@@ -181,6 +245,81 @@ Deno.serve(async (req) => {
       }
       await writePortfolioMemory(db, portfolioId, portfolio.org_id, portfolio.user_id, records, { openaiKey, now: Date.now() }).catch(() => {})
     }
+
+    const decisionId = await recordDecisionMemory(serviceClient, {
+      visibility: 'org_private',
+      orgId: portfolio.org_id,
+      userId: portfolio.user_id,
+      surface: 'portfolio_intelligence',
+      decisionKind: blocked ? 'portfolio_intel_blocked' : 'portfolio_intel_generated',
+      subjectType: 'portfolio',
+      subjectRef: portfolioId,
+      recommendation: compactText(structured?.summary || (blocked ? 'Portfolio intelligence output withheld' : 'Portfolio intelligence generated'), 500),
+      conclusion: compactText(textOf(structured), 1200) || null,
+      reasoningSummary: compactText(
+        `Generated private portfolio intelligence from current holdings, exchange market memory, user-private portfolio memory, and ${platformContextRefs.length} platform intelligence block(s).`,
+        900,
+      ),
+      evidenceRefs: [
+        { source_table: 'investor_portfolios', source_id: portfolioId },
+        { source_table: 'investor_portfolio_holdings', portfolio_id: portfolioId, row_count: holdings.length },
+        { source_table: 'investor_portfolio_tx', portfolio_id: portfolioId, row_count: (recentTx || []).length },
+      ],
+      retrievedContextRefs: platformContextRefs,
+      sourceRefs: [{ source: 'portfolio_intelligence', portfolio_id: portfolioId }],
+      entityRefs: portfolioEntityRefs,
+      confidence: structured?.confidence || (blocked ? 'low' : 'medium'),
+      confidenceScore: confidenceScore(structured?.confidence),
+      assumptions: [
+        'Holdings, prices, and transaction classifications are authoritative only when present in the supplied portfolio facts.',
+        'Generated text is informational context, not financial, tax, or investment advice.',
+      ],
+      alternativesConsidered: [
+        'Return deterministic risk summary only when model generation is unavailable.',
+        'Withhold output when the safety rewrite still violates non-advice guardrails.',
+      ],
+      model: openaiKey ? 'gpt-5.5' : 'deterministic',
+      decisionHash: `portfolio_intel:${portfolioId}:${new Date().toISOString().slice(0, 10)}`,
+      metadata: {
+        private_user_scope: true,
+        source_table: 'intel-portfolio',
+        portfolio_id: portfolioId,
+        holdings_count: holdings.length,
+        risk_band: risk.band,
+        blocked,
+        market_data_available: priced.marketDataAvailable,
+        platform_intelligence_blocks: platformContextRefs.length,
+      },
+    }).catch(() => null)
+
+    await recordExecutionDecisionOutcome(serviceClient, {
+      decisionId,
+      orgId: portfolio.org_id,
+      userId: portfolio.user_id,
+      surface: 'portfolio_intelligence',
+      outcomeKind: blocked ? 'portfolio_intel_blocked' : 'portfolio_intel_generated',
+      subjectType: 'portfolio',
+      subjectRef: portfolioId,
+      metrics: {
+        holdings_count: holdings.length,
+        risk_band: risk.band,
+        risk_score: risk.score,
+        unpriced_count: totals.unpricedCount,
+        stale_count: totals.staleCount,
+        incomplete_history: totals.incompleteHistory,
+        market_data_available: priced.marketDataAvailable,
+        platform_intelligence_blocks: platformContextRefs.length,
+      },
+      accuracyLabel: 'unknown',
+      usefulnessScore: blocked ? 0.20 : 0.65,
+      sourceOutcomeRefs: [{ source_table: 'intel-portfolio', source_id: portfolioId }],
+      metadata: {
+        private_user_scope: true,
+        source_table: 'intel-portfolio',
+        portfolio_id: portfolioId,
+        blocked,
+      },
+    }).catch(() => null)
 
     return json({
       ok: true, blocked,
