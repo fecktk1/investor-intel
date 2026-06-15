@@ -34,7 +34,19 @@ Deno.serve(async (req) => {
     const keys = { openai: Deno.env.get('OPENAI_API_KEY'), xai: Deno.env.get('XAI_API_KEY') || Deno.env.get('GROK_API_KEY'), gemini: Deno.env.get('GEMINI_API_KEY') }
     if (!keys.openai) return json({ error: 'OPENAI_API_KEY not configured' }, 500)
     let body: any = {}; try { body = await req.json() } catch { /* */ }
-    const limit = Math.min(Math.max(Number(body?.limit) || 6, 1), 12)
+    const limit = Math.min(Math.max(Number(body?.limit) || Number(Deno.env.get('INTEL_STORY_CARDS_LIMIT')) || 3, 1), 12)
+
+    // Lazy precompute (low userbase): skip this expensive per-story multi-model pass when
+    // nobody has touched Investor Intel recently. Safe because the dashboard degrades to
+    // curated-news analysis when a fresh card is absent. Bypass via body.force or env opt-out.
+    const gated = (Deno.env.get('INTEL_STORY_CARDS_GATED') ?? 'true') !== 'false'
+    if (gated && !body?.force) {
+      const windowH = Math.max(1, Math.min(168, Number(Deno.env.get('INTEL_PRECOMPUTE_ACTIVITY_WINDOW_H') || '24')))
+      const activeSince = new Date(Date.now() - windowH * 3_600_000).toISOString()
+      let recent = 1   // fail open: a transient count error should not block generation
+      try { const { count } = await admin.from('intel_ai_events').select('*', { count: 'exact', head: true }).gte('created_at', activeSince); recent = count ?? 0 } catch { /* keep recent=1 */ }
+      if (!recent) return json({ ok: true, skipped: 'no_recent_intel_activity', window_hours: windowH })
+    }
 
     // Candidate stories from the shared corpus → clean + dedupe + rank.
     const since = new Date(Date.now() - 4 * 86_400_000).toISOString()

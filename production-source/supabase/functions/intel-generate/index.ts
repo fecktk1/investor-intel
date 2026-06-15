@@ -22,6 +22,7 @@ import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { routeExplainContext, similarRecentExplain, computeQuestionHashes } from '../_shared/intel/intel-context-adapters.ts'
 import { assembleIntelligenceContext, recordDecisionMemory } from '../_shared/intelligence-core.ts'
+import { intelModel, intelEffort } from '../_shared/intel-model-config.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -54,7 +55,7 @@ function textOfArtifact(structured: any): string {
   return parts.filter((x) => typeof x === 'string').join('\n')
 }
 
-async function callOpenAI(model: string, system: string, user: string, apiKey: string) {
+async function callOpenAI(model: string, system: string, user: string, apiKey: string, effort: string = intelEffort()) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
@@ -62,7 +63,7 @@ async function callOpenAI(model: string, system: string, user: string, apiKey: s
       model,
       messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
       response_format: { type: 'json_object' },
-      reasoning_effort: 'medium', // cost rule: cap at medium
+      reasoning_effort: effort, // cost rule: default low, hard-capped at medium (intelEffort)
     }),
   })
   if (!res.ok) throw new Error(`openai_${res.status}: ${(await res.text()).slice(0, 300)}`)
@@ -553,10 +554,10 @@ Deno.serve(async (req) => {
         structured = mm.structured
         usage = mm.usage?.synth || null
         consensus = mm.consensus
-        modelUsed = `synth:gpt-5.5(${mm.providersUsed.join('+')})`
+        modelUsed = `synth:${intelModel('standard')}(${mm.providersUsed.join('+')})`
         providerMeta = { providers: mm.providersUsed, statuses: mm.statuses, consensus: mm.consensus, synth_failed: !!mm.synthFailed }
         for (const [prov, u] of Object.entries(mm.usage || {})) {
-          const pmodel = prov === 'grok' ? (Deno.env.get('GROK_MODEL') || 'grok-4.3') : prov === 'gemini' ? (Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash') : prov === 'synth' ? 'gpt-5.5' : 'gpt-5.4-mini'
+          const pmodel = prov === 'grok' ? (Deno.env.get('GROK_MODEL') || 'grok-4.3') : prov === 'gemini' ? (Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash') : prov === 'synth' ? intelModel('standard') : intelModel('bulk')
           void recordAIUsage(supabase, { orgId, userId, provider: prov === 'grok' ? 'grok' : prov === 'gemini' ? 'gemini' : 'openai', model: pmodel, surface: 'investor_intel', subMode: `${artifactType}:${prov}`, providerUsage: u, status: 'success' })
         }
       }
@@ -574,10 +575,15 @@ Deno.serve(async (req) => {
     let validation = validateSafeLanguage(textOfArtifact(structured))
     let validatorOutcome: 'pass' | 'rewrite' | 'block' = 'pass'
     if (!validation.ok) {
+      // Validation-gated escalation: a guardrail miss is the ONLY place Intel reaches for
+      // a higher tier (gpt-5.4, never gpt-5.5). Record the rewrite so its cost is visible.
+      const escalateModel = intelModel('escalate')
       const fixSystem = `${system}\n\nYour previous answer used advice-style language (${validation.hits.map((h) => h.label).join(', ')}). Rewrite it to be strictly research/risk context. ${SAFE_LANGUAGE_RULES}`
-      const retry = await callOpenAI(model, fixSystem, `${user}\n\nPrevious JSON to fix:\n${JSON.stringify(structured).slice(0, 8000)}`, apiKey)
+      const retry = await callOpenAI(escalateModel, fixSystem, `${user}\n\nPrevious JSON to fix:\n${JSON.stringify(structured).slice(0, 8000)}`, apiKey)
       try { structured = JSON.parse(retry.content) } catch { /* keep prior */ }
       usage = retry.usage
+      modelUsed = `${modelUsed}→escalate:${escalateModel}`
+      void recordAIUsage(supabase, { orgId, userId, provider: 'openai', model: escalateModel, surface: 'investor_intel', subMode: `${artifactType}:escalate_rewrite`, providerUsage: retry.usage, status: 'success' })
       validation = validateSafeLanguage(textOfArtifact(structured))
       validatorOutcome = validation.ok ? 'rewrite' : 'block'
     }
@@ -685,7 +691,8 @@ async function handleNarrativeBrief(req: Request, body: any) {
   if (!validation.ok) {
     const fixSystem = `${system}\n\nYour previous answer used advice-style language (${validation.hits.map((h: { label: string }) => h.label).join(', ')}). Rewrite it to be strictly research/risk context. ${SAFE_LANGUAGE_RULES}`
     try {
-      const retry = await callOpenAI(model, fixSystem, `${user}\n\nPrevious JSON to fix:\n${JSON.stringify(structured).slice(0, 8000)}`, apiKey)
+      // Validation-gated escalation (gpt-5.4) — only on a guardrail miss.
+      const retry = await callOpenAI(intelModel('escalate'), fixSystem, `${user}\n\nPrevious JSON to fix:\n${JSON.stringify(structured).slice(0, 8000)}`, apiKey)
       structured = JSON.parse(retry.content); rewrote = true
     } catch { /* keep prior */ }
     validation = validateSafeLanguage(textOfArtifact(structured))

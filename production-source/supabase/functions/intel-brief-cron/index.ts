@@ -19,6 +19,7 @@ import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { validateSafeLanguage, SAFE_LANGUAGE_RULES } from '../_shared/intel-guardrails.ts'
 import { CONTRACT_VERSION, GUARDRAIL_VERSION } from '../_shared/intel-prompts.ts'
+import { intelModel, intelEffort } from '../_shared/intel-model-config.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -109,6 +110,7 @@ Deno.serve(async (req) => {
     let synthesisRef: string | null = null
     let globalAiRan = false
     const openaiKey = Deno.env.get('OPENAI_API_KEY')
+    const briefModel = intelModel('standard')   // global market synthesis → standard tier
     const globalFingerprint = h32([
       regimeR ? `${regimeR.regime}|${regimeR.flavor || ''}` : 'no-regime',
       ...narratives.slice(0, 10).map((n: Any) => `${n.slug}:${n.lifecycle_stage}`),
@@ -125,7 +127,7 @@ Deno.serve(async (req) => {
         const user = JSON.stringify({ regime: regimeR, narratives: narratives.slice(0, 8).map((n: Any) => ({ name: n.name, stage: n.lifecycle_stage, signal: n.signal_class })), signals: signals.slice(0, 10).map((s: Any) => ({ subject: s.display_symbol || s.subject_id, direction: s.direction, why: s.why_it_matters })), news: news.slice(0, 5).map((c: Any) => ({ title: c.cleaned_title || c.title, signal: c.signal })) })
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST', headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: 'gpt-5.4-mini', messages: [{ role: 'system', content: system }, { role: 'user', content: user }], response_format: { type: 'json_object' }, reasoning_effort: 'medium' }),
+          body: JSON.stringify({ model: briefModel, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], response_format: { type: 'json_object' }, reasoning_effort: intelEffort() }),
         })
         if (res.ok) {
           const data = await res.json()
@@ -135,7 +137,7 @@ Deno.serve(async (req) => {
           const check = validateSafeLanguage(String(structured?.summary || ''))
           if (check.ok && structured?.summary) {
             await admin.from('intel_shared_artifacts').upsert({
-              ...sharedKey, source_set_hash: null, models: ['gpt-5.4-mini'], consensus: 'single',
+              ...sharedKey, source_set_hash: null, models: [briefModel], consensus: 'single',
               structured, confidence: ['high', 'medium', 'low'].includes(structured?.confidence) ? structured.confidence : 'medium',
               net_signal: structured?.net_signal || null, sources: ['Regime', 'Narratives', 'Intel Signals', 'Curated news'],
               data_freshness: {}, validation_status: 'passed', model_meta: { purpose: 'daily_brief_global' },
@@ -170,7 +172,7 @@ Deno.serve(async (req) => {
     try {
       await recordCostEvent(makeCostWriter(admin), {
         feature: 'daily_brief', orgId: null, artifactType: 'daily_brief',
-        model: globalAiRan ? 'gpt-5.4-mini' : null,
+        model: globalAiRan ? briefModel : null,
         cacheStatus: globalAiRan ? 'fresh' : (synthesisRef ? 'shared_hit' : 'no_ai'),
         allowReason: globalAiRan ? 'evidence_changed_material' : 'n/a_no_ai',
         evidenceHash: globalFingerprint,

@@ -23,6 +23,10 @@ import {
   recordExecutionDecisionOutcome,
   type IntelligenceContextBlock,
 } from '../_shared/intelligence-core.ts'
+import { intelModel, intelEffort } from '../_shared/intel-model-config.ts'
+import { recordAIUsage } from '../_shared/usage.ts'
+import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
+import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -104,18 +108,20 @@ function contextRefs(blocks: IntelligenceContextBlock[]): Array<Record<string, u
   }))
 }
 
-async function callOpenAI(model: string, system: string, user: string, apiKey: string) {
+async function callOpenAI(model: string, system: string, user: string, apiKey: string, effort: string = intelEffort()) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model, messages: [{ role: 'system', content: system }, { role: 'user', content: user }],
-      response_format: { type: 'json_object' }, reasoning_effort: 'medium',  // cost rule: cap at medium
+      response_format: { type: 'json_object' }, reasoning_effort: effort,  // cost rule: default low, capped at medium
     }),
   })
   if (!res.ok) throw new Error(`openai_${res.status}: ${(await res.text()).slice(0, 200)}`)
   const data = await res.json()
-  return JSON.parse(data.choices?.[0]?.message?.content || '{}')
+  let parsed: any
+  try { parsed = JSON.parse(data.choices?.[0]?.message?.content || '{}') } catch { parsed = {} }
+  return { structured: parsed, usage: data.usage }
 }
 
 function rowToHolding(r: any): PortfolioHolding {
@@ -223,19 +229,44 @@ Deno.serve(async (req) => {
 
     let structured: any
     let blocked = false
+    // Portfolio is a grounded compile over the user's holdings + cached market facts → the
+    // standard tier (gpt-5.4-mini); a guardrail miss escalates one rewrite to gpt-5.4. No gpt-5.5.
+    let modelUsed = 'deterministic'
+    let usage: any = null            // final-call OpenAI usage → cost ledger
+    let providerCalls = 0
     if (!openaiKey) {
       // degrade gracefully without AI — return the deterministic risk summary
       structured = { summary: `Portfolio value ${totals.totalValueUsd ? '$' + Math.round(totals.totalValueUsd) : 'unavailable'}. ${risk.summary}`, what_changed: 'AI narrative unavailable (no model key); showing deterministic risk context.', risks: risk.summary, confidence: 'low' }
     } else {
-      structured = await callOpenAI('gpt-5.5', system, userMsg, openaiKey)
+      modelUsed = intelModel('standard')
+      const first = await callOpenAI(modelUsed, system, userMsg, openaiKey)
+      structured = first.structured; usage = first.usage; providerCalls++
+      // Telemetry: record the OpenAI call so portfolio spend is visible in ai_usage.
+      void recordAIUsage(serviceClient, { orgId: portfolio.org_id, userId: portfolio.user_id, provider: 'openai', model: modelUsed, surface: 'investor_intel', subMode: 'portfolio_intel', providerUsage: first.usage, status: 'success' })
       let check = validateSafeLanguage(textOf(structured))
       if (!check.ok) {
-        // one constrained rewrite
-        structured = await callOpenAI('gpt-5.5', system, `${userMsg}\n\nYour previous draft used advice-like language (${check.hits.map((h: any) => h.match).slice(0, 5).join(', ')}). Rewrite as neutral research/risk context with NO buy/sell/hold guidance.`, openaiKey)
+        // one constrained rewrite, escalated to gpt-5.4 only because the guardrail failed
+        modelUsed = intelModel('escalate')
+        const retry = await callOpenAI(modelUsed, system, `${userMsg}\n\nYour previous draft used advice-like language (${check.hits.map((h: any) => h.match).slice(0, 5).join(', ')}). Rewrite as neutral research/risk context with NO buy/sell/hold guidance.`, openaiKey)
+        structured = retry.structured; usage = retry.usage; providerCalls++
+        void recordAIUsage(serviceClient, { orgId: portfolio.org_id, userId: portfolio.user_id, provider: 'openai', model: modelUsed, surface: 'investor_intel', subMode: 'portfolio_intel:escalate_rewrite', providerUsage: retry.usage, status: 'success' })
         check = validateSafeLanguage(textOf(structured))
         if (!check.ok) { blocked = true; structured = { summary: 'Output withheld — could not produce portfolio context within the non-advice guardrails. Please try again.', confidence: 'low' } }
       }
     }
+
+    // Cost ledger: one row per portfolio_intel decision (mirrors intel-generate / intel-brief-cron)
+    // so portfolio shows up in intel_cost_ledger alongside the per-call ai_usage rows above.
+    try {
+      await recordCostEvent(makeCostWriter(serviceClient), {
+        feature: 'portfolio_intel', orgId: portfolio.org_id, artifactType: 'portfolio_intel', subjectRef: portfolioId,
+        model: providerCalls ? modelUsed : null,
+        cacheStatus: providerCalls ? 'fresh' : 'no_ai',
+        allowReason: providerCalls ? (providerCalls > 1 ? 'guardrail_rewrite' : 'fresh') : 'n/a_no_ai',
+        providerCallsMade: providerCalls,
+        usage: { tokens_in: usage?.prompt_tokens, tokens_out: usage?.completion_tokens, blocked },
+      }, { precision: 'exact', nowMs: Date.now() })
+    } catch { /* ledger best-effort — telemetry must never break the request */ }
 
     // persist ONLY to private memory (deterministic facts + the AI change-log)
     if (!blocked) {
@@ -278,7 +309,7 @@ Deno.serve(async (req) => {
         'Return deterministic risk summary only when model generation is unavailable.',
         'Withhold output when the safety rewrite still violates non-advice guardrails.',
       ],
-      model: openaiKey ? 'gpt-5.5' : 'deterministic',
+      model: modelUsed,
       decisionHash: `portfolio_intel:${portfolioId}:${new Date().toISOString().slice(0, 10)}`,
       metadata: {
         private_user_scope: true,
