@@ -17,6 +17,12 @@ export interface BriefInputs {
   narratives?: Any[]                  // narrative_state + taxonomy (top by priority)
   signals?: Any[]                     // intel_signal_state rows (top by global_score)
   news?: Any[]                        // intel_curated_news should_surface rows
+  macro?: Any[]                       // market_macro_snapshots rows
+  rankings?: Any[]                    // market_ranking_snapshots rows
+  categories?: Any[]                  // narrative_category_snapshots rows
+  protocolTvl?: Any[]                 // protocol_tvl_snapshots rows
+  chainTvl?: Any[]                    // chain_tvl_snapshots rows
+  flowHighlights?: Any[]              // large_transfer_events rows
   watchlistSymbols?: string[]         // org watchlist display symbols (UPPER)
   holdings?: Array<{ symbol: string; value?: number | null; dayPnl?: number | null; dayPnlPct?: number | null }>
   prevFingerprint?: string | null
@@ -36,6 +42,12 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
   const narratives = inp.narratives || []
   const signals = inp.signals || []
   const news = inp.news || []
+  const macro = inp.macro || []
+  const rankings = inp.rankings || []
+  const categories = inp.categories || []
+  const protocolTvl = inp.protocolTvl || []
+  const chainTvl = inp.chainTvl || []
+  const flowHighlights = inp.flowHighlights || []
   const wl = new Set((inp.watchlistSymbols || []).map(upper))
   const holdings = (inp.holdings || []).filter((h) => h.symbol)
   const heldSet = new Set(holdings.map((h) => upper(h.symbol)))
@@ -86,6 +98,57 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
   const newsRanked = [...news].sort((a, b) => ((watchlistNews.includes(b) ? 20 : 0) + (b.final_score || 0)) - ((watchlistNews.includes(a) ? 20 : 0) + (a.final_score || 0)))
   const newsOut = newsRanked.slice(0, 5).map((c) => ({ title: c.cleaned_title || c.title, why: c.why_it_matters || null, signal: c.signal || null, watchlist_match: watchlistNews.includes(c) }))
 
+  // Stage F2 context: cached macro/category rotation, protocol/chain TVL, and
+  // poll-cadence flow highlights. Compact and descriptive; no advice language.
+  const macroContext = {
+    global: macro.slice(0, 2).map((m) => ({
+      provider: m.provider,
+      market_cap: m.total_market_cap_usd ?? null,
+      volume_24h: m.total_volume_24h_usd ?? null,
+      market_cap_change_24h_pct: m.market_cap_change_24h_pct ?? null,
+      btc_dominance_pct: m.btc_dominance_pct ?? null,
+      eth_dominance_pct: m.eth_dominance_pct ?? null,
+      stablecoin_market_cap_usd: m.stablecoin_market_cap_usd ?? null,
+      as_of: m.as_of || m.fetched_at || null,
+    })),
+    ranking_rotation: rankings.slice(0, 8).map((r) => ({
+      rank: r.rank,
+      symbol: upper(r.normalized_symbol || r.symbol),
+      name: r.name || null,
+      change_24h_pct: r.change_24h_pct ?? null,
+      market_cap_usd: r.market_cap_usd ?? null,
+      volume_24h_usd: r.volume_24h_usd ?? null,
+    })),
+    category_rotation: categories.slice(0, 6).map((c) => ({
+      category: c.category_label || c.category_id,
+      rank: c.rank ?? null,
+      market_cap_change_24h_pct: c.market_cap_change_24h_pct ?? null,
+      top_3_coins: c.top_3_coins || [],
+    })),
+  }
+  const protocolChainContext = {
+    protocol_tvl: protocolTvl.slice(0, 6).map((p) => ({
+      protocol: p.protocol_name || p.protocol_slug,
+      chain: p.chain || null,
+      tvl_usd: p.tvl_usd ?? null,
+      as_of: p.ts || p.fetched_at || null,
+    })),
+    chain_tvl: chainTvl.slice(0, 6).map((c) => ({
+      chain: c.chain,
+      tvl_usd: c.tvl_usd ?? null,
+      as_of: c.ts || c.fetched_at || null,
+    })),
+  }
+  const flowOut = flowHighlights.slice(0, 5).map((f) => ({
+    symbol: upper(f.symbol),
+    chain: f.chain || null,
+    usd_value: f.usd_value ?? null,
+    direction: f.direction || null,
+    label: f.label || null,
+    observed_at: f.observed_at || f.fetched_at || null,
+    note: 'Poll-cadence flow highlight; webhook lanes remain dormant until registered.',
+  }))
+
   // What to watch next: stored what_to_watch_next + regime invalidators.
   const watchNext = [
     ...signals.slice(0, 4).map((s) => s.what_to_watch_next).filter(Boolean),
@@ -100,6 +163,11 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
     ...signals.slice(0, 12).map((s) => `${s.signal_key || s.subject_id}:${s.direction}`),
     ...newsRanked.slice(0, 5).map((c) => String(c.cluster_hash || c.title)),
     ...movers.slice(0, 3).map((m) => `${upper(m.symbol)}:${Math.round((m.dayPnlPct ?? 0))}`),
+    ...macro.slice(0, 2).map((m) => `macro:${m.provider}:${m.as_of}:${m.market_cap_change_24h_pct}`),
+    ...categories.slice(0, 6).map((c) => `cat:${c.category_id}:${c.rank}:${c.market_cap_change_24h_pct}`),
+    ...protocolTvl.slice(0, 6).map((p) => `ptvl:${p.protocol_slug}:${p.chain}:${Math.round(Number(p.tvl_usd || 0))}`),
+    ...chainTvl.slice(0, 6).map((c) => `ctvl:${c.chain}:${Math.round(Number(c.tvl_usd || 0))}`),
+    ...flowHighlights.slice(0, 5).map((f) => `flow:${f.tx_hash || f.event_key || f.observed_at}:${Math.round(Number(f.usd_value || 0))}`),
   ].join('~'))
 
   const material = !inp.prevFingerprint || inp.prevFingerprint !== change_fingerprint
@@ -115,6 +183,9 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
       framing: 'Research context describing your holdings — not a recommendation.',
     } : null,
     narrative_heat: heat,
+    macro_rotation: macroContext,
+    protocol_chain_context: protocolChainContext,
+    flow_highlights: flowOut,
     major_risks: risks.slice(0, 6),
     news_that_matters: newsOut,
     what_to_watch_next: watchNext,

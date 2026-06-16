@@ -81,11 +81,16 @@ Deno.serve(async (req) => {
     const todo = active.filter((o: Any) => !done.has(o.id))
 
     // ── 2. Global inputs fetched ONCE (cached tables only) ──
-    const [regimeR, narrR, sigR, newsR, prevR] = await Promise.all([
+    const [regimeR, narrR, sigR, newsR, macroR, rankR, catR, protocolR, chainR, prevR] = await Promise.all([
       Promise.resolve(admin.rpc('intel_current_regime')).then((r: Any) => (Array.isArray(r.data) ? r.data[0] : r.data) || null).catch(() => null),
       admin.from('narrative_state').select('lifecycle_stage, prev_stage, signal_class, global_priority_score, clarity_labels, narrative_taxonomy!inner(slug, name, status)').order('global_priority_score', { ascending: false, nullsFirst: false }).limit(40),
       admin.from('intel_signal_state').select('signal_key, subject_type, subject_id, display_symbol, direction, severity, global_score, why_it_matters, what_to_watch_next, related_assets, score_delta').gt('expires_at', new Date().toISOString()).order('global_score', { ascending: false }).limit(60),
       admin.from('intel_curated_news').select('cluster_hash, cleaned_title, title, why_it_matters, signal, tokens, final_score, should_surface').eq('should_surface', true).gt('stale_after', new Date().toISOString()).order('final_score', { ascending: false }).limit(20),
+      admin.from('market_macro_snapshots').select('provider, total_market_cap_usd, total_volume_24h_usd, market_cap_change_24h_pct, btc_dominance_pct, eth_dominance_pct, stablecoin_market_cap_usd, as_of, fetched_at').order('as_of', { ascending: false }).limit(2),
+      admin.from('market_ranking_snapshots').select('rank, normalized_symbol, symbol, name, change_24h_pct, market_cap_usd, volume_24h_usd, as_of').order('as_of', { ascending: false }).limit(12),
+      admin.from('narrative_category_snapshots').select('category_id, category_label, rank, market_cap_change_24h_pct, top_3_coins, as_of').order('as_of', { ascending: false }).limit(10),
+      admin.from('protocol_tvl_snapshots').select('protocol_slug, protocol_name, chain, tvl_usd, ts, fetched_at').order('ts', { ascending: false }).limit(10),
+      admin.from('chain_tvl_snapshots').select('chain, tvl_usd, ts, fetched_at').order('ts', { ascending: false }).limit(10),
       admin.from('intel_briefs').select('org_id, change_fingerprint').eq('brief_type', 'daily').eq('period_date', yesterday).in('org_id', todo.map((o: Any) => o.id)),
     ])
     const narratives = (narrR.data || []).filter((n: Any) => ['active', 'surfaced'].includes(n.narrative_taxonomy?.status)).map((n: Any) => ({ ...n, slug: n.narrative_taxonomy.slug, name: n.narrative_taxonomy.name }))
@@ -95,14 +100,17 @@ Deno.serve(async (req) => {
 
     // Per-org context batched (watchlist + holdings), one query each.
     const todoIds = todo.map((o: Any) => o.id)
-    const [wlRows, holdRows] = await Promise.all([
+    const [wlRows, holdRows, flowRows] = await Promise.all([
       Promise.resolve(admin.from('watchlist_items').select('org_id, entity:entities(display_symbol)').in('org_id', todoIds).limit(8000)).then((r: Any) => r.data || []).catch(() => []),
       Promise.resolve(admin.from('investor_portfolio_holdings').select('org_id, normalized_symbol, asset_symbol, current_value, day_pnl, day_pnl_pct').in('org_id', todoIds).limit(8000)).then((r: Any) => r.data || []).catch(() => []),
+      Promise.resolve(admin.from('large_transfer_events').select('org_id, chain, canonical_asset_key, symbol, amount, usd_value, threshold_usd, direction, label, observed_at, fetched_at').in('org_id', todoIds).order('observed_at', { ascending: false }).limit(2000)).then((r: Any) => r.data || []).catch(() => []),
     ])
     const wlByOrg = new Map<string, string[]>()
     for (const w of wlRows) { const s = String(w.entity?.display_symbol || '').toUpperCase(); if (!s) continue; const a = wlByOrg.get(w.org_id) || []; a.push(s); wlByOrg.set(w.org_id, a) }
     const holdByOrg = new Map<string, Any[]>()
     for (const h of holdRows) { const a = holdByOrg.get(h.org_id) || []; a.push({ symbol: h.normalized_symbol || h.asset_symbol, value: h.current_value, dayPnl: h.day_pnl, dayPnlPct: h.day_pnl_pct }); holdByOrg.set(h.org_id, a) }
+    const flowByOrg = new Map<string, Any[]>()
+    for (const f of flowRows) { const a = flowByOrg.get(f.org_id) || []; if (a.length < 8) a.push(f); flowByOrg.set(f.org_id, a) }
 
     // ── 3. ONE shared global market synthesis per day (reused by every org) ──
     // Generated at most once; identity-stripped (global inputs only). Quiet
@@ -116,6 +124,10 @@ Deno.serve(async (req) => {
       ...narratives.slice(0, 10).map((n: Any) => `${n.slug}:${n.lifecycle_stage}`),
       ...signals.slice(0, 12).map((s: Any) => `${s.signal_key}:${s.direction}`),
       ...news.slice(0, 5).map((c: Any) => String(c.cluster_hash)),
+      ...(macroR.data || []).slice(0, 2).map((m: Any) => `macro:${m.provider}:${m.as_of}:${m.market_cap_change_24h_pct}`),
+      ...(catR.data || []).slice(0, 6).map((c: Any) => `cat:${c.category_id}:${c.rank}:${c.market_cap_change_24h_pct}`),
+      ...(protocolR.data || []).slice(0, 6).map((p: Any) => `ptvl:${p.protocol_slug}:${p.chain}:${Math.round(Number(p.tvl_usd || 0))}`),
+      ...(chainR.data || []).slice(0, 6).map((c: Any) => `ctvl:${c.chain}:${Math.round(Number(c.tvl_usd || 0))}`),
     ].join('~'))
     const sharedKey = { artifact_type: 'daily_brief_global', entity_ref: '', evidence_hash: globalFingerprint, contract_version: CONTRACT_VERSION, guardrail_version: GUARDRAIL_VERSION }
     try {
@@ -124,7 +136,16 @@ Deno.serve(async (req) => {
         synthesisRef = globalFingerprint
       } else if (openaiKey && todo.length) {
         const system = `You are Investor Intel's market brief writer.\n${SAFE_LANGUAGE_RULES}\nReturn ONLY JSON: { "summary": "...", "net_signal": "bullish|bearish|mixed|neutral|unclear|data_limited", "confidence": "high|medium|low" }. One concise market-wide paragraph synthesizing ONLY the provided regime, narratives, signals and news — research context, never advice.`
-        const user = JSON.stringify({ regime: regimeR, narratives: narratives.slice(0, 8).map((n: Any) => ({ name: n.name, stage: n.lifecycle_stage, signal: n.signal_class })), signals: signals.slice(0, 10).map((s: Any) => ({ subject: s.display_symbol || s.subject_id, direction: s.direction, why: s.why_it_matters })), news: news.slice(0, 5).map((c: Any) => ({ title: c.cleaned_title || c.title, signal: c.signal })) })
+        const user = JSON.stringify({
+          regime: regimeR,
+          macro: (macroR.data || []).slice(0, 2),
+          category_rotation: (catR.data || []).slice(0, 6),
+          protocol_tvl: (protocolR.data || []).slice(0, 6),
+          chain_tvl: (chainR.data || []).slice(0, 6),
+          narratives: narratives.slice(0, 8).map((n: Any) => ({ name: n.name, stage: n.lifecycle_stage, signal: n.signal_class })),
+          signals: signals.slice(0, 10).map((s: Any) => ({ subject: s.display_symbol || s.subject_id, direction: s.direction, why: s.why_it_matters })),
+          news: news.slice(0, 5).map((c: Any) => ({ title: c.cleaned_title || c.title, signal: c.signal })),
+        })
         const res = await fetch('https://api.openai.com/v1/chat/completions', {
           method: 'POST', headers: { Authorization: `Bearer ${openaiKey}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: briefModel, messages: [{ role: 'system', content: system }, { role: 'user', content: user }], response_format: { type: 'json_object' }, reasoning_effort: intelEffort() }),
@@ -156,6 +177,9 @@ Deno.serve(async (req) => {
       if (Date.now() - startMs > TIME_BUDGET_MS) { skipped = todo.length - briefed - unchanged; break }
       const out = assembleBrief({
         regime: regimeR, narratives, signals, news,
+        macro: macroR.data || [], rankings: rankR.data || [], categories: catR.data || [],
+        protocolTvl: protocolR.data || [], chainTvl: chainR.data || [],
+        flowHighlights: flowByOrg.get(o.id) || [],
         watchlistSymbols: wlByOrg.get(o.id) || [],
         holdings: holdByOrg.get(o.id) || [],
         prevFingerprint: prevByOrg.get(o.id) || null,

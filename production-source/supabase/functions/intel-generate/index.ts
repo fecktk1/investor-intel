@@ -32,6 +32,7 @@ import {
   type DataCoverage,
 } from '../_shared/intel/asset-evidence-pack.ts'
 import { reconcileCoverage } from '../_shared/intel/coverage.ts'
+import { assembleBriefEvidencePack } from '../_shared/intel/brief-evidence-pack.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -535,6 +536,45 @@ Deno.serve(async (req) => {
       } catch { /* F1 grounding is additive; original artifact path still works */ }
     }
 
+    // Stage F2: Daily Brief gets one aggregate pack assembled from cached macro,
+    // rankings, narrative category, protocol/chain TVL, flow, and watchlist mini
+    // packs. It is org-scoped but still no-live-provider and participates in the
+    // evidence hash before shared/delta decisions.
+    // deno-lint-ignore no-explicit-any
+    let briefEvidenceContext: any = null
+    if (artifactType === 'daily_brief') {
+      try {
+        const briefPack = await assembleBriefEvidencePack(admin, {
+          orgId,
+          watchlistSymbols: Array.isArray(extra?.symbols) ? extra.symbols : undefined,
+          holdings: Array.isArray(extra?.holdings) ? extra.holdings : undefined,
+          maxAssets: 8,
+        })
+        briefEvidenceContext = { brief_evidence_pack: briefPack }
+        if (pkg) {
+          const items = Array.isArray(pkg.items) ? pkg.items : []
+          const coverageMerged = mergeCoverageValues([pkg.coverage, briefPack.data_coverage]) || pkg.coverage
+          pkg = {
+            ...pkg,
+            evidence_hash: hashStr(`${pkg.evidence_hash || ''}:brief-pack:${briefPack.content_hash}`),
+            source_set_hash: hashStr(`${pkg.source_set_hash || ''}:brief-pack:${briefPack.content_hash}`),
+            coverage: coverageMerged,
+            items: [
+              ...items,
+              {
+                kind: 'brief_evidence_pack',
+                source: 'cached macro/regime/protocol/flow/watchlist snapshots',
+                content_hash: briefPack.content_hash,
+                watchlist_count: briefPack.org_scope.watchlist_count,
+                holding_count: briefPack.org_scope.holding_count,
+              },
+            ],
+            final_count: Number(pkg.final_count || items.length) + 1,
+          }
+        }
+      } catch { /* brief evidence is additive; original brief generation still works */ }
+    }
+
     // Reusable SHARED artifact: when the evidence package is PUBLIC (no private
     // custom source contributed), the expensive multi-model analysis is generated
     // ONCE and reused across all users. On a fresh hit, copy the shared structured
@@ -738,6 +778,10 @@ Deno.serve(async (req) => {
     if (assetEvidenceContext) {
       genContext = { ...(genContext || context || {}), ...assetEvidenceContext }
       sourcesUsed.push('Asset evidence pack (cached provider snapshots)')
+    }
+    if (briefEvidenceContext) {
+      genContext = { ...(genContext || context || {}), ...briefEvidenceContext }
+      sourcesUsed.push('Daily brief evidence pack (cached intelligence snapshots)')
     }
 
     // Market regime context (one cached global read) so impact analysis is
