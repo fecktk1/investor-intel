@@ -499,15 +499,15 @@ Deno.serve(async (req) => {
       } catch { /* best-effort */ }
     }
 
-    // Stage F1: public asset evidence packs for asset-keyed artifacts. This runs
+    // Stage F1/F4: public asset evidence packs for asset-keyed artifacts. This runs
     // before shared-cache lookup so the pack content hash participates in the
     // reusable evidence key. The subject is intentionally public-scope for these
     // shared artifact types; Explain keeps its D/E private-scoped path below.
-    const F1_ASSET_PACK_TYPES = ['token_breakdown', 'risk_panel', 'token_comparison']
+    const F_ASSET_PACK_TYPES = ['token_breakdown', 'risk_panel', 'token_comparison', 'thesis_review']
     // deno-lint-ignore no-explicit-any
     let assetEvidenceContext: any = null
     let assetEvidenceHash: string | null = null
-    if (F1_ASSET_PACK_TYPES.includes(artifactType)) {
+    if (F_ASSET_PACK_TYPES.includes(artifactType)) {
       try {
         const subjects = assetSubjectsForArtifact({ artifactType, extra, context, ent, orgId, userId }).slice(0, artifactType === 'token_comparison' ? 4 : 1)
         const packs = []

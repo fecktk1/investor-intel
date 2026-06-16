@@ -10,6 +10,7 @@ import { chainIdFor, getChain, CHAINS } from '../_shared/chains.ts'
 import { buildNotable, buildSignalRadar } from '../_shared/intel-signals.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
+import { assembleBriefEvidencePack } from '../_shared/intel/brief-evidence-pack.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -261,6 +262,16 @@ Deno.serve(async (req) => {
       }, { precision: 'bucketed', nowMs: Date.now() })
     } catch { /* ledger best-effort */ }
 
+    let intelligence_grounding: any = null
+    try {
+      const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+      intelligence_grounding = await assembleBriefEvidencePack(admin, {
+        orgId,
+        watchlistSymbols: [...wlSymbols].slice(0, 12),
+        maxAssets: 6,
+      })
+    } catch { /* dashboard grounding is additive */ }
+
     return json({
       scope, chain,
       counts, total_following: wl.length,
@@ -280,6 +291,7 @@ Deno.serve(async (req) => {
       followed_signals,
       outside_bubble,
       what_changed,
+      intelligence_grounding,
       narratives: scope === 'following' ? [] : (narrRes.data || []),
       alerts: alertRes.data || [],
       unread_alerts: (alertRes.data || []).filter((a: any) => !a.read_at).length,
