@@ -117,6 +117,18 @@ export async function fetchCoingeckoGlobal(ctx?: MarketAssetsContext): Promise<u
   })
 }
 
+export async function fetchCoingeckoCategories(ctx?: MarketAssetsContext): Promise<unknown[] | null> {
+  return await marketAssetsGet<unknown[]>({
+    provider: ID,
+    url: `${baseUrl()}/coins/categories`,
+    endpoint: '/coins/categories',
+    cacheKey: 'coins/categories',
+    headers: authHeaders(),
+    ttlMs: 30 * 60_000,
+    ctx,
+  })
+}
+
 export async function fetchCoingeckoMarketsByIds(
   ids: string[],
   ctx?: MarketAssetsContext,

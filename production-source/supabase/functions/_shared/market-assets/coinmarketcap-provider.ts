@@ -20,6 +20,19 @@ function baseUrl(): string { return env('COINMARKETCAP_API_BASE') || 'https://pr
 
 const ID = 'coinmarketcap' as const
 
+export async function fetchCoinmarketcapGlobalMetrics(ctx?: MarketAssetsContext): Promise<unknown | null> {
+  const key = apiKey(); if (!key) return null
+  return await marketAssetsGet<unknown>({
+    provider: ID,
+    url: `${baseUrl()}/v1/global-metrics/quotes/latest?convert=USD`,
+    endpoint: '/v1/global-metrics/quotes/latest',
+    cacheKey: 'global-metrics/quotes/latest:USD',
+    headers: { 'X-CMC_PRO_API_KEY': key },
+    ttlMs: 10 * 60_000,
+    ctx,
+  })
+}
+
 // deno-lint-ignore no-explicit-any
 function mapListing(c: any): CanonicalAsset | null {
   const providerId = c?.id != null ? String(c.id) : ''
