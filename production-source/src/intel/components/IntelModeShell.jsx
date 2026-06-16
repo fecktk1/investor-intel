@@ -10,6 +10,7 @@ import { INTEL_NAV } from '../intelNav'
 import LanguageSwitcher from '../../components/LanguageSwitcher'
 import SubmitTicketModal from '../../components/support/SubmitTicketModal'
 import IntelDisclaimer from './IntelDisclaimer'
+import { useScrollRestoration } from '../lib/useScrollRestoration'
 
 // Investor Intel shell. Modeled on the demo shell (src/demo/components/
 // DemoLayout.jsx) — same design tokens — but auth-guarded and driven by real
@@ -23,6 +24,7 @@ export default function IntelModeShell({ children }) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
+  const scrollRef = useScrollRestoration()
 
   // Super admins get the Intel control center in the Intel shell too, so they
   // never have to switch to a team workspace to manage Intel. Kept out of the
@@ -132,7 +134,7 @@ export default function IntelModeShell({ children }) {
           <span className="font-bold text-sm text-white">{t('brand.name', { defaultValue: 'Investor Intel' })}</span>
         </header>
         <IntelDisclaimer variant="bar" />
-        <main className="flex-1 overflow-y-auto p-4 lg:p-6">
+        <main ref={scrollRef} className="flex-1 overflow-y-auto p-4 lg:p-6">
           <div className="max-w-6xl mx-auto">{children}</div>
         </main>
       </div>

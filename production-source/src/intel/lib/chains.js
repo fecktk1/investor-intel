@@ -83,6 +83,32 @@ export const CHAINS = [
 
 export const CHAIN_IDS = CHAINS.map((c) => c.id)
 
+// Provider IDs mirrored from supabase/functions/_shared/chains.ts. This is
+// display/reference data for future coverage UI only; it does not trigger calls.
+export const CHAIN_PROVIDERS = {
+  solana: { dexscreener: 'solana', geckoterminal: 'solana', birdeye: 'solana', coingeckoPlatform: 'solana', explorerToken: 'https://solscan.io/token/' },
+  ethereum: { dexscreener: 'ethereum', geckoterminal: 'eth', birdeye: 'ethereum', coingeckoPlatform: 'ethereum', explorerToken: 'https://etherscan.io/token/' },
+  base: { dexscreener: 'base', geckoterminal: 'base', birdeye: 'base', coingeckoPlatform: 'base', explorerToken: 'https://basescan.org/token/' },
+  arbitrum: { dexscreener: 'arbitrum', geckoterminal: 'arbitrum', birdeye: 'arbitrum', coingeckoPlatform: 'arbitrum-one', explorerToken: 'https://arbiscan.io/token/' },
+  bnb: { dexscreener: 'bsc', geckoterminal: 'bsc', birdeye: 'bsc', coingeckoPlatform: 'binance-smart-chain', explorerToken: 'https://bscscan.com/token/' },
+  polygon: { dexscreener: 'polygon', geckoterminal: 'polygon_pos', birdeye: 'polygon', coingeckoPlatform: 'polygon-pos', explorerToken: 'https://polygonscan.com/token/' },
+  avalanche: { dexscreener: 'avalanche', geckoterminal: 'avax', birdeye: 'avalanche', coingeckoPlatform: 'avalanche', explorerToken: 'https://snowtrace.io/token/' },
+  sui: { dexscreener: 'sui', geckoterminal: 'sui-network', birdeye: 'sui', coingeckoPlatform: 'sui', explorerToken: 'https://suiscan.xyz/mainnet/coin/' },
+  optimism: { dexscreener: 'optimism', geckoterminal: 'optimism', birdeye: null, coingeckoPlatform: 'optimistic-ethereum', explorerToken: 'https://optimistic.etherscan.io/token/' },
+  blast: { dexscreener: 'blast', geckoterminal: 'blast', birdeye: null, coingeckoPlatform: 'blast', explorerToken: 'https://blastscan.io/token/' },
+  linea: { dexscreener: 'linea', geckoterminal: 'linea', birdeye: null, coingeckoPlatform: 'linea', explorerToken: 'https://lineascan.build/token/' },
+  scroll: { dexscreener: 'scroll', geckoterminal: 'scroll', birdeye: null, coingeckoPlatform: 'scroll', explorerToken: 'https://scrollscan.com/token/' },
+  mantle: { dexscreener: 'mantle', geckoterminal: 'mantle', birdeye: null, coingeckoPlatform: 'mantle', explorerToken: 'https://mantlescan.xyz/token/' },
+  zksync: { dexscreener: 'zksync', geckoterminal: 'zksync', birdeye: null, coingeckoPlatform: 'zksync', explorerToken: 'https://explorer.zksync.io/address/' },
+  sonic: { dexscreener: 'sonic', geckoterminal: 'sonic', birdeye: null, coingeckoPlatform: 'sonic', explorerToken: 'https://sonicscan.org/token/' },
+  gnosis: { dexscreener: 'gnosischain', geckoterminal: 'xdai', birdeye: null, coingeckoPlatform: 'xdai', explorerToken: 'https://gnosisscan.io/token/' },
+  celo: { dexscreener: 'celo', geckoterminal: 'celo', birdeye: null, coingeckoPlatform: 'celo', explorerToken: 'https://celoscan.io/token/' },
+  opbnb: { dexscreener: 'opbnb', geckoterminal: 'opbnb', birdeye: null, coingeckoPlatform: 'opbnb', explorerToken: 'https://opbnb.bscscan.com/token/' },
+  metis: { dexscreener: 'metis', geckoterminal: 'metis', birdeye: null, coingeckoPlatform: 'metis-andromeda', explorerToken: 'https://explorer.metis.io/token/' },
+}
+
+export function chainProviders(appId) { return CHAIN_PROVIDERS[appId] || null }
+
 export function getChain(id) {
   return CHAINS.find((c) => c.id === id) || null
 }

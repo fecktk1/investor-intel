@@ -1,5 +1,5 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import MarketSignalBadge from './MarketSignalBadge'
 import ProviderCoveragePill from './ProviderCoveragePill'
@@ -12,6 +12,8 @@ import { fmtPrice, fmtPct, fmtVol, pctClass } from '../lib/market-format'
 // server-side; this is presentation only. Logos via TokenAvatar (clean fallback).
 export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/intel', assetPath = null }) {
   const { t } = useTranslation('intel', { useSuspense: false })
+  const location = useLocation()
+  const returnState = { from: `${location.pathname}${location.search}` }
   if (!rows.length) return <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('markets.noData', { defaultValue: 'Market data is being gathered. Check back shortly.' })}</div>
   return (
     <div className="space-y-1.5">
@@ -60,9 +62,10 @@ export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/i
             </span>
           </div>
         )
-        const href = r.detailHref || (assetPath ? assetPath(r) : (r.chain ? `${linkBase}/asset/${encodeURIComponent('native:' + r.chain)}` : null))
+        const marketSymbol = r.symbol || r.normalizedSymbol || r.normalized_symbol || r.providerId
+        const href = r.detailHref || (assetPath ? assetPath(r) : (marketSymbol ? `${linkBase}/markets/${encodeURIComponent(marketSymbol)}` : null))
         return href
-          ? <Link key={`${r.sourceProvider || ''}:${r.providerId || r.symbol}`} to={href} className="block">{inner}</Link>
+          ? <Link key={`${r.sourceProvider || ''}:${r.providerId || r.symbol}`} to={href} state={returnState} className="block">{inner}</Link>
           : <div key={`${r.sourceProvider || ''}:${r.providerId || r.symbol}`}>{inner}</div>
       })}
     </div>

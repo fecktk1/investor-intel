@@ -1,4 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Search, Copy, Check, ExternalLink, RefreshCw, ArrowLeft, Layers, DollarSign, TrendingUp, Percent } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
@@ -110,9 +111,10 @@ export default function DefiPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase } = useSupabase()
+  const [searchParams, setSearchParams] = useSearchParams()
 
-  const [chain, setChain] = useState('solana')
-  const [view, setView] = useState('vaults')      // 'vaults' | 'lending'
+  const [chain, setChain] = useState(() => searchParams.get('chain') || 'solana')
+  const [view, setView] = useState(() => searchParams.get('view') || 'vaults')      // 'vaults' | 'lending'
   const [product, setProduct] = useState('all')   // vaults: all | lp | single | stable
   const [search, setSearch] = useState('')
   const [sort, setSort] = useState({ key: 'tvl_usd', dir: 'desc' })
@@ -121,10 +123,11 @@ export default function DefiPage() {
   const [arb, setArb] = useState([])
   const [loadingRows, setLoadingRows] = useState(false)
   const [rowsErr, setRowsErr] = useState(null)
+  const [rowsStatus, setRowsStatus] = useState('ok')
   const cacheRef = useRef(new Map())
 
   // Deep-dive (custom address or row click) → rich pool detail + AI + news.
-  const [addrInput, setAddrInput] = useState('')
+  const [addrInput, setAddrInput] = useState(() => searchParams.get('dd') || '')
   const [resolving, setResolving] = useState(false)
   const [ddErr, setDdErr] = useState(null)
   const [metrics, setMetrics] = useState(null)
@@ -134,17 +137,27 @@ export default function DefiPage() {
   const [loadingChart, setLoadingChart] = useState(false)
   const art = useArtifact()
   const deepActive = !!(selected || metrics || art.result || art.loading || resolving)
+  const updateUrl = useCallback((patch) => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev)
+      for (const [key, value] of Object.entries(patch || {})) {
+        if (value == null || value === '' || (key === 'chain' && value === 'solana') || (key === 'view' && value === 'vaults')) next.delete(key)
+        else next.set(key, String(value))
+      }
+      return next
+    }, { replace: true })
+  }, [setSearchParams])
 
   const chainLabel = getChain(chain)?.label || chain
 
   const loadRows = useCallback(async (ch, vw, force = false) => {
     const cacheKey = `${ch}:${vw}`
     if (!force && cacheRef.current.has(cacheKey)) {
-      const c = cacheRef.current.get(cacheKey); setRows(c.rows); setArb(c.arb || []); return
+      const c = cacheRef.current.get(cacheKey); setRows(c.rows); setArb(c.arb || []); setRowsStatus(c.status || 'ok'); return
     }
-    setLoadingRows(true); setRowsErr(null); setRows([]); setArb([])
+    setLoadingRows(true); setRowsErr(null); setRows([]); setArb([]); setRowsStatus('loading')
     try {
-      let out = []; let arbOut = []
+      let out = []; let arbOut = []; let status = 'ok'
       if (ch === 'solana' && vw === 'vaults') {
         out = (await fetchAllKaminoVaults()).map(normKaminoVault)
       } else if (ch === 'solana' && vw === 'lending') {
@@ -152,13 +165,19 @@ export default function DefiPage() {
         out = reserves.map(normKaminoReserve)
         arbOut = computeArb(vaults.map(normKaminoVault), out)
       } else if (vw === 'vaults') {
-        out = await fetchLlamaPools(ch)
+        const res = await fetchLlamaPools(ch)
+        out = res.rows || []
+        status = res.status || 'ok'
       } else {
-        out = await fetchLlamaLending(ch)
+        const res = await fetchLlamaLending(ch)
+        out = res.rows || []
+        status = res.status || 'ok'
       }
-      cacheRef.current.set(cacheKey, { rows: out, arb: arbOut })
+      cacheRef.current.set(cacheKey, { rows: out, arb: arbOut, status })
       setRows(out); setArb(arbOut)
+      setRowsStatus(status)
     } catch (e) {
+      setRowsStatus('provider_error')
       setRowsErr(e?.message || 'load_failed')
     } finally { setLoadingRows(false) }
   }, [])
@@ -185,10 +204,11 @@ export default function DefiPage() {
     } catch (ex) { setDdErr(ex.message) } finally { setResolving(false) }
   }, [org?.id, supabase, art])
 
-  const closeDeepDive = useCallback(() => { setSelected(null); setRichChart([]); setMetrics(null); setNews([]); setDdErr(null); art.setResult(null) }, [art])
+  const closeDeepDive = useCallback(() => { setSelected(null); setRichChart([]); setMetrics(null); setNews([]); setDdErr(null); art.setResult(null); updateUrl({ dd: null }) }, [art, updateUrl])
 
   const onRowDeepDive = useCallback(async (row) => {
     setSelected(row); setAddrInput(row.address); setRichChart([])
+    updateUrl({ chain: row.chain, view, dd: row.address })
     // Rich history chart: DeFiLlama (pool UUID) for non-Solana, Kamino native
     // history for Solana vaults. Skip for Kamino lending reserves (no series).
     setLoadingChart(true)
@@ -205,14 +225,14 @@ export default function DefiPage() {
       stable: row.stable, outlook: row.prediction,
     }
     runDeepDive(row.chain, row.address, poolContext)
-  }, [runDeepDive])
+  }, [runDeepDive, updateUrl, view])
 
   // Typed-address analyze: clear any row context so the chart falls back to the
   // resolved metrics history rather than reusing a previously clicked pool.
-  const analyzeAddress = useCallback(() => { setSelected(null); setRichChart([]); runDeepDive(chain, addrInput) }, [chain, addrInput, runDeepDive])
+  const analyzeAddress = useCallback(() => { setSelected(null); setRichChart([]); updateUrl({ chain, view, dd: addrInput }); runDeepDive(chain, addrInput) }, [chain, view, addrInput, runDeepDive, updateUrl])
 
-  const pickChain = (c) => { setChain(c); setProduct('all'); setSearch('') }
-  const pickView = (v) => { setView(v); setSearch(''); setSort({ key: 'tvl_usd', dir: 'desc' }) }
+  const pickChain = (c) => { setChain(c); setProduct('all'); setSearch(''); updateUrl({ chain: c, dd: null }) }
+  const pickView = (v) => { setView(v); setSearch(''); setSort({ key: 'tvl_usd', dir: 'desc' }); updateUrl({ view: v, dd: null }) }
 
   // ── Filtered + sorted rows ───────────────────────────────────────────────────
   const filtered = useMemo(() => {
@@ -441,7 +461,13 @@ export default function DefiPage() {
         {loadingRows ? (
           <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
         ) : filtered.length === 0 ? (
-          <div className="card p-8 text-center text-[var(--fg-4)] text-sm">{t('defi.no_rows', { defaultValue: 'No results for this chain / filter.' })}</div>
+          <div className="card p-8 text-center text-[var(--fg-4)] text-sm">
+            {rowsStatus === 'provider_error'
+              ? t('defi.provider_error', { defaultValue: 'Provider data is temporarily unavailable for this chain. Showing no rows until the next refresh.' })
+              : rowsStatus === 'unmapped'
+                ? t('defi.unmapped_chain', { defaultValue: 'This chain is not mapped to a DeFi data provider yet.' })
+                : t('defi.no_rows', { defaultValue: 'No results for this chain / filter.' })}
+          </div>
         ) : view === 'vaults' ? (
           <div className="card overflow-hidden">
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-[var(--fg-5)] border-b border-[var(--border-subtle)]">

@@ -12,6 +12,10 @@ export default function SourcesFreshnessFooter({ artifact }) {
   const sources = artifact.sources || []
   const fresh = artifact.data_freshness || {}
   const missing = artifact.missing_context || []
+  const coverage = artifact.data_coverage || artifact.structured?.data_coverage || null
+  const showWarning = typeof coverage?.should_show_warning === 'boolean'
+    ? coverage.should_show_warning
+    : missing.length > 0
   const freshEntries = Object.entries(fresh)
 
   return (
@@ -29,7 +33,7 @@ export default function SourcesFreshnessFooter({ artifact }) {
           <span>{freshEntries.map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>
         </div>
       )}
-      {missing.length > 0 && (
+      {showWarning && missing.length > 0 && (
         <div className="flex items-start gap-1.5 text-amber-400/80">
           <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
           <span>{t('sources.missing', { defaultValue: 'Could not verify' })}: {missing.join('; ')}</span>

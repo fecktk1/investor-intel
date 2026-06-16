@@ -132,7 +132,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
         {Array.isArray(s.what_to_watch) && s.what_to_watch.length > 0 && (
           <div className="card p-4 space-y-1.5">
             <div className="flex items-center gap-1.5 eyebrow"><Eye className="h-3.5 w-3.5" />{t('artifact.watch', { defaultValue: 'What to watch' })}</div>
-            <ul className="list-disc pl-5 text-[13px] text-[var(--fg-2)] space-y-1">{s.what_to_watch.map((w, i) => <li key={i}>{w}</li>)}</ul>
+            <ul className="list-disc pl-5 text-[13px] text-[var(--fg-2)] space-y-1">{s.what_to_watch.slice(0, 5).map((w, i) => <li key={i}>{w}</li>)}</ul>
           </div>
         )}
 
@@ -150,6 +150,11 @@ export default function ArtifactView({ result, loading, onRefresh }) {
   ]
   const aff = s.affected || {}
   const affectedChips = [...(aff.assets || []), ...(aff.chains || []), ...(aff.sectors || []), ...(aff.narratives || [])].filter(Boolean).slice(0, 12)
+  const confirmationFor = (key) => ({
+    bull_case: s.confirms_bullish_read ? { text: s.confirms_bullish_read, cls: 'text-emerald-400', icon: CheckCircle2, label: t('signals.confirm_bull', { defaultValue: 'Confirms bullish' }) } : null,
+    bear_case: s.confirms_bearish_read ? { text: s.confirms_bearish_read, cls: 'text-red-400', icon: CheckCircle2, label: t('signals.confirm_bear', { defaultValue: 'Confirms bearish' }) } : null,
+    neutral_case: s.invalidates_current_read ? { text: s.invalidates_current_read, cls: 'text-amber-400', icon: XCircle, label: t('signals.invalidate', { defaultValue: 'Invalidates read' }) } : null,
+  }[key])
 
   return (
     <div className="space-y-4">
@@ -225,27 +230,29 @@ export default function ArtifactView({ result, loading, onRefresh }) {
 
       {cases.some(([k]) => s[k]) && (
         <div className="grid gap-3 sm:grid-cols-3">
-          {cases.map(([k, Icon, key, def]) => s[k] && (
-            <div key={k} className="card p-3 space-y-1.5">
-              <div className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--fg-2)]"><Icon className="h-3.5 w-3.5" />{t(key, { defaultValue: def })}</div>
-              <p className="text-[13px] text-[var(--fg-3)] leading-relaxed">{s[k]}</p>
-            </div>
-          ))}
+          {cases.map(([k, Icon, key, def]) => {
+            const confirmation = confirmationFor(k)
+            const ConfirmIcon = confirmation?.icon
+            return s[k] && (
+              <div key={k} className="card p-3 space-y-1.5">
+                <div className="flex items-center gap-1.5 text-[12px] font-medium text-[var(--fg-2)]"><Icon className="h-3.5 w-3.5" />{t(key, { defaultValue: def })}</div>
+                <p className="text-[13px] text-[var(--fg-3)] leading-relaxed">{s[k]}</p>
+                {confirmation && (
+                  <div className={`pt-1 border-t border-[var(--border-subtle)] ${confirmation.cls}`}>
+                    <div className="flex items-center gap-1.5 text-[11px]"><ConfirmIcon className="h-3.5 w-3.5" />{confirmation.label}</div>
+                    <p className="text-[12px] text-[var(--fg-3)] mt-1">{confirmation.text}</p>
+                  </div>
+                )}
+              </div>
+            )
+          })}
         </div>
       )}
 
       {Array.isArray(s.what_to_watch) && s.what_to_watch.length > 0 && (
         <div className="card p-4 space-y-1.5">
           <div className="flex items-center gap-1.5 eyebrow"><Eye className="h-3.5 w-3.5" />{t('artifact.watch', { defaultValue: 'What to watch' })}</div>
-          <ul className="list-disc pl-5 text-[13px] text-[var(--fg-2)] space-y-1">{s.what_to_watch.map((w, i) => <li key={i}>{w}</li>)}</ul>
-        </div>
-      )}
-
-      {(s.confirms_bullish_read || s.confirms_bearish_read || s.invalidates_current_read) && (
-        <div className="grid gap-3 sm:grid-cols-3">
-          {s.confirms_bullish_read && <div className="card p-3"><div className="flex items-center gap-1.5 text-[11px] text-emerald-400"><CheckCircle2 className="h-3.5 w-3.5" />{t('signals.confirm_bull', { defaultValue: 'Confirms bullish' })}</div><p className="text-[12px] text-[var(--fg-3)] mt-1">{s.confirms_bullish_read}</p></div>}
-          {s.confirms_bearish_read && <div className="card p-3"><div className="flex items-center gap-1.5 text-[11px] text-red-400"><CheckCircle2 className="h-3.5 w-3.5" />{t('signals.confirm_bear', { defaultValue: 'Confirms bearish' })}</div><p className="text-[12px] text-[var(--fg-3)] mt-1">{s.confirms_bearish_read}</p></div>}
-          {s.invalidates_current_read && <div className="card p-3"><div className="flex items-center gap-1.5 text-[11px] text-amber-400"><XCircle className="h-3.5 w-3.5" />{t('signals.invalidate', { defaultValue: 'Invalidates read' })}</div><p className="text-[12px] text-[var(--fg-3)] mt-1">{s.invalidates_current_read}</p></div>}
+          <ul className="list-disc pl-5 text-[13px] text-[var(--fg-2)] space-y-1">{s.what_to_watch.slice(0, 5).map((w, i) => <li key={i}>{w}</li>)}</ul>
         </div>
       )}
 

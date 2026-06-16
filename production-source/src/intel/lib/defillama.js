@@ -14,6 +14,26 @@ export const DEFILLAMA_CHAINS = {
   sei: 'Sei', injective: 'Injective', near: 'Near', tron: 'Tron', ton: 'Ton',
 }
 
+export const DEFILLAMA_CHAIN_ALIASES = {
+  bnb: ['BSC', 'BNB Chain', 'Binance'],
+  polygon: ['Polygon', 'Polygon PoS'],
+  avalanche: ['Avalanche', 'Avalanche C-Chain'],
+  ethereum: ['Ethereum', 'Ethereum Mainnet'],
+  arbitrum: ['Arbitrum', 'Arbitrum One'],
+}
+
+function llamaNames(chainSlug) {
+  const primary = DEFILLAMA_CHAINS[chainSlug]
+  if (!primary) return []
+  return [primary, ...(DEFILLAMA_CHAIN_ALIASES[chainSlug] || [])].map((x) => String(x).toLowerCase())
+}
+
+export function llamaMatches(rowChain, chainSlug) {
+  const names = llamaNames(chainSlug)
+  if (!names.length) return false
+  return names.includes(String(rowChain || '').toLowerCase())
+}
+
 const TTL = 120000 // 2 min — the pools list is large; cache aggressively
 let _poolsCache = { data: null, ts: 0 }
 let _lbCache = { data: null, ts: 0 }
@@ -52,11 +72,11 @@ function classify(p) {
 // `address` is the first underlying token (a real on-chain address that the
 // entity resolver + defiLlamaForPool can deep-dive), falling back to the UUID.
 export async function fetchLlamaPools(chainSlug) {
-  const name = DEFILLAMA_CHAINS[chainSlug]
-  if (!name) return []
-  const pools = await allPools()
-  return pools
-    .filter((p) => p.chain === name && Number(p.tvlUsd || 0) > 0)
+  if (!llamaNames(chainSlug).length) return { rows: [], status: 'unmapped' }
+  try {
+    const pools = await allPools()
+    const rows = pools
+    .filter((p) => llamaMatches(p.chain, chainSlug) && Number(p.tvlUsd || 0) > 0)
     .map((p) => {
       const sym = p.symbol || ''
       return {
@@ -82,6 +102,10 @@ export async function fetchLlamaPools(chainSlug) {
     })
     .sort((a, b) => b.tvl_usd - a.tvl_usd)
     .slice(0, 250)
+    return { rows, status: 'ok' }
+  } catch (e) {
+    return { rows: [], status: 'provider_error', error: e?.message || 'defillama_failed' }
+  }
 }
 
 // Full daily history for one pool (by DeFiLlama pool UUID) — powers the rich
@@ -108,12 +132,12 @@ export async function fetchLlamaPoolChart(poolId) {
 //   { key, address, symbol, market, protocol, chain, supplyApy, borrowApy,
 //     tvl_usd, totalBorrowUsd, utilization, ltv }
 export async function fetchLlamaLending(chainSlug) {
-  const name = DEFILLAMA_CHAINS[chainSlug]
-  if (!name) return []
-  const [pools, lb] = await Promise.all([allPools(), allLendBorrow()])
-  const lbByPool = new Map(lb.map((x) => [x.pool, x]))
-  return pools
-    .filter((p) => p.chain === name && lbByPool.has(p.pool) && Number(p.tvlUsd || 0) > 0)
+  if (!llamaNames(chainSlug).length) return { rows: [], status: 'unmapped' }
+  try {
+    const [pools, lb] = await Promise.all([allPools(), allLendBorrow()])
+    const lbByPool = new Map(lb.map((x) => [x.pool, x]))
+    const rows = pools
+    .filter((p) => llamaMatches(p.chain, chainSlug) && lbByPool.has(p.pool) && Number(p.tvlUsd || 0) > 0)
     .map((p) => {
       const b = lbByPool.get(p.pool)
       // Gross supplied + borrowed come from /lendBorrow (pools.tvlUsd is NET
@@ -139,4 +163,8 @@ export async function fetchLlamaLending(chainSlug) {
     // Sorting by APY here would surface micro-TVL degen outliers instead.
     .sort((a, b) => (b.tvl_usd || 0) - (a.tvl_usd || 0))
     .slice(0, 250)
+    return { rows, status: 'ok' }
+  } catch (e) {
+    return { rows: [], status: 'provider_error', error: e?.message || 'defillama_failed' }
+  }
 }

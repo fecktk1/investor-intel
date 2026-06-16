@@ -13,6 +13,18 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 
 const summ = (e) => ({ ref: e.canonical_ref_key, symbol: e.display_symbol, chain: e.chain_namespace, asset_id: e.asset_id })
 
+function AssetInput({ label, val, set, t }) {
+  return (
+    <div className="card p-3 space-y-2">
+      <div className="text-[12px] font-medium text-[var(--fg-2)]">{label}</div>
+      <select className="select w-full" value={val.chain} onChange={(e) => set({ ...val, chain: e.target.value })}>
+        {CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+      </select>
+      <input className="input w-full" placeholder={t('compare.ph', { defaultValue: 'Token mint / contract address' })} value={val.value} onChange={(e) => set({ ...val, value: e.target.value })} />
+    </div>
+  )
+}
+
 // P12 — Compare two assets. Explains tradeoffs; never declares a winner.
 export default function ComparePage() {
   const { t } = useTranslation('intel', { useSuspense: false })
@@ -44,16 +56,6 @@ export default function ComparePage() {
     } catch (e) { setErr(e.message) } finally { setResolving(false) }
   }, [a, b, org?.id, supabase, cmp])
 
-  const AssetInput = ({ label, val, set }) => (
-    <div className="card p-3 space-y-2">
-      <div className="text-[12px] font-medium text-[var(--fg-2)]">{label}</div>
-      <select className="select w-full" value={val.chain} onChange={(e) => set({ ...val, chain: e.target.value })}>
-        {CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
-      </select>
-      <input className="input w-full" placeholder={t('compare.ph', { defaultValue: 'Token mint / contract address' })} value={val.value} onChange={(e) => set({ ...val, value: e.target.value })} />
-    </div>
-  )
-
   return (
     <div className="space-y-5">
       <div>
@@ -63,8 +65,8 @@ export default function ComparePage() {
       </div>
 
       <div className="grid gap-3 sm:grid-cols-2">
-        <AssetInput label={t('compare.a', { defaultValue: 'Asset A' })} val={a} set={setA} />
-        <AssetInput label={t('compare.b', { defaultValue: 'Asset B' })} val={b} set={setB} />
+        <AssetInput label={t('compare.a', { defaultValue: 'Asset A' })} val={a} set={setA} t={t} />
+        <AssetInput label={t('compare.b', { defaultValue: 'Asset B' })} val={b} set={setB} t={t} />
       </div>
       <div className="flex justify-end">
         <button onClick={compare} disabled={resolving || cmp.loading || !a.value.trim() || !b.value.trim()} className="btn btn--primary disabled:opacity-50">

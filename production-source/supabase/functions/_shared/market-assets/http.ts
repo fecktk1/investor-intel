@@ -6,6 +6,8 @@
 // timeout + capped retry on 429/5xx, usage logging, and a per-context budget.
 // Returns null on suppression/failure so callers degrade to cached-or-empty.
 
+import { logProviderCall } from '../provider-budget.ts'
+
 // deno-lint-ignore no-explicit-any
 const _glob = globalThis as any
 
@@ -62,6 +64,22 @@ function ctxBudget(ctx?: Ctx): number {
 }
 
 async function logUsage(provider: string, endpoint: string, ctx: Ctx | undefined, row: { symbolCount?: number | null; cacheStatus: string; statusCode?: number | null; durationMs?: number | null; retryCount?: number | null; blocked?: boolean; error?: string | null }) {
+  await logProviderCall(ctx?.supabase, {
+    provider,
+    dataType: 'market_assets',
+    endpoint,
+    subjectRef: row.symbolCount ? `symbols:${row.symbolCount}` : null,
+    cacheStatus: row.cacheStatus,
+    calls: row.cacheStatus === 'miss' || (row.cacheStatus === 'rate_capped' && row.statusCode != null) ? 1 : 0,
+    latencyMs: row.durationMs ?? null,
+    statusCode: row.statusCode ?? null,
+    suppressionReason: row.blocked ? row.error ?? row.cacheStatus : null,
+    caller: ctx?.caller ?? ctx?.jobName ?? null,
+    jobName: ctx?.jobName ?? null,
+    requestId: ctx?.requestId ?? null,
+    environment: env('APP_ENV') ?? null,
+    errorMessage: row.error ?? null,
+  })
   try {
     if (!ctx?.supabase) return
     await ctx.supabase.from('market_data_api_usage_logs').insert({

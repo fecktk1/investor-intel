@@ -341,7 +341,12 @@ Deno.serve(async (req) => {
 
       // Overview via the centralized client: cached/deduped/capped/logged and
       // kill-switch aware. Also warms the shared overview cache.
-      const ov = await getTokenOverview(beChain, ent.contract_address, { supabase: admin, jobName: 'intel-alerts-eval', caller: 'alerts-cron', orgId: r.org_id })
+      const ov = await getTokenOverview(
+        beChain,
+        ent.contract_address,
+        { supabase: admin, jobName: 'intel-alerts-eval', caller: 'alerts-cron', orgId: r.org_id },
+        { cacheOnly: true },
+      )
       if (!ov) continue
 
       const cfg = r.config || {}

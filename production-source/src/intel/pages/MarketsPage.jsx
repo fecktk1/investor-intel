@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Compass, Search, TrendingUp, TrendingDown, Star, ArrowRight, ExternalLink, BarChart3, Activity, AlertTriangle, ArrowLeftRight, Dices } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
@@ -32,6 +32,7 @@ export default function MarketsPage() {
   const { org } = useProfile()
   const { supabase } = useSupabase()
   const navigate = useNavigate()
+  const location = useLocation()
   const [searchParams, setSearchParams] = useSearchParams()
   const mode = searchParams.get('mode') === 'degen' ? 'degen' : 'markets'
   const setMode = useCallback((m) => { const np = new URLSearchParams(searchParams); if (m === 'degen') np.set('mode', 'degen'); else np.delete('mode'); setSearchParams(np, { replace: true }) }, [searchParams, setSearchParams])
@@ -151,6 +152,7 @@ export default function MarketsPage() {
   const total = marketsData?.total || 0
   const maxPage = Math.max(0, Math.ceil(total / params.limit) - 1)
   const hasData = useMemo(() => rows.length > 0 || (marketsData && total > 0), [rows, marketsData, total])
+  const returnState = useMemo(() => ({ from: `${location.pathname}${location.search}` }), [location.pathname, location.search])
 
   const dsnap = degenData?.snapshot || {}
   const drows = degenData?.rows || []
@@ -273,7 +275,7 @@ export default function MarketsPage() {
               <div className="eyebrow">{t('markets.chains', { defaultValue: 'Chains' })}</div>
               <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
                 {chainCards.map(({ chain: c, perf: p }) => (
-                  <Link key={c.id} to={`/intel/asset/${encodeURIComponent('native:' + c.id)}`} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
+                  <Link key={c.id} to={`/intel/markets/${encodeURIComponent(c.nativeSymbol)}`} state={returnState} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-[var(--fg-1)] truncate">{c.label}</span>
                       {p.change_24h != null && <span className={`text-[12px] font-semibold flex items-center gap-0.5 ${pctClass(p.change_24h)}`}>{p.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{fmtPct(p.change_24h)}</span>}

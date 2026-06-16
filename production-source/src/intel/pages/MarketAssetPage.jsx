@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Activity } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
@@ -32,12 +32,14 @@ export default function MarketAssetPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase } = useSupabase()
+  const location = useLocation()
   const [d, setD] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
   const [profile, setProfile] = useState(null)
   const [profileState, setProfileState] = useState(null)
   const analysis = useArtifact()
+  const backTo = location.state?.from || '/intel/markets'
 
   useEffect(() => {
     if (!org?.id || !sym) return
@@ -70,7 +72,7 @@ export default function MarketAssetPage() {
   if (loading && !d) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[var(--accent)]" /></div>
   if (error || !d) return (
     <div className="space-y-3">
-      <Link to="/intel/markets" className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
+      <Link to={backTo} className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
       <div className="card p-8 text-center text-[13px] text-[var(--fg-4)]">{t('markets.assetNotFound', { defaultValue: 'No exchange market data for this asset yet.' })}</div>
     </div>
   )
@@ -90,7 +92,7 @@ export default function MarketAssetPage() {
 
   return (
     <div className="space-y-5">
-      <Link to="/intel/markets" className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
+      <Link to={backTo} className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
 
       {/* Header */}
       <div className="flex items-start justify-between gap-3 flex-wrap">
