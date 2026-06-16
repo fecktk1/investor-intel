@@ -11,7 +11,7 @@ function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { st
 
 const COVERAGE_CAPS = [
   'market', 'metadata', 'balances', 'tx', 'portfolio',
-  'holders', 'liquidity', 'defi', 'execution', 'alerts', 'narrative', 'risk', 'social',
+  'holders', 'liquidity', 'microstructure', 'defi', 'execution', 'alerts', 'narrative', 'risk', 'social',
 ] as const
 const SOLANA_DEFI = new Set(['solana'])     // Kamino
 const SOLANA_EXEC = new Set(['solana'])     // DFlow
@@ -29,6 +29,7 @@ export type C1CoverageState = {
   defiChains: Set<string>
   dexMarketChains: Set<string>
   dexOhlcvChains: Set<string>
+  cexDepthRows: boolean
   kaminoRows: boolean
 }
 
@@ -42,7 +43,7 @@ async function distinctChains(admin: any, table: string): Promise<Set<string>> {
 }
 
 export async function loadC1CoverageState(admin: any): Promise<C1CoverageState> {
-  const [metadataChains, priceChains, walletChains, transferChains, protocolChains, chainTvlChains, poolChains, dexMarketChains, dexOhlcvChains, kaminoRows] = await Promise.all([
+  const [metadataChains, priceChains, walletChains, transferChains, protocolChains, chainTvlChains, poolChains, dexMarketChains, dexOhlcvChains, cexDepthRows, kaminoRows] = await Promise.all([
     distinctChains(admin, 'token_metadata_snapshots'),
     distinctChains(admin, 'token_price_snapshots'),
     distinctChains(admin, 'wallet_portfolio_snapshots'),
@@ -54,6 +55,14 @@ export async function loadC1CoverageState(admin: any): Promise<C1CoverageState> 
     distinctChains(admin, 'pool_ohlcv_snapshots'),
     (async () => {
       try {
+        const { data } = await admin.from('exchange_latest_orderbook').select('provider').limit(1)
+        return (data || []).length > 0
+      } catch {
+        return false
+      }
+    })(),
+    (async () => {
+      try {
         const { data } = await admin.from('kamino_vault_snapshots').select('id').limit(1)
         return (data || []).length > 0
       } catch {
@@ -63,7 +72,7 @@ export async function loadC1CoverageState(admin: any): Promise<C1CoverageState> 
   ])
   const defiChains = new Set<string>([...protocolChains, ...chainTvlChains, ...poolChains])
   if (kaminoRows) defiChains.add('solana')
-  return { metadataChains, priceChains, walletChains, transferChains, defiChains, dexMarketChains, dexOhlcvChains, kaminoRows }
+  return { metadataChains, priceChains, walletChains, transferChains, defiChains, dexMarketChains, dexOhlcvChains, cexDepthRows, kaminoRows }
 }
 
 function alchemyReady(chain: string): boolean {
@@ -123,6 +132,11 @@ export function coverageFor(chain: string, cap: string, c1: C1CoverageState): { 
     if (c1.dexOhlcvChains.has(chain)) return { status: 'limited', provider: 'geckoterminal', caveat: 'OHLCV snapshot cache live; pair liquidity cache pending' }
     if (providers?.dexscreener || providers?.geckoterminal) return { status: 'limited', provider: providers.dexscreener ? 'dexscreener' : 'geckoterminal', caveat: 'DEX snapshot cache pending' }
     return { status: 'unavailable', provider: null, caveat: 'no DEX provider mapped' }
+  }
+
+  if (cap === 'microstructure') {
+    if (c1.cexDepthRows) return { status: 'live', provider: 'exchange-market', caveat: null }
+    return { status: 'limited', provider: 'exchange-market', caveat: 'CEX depth cache pending' }
   }
 
   if (cap === 'holders' || cap === 'risk') {

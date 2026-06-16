@@ -361,7 +361,7 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
 
 // deno-lint-ignore no-explicit-any
 async function marketDetail(admin: any, sym: string): Promise<Response> {
-  const [profR, sigR, capR, sprR, rollR, tickR, provSigR, memR, maR] = await Promise.all([
+  const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR, maR] = await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
     admin.from('exchange_latest_market_signals').select('*').eq('normalized_symbol', sym).maybeSingle(),
     admin.from('exchange_latest_market_caps').select('*').eq('normalized_symbol', sym).maybeSingle(),
@@ -369,6 +369,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
     admin.from('exchange_market_rollups').select('*').eq('normalized_symbol', sym),
     admin.from('exchange_latest_tickers').select('*').eq('normalized_symbol', sym),
     admin.from('exchange_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).eq('scope', 'provider').order('as_of', { ascending: false }).limit(24),
+    admin.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8),
     admin.from('exchange_market_memory').select('summary, why_it_matters, memory_type, as_of').eq('normalized_symbol', sym).eq('is_active', true).order('as_of', { ascending: false }).limit(1),
     admin.from('market_assets').select('*').eq('normalized_symbol', sym).order('market_cap', { ascending: false }).limit(1).maybeSingle(),
   ])
@@ -380,10 +381,24 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
   for (const s of (provSigR.data || [])) if (!provSig.has(s.provider)) provSig.set(s.provider, s)
   // deno-lint-ignore no-explicit-any
   const tickByProv = new Map<string, any>((tickR.data || []).map((t: any) => [t.provider, t]))
+  // deno-lint-ignore no-explicit-any
+  const bookByProv = new Map<string, any>((bookR.data || []).map((b: any) => [b.provider, b]))
   const providers = [...new Set([...(tickR.data || []).map((t: any) => t.provider), ...provSig.keys()])].map((p) => {
     const t = tickByProv.get(p); const s = provSig.get(p)
-    return { provider: p, providerSymbol: t?.provider_symbol ?? null, price: t?.price ?? null, change24h: t?.price_change_pct_24h ?? null, volume24h: t?.volume_quote_24h ?? null, spreadPct: t?.spread_pct ?? null, direction: s?.direction ?? null, strength: s?.strength ?? null, confidence: s?.confidence ?? null, factors: s?.factors || [] }
+    const b = bookByProv.get(p)
+    return { provider: p, providerSymbol: t?.provider_symbol ?? b?.provider_symbol ?? null, price: t?.price ?? null, change24h: t?.price_change_pct_24h ?? null, volume24h: t?.volume_quote_24h ?? null, spreadPct: t?.spread_pct ?? b?.spread_pct ?? null, direction: s?.direction ?? null, strength: s?.strength ?? null, confidence: s?.confidence ?? null, factors: s?.factors || [], orderbook: b ? { depthLevel: b.depth_level, bidDepthUsd: b.bid_depth_usd, askDepthUsd: b.ask_depth_usd, imbalancePct: b.imbalance_pct, bidPrice: b.bid_price, askPrice: b.ask_price, asOf: b.as_of } : null }
   }).sort((a, b) => (b.volume24h || 0) - (a.volume24h || 0))
+
+  const orderbookRows = [...(bookR.data || [])].sort((a, b) => ((b.bid_depth_usd || 0) + (b.ask_depth_usd || 0)) - ((a.bid_depth_usd || 0) + (a.ask_depth_usd || 0)))
+  const orderbook = orderbookRows.length ? {
+    providerCount: orderbookRows.length,
+    totalBidDepthUsd: orderbookRows.reduce((s, r) => s + (Number(r.bid_depth_usd) || 0), 0),
+    totalAskDepthUsd: orderbookRows.reduce((s, r) => s + (Number(r.ask_depth_usd) || 0), 0),
+    bestDepthProvider: orderbookRows[0]?.provider || null,
+    minSpreadPct: orderbookRows.map((r) => Number(r.spread_pct)).filter((x) => Number.isFinite(x)).sort((a, b) => a - b)[0] ?? null,
+    asOf: orderbookRows.reduce((m, r) => r.as_of && r.as_of > m ? r.as_of : m, ''),
+    providers: orderbookRows.map((r) => ({ provider: r.provider, providerSymbol: r.provider_symbol, depthLevel: r.depth_level, bidPrice: r.bid_price, askPrice: r.ask_price, bidDepthUsd: r.bid_depth_usd, askDepthUsd: r.ask_depth_usd, imbalancePct: r.imbalance_pct, spreadPct: r.spread_pct, asOf: r.as_of })),
+  } : null
 
   // deno-lint-ignore no-explicit-any
   const rollups: Record<string, any> = {}
@@ -406,7 +421,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
     signal: sig ? { direction: sig.direction, strength: sig.strength, confidence: sig.confidence, signalType: sig.signal_type, title: sig.title, summary: sig.summary, whyItMatters: sig.why_it_matters, factors: sig.factors || [], confirmingProviders: sig.confirming_providers || [], conflictingProviders: sig.conflicting_providers || [], providerCount: sig.provider_count } : null,
     profile: prof ? { liquidityScore: prof.liquidity_score, retailRelevanceScore: prof.retail_relevance_score, marketQualityScore: prof.market_quality_score, trendScore: prof.trend_score, bestGlobalPair: prof.best_global_pair, bestUsRetailPair: prof.best_us_retail_pair } : null,
     marketCap: capR.data || (canonical ? { market_cap: canonical.market_cap, fdv: canonical.fdv, circulating_supply: canonical.circulating_supply, market_cap_source: canonical.source_provider } : dexSnapshot ? { market_cap: dexSnapshot.market_cap, fdv: dexSnapshot.fdv, circulating_supply: null, market_cap_source: 'dexscreener' } : null),
-    spread: sprR.data || null, rollups, providers, dex,
+    spread: sprR.data || null, orderbook, rollups, providers, dex,
     memorySummary: memR.data?.[0]?.summary || null,
     candles, bestPair, bestProvider, asOf: prof?.as_of || sig?.as_of || canonical?.as_of || dexSnapshot?.fetched_at || null,
   })
