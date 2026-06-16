@@ -71,10 +71,7 @@ export async function adminSetLimit(supabase, orgId, key, value) {
   if (error) throw error
 }
 export async function adminRunCoverage(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-provider-coverage', { body: {} })
-  if (error) throw new Error(error.message || 'coverage_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-provider-coverage', {}, 'coverage_failed')
 }
 
 // ── Global curated sources ──
@@ -88,45 +85,94 @@ export async function adminAddGlobalSource(supabase, { sourceType, value, chains
 export async function adminRemoveGlobalSource(supabase, id) {
   const { error } = await supabase.rpc('intel_admin_remove_global_source', { p_id: id }); if (error) throw error
 }
+async function readFunctionError(error, fallback) {
+  const message = error?.message || fallback
+  const response = error?.context
+  if (!response) return message
+  try {
+    const body = await response.clone().json()
+    const detail = typeof body?.error === 'string'
+      ? body.error
+      : body?.message || JSON.stringify(body)
+    return detail && detail !== message ? `${message}: ${detail}` : message
+  } catch {
+    try {
+      const text = await response.clone().text()
+      return text ? `${message}: ${text}` : message
+    } catch {
+      return message
+    }
+  }
+}
+
+function normalizeFunctionData(data) {
+  if (data == null) return { ok: true }
+  if (Array.isArray(data)) return { ok: true, items: data }
+  if (typeof data === 'object') return { ok: data.ok !== false, ...data }
+  return { ok: true, value: data }
+}
+
+async function invokeIntelFunction(supabase, name, body, fallback) {
+  const { data, error } = await supabase.functions.invoke(name, { body })
+  if (error) throw new Error(await readFunctionError(error, fallback))
+  if (data?.error) {
+    const detail = typeof data.error === 'string' ? data.error : JSON.stringify(data.error)
+    throw new Error(detail || fallback)
+  }
+  return normalizeFunctionData(data)
+}
+
 export async function adminRunGlobalCrawl(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-global-news-cron', { body: {} })
-  if (error) throw new Error(error.message || 'crawl_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-global-news-cron', {}, 'crawl_failed')
 }
 export async function adminRunChainNews(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-chain-news-cron', { body: {} })
-  if (error) throw new Error(error.message || 'chain_news_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-chain-news-cron', {}, 'chain_news_failed')
 }
 export async function adminRunOrgNewsHarvest(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-org-news-harvest', { body: {} })
-  if (error) throw new Error(error.message || 'harvest_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-org-news-harvest', {}, 'harvest_failed')
 }
 export async function adminRunMacroRefresh(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-macro-cron', { body: {} })
-  if (error) throw new Error(error.message || 'macro_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-macro-cron', {}, 'macro_failed')
 }
 export async function adminRunRegime(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-regime', { body: {} })
-  if (error) throw new Error(error.message || 'regime_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-regime', {}, 'regime_failed')
 }
 export async function adminRunStoryCards(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-story-cards', { body: { limit: 8 } })
-  if (error) throw new Error(error.message || 'story_cards_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-story-cards', { limit: 8, force: true }, 'story_cards_failed')
 }
 export async function adminRunCurateNews(supabase) {
-  const { data, error } = await supabase.functions.invoke('intel-curate-news', { body: { limit: 30 } })
-  if (error) throw new Error(error.message || 'curate_failed')
-  if (data?.error) throw new Error(data.error)
-  return data
+  return invokeIntelFunction(supabase, 'intel-curate-news', { limit: 30 }, 'curate_failed')
+}
+
+export async function adminIntelRefreshSnapshot(supabase) {
+  const [
+    sources,
+    globalNews,
+    curated,
+    storyCards,
+    regime,
+    macroEvents,
+    macroIndicators,
+  ] = await Promise.all([
+    supabase.from('intel_global_sources').select('id,last_fetched_at', { count: 'exact', head: true }).eq('active', true),
+    supabase.from('intel_global_news').select('id', { count: 'exact', head: true }),
+    supabase.from('intel_curated_news').select('id', { count: 'exact', head: true }).eq('should_surface', true).gt('stale_after', new Date().toISOString()),
+    supabase.from('intel_shared_artifacts').select('id', { count: 'exact', head: true }).eq('artifact_type', 'story_card').gt('stale_after', new Date().toISOString()),
+    supabase.from('intel_market_regime').select('computed_at,regime').order('computed_at', { ascending: false }).limit(1).maybeSingle(),
+    supabase.from('intel_macro_calendar').select('id', { count: 'exact', head: true }),
+    supabase.from('intel_macro_indicators').select('id', { count: 'exact', head: true }),
+  ])
+  const { data: latestSource } = await supabase.from('intel_global_sources')
+    .select('last_fetched_at').not('last_fetched_at', 'is', null).order('last_fetched_at', { ascending: false }).limit(1).maybeSingle()
+  return {
+    active_sources: sources.count ?? null,
+    latest_source_fetch_at: latestSource?.last_fetched_at || null,
+    global_news: globalNews.count ?? null,
+    curated_news_surfaced: curated.count ?? null,
+    story_cards: storyCards.count ?? null,
+    latest_regime_at: regime.data?.computed_at || null,
+    latest_regime: regime.data?.regime || null,
+    macro_events: macroEvents.count ?? null,
+    macro_indicators: macroIndicators.count ?? null,
+  }
 }
