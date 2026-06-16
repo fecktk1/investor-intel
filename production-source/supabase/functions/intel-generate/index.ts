@@ -23,6 +23,13 @@ import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { routeExplainContext, similarRecentExplain, computeQuestionHashes } from '../_shared/intel/intel-context-adapters.ts'
 import { assembleIntelligenceContext, recordDecisionMemory } from '../_shared/intelligence-core.ts'
 import { intelModel, intelEffort } from '../_shared/intel-model-config.ts'
+import { checkProviderBudget, logProviderCall } from '../_shared/provider-budget.ts'
+import {
+  compactAssetEvidencePackForPrompt,
+  criticalSlicesForAssetEvidencePack,
+  getOrAssembleAssetEvidencePack,
+  type AssetEvidenceSubject,
+} from '../_shared/intel/asset-evidence-pack.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,6 +43,109 @@ function hashStr(s: string): string {
   let h = 5381
   for (let i = 0; i < s.length; i++) h = (((h << 5) + h) ^ s.charCodeAt(i)) >>> 0
   return h.toString(16)
+}
+
+function cleanSymbol(value: unknown): string | null {
+  const s = String(value || '').trim().replace(/^\$/, '').toUpperCase()
+  return s || null
+}
+
+function firstString(...values: unknown[]): string | null {
+  for (const value of values) {
+    if (Array.isArray(value)) {
+      const nested = firstString(...value)
+      if (nested) return nested
+      continue
+    }
+    const s = String(value || '').trim()
+    if (s) return s
+  }
+  return null
+}
+
+function deriveExplainEvidenceSubject(args: {
+  // deno-lint-ignore no-explicit-any
+  extra: any
+  // deno-lint-ignore no-explicit-any
+  context: any
+  // deno-lint-ignore no-explicit-any
+  ent: any
+  orgId: string
+  userId: string | null
+}): AssetEvidenceSubject | null {
+  const { extra, context, ent, orgId, userId } = args
+  const identity = context?.asset_identity || context?.exchange_market || {}
+  const symbol = cleanSymbol(firstString(extra?.symbols, extra?.symbol, identity.symbol, context?.exchange_market?.symbol, ent?.display_symbol))
+  const providerId = firstString(extra?.providerId, identity.providerId, context?.exchange_market?.providerId)
+  const sourceProvider = firstString(extra?.sourceProvider, identity.sourceProvider, context?.exchange_market?.sourceProvider)
+  const canonicalKey = firstString(extra?.canonicalKey, identity.canonicalKey, ent?.canonical_ref_key)
+  if (!symbol && !providerId && !canonicalKey) return null
+  return {
+    symbol,
+    canonicalKey,
+    chain: firstString(extra?.primaryChain, extra?.chain, identity.primaryChain, identity.chain, context?.exchange_market?.primaryChain, context?.exchange_market?.chain, ent?.chain_id, ent?.chain_namespace),
+    providerId,
+    sourceProvider,
+    tokenAddress: firstString(extra?.tokenAddress, identity.tokenAddress, context?.dex?.tokenAddress, ent?.contract_address),
+    orgId,
+    userId,
+  }
+}
+
+async function maybeRefreshCriticalEvidencePack(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  subject: AssetEvidenceSubject,
+  // deno-lint-ignore no-explicit-any
+  currentPack: any,
+  orgId: string,
+  userId: string | null,
+) {
+  const staleSlices = criticalSlicesForAssetEvidencePack(currentPack)
+  if (!staleSlices.length) return currentPack
+  const subjectRef = subject.canonicalKey || subject.symbol || subject.providerId || 'unknown'
+  const hardCap = Math.max(1, Number(Deno.env.get('INTEL_EVIDENCE_PACK_REFRESH_DAILY_CAP') || '250'))
+  const budget = await checkProviderBudget(admin, {
+    provider: 'asset-evidence-pack',
+    dataType: 'critical_slice_refresh',
+    calls: 1,
+    hardCap,
+    period: 'day',
+  })
+  if (!budget.allowed) {
+    await logProviderCall(admin, {
+      provider: 'asset-evidence-pack',
+      dataType: 'critical_slice_refresh',
+      endpoint: 'cache://intelligence_evidence_packs/critical-slice',
+      subjectRef,
+      cacheStatus: 'budget_exceeded',
+      calls: 0,
+      caller: 'intel-generate',
+      jobName: 'explain-critical-slice-planner',
+      orgId,
+      userId,
+      suppressionReason: budget.suppressionReason || `critical_slices:${staleSlices.join(',')}`,
+    })
+    return currentPack
+  }
+  await logProviderCall(admin, {
+    provider: 'asset-evidence-pack',
+    dataType: 'critical_slice_refresh',
+    endpoint: 'cache://intelligence_evidence_packs/critical-slice',
+    subjectRef,
+    cacheStatus: 'stale_fallback',
+    calls: 0,
+    caller: 'intel-generate',
+    jobName: 'explain-critical-slice-planner',
+    orgId,
+    userId,
+    suppressionReason: `critical_slices:${staleSlices.join(',')};cached_table_refresh_only`,
+  })
+  try {
+    return await getOrAssembleAssetEvidencePack(admin, subject, { force: true, staleMinutes: 30 })
+  } catch {
+    return currentPack
+  }
 }
 
 function textOfArtifact(structured: any): string {
@@ -483,6 +593,26 @@ Deno.serve(async (req) => {
     if (artifactType === 'explain' && explainRouted && Object.keys(explainRouted.routed_context || {}).length) {
       genContext = { ...(genContext || context || {}), user_context: explainRouted.routed_context }
       sourcesUsed.push('Your watchlist / theses / alerts / signals context')
+    }
+
+    // Stage D2: Explain This can consume a compact asset evidence pack assembled
+    // from materialized snapshot tables. This is gated to explain + asset
+    // identity only; non-explain artifact paths keep the existing provider/read
+    // behavior. Critical stale slices rebuild this pack from cached tables once,
+    // recording a budgeted planner event with zero live provider calls.
+    if (artifactType === 'explain') {
+      try {
+        const subject = deriveExplainEvidenceSubject({ extra, context, ent, orgId, userId })
+        if (subject) {
+          let assetPack = await getOrAssembleAssetEvidencePack(admin, subject, { staleMinutes: 30 })
+          assetPack = await maybeRefreshCriticalEvidencePack(admin, subject, assetPack, orgId, userId)
+          const compactPack = compactAssetEvidencePackForPrompt(assetPack, 9000)
+          if (compactPack) {
+            genContext = { asset_evidence_pack: compactPack, ...(genContext || context || {}) }
+            sourcesUsed.push('Asset evidence pack (cached provider snapshots)')
+          }
+        }
+      } catch { /* evidence packs are additive; explain still works without them */ }
     }
 
     // Platform-wide derived memory. This prefers stored/derived intelligence

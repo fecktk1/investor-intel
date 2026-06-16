@@ -72,6 +72,8 @@ export interface DataCoverage {
   should_show_warning: boolean
 }
 
+export type CriticalEvidenceSlice = 'market' | 'price' | 'liquidity'
+
 const CHECKED_SOURCES = [
   'market_assets',
   'exchange_latest_asset_profiles',
@@ -866,4 +868,29 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
     ...minimal,
     ai_context_pack: { blocks: [] },
   }
+}
+
+export function criticalSlicesForAssetEvidencePack(result: AssetEvidencePackResult | null | undefined): CriticalEvidenceSlice[] {
+  if (!result?.pack) return []
+  const pack = result.pack as Record<string, unknown>
+  const coverage = (pack.data_coverage || result.dataCoverage || {}) as Partial<DataCoverage>
+  const gaps = [...(coverage.material_gaps || []), ...((pack.stale_or_missing_material_gaps as string[] | undefined) || [])]
+    .map((gap) => String(gap || '').toLowerCase())
+  const out = new Set<CriticalEvidenceSlice>()
+  for (const gap of gaps) {
+    if (/market|profile/.test(gap)) out.add('market')
+    if (/price/.test(gap)) out.add('price')
+    if (/liquidity|depth|spread/.test(gap)) out.add('liquidity')
+  }
+  const cex = (pack.cex_state || {}) as Record<string, unknown>
+  const dex = (pack.dex_state || {}) as Record<string, unknown>
+  const liq = (pack.liquidity_state || {}) as Record<string, unknown>
+  const market = (pack.market_summary || {}) as Record<string, unknown>
+  const cexFresh = (cex.freshness || {}) as Record<string, unknown>
+  const dexFresh = (dex.freshness || {}) as Record<string, unknown>
+  if (!market.current_price && !market.market_cap && !market.volume_24h) out.add('market')
+  if (!market.current_price) out.add('price')
+  if (!liq.cex_bid_depth_usd && !liq.cex_ask_depth_usd && !liq.dex_liquidity_usd && !liq.cex_min_spread_pct) out.add('liquidity')
+  if (cexFresh.status === 'stale' && dexFresh.status !== 'fresh') out.add('market')
+  return [...out]
 }

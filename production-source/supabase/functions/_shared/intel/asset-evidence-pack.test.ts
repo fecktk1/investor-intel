@@ -1,5 +1,6 @@
 import {
   assembleAssetEvidencePack,
+  criticalSlicesForAssetEvidencePack,
   getOrAssembleAssetEvidencePack,
   persistAssetEvidencePack,
 } from './asset-evidence-pack.ts'
@@ -345,4 +346,42 @@ Deno.test('D1 reads a fresh evidence/context pack cache before assembling', asyn
   assert(result.contentHash === 'abc123', 'cached evidence hash preserved')
   assert(result.contextPack.content_hash === 'ctx123', 'cached context pack returned')
   assert(!db.writes.intelligence_evidence_packs, 'cache hit did not persist a new pack')
+})
+
+Deno.test('D2 critical-slice detector only flags market price liquidity gaps', () => {
+  const slices = criticalSlicesForAssetEvidencePack({
+    subject: { canonical_key: 'symbol:MISS', symbol: 'MISS', chain: null, token_address: null, provider_id: null, source_provider: null },
+    pack: {
+      market_summary: {},
+      cex_state: { freshness: { status: 'missing' } },
+      dex_state: { freshness: { status: 'missing' } },
+      liquidity_state: {},
+      data_coverage: {
+        material_gaps: [
+          'No cached market/profile snapshot matched MISS.',
+          'No cached price snapshot matched MISS.',
+          'No cached liquidity/depth snapshot matched MISS.',
+        ],
+      },
+    },
+    contentHash: 'hash',
+    contextPack: { surface: 'investor_intel', scope_key: 'symbol:MISS', content_hash: 'ctx', blocks: [], policy: {}, stale_after: FRESH },
+    dataCoverage: {
+      used_sources: [],
+      checked_sources: [],
+      unavailable_sources: [],
+      material_gaps: [],
+      optional_gaps: ['No cached DEX pair snapshot matched MISS.'],
+      confidence_impact: 'high',
+      should_show_warning: true,
+    },
+    providerCoverage: {},
+    sourceProvenance: {},
+    confidence: 0.2,
+    staleAfter: FRESH,
+  })
+  assert(slices.includes('market'), 'market gap flagged')
+  assert(slices.includes('price'), 'price gap flagged')
+  assert(slices.includes('liquidity'), 'liquidity gap flagged')
+  assert(slices.length === 3, 'optional gaps do not add extra critical slices')
 })

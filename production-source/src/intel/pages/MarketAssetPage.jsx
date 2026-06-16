@@ -61,13 +61,63 @@ export default function MarketAssetPage() {
   const sig = d?.signal
   const explain = useCallback((force = false) => {
     if (!d) return
+    const primaryChain = d.primaryChain || d.chain || null
+    const assetIdentity = {
+      symbol: sym,
+      displayName: d.displayName || sym,
+      providerId: d.providerId || null,
+      sourceProvider: d.sourceProvider || null,
+      primaryChain,
+      chain: primaryChain,
+      canonicalKey: d.sourceProvider && d.providerId ? `market:${d.sourceProvider}:${d.providerId}` : null,
+    }
+    const generationExtra = {
+      title: `${sym} market read`,
+      symbols: [sym],
+      symbol: sym,
+      providerId: d.providerId || null,
+      sourceProvider: d.sourceProvider || null,
+      primaryChain,
+      canonicalKey: assetIdentity.canonicalKey,
+      question: `Explain the current market read for ${sym}: why is it ${sig?.direction || 'mixed'}? Synthesize market/price action, CEX depth and spreads, DEX liquidity, on-chain or flow activity, protocol and chain context, project profile, narrative state, curated news, and social context where available. If a dimension is missing, name the specific missing data instead of giving a generic warning. Research context only - not advice.`,
+    }
+    const generationContext = {
+      asset_identity: assetIdentity,
+      exchange_market: {
+        symbol: sym,
+        providerId: d.providerId || null,
+        sourceProvider: d.sourceProvider || null,
+        primaryChain,
+        signal: sig,
+        providers: d.providers,
+        marketCap: d.marketCap,
+        spread: d.spread,
+        orderbook: d.orderbook,
+        dex: d.dex,
+        rollups: d.rollups,
+        price: d.price,
+        change24h: d.change24h,
+        change7d: d.change7d,
+        volume24h: d.volume24h,
+        profile: d.profile,
+        memorySummary: d.memorySummary,
+      },
+      token_profile: profile ? {
+        name: profile.name,
+        symbol: profile.symbol,
+        description: profile.description,
+        categories: profile.categories,
+        links: profile.links,
+        sentiment: profile.sentiment,
+      } : null,
+    }
     analysis.generate({
       artifactType: 'explain',
       force: force === true,
-      extra: { title: `${sym} market read`, question: `Explain the current exchange market read for ${sym}: why is it ${sig?.direction || 'mixed'}? Cover price action, volume confirmation, liquidity/spread, and multi-exchange agreement in simple terms. Research context only — not advice.` },
-      context: { exchange_market: { symbol: sym, signal: sig, providers: d.providers, marketCap: d.marketCap, rollups: d.rollups, price: d.price, change24h: d.change24h, change7d: d.change7d, volume24h: d.volume24h } },
+      extra: generationExtra,
+      context: generationContext,
     })
-  }, [d, sig, sym, analysis])
+  }, [d, sig, sym, analysis, profile])
 
   if (loading && !d) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[var(--accent)]" /></div>
   if (error || !d) return (
