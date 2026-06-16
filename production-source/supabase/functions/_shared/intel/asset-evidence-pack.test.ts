@@ -22,15 +22,27 @@ function makeDb(seed: Record<string, any[]> = {}) {
         eq: Array<[string, unknown]>
         in: Array<[string, unknown[]]>
         is: Array<[string, unknown]>
+        contains: Array<[string, unknown[]]>
+        or: string | null
         order: [string, { ascending?: boolean }?] | null
         limit: number | null
-      } = { eq: [], in: [], is: [], order: null, limit: null }
+      } = { eq: [], in: [], is: [], contains: [], or: null, order: null, limit: null }
 
       const result = () => {
         let data = [...(seed[table] || [])]
         for (const [key, value] of state.eq) data = data.filter((row) => row?.[key] === value)
         for (const [key, values] of state.in) data = data.filter((row) => values.includes(row?.[key]))
         for (const [key, value] of state.is) data = data.filter((row) => row?.[key] === value)
+        for (const [key, arr] of state.contains) data = data.filter((row) => Array.isArray(row?.[key]) && arr.every((v) => row[key].includes(v)))
+        if (state.or) {
+          const terms = String(state.or).split(',').map((s) => s.trim()).filter(Boolean)
+          data = data.filter((row) => terms.some((term) => {
+            const m = term.match(/^([\w]+)\.cs\.\{(.+)\}$/)
+            if (!m) return false
+            const [, field, val] = m
+            return Array.isArray(row?.[field]) && row[field].includes(val)
+          }))
+        }
         if (state.order) {
           const [key, opts] = state.order
           data.sort((a, b) => {
@@ -52,6 +64,8 @@ function makeDb(seed: Record<string, any[]> = {}) {
         eq: (key: string, value: unknown) => { state.eq.push([key, value]); return q },
         in: (key: string, values: unknown[]) => { state.in.push([key, values]); return q },
         is: (key: string, value: unknown) => { state.is.push([key, value]); return q },
+        contains: (key: string, values: unknown[]) => { state.contains.push([key, values]); return q },
+        or: (expr: string) => { state.or = expr; return q },
         order: (key: string, opts?: { ascending?: boolean }) => { state.order = [key, opts]; return q },
         limit: (n: number) => { state.limit = n; return q },
         maybeSingle: () => Promise.resolve({ data: result().data[0] || null, error: null }),
@@ -239,6 +253,10 @@ Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables o
       historical_analog_links: [{ id: 'ana1', current_subject_ref: 'SOL', current_subject_type: 'asset', analog_subject_ref: 'SOL:prior-cycle', analog_subject_type: 'asset', analog_kind: 'asset_cycle', similarity_score: 0.72, basis: { shared: 'liquidity expansion' }, observed_at: '2026-06-15T11:00:00.000Z' }],
       intelligence_entity_timeline: [{ id: 'tl1', entity_type: 'asset', entity_ref: 'SOL', event_type: 'provider_snapshot_change', title: 'SOL snapshot trend persisted', summary: 'Month-to-date provider rollups kept improving.', impact_score: 0.8, confidence: 0.8, occurred_at: '2026-06-15T12:00:00.000Z' }],
       chain_capabilities: [{ chain: 'solana', capability: 'dex_market', status: 'live', verified_at: '2026-06-16T00:00:00.000Z' }],
+      narrative_taxonomy: [{ id: 'n1', slug: 'solana-memes', name: 'Solana Memes', parent_category: 'Meme', status: 'active', chains: ['solana'] }],
+      narrative_state: [{ narrative_id: 'n1', global_priority_score: 72, signal_class: 'bullish', lifecycle_stage: 'heating_up', momentum_score: 64, chatter_score: 58, risk_score: 30, scored_at: '2026-06-16T11:00:00.000Z' }],
+      narrative_signals: [{ narrative_id: 'n1', signal_kind: 'social_chatter', bias: 'bullish', source_quality_score: 70, title: 'Solana meme rotation heating up', snippet: 'Chatter rising.', observed_at: '2026-06-16T11:10:00.000Z' }],
+      intel_curated_news: [{ title: 'Solana ecosystem inflows accelerate', cleaned_title: 'Solana inflows accelerate', summary: 'Net inflows rose.', why_it_matters: 'Confirms demand.', signal: 'bullish', confidence: 'medium', final_score: 81, source_count: 3, primary_url: 'https://example.com/sol', published_at: '2026-06-16T09:30:00.000Z', should_surface: true, tokens: ['SOL'], chains: ['solana'], narratives: ['solana-ecosystem'], sectors: [] }],
     })
 
     const assembled = await assembleAssetEvidencePack(db, {
@@ -289,6 +307,14 @@ Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables o
     assert(pack.flow_state?.status === 'available', 'scoped flow data included')
     assert(pack.dex_state?.status === 'available', 'DEX state included')
     assert(pack.news_state?.status === 'available', 'news state included')
+    assert(pack.ecosystem_narrative_state?.status === 'available', 'ecosystem narratives included')
+    assert((pack.ecosystem_narrative_state?.ecosystem_narratives || []).some((n: any) => n.slug === 'solana-memes'), 'chain ecosystem narrative surfaced')
+    assert(pack.catalyst_state?.status === 'available', 'curated news + catalysts included')
+    assert((pack.catalyst_state?.curated_news || []).length >= 1, 'curated news surfaced by token/chain')
+    assert((pack.catalyst_state?.catalysts || []).some((e: any) => e.event_type === 'other'), 'historic catalyst surfaced')
+    assert(pack.onchain_state != null && typeof pack.onchain_state.status === 'string', 'on-chain state slice present')
+    assert(pack.data_coverage?.used_sources?.includes('narrative_taxonomy'), 'ecosystem narrative tracked as a source')
+    assert(pack.data_coverage?.used_sources?.includes('intel_curated_news'), 'curated news tracked as a source')
     assert(pack.historical_context?.status === 'available', 'historical context included')
     assert(pack.historical_context?.trend_windows?.length === 1, 'rollup trend window included')
     assert(pack.data_coverage?.used_sources?.includes('intel_rollups'), 'historical rollups tracked as a source')
@@ -316,7 +342,8 @@ Deno.test('D1 degrades CEX-only assets with specific optional gaps', async () =>
   assert(coverage.material_gaps.length === 0, 'CEX-only asset with price/liquidity does not get a generic warning')
   assert(coverage.optional_gaps.some((gap) => gap.includes('No cached DEX pair snapshot')), 'DEX absence is a specific optional gap')
   assert(coverage.optional_gaps.some((gap) => gap.includes('Wallet/whale flow data was not scoped')), 'flow absence is a specific optional gap')
-  assert(coverage.optional_gaps.some((gap) => gap.includes('No recent curated news rows')), 'news absence is a specific optional gap')
+  assert(coverage.optional_gaps.some((gap) => gap.includes('No curated news or historic catalysts')), 'news/catalyst absence is a specific optional gap')
+  assert(coverage.optional_gaps.some((gap) => gap.includes('Derivatives positioning')), 'derivatives absence is an optional (not material) gap')
   assert(coverage.should_show_warning === false, 'optional gaps do not force the material warning')
 })
 

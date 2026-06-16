@@ -90,9 +90,16 @@ export async function routeExplainContext(supabase: DB, { orgId, question, entit
 
 export interface SimilarExplainHit { artifact: Any; similarity: number; kind: 'exact' | 'shingle' }
 
-/** Find a recent same-entity explain answer similar to this question (7d window).
- *  Exact norm-hash match OR Jaccard over HMAC-hashed shingles ≥ 0.8. No AI. */
-export async function similarRecentExplain(supabase: DB, { orgId, entityId, hashes }: { orgId: string; entityId: string | null; hashes: QuestionHashes }): Promise<SimilarExplainHit | null> {
+/** Find a recent same-asset explain answer similar to this question (7d window).
+ *  Exact norm-hash match OR Jaccard over HMAC-hashed shingles ≥ 0.8. No AI.
+ *
+ *  subjectKey pins reuse to ONE asset (migration 286). Market-page explains all
+ *  share entity_id IS NULL and a near-identical question template, so without this
+ *  the shingle match crosses assets (a stored ZEC answer served on every asset
+ *  page). When subjectKey is present we require an exact explain_subject_key match;
+ *  when it is null (a fungible educational "what is X" question with no asset) we
+ *  keep the entity-pool behaviour. */
+export async function similarRecentExplain(supabase: DB, { orgId, entityId, subjectKey, hashes }: { orgId: string; entityId: string | null; subjectKey?: string | null; hashes: QuestionHashes }): Promise<SimilarExplainHit | null> {
   try {
     let q = supabase.from('research_artifacts')
       .select('*')
@@ -101,6 +108,9 @@ export async function similarRecentExplain(supabase: DB, { orgId, entityId, hash
       .gte('created_at', new Date(Date.now() - 7 * 86_400_000).toISOString())
       .order('created_at', { ascending: false }).limit(15)
     q = entityId ? q.eq('entity_id', entityId) : q.is('entity_id', null)
+    // Asset-scoped reuse: only ever match within the SAME asset. (If the column is
+    // absent pre-migration this throws → caught below → no reuse, which is safe.)
+    if (subjectKey) q = q.eq('explain_subject_key', subjectKey)
     const { data } = await q
     for (const row of (data || []) as Any[]) {
       if (row.question_norm_hash === hashes.question_norm_hash) return { artifact: row, similarity: 1, kind: 'exact' }

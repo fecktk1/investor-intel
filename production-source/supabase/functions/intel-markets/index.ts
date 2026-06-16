@@ -15,6 +15,7 @@ import { getProvider } from '../_shared/exchange-market/provider-registry.ts'
 import { buildSymbolCounts, matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
 import { computeRowFlags, categoryLeaders } from '../_shared/intel/market-derived.ts'
 import { CHAIN_PROVIDERS } from '../_shared/chains.ts'
+import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState } from '../_shared/intel/market-enrichment.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -359,6 +360,21 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
   return null
 }
 
+// Resolve the canonical market_assets row for a bare symbol. normalized_symbol is
+// not unique, so prefer the CoinGecko row deterministically (market cap as tiebreak)
+// before any other provider — avoids resolving a different token that shares the
+// symbol. Returns the PostgREST-shaped { data } so callers can use `.data`.
+// deno-lint-ignore no-explicit-any
+async function resolveCanonicalAsset(admin: any, sym: string) {
+  const cg = await admin.from('market_assets').select('*')
+    .eq('normalized_symbol', sym).eq('source_provider', 'coingecko')
+    .order('market_cap', { ascending: false }).limit(1).maybeSingle()
+  if (cg?.data) return cg
+  return await admin.from('market_assets').select('*')
+    .eq('normalized_symbol', sym)
+    .order('market_cap', { ascending: false }).limit(1).maybeSingle()
+}
+
 // deno-lint-ignore no-explicit-any
 async function marketDetail(admin: any, sym: string): Promise<Response> {
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR, maR] = await Promise.all([
@@ -371,7 +387,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
     admin.from('exchange_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).eq('scope', 'provider').order('as_of', { ascending: false }).limit(24),
     admin.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8),
     admin.from('exchange_market_memory').select('summary, why_it_matters, memory_type, as_of').eq('normalized_symbol', sym).eq('is_active', true).order('as_of', { ascending: false }).limit(1),
-    admin.from('market_assets').select('*').eq('normalized_symbol', sym).order('market_cap', { ascending: false }).limit(1).maybeSingle(),
+    resolveCanonicalAsset(admin, sym),
   ])
   const canonical = maR.data
   if (!profR.data && !sigR.data && !(tickR.data || []).length && !canonical) return json({ error: 'asset_not_found', symbol: sym }, 404)
@@ -409,6 +425,25 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
   const dexSnapshot = await latestDexSnapshotForPlatforms(admin, canonicalPlatforms)
   const dex = dexSnapshot ? dexEnrichment(dexSnapshot, String(dexSnapshot.chain || '')) : null
 
+  // Enrichment for the always-visible cards (ecosystem narratives, curated news +
+  // catalysts, public on-chain activity). The SAME helpers feed the AI evidence
+  // pack, so the cards and the "Explain why" read draw on identical data. Each
+  // degrades to a 'missing' status; on-chain may make a budgeted live Birdeye call.
+  const ecoChain = String(canonical?.primary_chain || prof?.chain || '').toLowerCase() || null
+  const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
+  const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : null
+  const [ecosystemNarratives, catalysts, onchain] = await Promise.all([
+    assembleEcosystemNarrativeState(admin, { chain: ecoChain, symbol: sym }),
+    assembleCatalystNewsState(admin, { symbol: sym, chain: ecoChain }),
+    assemblePublicOnchainState({
+      chain: onchainChain,
+      tokenAddress: onchainAddress,
+      allowLive: true,
+      nowIso: new Date().toISOString(),
+      birdeyeCtx: { supabase: admin, jobName: 'intel-markets', caller: 'market-detail', kind: 'request' },
+    }),
+  ])
+
   return json({
     detail: true, symbol: sym, displayName: prof?.display_name ?? canonical?.name ?? null, chain: prof?.chain ?? canonical?.primary_chain ?? null,
     imageUrl: canonical?.image_url ?? null,
@@ -423,6 +458,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
     marketCap: capR.data || (canonical ? { market_cap: canonical.market_cap, fdv: canonical.fdv, circulating_supply: canonical.circulating_supply, market_cap_source: canonical.source_provider } : dexSnapshot ? { market_cap: dexSnapshot.market_cap, fdv: dexSnapshot.fdv, circulating_supply: null, market_cap_source: 'dexscreener' } : null),
     spread: sprR.data || null, orderbook, rollups, providers, dex,
     memorySummary: memR.data?.[0]?.summary || null,
+    ecosystemNarratives, catalysts, onchain,
     candles, bestPair, bestProvider, asOf: prof?.as_of || sig?.as_of || canonical?.as_of || dexSnapshot?.fetched_at || null,
   })
 }

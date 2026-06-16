@@ -5,6 +5,11 @@ import {
 } from '../intelligence-core.ts'
 import { materialityVerdict } from '../core-intel/materiality.ts'
 import { h32 } from '../core-intel/hashing.ts'
+import {
+  assembleEcosystemNarrativeState,
+  assembleCatalystNewsState,
+  assemblePublicOnchainState,
+} from './market-enrichment.ts'
 
 // deno-lint-ignore no-explicit-any
 type DB = any
@@ -96,8 +101,14 @@ const CHECKED_SOURCES = [
   'market_macro_snapshots',
   'market_ranking_snapshots',
   'narrative_category_snapshots',
+  'narrative_taxonomy',
+  'narrative_assets',
+  'narrative_signals',
+  'narrative_state',
   'intel_signal_state',
   'intel_global_news',
+  'intel_curated_news',
+  'birdeye_token_overview',
   'intel_rollups',
   'intel_event_memory',
   'historical_analog_links',
@@ -465,13 +476,26 @@ async function resolveAsset(db: DB, subject: AssetEvidenceSubject) {
       .eq('provider_id', providerId)
       .maybeSingle())
   }
-  if (!marketAsset && symbol) {
+  // Symbol-only fallback is for assets WITHOUT an explicit provider id (e.g. a
+  // CEX-only ticker). When a providerId was supplied we never fall back to symbol:
+  // normalized_symbol is not unique, so a market-cap-ordered pick could resolve a
+  // DIFFERENT token that happens to share the symbol (the ZEC-on-ETH class of bug).
+  // For the symbol path, prefer the CoinGecko row deterministically before any
+  // other provider, then market cap as a tiebreak.
+  if (!marketAsset && symbol && !providerId) {
     marketAsset = await maybeSingle(() => db.from('market_assets')
-      .select('*')
-      .eq('normalized_symbol', symbol)
-      .order('market_cap', { ascending: false })
-      .limit(1)
-      .maybeSingle())
+        .select('*')
+        .eq('normalized_symbol', symbol)
+        .eq('source_provider', 'coingecko')
+        .order('market_cap', { ascending: false })
+        .limit(1)
+        .maybeSingle())
+      || await maybeSingle(() => db.from('market_assets')
+        .select('*')
+        .eq('normalized_symbol', symbol)
+        .order('market_cap', { ascending: false })
+        .limit(1)
+        .maybeSingle())
   }
 
   const cexProfile = symbol
@@ -595,7 +619,23 @@ export async function assembleAssetEvidencePack(
     }
   }
 
-  const historicalContext = await assembleHistoricalContext(db, resolved, assetKeys, nowMs)
+  // Enrichment layers (chain-aware narratives, curated news + historic catalysts,
+  // public on-chain). Each degrades to a 'missing' status rather than throwing.
+  // On-chain uses the central Birdeye client (cache-first, budget/kill-switch
+  // enforced); live calls are allowed per product decision but bounded by the
+  // 'request' budget and the pack's own 30-min reuse cache.
+  const [historicalContext, ecosystemNarrativeState, catalystState, onchainState] = await Promise.all([
+    assembleHistoricalContext(db, resolved, assetKeys, nowMs),
+    assembleEcosystemNarrativeState(db, { chain, symbol: sym }),
+    assembleCatalystNewsState(db, { symbol: sym, chain }),
+    assemblePublicOnchainState({
+      chain,
+      tokenAddress,
+      allowLive: true,
+      nowIso: now.toISOString(),
+      birdeyeCtx: { supabase: db, jobName: 'asset-evidence-pack', caller: 'market-enrichment', kind: 'request', orgId: subject.orgId || null, userId: subject.userId || null },
+    }),
+  ])
   const cexFreshness = newestFreshness([resolved.cexProfile, ...tickerRows, signal, cap, spread, ...orderbooks].filter(Boolean), nowMs, 3)
   const dexFreshness = newestFreshness(dexRows, nowMs, 3)
   const flowFreshness = newestFreshness([...largeTransferRows, ...transferRows], nowMs, 3)
@@ -648,6 +688,12 @@ export async function assembleAssetEvidencePack(
   mark('narrative_category_snapshots', categoryRows.length > 0)
   mark('intel_signal_state', !!signalState)
   mark('intel_global_news', newsRows.length > 0)
+  mark('narrative_taxonomy', ecosystemNarrativeState.ecosystem_narratives.length > 0)
+  mark('narrative_assets', ecosystemNarrativeState.asset_narratives.length > 0)
+  mark('narrative_signals', ecosystemNarrativeState.signals.length > 0)
+  mark('narrative_state', ecosystemNarrativeState.ecosystem_narratives.some((n) => n.global_priority_score != null) || ecosystemNarrativeState.asset_narratives.some((n) => n.global_priority_score != null))
+  mark('intel_curated_news', catalystState.curated_news.length > 0)
+  mark('birdeye_token_overview', onchainState.status === 'available')
   mark('intel_rollups', (historicalContext.trend_windows as unknown[]).length > 0)
   mark('intel_event_memory', (historicalContext.material_events as unknown[]).length > 0)
   mark('historical_analog_links', (historicalContext.analogs as unknown[]).length > 0)
@@ -673,7 +719,19 @@ export async function assembleAssetEvidencePack(
   if (!subject.orgId || !subject.userId) optionalGaps.push('Wallet/whale flow data was not scoped for this explain request.')
   else if (!transferRows.length && !largeTransferRows.length) optionalGaps.push(`No cached wallet or large-transfer flow rows matched ${sym || resolved.canonicalKey}.`)
   else if (flowFreshness.status === 'stale') optionalGaps.push('Cached flow data is stale or partial; webhooks remain dormant and polling cadence may lag.')
-  if (!newsRows.length) optionalGaps.push(`No recent curated news rows matched ${sym || resolved.canonicalKey}.`)
+  if (!newsRows.length && !catalystState.curated_news.length && !catalystState.catalysts.length) {
+    optionalGaps.push(`No curated news or historic catalysts matched ${sym || resolved.canonicalKey}.`)
+  }
+  if (chain && ecosystemNarrativeState.status === 'missing') {
+    optionalGaps.push(`No active ecosystem narratives matched ${chain}; ecosystem rotation context is absent.`)
+  }
+  if (onchainState.status === 'missing') {
+    optionalGaps.push(`No public on-chain activity snapshot resolved for ${sym || resolved.canonicalKey}.`)
+  }
+  // Derivatives (funding / open interest / liquidations) are not ingested
+  // platform-wide. This is a KNOWN, NON-ESSENTIAL absence — keep it an optional gap
+  // so a market read is never dominated by "no derivatives data".
+  optionalGaps.push('Derivatives positioning (funding, open interest, liquidations) is not collected platform-wide — treat as an optional limitation, not a material gap.')
   if (historicalContext.status === 'thin' && historicalContext.coverage_note) optionalGaps.push(String(historicalContext.coverage_note))
   if (!bestDex?.socials && !bestDex?.links) optionalGaps.push(`No cached social/link metadata was present for ${sym || resolved.canonicalKey}.`)
   optionalGaps.push('Holder distribution was not materialized in the deployed cache tables; holder_state is derived only from available flow metadata.')
@@ -684,10 +742,10 @@ export async function assembleAssetEvidencePack(
     unavailable_sources: [...unavailableSources].sort(),
     material_gaps: [...new Set(materialGaps)],
     optional_gaps: [...new Set(optionalGaps)],
-    confidence_impact: materialGaps.length ? 'high' : optionalGaps.length > 4 ? 'medium' : optionalGaps.length ? 'low' : 'none',
+    confidence_impact: materialGaps.length ? 'high' : optionalGaps.length > 6 ? 'medium' : optionalGaps.length ? 'low' : 'none',
     should_show_warning: materialGaps.length > 0,
   }
-  const confidence = materialGaps.length ? 0.35 : optionalGaps.length > 4 ? 0.62 : 0.82
+  const confidence = materialGaps.length ? 0.35 : optionalGaps.length > 6 ? 0.62 : 0.82
 
   const sourceProvenance = {
     market_assets: provenanceFor('market_assets', resolved.marketAsset ? [resolved.marketAsset] : [], nowMs, resolved.sourceProvider),
@@ -699,7 +757,10 @@ export async function assembleAssetEvidencePack(
     protocol: provenanceFor('protocol/defi/kamino snapshots', [...protocolRows, ...defiPools, ...kaminoVaults, ...kaminoMarkets], nowMs, null),
     chain: provenanceFor('chain_tvl_snapshots/market_macro_snapshots', [...chainTvlRows, ...macroRows], nowMs, null),
     narrative: provenanceFor('intel_signal_state/narrative_category_snapshots', [signalState, ...categoryRows].filter(Boolean), nowMs, null),
+    ecosystem_narrative: { source: 'narrative_taxonomy/narrative_state/narrative_signals', freshness: ecosystemNarrativeState.freshness, status: ecosystemNarrativeState.status },
     news: provenanceFor('intel_global_news', newsRows, nowMs, null),
+    catalysts: { source: 'intel_curated_news/intel_event_memory', freshness: catalystState.freshness, status: catalystState.status },
+    onchain: { source: onchainState.source || 'birdeye_token_overview', as_of: onchainState.as_of, status: onchainState.status },
     historical: historicalContext.provenance,
   }
 
@@ -816,6 +877,13 @@ export async function assembleAssetEvidencePack(
       categories: compactRows(categoryRows, ['provider', 'category_id', 'category_label', 'rank', 'market_cap_usd', 'market_cap_change_24h_pct', 'volume_24h_usd', 'top_3_coins', 'as_of', 'fetched_at'], 6),
       context_blocks: contextBlocksForStorage,
     },
+    // Chain-aware ecosystem narratives — for an L1, the narratives within its
+    // ecosystem (and the ones THIS asset leads) that may be driving the move.
+    ecosystem_narrative_state: ecosystemNarrativeState,
+    // AI-curated news clusters + historic catalysts (the "what happened / why").
+    catalyst_state: catalystState,
+    // Public token-level on-chain activity (holders, active wallets, volume).
+    onchain_state: onchainState,
     news_state: {
       status: newsRows.length ? 'available' : 'missing',
       stories: compactRows(newsRows, ['title', 'url', 'summary', 'source_name', 'sentiment', 'relevance', 'published_at', 'created_at', 'tags', 'chains', 'entity_symbol'], 6),
@@ -994,6 +1062,10 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       market_summary: (result.pack as Record<string, unknown>).market_summary,
       liquidity_state: (result.pack as Record<string, unknown>).liquidity_state,
       flow_state: (result.pack as Record<string, unknown>).flow_state,
+      onchain_state: (result.pack as Record<string, unknown>).onchain_state,
+      ecosystem_narrative_state: (result.pack as Record<string, unknown>).ecosystem_narrative_state,
+      catalyst_state: (result.pack as Record<string, unknown>).catalyst_state,
+      narrative_state: (result.pack as Record<string, unknown>).narrative_state,
       historical_context: (result.pack as Record<string, unknown>).historical_context,
       provider_coverage: (result.pack as Record<string, unknown>).provider_coverage,
       data_coverage: (result.pack as Record<string, unknown>).data_coverage,
@@ -1016,6 +1088,9 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       cex_state: (result.pack as Record<string, unknown>).cex_state,
       dex_state: (result.pack as Record<string, unknown>).dex_state,
       liquidity_state: (result.pack as Record<string, unknown>).liquidity_state,
+      onchain_state: (result.pack as Record<string, unknown>).onchain_state,
+      ecosystem_narrative_state: (result.pack as Record<string, unknown>).ecosystem_narrative_state,
+      catalyst_state: (result.pack as Record<string, unknown>).catalyst_state,
       narrative_state: (result.pack as Record<string, unknown>).narrative_state,
       news_state: (result.pack as Record<string, unknown>).news_state,
       historical_context: (result.pack as Record<string, unknown>).historical_context,

@@ -188,6 +188,20 @@ function deriveExplainEvidenceSubject(args: {
   return deriveAssetEvidenceSubject(args)
 }
 
+// Stable per-asset key for explain reuse scoping (migration 286). Prefer the
+// canonical key, then provider identity, then symbol. Null => no asset (a fungible
+// educational question), which keeps the legacy entity-pool reuse behaviour.
+function explainSubjectKeyFor(subject: AssetEvidenceSubject | null): string | null {
+  if (!subject) return null
+  const canonical = String(subject.canonicalKey || '').trim()
+  if (canonical) return canonical
+  const provider = String(subject.sourceProvider || '').trim()
+  const pid = String(subject.providerId || '').trim()
+  if (provider && pid) return `${provider}:${pid}`
+  const sym = cleanSymbol(subject.symbol)
+  return sym ? `symbol:${sym}` : null
+}
+
 function comparisonSymbols(extra: any, context: any, ent: any): string[] {
   const values: unknown[] = [
     ...(Array.isArray(extra?.symbols) ? extra.symbols : []),
@@ -352,17 +366,21 @@ function orgArtifactRow(p: any) {
     signal_snapshot: p.signalSnapshot ?? {}, base_artifact_id: p.baseArtifactId ?? null,
     reuse_kind: p.reuseKind ?? 'fresh',
     question_norm_hash: p.questionNormHash ?? null, question_shingles: p.questionShingles ?? null,
+    // Asset-scoped explain reuse key (migration 286). Stripped on insert below when
+    // the column doesn't exist yet (deploy-order safety).
+    explain_subject_key: p.explainSubjectKey ?? null,
   }
 }
 
-// Columns added by migration 215 — stripped on insert when the migration hasn't
-// been applied yet so a function-first deploy degrades instead of hard-breaking.
+// Columns added by additive migrations — stripped on insert when the migration
+// hasn't been applied yet so a function-first deploy degrades instead of hard-breaking.
 const M215_COLS = ['evidence_hash', 'source_set_hash', 'signal_snapshot', 'base_artifact_id', 'reuse_kind', 'question_norm_hash', 'question_shingles']
+const ADDITIVE_COLS = [...M215_COLS, 'explain_subject_key']
 async function insertArtifact(supabase: any, row: any) {
   let res = await supabase.from('research_artifacts').insert(row).select('*').single()
   if (res.error && /column|schema cache/i.test(String(res.error.message))) {
     const legacy = { ...row }
-    for (const c of M215_COLS) delete legacy[c]
+    for (const c of ADDITIVE_COLS) delete legacy[c]
     res = await supabase.from('research_artifacts').insert(legacy).select('*').single()
   }
   return res
@@ -472,11 +490,18 @@ Deno.serve(async (req) => {
     let explainHashes: any = null
     // deno-lint-ignore no-explicit-any
     let explainRouted: any = null
+    // Asset key for explain reuse scoping (migration 286) — derived once, used to
+    // pin similarity reuse to the SAME asset and persisted on the artifact row.
+    let explainSubjectKey: string | null = null
     if (artifactType === 'explain') {
+      try { explainSubjectKey = explainSubjectKeyFor(deriveExplainEvidenceSubject({ extra, context, ent, orgId, userId })) } catch { /* identity best-effort */ }
       try { explainHashes = await computeQuestionHashes(extra?.question || JSON.stringify(extra || {}), orgId) } catch { /* hashing unavailable → no similarity */ }
       if (!force && explainHashes) {
-        const hit = await similarRecentExplain(supabase, { orgId, entityId: ent?.id || null, hashes: explainHashes })
-        if (hit) {
+        const hit = await similarRecentExplain(supabase, { orgId, entityId: ent?.id || null, subjectKey: explainSubjectKey, hashes: explainHashes })
+        // Defense-in-depth: when we have an asset key, the reused artifact MUST be the
+        // same asset (never serve a different token even if keying drifts or a legacy
+        // null-key row slips through).
+        if (hit && (!explainSubjectKey || hit.artifact.explain_subject_key === explainSubjectKey)) {
           await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: hit.artifact.id, model: hit.artifact.model, metadata: { cache: 'explain_similar', similarity: hit.similarity, kind: hit.kind } })
           void logCost({ cacheStatus: 'explain_similar', reuseKind: 'explain_similar', model: null, providerCallsAvoided: 1, allowReason: 'n/a_no_ai', usage: { similarity: hit.similarity } })
           return json({ artifact: hit.artifact, cached: true, similar: hit.similarity, reuse_kind: 'explain_similar' })
@@ -890,7 +915,7 @@ Deno.serve(async (req) => {
         if (subject) {
           let assetPack = await getOrAssembleAssetEvidencePack(admin, subject, { staleMinutes: 30 })
           assetPack = await maybeRefreshCriticalEvidencePack(admin, subject, assetPack, orgId, userId)
-          const compactPack = compactAssetEvidencePackForPrompt(assetPack, 9000)
+          const compactPack = compactAssetEvidencePackForPrompt(assetPack, 12000)
           if (compactPack) {
             genContext = { asset_evidence_pack: compactPack, ...(genContext || context || {}) }
             sourcesUsed.push('Asset evidence pack (cached provider snapshots)')
@@ -938,7 +963,7 @@ Deno.serve(async (req) => {
       }
     } catch { /* best-effort memory grounding */ }
 
-    const required = requiredFieldsFor(artifactType)
+    const required = requiredFieldsFor(artifactType, { hasAssetEvidence: !!(genContext as { asset_evidence_pack?: unknown })?.asset_evidence_pack })
     const { system, user, model } = buildPrompt(artifactType, { entity: ent, context: genContext, profile, extra })
 
     // Multi-model synthesis (Grok + OpenAI + Gemini → OpenAI synthesis) runs ONLY
@@ -1015,6 +1040,7 @@ Deno.serve(async (req) => {
       evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, signalSnapshot: signalSnap || {},
       reuseKind: 'fresh',
       questionNormHash: explainHashes?.question_norm_hash || null, questionShingles: explainHashes?.question_shingles || null,
+      explainSubjectKey,
     })
     const { data: artifact, error } = await insertArtifact(supabase, row)
     if (error) throw error
