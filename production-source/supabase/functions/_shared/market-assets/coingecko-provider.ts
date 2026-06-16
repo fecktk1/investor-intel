@@ -39,6 +39,102 @@ function authHeaders(): Record<string, string> {
 
 const ID = 'coingecko' as const
 
+export interface CoingeckoSimplePriceOpts {
+  ctx?: MarketAssetsContext
+  ttlMs?: number
+  includeMarketCap?: boolean
+  include24hVol?: boolean
+  include24hChange?: boolean
+  include24hHighLow?: boolean
+}
+
+function uniqIds(ids: string[]): string[] {
+  return [...new Set(ids.map((id) => String(id || '').trim()).filter(Boolean))].sort()
+}
+
+export async function fetchCoingeckoSimplePrice(
+  ids: string[],
+  opts: CoingeckoSimplePriceOpts = {},
+): Promise<Record<string, unknown> | null> {
+  const clean = uniqIds(ids)
+  if (!clean.length) return {}
+  const flags = [
+    opts.includeMarketCap ? 'mcap' : null,
+    opts.include24hVol ? 'vol24h' : null,
+    opts.include24hChange ? 'chg24h' : null,
+    opts.include24hHighLow ? 'hiLo24h' : null,
+  ].filter(Boolean).join(':') || 'base'
+  const qs = [
+    `ids=${encodeURIComponent(clean.join(','))}`,
+    'vs_currencies=usd',
+    opts.includeMarketCap ? 'include_market_cap=true' : null,
+    opts.include24hVol ? 'include_24hr_vol=true' : null,
+    opts.include24hChange ? 'include_24hr_change=true' : null,
+    opts.include24hHighLow ? 'include_24hr_high=true' : null,
+    opts.include24hHighLow ? 'include_24hr_low=true' : null,
+  ].filter(Boolean).join('&')
+  return await marketAssetsGet<Record<string, unknown>>({
+    provider: ID,
+    url: `${baseUrl()}/simple/price?${qs}`,
+    endpoint: '/simple/price',
+    cacheKey: `simple/price:${clean.join(',')}:${flags}`,
+    headers: authHeaders(),
+    ttlMs: opts.ttlMs,
+    symbolCount: clean.length,
+    ctx: opts.ctx,
+  })
+}
+
+export async function fetchCoingeckoOhlc(
+  id: string,
+  days: number,
+  ctx?: MarketAssetsContext,
+): Promise<unknown[] | null> {
+  const clean = String(id || '').trim()
+  if (!clean) return []
+  const d = Math.max(1, Math.trunc(Number(days) || 1))
+  return await marketAssetsGet<unknown[]>({
+    provider: ID,
+    url: `${baseUrl()}/coins/${encodeURIComponent(clean)}/ohlc?vs_currency=usd&days=${d}`,
+    endpoint: '/coins/{id}/ohlc',
+    cacheKey: `coins/${clean}/ohlc:${d}`,
+    headers: authHeaders(),
+    ttlMs: 5 * 60_000,
+    symbolCount: 1,
+    ctx,
+  })
+}
+
+export async function fetchCoingeckoGlobal(ctx?: MarketAssetsContext): Promise<unknown | null> {
+  return await marketAssetsGet<unknown>({
+    provider: ID,
+    url: `${baseUrl()}/global`,
+    endpoint: '/global',
+    cacheKey: 'global',
+    headers: authHeaders(),
+    ttlMs: 10 * 60_000,
+    ctx,
+  })
+}
+
+export async function fetchCoingeckoMarketsByIds(
+  ids: string[],
+  ctx?: MarketAssetsContext,
+): Promise<unknown[] | null> {
+  const clean = uniqIds(ids)
+  if (!clean.length) return []
+  return await marketAssetsGet<unknown[]>({
+    provider: ID,
+    url: `${baseUrl()}/coins/markets?vs_currency=usd&ids=${encodeURIComponent(clean.join(','))}&per_page=250&page=1`,
+    endpoint: '/coins/markets?ids',
+    cacheKey: `coins/markets:ids:${clean.join(',')}`,
+    headers: authHeaders(),
+    ttlMs: 5 * 60_000,
+    symbolCount: clean.length,
+    ctx,
+  })
+}
+
 // deno-lint-ignore no-explicit-any
 function mapCoin(c: any): CanonicalAsset | null {
   const providerId = String(c?.id || '').trim()

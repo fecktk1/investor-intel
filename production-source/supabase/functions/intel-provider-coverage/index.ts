@@ -21,12 +21,14 @@ function envPresent(name: string): boolean {
   return !!String(Deno.env.get(name) || '').trim()
 }
 
-type C1CoverageState = {
+export type C1CoverageState = {
   metadataChains: Set<string>
   priceChains: Set<string>
   walletChains: Set<string>
   transferChains: Set<string>
   defiChains: Set<string>
+  dexMarketChains: Set<string>
+  dexOhlcvChains: Set<string>
   kaminoRows: boolean
 }
 
@@ -39,8 +41,8 @@ async function distinctChains(admin: any, table: string): Promise<Set<string>> {
   }
 }
 
-async function loadC1CoverageState(admin: any): Promise<C1CoverageState> {
-  const [metadataChains, priceChains, walletChains, transferChains, protocolChains, chainTvlChains, poolChains, kaminoRows] = await Promise.all([
+export async function loadC1CoverageState(admin: any): Promise<C1CoverageState> {
+  const [metadataChains, priceChains, walletChains, transferChains, protocolChains, chainTvlChains, poolChains, dexMarketChains, dexOhlcvChains, kaminoRows] = await Promise.all([
     distinctChains(admin, 'token_metadata_snapshots'),
     distinctChains(admin, 'token_price_snapshots'),
     distinctChains(admin, 'wallet_portfolio_snapshots'),
@@ -48,6 +50,8 @@ async function loadC1CoverageState(admin: any): Promise<C1CoverageState> {
     distinctChains(admin, 'protocol_tvl_snapshots'),
     distinctChains(admin, 'chain_tvl_snapshots'),
     distinctChains(admin, 'defi_pool_snapshots'),
+    distinctChains(admin, 'dex_pair_snapshots'),
+    distinctChains(admin, 'pool_ohlcv_snapshots'),
     (async () => {
       try {
         const { data } = await admin.from('kamino_vault_snapshots').select('id').limit(1)
@@ -59,14 +63,14 @@ async function loadC1CoverageState(admin: any): Promise<C1CoverageState> {
   ])
   const defiChains = new Set<string>([...protocolChains, ...chainTvlChains, ...poolChains])
   if (kaminoRows) defiChains.add('solana')
-  return { metadataChains, priceChains, walletChains, transferChains, defiChains, kaminoRows }
+  return { metadataChains, priceChains, walletChains, transferChains, defiChains, dexMarketChains, dexOhlcvChains, kaminoRows }
 }
 
 function alchemyReady(chain: string): boolean {
   return isEvmFamily(chain) && !!alchemyNetworkFor(chain) && envPresent('ALCHEMY_API_KEY')
 }
 
-function coverageFor(chain: string, cap: string, c1: C1CoverageState): { status: CapabilityStatus; provider: string | null; caveat: string | null } {
+export function coverageFor(chain: string, cap: string, c1: C1CoverageState): { status: CapabilityStatus; provider: string | null; caveat: string | null } {
   const providers = CHAIN_PROVIDERS[chain]
   if (cap === 'narrative' || cap === 'social') {
     return { status: 'live', provider: 'intel', caveat: null }
@@ -81,6 +85,7 @@ function coverageFor(chain: string, cap: string, c1: C1CoverageState): { status:
 
   if (cap === 'market') {
     if (c1.priceChains.has(chain)) return { status: 'live', provider: 'alchemy', caveat: null }
+    if (c1.dexMarketChains.has(chain)) return { status: 'live', provider: 'dexscreener', caveat: null }
     if (alchemyReady(chain)) return { status: 'limited', provider: 'alchemy', caveat: 'price snapshot cache pending' }
     if (providers?.dexscreener || providers?.geckoterminal) return { status: 'limited', provider: providers.dexscreener ? 'dexscreener' : 'geckoterminal', caveat: 'DEX market coverage only' }
     return { status: 'unavailable', provider: null, caveat: 'no market provider mapped' }
@@ -114,7 +119,9 @@ function coverageFor(chain: string, cap: string, c1: C1CoverageState): { status:
   }
 
   if (cap === 'liquidity') {
-    if (providers?.dexscreener || providers?.geckoterminal) return { status: 'live', provider: providers.dexscreener ? 'dexscreener' : 'geckoterminal', caveat: null }
+    if (c1.dexMarketChains.has(chain)) return { status: 'live', provider: 'dexscreener', caveat: null }
+    if (c1.dexOhlcvChains.has(chain)) return { status: 'limited', provider: 'geckoterminal', caveat: 'OHLCV snapshot cache live; pair liquidity cache pending' }
+    if (providers?.dexscreener || providers?.geckoterminal) return { status: 'limited', provider: providers.dexscreener ? 'dexscreener' : 'geckoterminal', caveat: 'DEX snapshot cache pending' }
     return { status: 'unavailable', provider: null, caveat: 'no DEX provider mapped' }
   }
 

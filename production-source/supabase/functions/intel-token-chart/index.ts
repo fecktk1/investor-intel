@@ -14,6 +14,8 @@ import { birdeyeGet, type BirdeyeContext } from '../_shared/birdeye-client.ts'
 import { CHAINS, CHAIN_COINGECKO, CHAIN_PROVIDERS, chainIdFor, getChain } from '../_shared/chains.ts'
 import { getOhlcv, getTokenPools } from '../_shared/memecoin/geckoterminal.ts'
 import { getTokenPairs } from '../_shared/memecoin/dexscreener.ts'
+import { fetchCoingeckoOhlc, fetchCoingeckoSimplePrice } from '../_shared/market-assets/coingecko-provider.ts'
+import type { MarketAssetsContext } from '../_shared/market-assets/types.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -24,20 +26,70 @@ const TF: Record<string, { type: string; days: number; cgDays: number }> = {
   '1D': { type: '1D', days: 180, cgDays: 30 }, '1W': { type: '1W', days: 365, cgDays: 365 },
 }
 
-const CG = 'https://api.coingecko.com/api/v3'
-async function coingeckoChart(cgId: string, timeframe: string) {
+async function coingeckoChart(cgId: string, timeframe: string, ctx?: MarketAssetsContext) {
   const tf = TF[timeframe] || TF['1D']
-  const [ohlcRes, priceRes] = await Promise.all([
-    fetch(`${CG}/coins/${cgId}/ohlc?vs_currency=usd&days=${tf.cgDays}`, { signal: AbortSignal.timeout(12000) }).catch(() => null),
-    fetch(`${CG}/simple/price?ids=${cgId}&vs_currencies=usd&include_market_cap=true&include_24hr_vol=true&include_24hr_change=true`, { signal: AbortSignal.timeout(10000) }).catch(() => null),
+  const [ohlcRows, priceData] = await Promise.all([
+    fetchCoingeckoOhlc(cgId, tf.cgDays, ctx).catch(() => null),
+    fetchCoingeckoSimplePrice([cgId], { includeMarketCap: true, include24hVol: true, include24hChange: true, ttlMs: 90_000, ctx }).catch(() => null),
   ])
   // deno-lint-ignore no-explicit-any
   let candles: any[] = []
-  if (ohlcRes?.ok) { const rows = await ohlcRes.json(); if (Array.isArray(rows)) candles = rows.map((r: any) => ({ t: r[0], o: r[1], h: r[2], l: r[3], c: r[4], v: null })).filter((c: any) => c.c != null) }
+  if (Array.isArray(ohlcRows)) candles = ohlcRows.map((r: any) => ({ t: r[0], o: r[1], h: r[2], l: r[3], c: r[4], v: null })).filter((c: any) => c.c != null)
   // deno-lint-ignore no-explicit-any
   let overview: any = null
-  if (priceRes?.ok) { const d = (await priceRes.json())?.[cgId]; if (d) overview = { price: num(d.usd), market_cap: num(d.usd_market_cap), fdv: null, liquidity: null, volume_24h_usd: num(d.usd_24h_vol), holders: null, price_change_24h_pct: num(d.usd_24h_change) } }
+  const d = (priceData as Record<string, any> | null)?.[cgId]
+  if (d) overview = { price: num(d.usd), market_cap: num(d.usd_market_cap), fdv: null, liquidity: null, volume_24h_usd: num(d.usd_24h_vol), holders: null, price_change_24h_pct: num(d.usd_24h_change) }
   return { overview, candles }
+}
+
+// deno-lint-ignore no-explicit-any
+async function latestDexPairSnapshot(admin: any, chain: string, address: string): Promise<any | null> {
+  const candidates = [...new Set([address, chain === 'solana' || chain === 'sui' ? null : address.toLowerCase()].filter(Boolean) as string[])]
+  for (const tokenAddress of candidates) {
+    try {
+      const { data } = await admin.from('dex_pair_snapshots')
+        .select('*')
+        .eq('chain', chain)
+        .eq('token_address', tokenAddress)
+        .order('fetched_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (data) return data
+    } catch { return null }
+  }
+  return null
+}
+
+// deno-lint-ignore no-explicit-any
+async function latestOhlcvSnapshot(admin: any, chain: string, address: string, timeframe: string): Promise<any | null> {
+  const candidates = [...new Set([address, chain === 'solana' || chain === 'sui' ? null : address.toLowerCase()].filter(Boolean) as string[])]
+  for (const tokenAddress of candidates) {
+    try {
+      const { data } = await admin.from('pool_ohlcv_snapshots')
+        .select('*')
+        .eq('chain', chain)
+        .eq('token_address', tokenAddress)
+        .eq('timeframe', timeframe)
+        .order('fetched_at', { ascending: false })
+        .limit(1)
+        .maybeSingle()
+      if (Array.isArray(data?.candles) && data.candles.length) return data
+    } catch { return null }
+  }
+  return null
+}
+
+function dexSnapshotOverview(row: Record<string, unknown> | null | undefined) {
+  if (!row) return null
+  return {
+    price: num(row.price_usd),
+    market_cap: num(row.market_cap),
+    fdv: num(row.fdv),
+    liquidity: num(row.liquidity_usd),
+    volume_24h_usd: num(row.volume_24h),
+    holders: null,
+    price_change_24h_pct: num((row.price_change as Record<string, unknown> | null)?.h24),
+  }
 }
 
 // Degen / contract token chart by app chain id + address. Free + resilient:
@@ -51,16 +103,23 @@ async function degenChart(chain: string, address: string, timeframe: string): Pr
   const nowIso = new Date().toISOString()
 
   const { data: row } = await admin.from('memecoin_latest_tokens').select('*').eq('chain', chain).eq('token_address', address).maybeSingle()
+  const dexSnapshot = await latestDexPairSnapshot(admin, chain, address)
   // deno-lint-ignore no-explicit-any
-  let ov: any = row ? { price: num(row.price_usd), market_cap: num(row.market_cap), fdv: num(row.fdv), liquidity: num(row.liquidity_usd), volume_24h_usd: num(row.volume_24h_usd), holders: null, price_change_24h_pct: num(row.change_24h_pct) } : null
-  let pool: string | null = row?.pair_address || null
-  let dexId: string | null = row?.dex_id || null
+  let ov: any = dexSnapshotOverview(dexSnapshot) || (row ? { price: num(row.price_usd), market_cap: num(row.market_cap), fdv: num(row.fdv), liquidity: num(row.liquidity_usd), volume_24h_usd: num(row.volume_24h_usd), holders: null, price_change_24h_pct: num(row.change_24h_pct) } : null)
+  let pool: string | null = dexSnapshot?.pair_address || row?.pair_address || null
+  let dexId: string | null = dexSnapshot?.dex_id || row?.dex_id || null
   let pairUrl: string | null = pool ? `https://dexscreener.com/${dsId}/${pool}` : null
   // deno-lint-ignore no-explicit-any
   let candles: any[] = []
+  const ohlcvSnapshot = await latestOhlcvSnapshot(admin, chain, address, timeframe)
+  if (ohlcvSnapshot) {
+    candles = ohlcvSnapshot.candles
+    pool = ohlcvSnapshot.pool_or_token_address || pool
+    pairUrl = ohlcvSnapshot.source_ref || (pool ? `https://www.geckoterminal.com/${gtNet}/pools/${pool}` : pairUrl)
+  }
 
   // 1) validate cached pair_address against GeckoTerminal
-  if (pool) candles = await getOhlcv(chain, pool, timeframe, ctx)
+  if (!candles.length && pool) candles = await getOhlcv(chain, pool, timeframe, ctx)
   // 2) no candles → choose the best GeckoTerminal pool for the token
   if (!candles.length) {
     const pools = await getTokenPools(chain, address, ctx)
@@ -77,7 +136,7 @@ async function degenChart(chain: string, address: string, timeframe: string): Pr
 
   const entity = { symbol: row?.symbol ?? null, name: row?.name ?? null, ref: `${chain}:${address}`, chain }
   if (candles.length && pool) {
-    return json({ entity, overview: ov, candles, timeframe, source: 'geckoterminal', source_label: 'GeckoTerminal', source_url: gtNet ? `https://www.geckoterminal.com/${gtNet}/pools/${pool}` : null, pool_address: pool, dex_id: dexId, pair_url: pairUrl, as_of: nowIso, last_refreshed_at: row?.last_refreshed_at ?? nowIso })
+    return json({ entity, overview: ov, candles, timeframe, source: 'geckoterminal', source_label: 'GeckoTerminal', source_url: gtNet ? `https://www.geckoterminal.com/${gtNet}/pools/${pool}` : null, pool_address: pool, dex_id: dexId, pair_url: pairUrl, as_of: nowIso, last_refreshed_at: ohlcvSnapshot?.fetched_at ?? dexSnapshot?.fetched_at ?? row?.last_refreshed_at ?? nowIso })
   }
   // No verified pool → clean unsupported state (overview-only). Never break the page.
   const state = (row?.listing_state === 'pre_liquidity' || row?.is_new) ? 'pre_liquidity' : (row?.is_migrated ? 'pool_pending' : 'no_pool')
@@ -91,6 +150,8 @@ Deno.serve(async (req) => {
     if (!authHeader) return json({ error: 'No authorization header' }, 401)
     const { orgId, entityId = null, ref = null, timeframe = '1D' } = await req.json() || {}
     if (!orgId || (!entityId && !ref)) return json({ error: 'orgId and entityId|ref required' }, 400)
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const marketCtx: MarketAssetsContext = { supabase: admin, jobName: 'intel-token-chart', caller: 'token-chart', kind: 'request' }
 
     // Native chain coin (ref='native:<chainId>') — chart via CoinGecko, no entity row.
     if (typeof ref === 'string' && ref.startsWith('native:')) {
@@ -98,7 +159,7 @@ Deno.serve(async (req) => {
       const ch = CHAINS.find((c) => c.id === cid)
       const cg = CHAIN_COINGECKO[cid]
       if (ch && cg) {
-        const { overview, candles } = await coingeckoChart(cg, timeframe)
+        const { overview, candles } = await coingeckoChart(cg, timeframe, marketCtx)
         return json({ entity: { symbol: ch.nativeSymbol, name: ch.label, ref, chain: cid, native: true }, overview, candles, timeframe, source: 'coingecko' })
       }
       return json({ entity: { ref, chain: cid }, overview: null, candles: [], timeframe, unsupported: true })
@@ -150,7 +211,7 @@ Deno.serve(async (req) => {
     // No contract (native in watchlist) → CoinGecko if we know the id.
     const cg = ent.provider_ids?.coingecko || (ent.asset_type === 'native' ? CHAIN_COINGECKO[ent.chain_id] : null)
     if (cg) {
-      const { overview, candles } = await coingeckoChart(cg, timeframe)
+      const { overview, candles } = await coingeckoChart(cg, timeframe, marketCtx)
       return json({ entity: { symbol: ent.display_symbol, ref: ent.canonical_ref_key, chain: ent.chain_namespace }, overview, candles, timeframe, source: 'coingecko' })
     }
     return json({ entity: { symbol: ent.display_symbol, ref: ent.canonical_ref_key, chain: ent.chain_namespace }, overview: null, candles: [], timeframe, unsupported: true })

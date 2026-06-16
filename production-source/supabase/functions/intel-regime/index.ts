@@ -8,6 +8,7 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { CHAINS, CHAIN_COINGECKO } from '../_shared/chains.ts'
+import { fetchCoingeckoGlobal, fetchCoingeckoSimplePrice } from '../_shared/market-assets/coingecko-provider.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -31,10 +32,11 @@ Deno.serve(async (req) => {
     // 1) Majors + dominance + per-chain perf (ONE free CoinGecko call, shared).
     let btc: number | null = null, eth: number | null = null, sol: number | null = null, btcDom: number | null = null, totalChg: number | null = null
     let priceData: any = null
+    const marketCtx = { supabase: admin, jobName: 'intel-regime', caller: 'intel-regime', kind: 'job' as const }
     try {
-      const ids = [...new Set(Object.values(CHAIN_COINGECKO))].join(',')
-      const p = await fetch(`https://api.coingecko.com/api/v3/simple/price?ids=${ids}&vs_currencies=usd&include_24hr_change=true&include_market_cap=true`, { signal: AbortSignal.timeout(12000) })
-      if (p.ok) { priceData = await p.json(); btc = num(priceData?.bitcoin?.usd_24h_change); eth = num(priceData?.ethereum?.usd_24h_change); sol = num(priceData?.solana?.usd_24h_change) }
+      const ids = [...new Set(Object.values(CHAIN_COINGECKO))]
+      priceData = await fetchCoingeckoSimplePrice(ids, { include24hChange: true, includeMarketCap: true, ttlMs: 10 * 60_000, ctx: marketCtx })
+      if (priceData) { btc = num(priceData?.bitcoin?.usd_24h_change); eth = num(priceData?.ethereum?.usd_24h_change); sol = num(priceData?.solana?.usd_24h_change) }
     } catch { /* degrade */ }
 
     // Per-chain native-token performance (Market Pulse shows the user's followed chains).
@@ -47,8 +49,8 @@ Deno.serve(async (req) => {
       if (perf.length) { try { await admin.from('intel_chain_perf').upsert(perf, { onConflict: 'chain_id' }) } catch { /* best-effort */ } }
     }
     try {
-      const g = await fetch('https://api.coingecko.com/api/v3/global', { signal: AbortSignal.timeout(10000) })
-      if (g.ok) { const d = (await g.json())?.data; btcDom = num(d?.market_cap_percentage?.btc); totalChg = num(d?.market_cap_change_percentage_24h_usd) }
+      const d = ((await fetchCoingeckoGlobal(marketCtx)) as any)?.data
+      if (d) { btcDom = num(d?.market_cap_percentage?.btc); totalChg = num(d?.market_cap_change_percentage_24h_usd) }
     } catch { /* degrade */ }
 
     // 2) Hot narratives (best-effort, from shared corpus tags, last 24h).

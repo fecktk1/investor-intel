@@ -14,6 +14,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/exchange-market/provider-registry.ts'
 import { buildSymbolCounts, matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
 import { computeRowFlags, categoryLeaders } from '../_shared/intel/market-derived.ts'
+import { CHAIN_PROVIDERS } from '../_shared/chains.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -28,6 +29,30 @@ function freshness(asOf: string | null, providerDegraded: boolean): 'fresh' | 's
   return 'degraded'
 }
 const n = (v: unknown) => (typeof v === 'number' ? v : -Infinity)
+
+const CG_PLATFORM_TO_CHAIN = new Map<string, string>(
+  Object.entries(CHAIN_PROVIDERS)
+    .flatMap(([chain, providers]) => providers.coingeckoPlatform ? [[providers.coingeckoPlatform, chain] as const] : []),
+)
+
+function appChainFromPlatform(platform: string): string {
+  const key = String(platform || '').trim()
+  return CHAIN_PROVIDERS[key] ? key : CG_PLATFORM_TO_CHAIN.get(key) || key
+}
+
+function dexEnrichment(row: Record<string, unknown>, chain: string): Record<string, unknown> {
+  return {
+    liquidityUsd: row.liquidity_usd ?? null,
+    volume24hUsd: row.volume_24h ?? row.volume_24h_usd ?? null,
+    priceUsd: row.price_usd ?? null,
+    marketCap: row.market_cap ?? null,
+    fdv: row.fdv ?? null,
+    pairAddress: row.pair_address ?? null,
+    sourceUrl: row.source_ref ?? null,
+    fetchedAt: row.fetched_at ?? null,
+    chain,
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -85,6 +110,16 @@ Deno.serve(async (req) => {
       const { data: dex } = await admin.from('memecoin_latest_tokens').select('chain, token_address, liquidity_usd, volume_24h_usd, image_url').limit(5000)
       for (const d of (dex || [])) dexByContract.set(`${d.chain}:${String(d.token_address).toLowerCase()}`, d)
     } catch { /* pre-migration */ }
+    try {
+      const { data: dex } = await admin.from('dex_pair_snapshots')
+        .select('chain, token_address, pair_address, price_usd, liquidity_usd, volume_24h, market_cap, fdv, source_ref, fetched_at')
+        .order('fetched_at', { ascending: false })
+        .limit(5000)
+      for (const d of (dex || [])) {
+        const key = `${d.chain}:${String(d.token_address).toLowerCase()}`
+        if (!dexByContract.has(key)) dexByContract.set(key, d)
+      }
+    } catch { /* pre-C3 migration */ }
 
     // provider status / degraded
     const providerStatus = (provR.data || []).map((p) => {
@@ -142,8 +177,9 @@ Deno.serve(async (req) => {
       let dex: Record<string, unknown> | null = null
       if (platforms) {
         for (const [pchain, addr] of Object.entries(platforms)) {
-          const d = dexByContract.get(`${pchain}:${String(addr).toLowerCase()}`)
-          if (d) { dex = { liquidityUsd: d.liquidity_usd ?? null, volume24hUsd: d.volume_24h_usd ?? null, chain: pchain }; break }
+          const appChain = appChainFromPlatform(pchain)
+          const d = dexByContract.get(`${appChain}:${String(addr).toLowerCase()}`)
+          if (d) { dex = dexEnrichment(d, appChain); break }
         }
       }
 
@@ -298,6 +334,32 @@ async function fetchCandles(admin: any, sym: string): Promise<{ candles: { t: nu
 }
 
 // deno-lint-ignore no-explicit-any
+async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<string, unknown> | null): Promise<Record<string, unknown> | null> {
+  if (!platforms) return null
+  for (const [platform, address] of Object.entries(platforms)) {
+    const addr = String(address || '').trim()
+    if (!addr) continue
+    const appChain = appChainFromPlatform(platform)
+    const candidates = [...new Set([addr, addr.toLowerCase()])]
+    for (const tokenAddress of candidates) {
+      try {
+        const { data } = await admin.from('dex_pair_snapshots')
+          .select('chain, token_address, pair_address, price_usd, liquidity_usd, volume_24h, market_cap, fdv, source_ref, fetched_at')
+          .eq('chain', appChain)
+          .eq('token_address', tokenAddress)
+          .order('fetched_at', { ascending: false })
+          .limit(1)
+          .maybeSingle()
+        if (data) return data
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
+// deno-lint-ignore no-explicit-any
 async function marketDetail(admin: any, sym: string): Promise<Response> {
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, memR, maR] = await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
@@ -328,21 +390,24 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
   for (const r of (rollR.data || [])) rollups[r.timeframe] = r
   const { candles, bestPair, bestProvider } = await fetchCandles(admin, sym)
   const prof = profR.data, sig = sigR.data
+  const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null
+  const dexSnapshot = await latestDexSnapshotForPlatforms(admin, canonicalPlatforms)
+  const dex = dexSnapshot ? dexEnrichment(dexSnapshot, String(dexSnapshot.chain || '')) : null
 
   return json({
     detail: true, symbol: sym, displayName: prof?.display_name ?? canonical?.name ?? null, chain: prof?.chain ?? canonical?.primary_chain ?? null,
     imageUrl: canonical?.image_url ?? null,
     // Canonical identity → lets the detail page load the rich CoinGecko profile.
     providerId: canonical?.provider_id ?? null, sourceProvider: canonical?.source_provider ?? null, primaryChain: canonical?.primary_chain ?? null,
-    price: prof?.latest_price ?? canonical?.current_price ?? providers[0]?.price ?? null,
+    price: prof?.latest_price ?? canonical?.current_price ?? dexSnapshot?.price_usd ?? providers[0]?.price ?? null,
     change24h: prof?.latest_change_24h_pct ?? canonical?.change_24h_pct ?? providers[0]?.change24h ?? null,
     change7d: prof?.latest_change_7d_pct ?? canonical?.change_7d_pct ?? rollups['7d']?.price_change_pct ?? null,
-    volume24h: prof?.latest_volume_quote_24h ?? canonical?.volume_24h ?? providers[0]?.volume24h ?? null,
+    volume24h: prof?.latest_volume_quote_24h ?? canonical?.volume_24h ?? dexSnapshot?.volume_24h ?? providers[0]?.volume24h ?? null,
     signal: sig ? { direction: sig.direction, strength: sig.strength, confidence: sig.confidence, signalType: sig.signal_type, title: sig.title, summary: sig.summary, whyItMatters: sig.why_it_matters, factors: sig.factors || [], confirmingProviders: sig.confirming_providers || [], conflictingProviders: sig.conflicting_providers || [], providerCount: sig.provider_count } : null,
     profile: prof ? { liquidityScore: prof.liquidity_score, retailRelevanceScore: prof.retail_relevance_score, marketQualityScore: prof.market_quality_score, trendScore: prof.trend_score, bestGlobalPair: prof.best_global_pair, bestUsRetailPair: prof.best_us_retail_pair } : null,
-    marketCap: capR.data || (canonical ? { market_cap: canonical.market_cap, fdv: canonical.fdv, circulating_supply: canonical.circulating_supply, market_cap_source: canonical.source_provider } : null),
-    spread: sprR.data || null, rollups, providers,
+    marketCap: capR.data || (canonical ? { market_cap: canonical.market_cap, fdv: canonical.fdv, circulating_supply: canonical.circulating_supply, market_cap_source: canonical.source_provider } : dexSnapshot ? { market_cap: dexSnapshot.market_cap, fdv: dexSnapshot.fdv, circulating_supply: null, market_cap_source: 'dexscreener' } : null),
+    spread: sprR.data || null, rollups, providers, dex,
     memorySummary: memR.data?.[0]?.summary || null,
-    candles, bestPair, bestProvider, asOf: prof?.as_of || sig?.as_of || canonical?.as_of || null,
+    candles, bestPair, bestProvider, asOf: prof?.as_of || sig?.as_of || canonical?.as_of || dexSnapshot?.fetched_at || null,
   })
 }
