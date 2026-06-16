@@ -1,8 +1,9 @@
 // Investor Intel — wallet holdings (read-only, watch-by-address).
-// Birdeye multichain portfolio for a wallet entity: total value + top holdings.
+// Provider-layer portfolio for a wallet entity: total value + top holdings.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { birdeyeChainFor, birdeyeWalletPortfolio } from '../_shared/intel-providers.ts'
+import { chainIdFor } from '../_shared/chains.ts'
+import { loadWalletPortfolioViaProviders } from '../_shared/alchemy-c1-hydration.ts'
 import { persistApiIntelligence } from '../_shared/intelligence-core.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
@@ -22,12 +23,12 @@ function stableHash(value: unknown): string {
   return (hash >>> 0).toString(16)
 }
 
-function portfolioItems(portfolio: any): any[] {
-  if (Array.isArray(portfolio?.items)) return portfolio.items
-  if (Array.isArray(portfolio?.tokens)) return portfolio.tokens
-  if (Array.isArray(portfolio?.data?.items)) return portfolio.data.items
-  if (Array.isArray(portfolio?.data?.tokens)) return portfolio.data.tokens
-  return []
+function appChainForEntity(ent: any): string | null {
+  const caip = chainIdFor(ent?.chain_namespace ?? null, ent?.chain_id ?? null)
+  if (caip) return caip
+  const raw = String(ent?.chain_id || ent?.chain_namespace || '').trim().toLowerCase()
+  if (raw === 'evm') return 'evm'
+  return raw || null
 }
 
 Deno.serve(async (req) => {
@@ -40,6 +41,8 @@ Deno.serve(async (req) => {
 
     const supabaseUrl = Deno.env.get('SUPABASE_URL')!
     const supabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } })
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) return json({ error: 'unauthorized' }, 401)
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SERVICE_ROLE_KEY')
     const intelligenceClient = serviceKey ? createClient(supabaseUrl, serviceKey) : supabase
     let q = supabase.from('entities').select('*').eq('org_id', orgId)
@@ -47,29 +50,41 @@ Deno.serve(async (req) => {
     const { data: ent } = await q.maybeSingle()
     if (!ent) return json({ error: 'entity_not_found' }, 404)
 
-    const beKey = Deno.env.get('BIRDEYE_API_KEY')
-    const beChain = birdeyeChainFor(ent.chain_namespace, ent.chain_id)
+    const chain = appChainForEntity(ent)
     const addr = ent.wallet_address || ent.asset_id
-    if (!beKey || !beChain || !addr) return json({ entity: { address: addr, chain: ent.chain_namespace }, portfolio: null, unsupported: true })
+    if (!chain || !addr) return json({ entity: { address: addr, chain: ent.chain_namespace }, portfolio: null, unsupported: true })
 
-    const portfolio = await birdeyeWalletPortfolio(beChain, addr, beKey)
-    const items = portfolioItems(portfolio)
-    const topItems = items.slice(0, 15).map((item: any) => ({
-      symbol: item.symbol || item.token_symbol || item.name || null,
-      address: item.address || item.token_address || item.mint || null,
-      value_usd: item.valueUsd ?? item.value_usd ?? item.usd_value ?? null,
-      amount: item.amount ?? item.balance ?? null,
-    }))
-    const totalUsd = (portfolio as any)?.totalUsd ?? (portfolio as any)?.total_usd ?? (portfolio as any)?.total_value_usd ?? (portfolio as any)?.data?.totalUsd ?? null
+    const providerResult = await loadWalletPortfolioViaProviders(addr, chain, {
+      supabase: intelligenceClient,
+      kind: 'request',
+      caller: 'intel-wallet',
+      jobName: 'intel-wallet',
+      orgId,
+      userId: user.id,
+      entityId: ent.id,
+      walletAddress: addr,
+      chain,
+    })
+    const portfolio = providerResult.portfolio
+    if (!portfolio) {
+      return json({
+        entity: { address: addr, chain: ent.chain_namespace, app_chain: chain, privacy_limited: ent.privacy_limited },
+        portfolio: null,
+        unsupported: providerResult.unsupported,
+        provider: providerResult.provider,
+      })
+    }
+    const topItems = portfolio.top_holdings || []
+    const totalUsd = portfolio.total_usd ?? null
     const hourBucket = new Date().toISOString().slice(0, 13)
     await persistApiIntelligence(intelligenceClient, {
       visibility: 'org_private',
       orgId,
-      rawTable: 'birdeye_wallet_portfolio',
+      rawTable: 'wallet_portfolio_snapshots',
       rawRecordId: `${ent.id || addr}:${hourBucket}`,
-      rawHash: stableHash({ chain: beChain, address: addr, totalUsd, topItems }),
+      rawHash: stableHash({ chain, address: addr, provider: providerResult.provider, totalUsd, topItems }),
       promotionStatus: 'linked',
-      promotionScore: items.length ? 0.65 : 0.45,
+      promotionScore: portfolio.token_count ? 0.65 : 0.45,
       validationStatus: 'api_wallet_portfolio_fetched',
       entityRefs: [
         compactText(ent.id, 120),
@@ -78,10 +93,10 @@ Deno.serve(async (req) => {
         compactText(ent.asset_id, 160),
       ].filter(Boolean),
       sourceRefs: [{
-        source: 'birdeye',
-        source_table: 'birdeye_wallet_portfolio',
+        source: providerResult.provider || 'portfolio_provider',
+        source_table: 'wallet_portfolio_snapshots',
         entity_id: ent.id,
-        chain: beChain,
+        chain,
         address: addr,
         fetched_at: new Date().toISOString(),
       }],
@@ -90,16 +105,22 @@ Deno.serve(async (req) => {
       derivedPayload: {
         entity_id: ent.id,
         chain: ent.chain_namespace,
-        birdeye_chain: beChain,
+        app_chain: chain,
+        provider: providerResult.provider,
         address: addr,
         privacy_limited: ent.privacy_limited,
         total_usd: totalUsd,
-        holding_count: items.length,
+        holding_count: portfolio.token_count,
         top_items: topItems,
       },
     }).catch((err: any) => console.warn('[intel-wallet] intelligence persistence skipped:', err?.message || err))
 
-    return json({ entity: { address: addr, chain: ent.chain_namespace, privacy_limited: ent.privacy_limited }, portfolio })
+    return json({
+      entity: { address: addr, chain: ent.chain_namespace, app_chain: chain, privacy_limited: ent.privacy_limited },
+      portfolio,
+      provider: providerResult.provider,
+      unsupported: false,
+    })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'wallet_failed' }, 400)
   }

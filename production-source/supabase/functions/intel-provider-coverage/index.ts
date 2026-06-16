@@ -4,14 +4,15 @@
 // Invokable by pg_cron (x-cron-secret) or a super-admin (JWT).
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { CHAINS, CHAIN_PROVIDERS, type CapabilityStatus } from '../_shared/chains.ts'
+import { CHAINS, CHAIN_PROVIDERS, alchemyNetworkFor, isEvmFamily, type CapabilityStatus } from '../_shared/chains.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
 
-// Disjoint from portfolio-capability-probe, which owns:
-// balances, metadata, market, tx, portfolio.
-const COVERAGE_CAPS = ['holders', 'liquidity', 'defi', 'execution', 'alerts', 'narrative', 'risk', 'social'] as const
+const COVERAGE_CAPS = [
+  'market', 'metadata', 'balances', 'tx', 'portfolio',
+  'holders', 'liquidity', 'defi', 'execution', 'alerts', 'narrative', 'risk', 'social',
+] as const
 const SOLANA_DEFI = new Set(['solana'])     // Kamino
 const SOLANA_EXEC = new Set(['solana'])     // DFlow
 const DEFILLAMA_DEFI = new Set(['ethereum', 'base', 'arbitrum', 'bnb', 'polygon', 'avalanche', 'sui', 'sei', 'injective', 'near', 'tron', 'ton'])
@@ -20,10 +21,68 @@ function envPresent(name: string): boolean {
   return !!String(Deno.env.get(name) || '').trim()
 }
 
-function coverageFor(chain: string, cap: string): { status: CapabilityStatus; provider: string | null; caveat: string | null } {
+type C1CoverageState = {
+  metadataChains: Set<string>
+  priceChains: Set<string>
+  walletChains: Set<string>
+  transferChains: Set<string>
+}
+
+async function distinctChains(admin: any, table: string): Promise<Set<string>> {
+  try {
+    const { data } = await admin.from(table).select('chain').limit(5000)
+    return new Set((data || []).map((r: any) => String(r.chain || '')).filter(Boolean))
+  } catch {
+    return new Set()
+  }
+}
+
+async function loadC1CoverageState(admin: any): Promise<C1CoverageState> {
+  const [metadataChains, priceChains, walletChains, transferChains] = await Promise.all([
+    distinctChains(admin, 'token_metadata_snapshots'),
+    distinctChains(admin, 'token_price_snapshots'),
+    distinctChains(admin, 'wallet_portfolio_snapshots'),
+    distinctChains(admin, 'asset_transfer_activity'),
+  ])
+  return { metadataChains, priceChains, walletChains, transferChains }
+}
+
+function alchemyReady(chain: string): boolean {
+  return isEvmFamily(chain) && !!alchemyNetworkFor(chain) && envPresent('ALCHEMY_API_KEY')
+}
+
+function coverageFor(chain: string, cap: string, c1: C1CoverageState): { status: CapabilityStatus; provider: string | null; caveat: string | null } {
   const providers = CHAIN_PROVIDERS[chain]
   if (cap === 'narrative' || cap === 'social') {
     return { status: 'live', provider: 'intel', caveat: null }
+  }
+
+  if (cap === 'metadata') {
+    if (c1.metadataChains.has(chain)) return { status: 'live', provider: alchemyReady(chain) ? 'alchemy' : 'provider_snapshot', caveat: null }
+    if (alchemyReady(chain)) return { status: 'limited', provider: 'alchemy', caveat: 'metadata snapshot cache pending' }
+    if (chain === 'solana') return { status: 'limited', provider: 'helius', caveat: 'Solana metadata available through the portfolio layer' }
+    return { status: 'unavailable', provider: null, caveat: 'no metadata provider mapped' }
+  }
+
+  if (cap === 'market') {
+    if (c1.priceChains.has(chain)) return { status: 'live', provider: 'alchemy', caveat: null }
+    if (alchemyReady(chain)) return { status: 'limited', provider: 'alchemy', caveat: 'price snapshot cache pending' }
+    if (providers?.dexscreener || providers?.geckoterminal) return { status: 'limited', provider: providers.dexscreener ? 'dexscreener' : 'geckoterminal', caveat: 'DEX market coverage only' }
+    return { status: 'unavailable', provider: null, caveat: 'no market provider mapped' }
+  }
+
+  if (cap === 'balances' || cap === 'portfolio') {
+    if (c1.walletChains.has(chain)) return { status: 'live', provider: chain === 'solana' ? 'helius' : 'alchemy', caveat: null }
+    if (alchemyReady(chain)) return { status: 'limited', provider: 'alchemy', caveat: 'wallet snapshot cache pending' }
+    if (chain === 'solana' && envPresent('HELIUS_API_KEY')) return { status: 'limited', provider: 'helius', caveat: 'wallet snapshot cache pending' }
+    return { status: 'unavailable', provider: null, caveat: 'no wallet portfolio provider mapped' }
+  }
+
+  if (cap === 'tx') {
+    if (c1.transferChains.has(chain)) return { status: 'live', provider: chain === 'solana' ? 'helius' : 'alchemy', caveat: null }
+    if (alchemyReady(chain)) return { status: 'limited', provider: 'alchemy', caveat: 'transfer activity snapshot cache pending' }
+    if (chain === 'solana' && envPresent('HELIUS_API_KEY')) return { status: 'limited', provider: 'helius', caveat: 'transfer activity cache pending' }
+    return { status: 'unavailable', provider: null, caveat: 'no transfer provider mapped' }
   }
 
   if (cap === 'defi') {
@@ -74,11 +133,12 @@ Deno.serve(async (req) => {
       if (!prof?.is_super_admin) return json({ error: 'forbidden' }, 403)
     }
 
+    const c1 = await loadC1CoverageState(admin)
     const rows: any[] = []
     const now = new Date().toISOString()
     for (const chainDef of CHAINS) {
       for (const capability of COVERAGE_CAPS) {
-        const coverage = coverageFor(chainDef.id, capability)
+        const coverage = coverageFor(chainDef.id, capability, c1)
         rows.push({
           chain: chainDef.id,
           capability,

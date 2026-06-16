@@ -8,7 +8,7 @@ import { getEntityByRef } from '../lib/artifact-api'
 import { addEntityToWatchlist, resolveEntity } from '../lib/watchlist-api'
 import { loadTokenChart, loadWalletPortfolio } from '../lib/chart-api'
 import { listEntityNews, listGlobalNews } from '../lib/news-api'
-import { getChain, chainIdFor, normalizeAddressForChain, assetRef } from '../lib/chains'
+import { getChain, chainIdFor, normalizeAddressForChain, assetRef, loadChainCoverage, capabilityStatus } from '../lib/chains'
 import { cleanNewsTitle } from '../lib/text-clean'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
@@ -23,6 +23,7 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 
 const TIMEFRAMES = ['1H', '4H', '1D', '1W']
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
+const providerLabel = (p) => String(p || '').toLowerCase() === 'alchemy' ? 'Alchemy' : String(p || '').toLowerCase() === 'helius' ? 'Helius' : 'Provider'
 const fmtNum = (n) => n == null ? '—' : Number(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Number(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : Number(n) >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${Number(n).toFixed(0)}`
 const fmtPrice = (p) => p == null ? '—' : p < 1 ? `$${Number(p).toPrecision(4)}` : `$${Number(p).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 
@@ -48,9 +49,21 @@ export default function AssetBreakdownPage() {
   const [profile, setProfile] = useState(null)
   const [profileState, setProfileState] = useState(null)
   const [degenSignals, setDegenSignals] = useState(null)
+  const [coverage, setCoverage] = useState({})
   const breakdown = useArtifact()
   const risk = useArtifact()
   const isWallet = entity?.entity_kind === 'wallet'
+
+  useEffect(() => {
+    let alive = true
+    ;(async () => {
+      try {
+        const map = await loadChainCoverage(supabase)
+        if (alive) setCoverage(map)
+      } catch { /* coverage is additive */ }
+    })()
+    return () => { alive = false }
+  }, [supabase])
 
   useEffect(() => {
     let alive = true
@@ -159,6 +172,14 @@ export default function AssetBreakdownPage() {
   if (!entity) return <div className="card p-8 text-center text-[var(--fg-3)] text-sm">{t('breakdown.not_found', { defaultValue: 'Asset not found in this workspace. Add it from the Watchlist first.' })}</div>
 
   const ov = chart?.overview
+  const appChainId = walletPf?.entity?.app_chain || entity?._chain || chainIdFor(entity?.chain_namespace, entity?.chain_id)
+  const appChain = appChainId ? getChain(appChainId) : null
+  const holderStatus = appChainId ? capabilityStatus(appChainId, 'holders', coverage) : 'unverified'
+  const coverageChip = isWallet && walletPf?.provider
+    ? t('breakdown.holdings_via', { defaultValue: 'Holdings via {{provider}}', provider: providerLabel(walletPf.provider) })
+    : (!isWallet && appChain && holderStatus !== 'live')
+      ? t('breakdown.holders_not_covered', { defaultValue: 'Holders not covered on {{chain}}', chain: appChain.label })
+      : null
   const change = ov?.price_change_24h_pct
   const stats = [
     ['price', t('breakdown.price', { defaultValue: 'Price' }), fmtPrice(ov?.price)],
@@ -184,6 +205,7 @@ export default function AssetBreakdownPage() {
             )}
           </div>
           <p className="page-sub font-mono text-[12px] break-all">{entity.canonical_ref_key}</p>
+          {coverageChip && <div className="mt-2"><span className="chip text-[10px]">{coverageChip}</span></div>}
         </div>
         {!entity._native && (
           <div className="flex gap-2 flex-wrap">
