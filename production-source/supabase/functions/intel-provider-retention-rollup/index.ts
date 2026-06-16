@@ -1,4 +1,5 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { promoteProviderSnapshotMemory } from '../_shared/intel/provider-snapshot-promotion.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -36,7 +37,10 @@ Deno.serve(async (req) => {
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const { data, error } = await admin.rpc('intel_provider_snapshot_retention_run', { p_confirm: confirm })
     if (error) return json({ error: error.message }, 500)
-    return json({ ok: true, confirm, result: data })
+    const promotion = body?.promote === false
+      ? { skipped: true }
+      : await promoteProviderSnapshotMemory(admin, { lookbackDays: Number(body?.lookback_days) || undefined })
+    return json({ ok: true, confirm, result: data, promotion })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'provider_retention_rollup_failed' }, 500)
   }
