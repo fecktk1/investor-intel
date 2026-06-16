@@ -26,6 +26,8 @@ type C1CoverageState = {
   priceChains: Set<string>
   walletChains: Set<string>
   transferChains: Set<string>
+  defiChains: Set<string>
+  kaminoRows: boolean
 }
 
 async function distinctChains(admin: any, table: string): Promise<Set<string>> {
@@ -38,13 +40,26 @@ async function distinctChains(admin: any, table: string): Promise<Set<string>> {
 }
 
 async function loadC1CoverageState(admin: any): Promise<C1CoverageState> {
-  const [metadataChains, priceChains, walletChains, transferChains] = await Promise.all([
+  const [metadataChains, priceChains, walletChains, transferChains, protocolChains, chainTvlChains, poolChains, kaminoRows] = await Promise.all([
     distinctChains(admin, 'token_metadata_snapshots'),
     distinctChains(admin, 'token_price_snapshots'),
     distinctChains(admin, 'wallet_portfolio_snapshots'),
     distinctChains(admin, 'asset_transfer_activity'),
+    distinctChains(admin, 'protocol_tvl_snapshots'),
+    distinctChains(admin, 'chain_tvl_snapshots'),
+    distinctChains(admin, 'defi_pool_snapshots'),
+    (async () => {
+      try {
+        const { data } = await admin.from('kamino_vault_snapshots').select('id').limit(1)
+        return (data || []).length > 0
+      } catch {
+        return false
+      }
+    })(),
   ])
-  return { metadataChains, priceChains, walletChains, transferChains }
+  const defiChains = new Set<string>([...protocolChains, ...chainTvlChains, ...poolChains])
+  if (kaminoRows) defiChains.add('solana')
+  return { metadataChains, priceChains, walletChains, transferChains, defiChains, kaminoRows }
 }
 
 function alchemyReady(chain: string): boolean {
@@ -86,8 +101,9 @@ function coverageFor(chain: string, cap: string, c1: C1CoverageState): { status:
   }
 
   if (cap === 'defi') {
-    if (SOLANA_DEFI.has(chain)) return { status: 'live', provider: 'kamino', caveat: null }
-    if (DEFILLAMA_DEFI.has(chain)) return { status: 'live', provider: 'defillama', caveat: null }
+    if (c1.defiChains.has(chain)) return { status: 'live', provider: chain === 'solana' ? 'kamino' : 'defillama', caveat: null }
+    if (SOLANA_DEFI.has(chain)) return { status: 'limited', provider: 'kamino', caveat: 'DeFi cache pending' }
+    if (DEFILLAMA_DEFI.has(chain)) return { status: 'limited', provider: 'defillama', caveat: 'DeFi cache pending' }
     return { status: 'unavailable', provider: null, caveat: 'no defi provider mapped' }
   }
 

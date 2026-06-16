@@ -25,9 +25,10 @@ Deno.serve(async (req) => {
     const llamaRows: any[] = []
 
     for (const w of (data || []).filter((x: any) => x.org?.product_mode === 'intel' && x.entity)) {
-      const addr = w.entity.contract_address || w.entity.asset_id
+      const entity = Array.isArray(w.entity) ? w.entity[0] : w.entity
+      const addr = entity?.contract_address || entity?.asset_id
       if (!addr) continue
-      const chain = chainIdFor(w.entity.chain_namespace, w.entity.chain_id) || 'solana'
+      const chain = chainIdFor(entity?.chain_namespace, entity?.chain_id) || 'solana'
       const key = `${w.org_id}:${chain}:${addr}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -38,7 +39,7 @@ Deno.serve(async (req) => {
         kaminoRows.push({
           org_id: w.org_id,
           vault_address: addr,
-          vault_name: w.entity.display_symbol || null,
+          vault_name: entity?.display_symbol || null,
           apy: k.apy ?? null,
           tvl_usd: k.tvl_usd ?? null,
           snapshot_at: new Date().toISOString(),

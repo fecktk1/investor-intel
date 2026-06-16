@@ -6,7 +6,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { getChain } from '../lib/chains'
 import { resolveEntity } from '../lib/watchlist-api'
-import { loadDefiMetrics } from '../lib/chart-api'
+import { loadDefiBrowse, loadDefiMetrics } from '../lib/chart-api'
 import { fetchAllKaminoVaults, fetchKaminoMarkets, fetchKaminoVaultHistory, formatUsd, shortenAddress } from '../../lib/defi-intelligence'
 import { fetchLlamaPools, fetchLlamaLending, fetchLlamaPoolChart } from '../lib/defillama'
 import { listEntityNews } from '../lib/news-api'
@@ -151,27 +151,42 @@ export default function DefiPage() {
   const chainLabel = getChain(chain)?.label || chain
 
   const loadRows = useCallback(async (ch, vw, force = false) => {
-    const cacheKey = `${ch}:${vw}`
+    const cacheKey = `${org?.id || 'anon'}:${ch}:${vw}`
     if (!force && cacheRef.current.has(cacheKey)) {
       const c = cacheRef.current.get(cacheKey); setRows(c.rows); setArb(c.arb || []); setRowsStatus(c.status || 'ok'); return
     }
     setLoadingRows(true); setRowsErr(null); setRows([]); setArb([]); setRowsStatus('loading')
     try {
       let out = []; let arbOut = []; let status = 'ok'
-      if (ch === 'solana' && vw === 'vaults') {
-        out = (await fetchAllKaminoVaults()).map(normKaminoVault)
-      } else if (ch === 'solana' && vw === 'lending') {
-        const [reserves, vaults] = await Promise.all([fetchKaminoMarkets(), fetchAllKaminoVaults()])
-        out = reserves.map(normKaminoReserve)
-        arbOut = computeArb(vaults.map(normKaminoVault), out)
-      } else if (vw === 'vaults') {
-        const res = await fetchLlamaPools(ch)
-        out = res.rows || []
-        status = res.status || 'ok'
+      if (org?.id) {
+        try {
+          const cached = await loadDefiBrowse(supabase, org.id, { chain: ch, view: vw })
+          out = cached.rows || []
+          status = cached.status || 'ok'
+          if (ch === 'solana' && vw === 'lending' && out.length) {
+            const cachedVaults = await loadDefiBrowse(supabase, org.id, { chain: ch, view: 'vaults' }).catch(() => ({ rows: [] }))
+            arbOut = computeArb(cachedVaults.rows || [], out)
+          }
+        } catch {
+          // Fallback only when the cached edge layer itself is unavailable.
+          if (ch === 'solana' && vw === 'vaults') {
+            out = (await fetchAllKaminoVaults()).map(normKaminoVault)
+          } else if (ch === 'solana' && vw === 'lending') {
+            const [reserves, vaults] = await Promise.all([fetchKaminoMarkets(), fetchAllKaminoVaults()])
+            out = reserves.map(normKaminoReserve)
+            arbOut = computeArb(vaults.map(normKaminoVault), out)
+          } else if (vw === 'vaults') {
+            const res = await fetchLlamaPools(ch)
+            out = res.rows || []
+            status = res.status || 'ok'
+          } else {
+            const res = await fetchLlamaLending(ch)
+            out = res.rows || []
+            status = res.status || 'ok'
+          }
+        }
       } else {
-        const res = await fetchLlamaLending(ch)
-        out = res.rows || []
-        status = res.status || 'ok'
+        status = 'provider_error'
       }
       cacheRef.current.set(cacheKey, { rows: out, arb: arbOut, status })
       setRows(out); setArb(arbOut)
@@ -180,7 +195,7 @@ export default function DefiPage() {
       setRowsStatus('provider_error')
       setRowsErr(e?.message || 'load_failed')
     } finally { setLoadingRows(false) }
-  }, [])
+  }, [org?.id, supabase])
 
   useEffect(() => { loadRows(chain, view) }, [chain, view, loadRows])
 

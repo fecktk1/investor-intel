@@ -20,6 +20,13 @@ export async function loadDefiMetrics(supabase, orgId, { entityId = null, ref = 
   return data
 }
 
+export async function loadDefiBrowse(supabase, orgId, { chain = 'solana', view = 'vaults' } = {}) {
+  const { data, error } = await supabase.functions.invoke('intel-defi-browse', { body: { orgId, chain, view } })
+  if (error) throw new Error(error.message || 'defi_browse_failed')
+  if (data?.error) throw new Error(data.error)
+  return data
+}
+
 // Mirror of the org-wide Kamino universe (latest snapshot per vault across all
 // workspaces, ranked by TVL) — so the DeFi page is populated from the jump with
 // zero new Kamino calls. intel_defi_universe is SECURITY DEFINER (public data).
