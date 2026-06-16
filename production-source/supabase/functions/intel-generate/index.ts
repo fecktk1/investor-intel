@@ -33,6 +33,7 @@ import {
 } from '../_shared/intel/asset-evidence-pack.ts'
 import { reconcileCoverage } from '../_shared/intel/coverage.ts'
 import { assembleBriefEvidencePack } from '../_shared/intel/brief-evidence-pack.ts'
+import { assembleNarrativeEvidencePack } from '../_shared/intel/narrative-evidence-pack.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -220,6 +221,20 @@ function assetSubjectsForArtifact(args: {
   }
   const subject = deriveAssetEvidenceSubject({ ...args, publicOnly: true })
   return subject ? [subject] : []
+}
+
+function narrativeSlugFromContext(extra: any, context: any, ent: any): string | null {
+  const raw = firstString(
+    extra?.narrativeSlug,
+    extra?.slug,
+    extra?.narrative?.slug,
+    context?.narrative?.slug,
+    context?.slug,
+    ent?.slug,
+    ent?.canonical_ref_key,
+  )
+  if (!raw) return null
+  return String(raw).replace(/^narrative:/, '').trim()
 }
 
 async function maybeRefreshCriticalEvidencePack(
@@ -575,6 +590,41 @@ Deno.serve(async (req) => {
       } catch { /* brief evidence is additive; original brief generation still works */ }
     }
 
+    // Stage F3: narrative reports get member asset mini-packs plus category/macro
+    // rotation and narrative source signals. Public/global only, so shared reuse
+    // remains identity-stripped.
+    // deno-lint-ignore no-explicit-any
+    let narrativeEvidenceContext: any = null
+    if (artifactType === 'narrative_report') {
+      try {
+        const slug = narrativeSlugFromContext(extra, context, ent)
+        if (slug) {
+          const narrativePack = await assembleNarrativeEvidencePack(admin, slug, { maxAssets: 8 })
+          narrativeEvidenceContext = { narrative_evidence_pack: narrativePack }
+          if (pkg) {
+            const items = Array.isArray(pkg.items) ? pkg.items : []
+            const coverageMerged = mergeCoverageValues([pkg.coverage, narrativePack.data_coverage]) || pkg.coverage
+            pkg = {
+              ...pkg,
+              evidence_hash: hashStr(`${pkg.evidence_hash || ''}:narrative-pack:${narrativePack.content_hash}`),
+              source_set_hash: hashStr(`${pkg.source_set_hash || ''}:narrative-pack:${narrativePack.content_hash}`),
+              coverage: coverageMerged,
+              items: [
+                ...items,
+                {
+                  kind: 'narrative_evidence_pack',
+                  source: 'cached narrative/member-asset intelligence',
+                  slug,
+                  content_hash: narrativePack.content_hash,
+                },
+              ],
+              final_count: Number(pkg.final_count || items.length) + 1,
+            }
+          }
+        }
+      } catch { /* narrative evidence is additive; original report path still works */ }
+    }
+
     // Reusable SHARED artifact: when the evidence package is PUBLIC (no private
     // custom source contributed), the expensive multi-model analysis is generated
     // ONCE and reused across all users. On a fresh hit, copy the shared structured
@@ -782,6 +832,10 @@ Deno.serve(async (req) => {
     if (briefEvidenceContext) {
       genContext = { ...(genContext || context || {}), ...briefEvidenceContext }
       sourcesUsed.push('Daily brief evidence pack (cached intelligence snapshots)')
+    }
+    if (narrativeEvidenceContext) {
+      genContext = { ...(genContext || context || {}), ...narrativeEvidenceContext }
+      sourcesUsed.push('Narrative evidence pack (cached member asset snapshots)')
     }
 
     // Market regime context (one cached global read) so impact analysis is
@@ -1011,10 +1065,14 @@ async function handleNarrativeBrief(req: Request, body: any) {
 
   const slug = String(body?.narrativeSlug || '').trim()
   if (!slug) return json({ error: 'narrativeSlug required' }, 400)
-  const evidence = body?.evidence || {}
+  let evidence = body?.evidence || {}
   const apiKey = Deno.env.get('OPENAI_API_KEY')
   if (!apiKey) return json({ error: 'OPENAI_API_KEY not configured' }, 500)
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+  try {
+    const narrativePack = await assembleNarrativeEvidencePack(admin, slug, { maxAssets: 8 })
+    evidence = { ...(evidence || {}), narrative_evidence_pack: narrativePack }
+  } catch { /* additive; the existing narrative evidence still drives the brief */ }
 
   const entityRef = `narrative:${slug}`
   const evidenceHash = hashStr(JSON.stringify(evidence))

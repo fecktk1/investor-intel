@@ -13,10 +13,59 @@ import { multiModelAnalyze } from '../_shared/intel-models.ts'
 import { validateSafeLanguage } from '../_shared/intel-guardrails.ts'
 import { isUsableStory, cleanSourceName, isPressRelease, storyHash } from '../_shared/news-clean.ts'
 import { reconcileCoverage } from '../_shared/intel/coverage.ts'
+import { assembleAssetMiniPack } from '../_shared/intel/asset-mini-pack.ts'
+import { h32 } from '../_shared/core-intel/hashing.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
 const TRUST: Record<string, number> = { curated: 0.85, macro: 0.7, gemini: 0.5, org_rss: 0.45 }
+
+function uniqSymbols(values: unknown[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const s = String(value || '').trim().replace(/^\$/, '').toUpperCase()
+    if (!s || seen.has(s)) continue
+    seen.add(s)
+    out.push(s)
+  }
+  return out
+}
+
+async function buildStoryEvidence(admin: any, c: any) {
+  const symbols = uniqSymbols([c.symbol]).slice(0, 3)
+  const assetPacks = []
+  for (const symbol of symbols) {
+    try {
+      const mini = await assembleAssetMiniPack(admin, { symbol }, { staleMinutes: 60, maxPromptChars: 3000 })
+      if (mini.prompt_pack) assetPacks.push(mini.prompt_pack)
+    } catch {
+      // Story cards are public-news first; asset packs are additive corroboration.
+    }
+  }
+  const packHashes = assetPacks.map((pack) => String((pack as Record<string, any>).content_hash || '')).filter(Boolean)
+  const sourceSetHash = h32(JSON.stringify({ story_hash: c.story_hash, pack_hashes: packHashes }))
+  const optional = c.source_support > 1 ? [] : ['Single-source story; corroboration is limited.']
+  if (!assetPacks.length) optional.push('No affected-asset mini-pack was available for this story.')
+  return {
+    source_set_hash: sourceSetHash,
+    evidence: {
+      story: { title: c.title, summary: c.summary, source: c.source_name, chains: c.chains, symbol: c.symbol, source_support: c.source_support, press_release: c.is_press_release },
+      affected_asset_packs: assetPacks,
+      corroboration: { source_support: c.source_support, origin: c.origin, trust_score: TRUST[c.origin] ?? 0.5 },
+      note: 'Public crypto news story. Judge corroboration honestly; a single press release is weak evidence. Asset mini-packs are cached corroboration only.',
+      data_coverage: {
+        used_sources: [c.source_name, ...(assetPacks.length ? ['affected asset mini-packs'] : [])],
+        checked_sources: [c.source_name, c.origin, 'asset mini-packs'].filter(Boolean),
+        unavailable_sources: [],
+        material_gaps: [],
+        optional_gaps: optional,
+        confidence_impact: optional.length ? 'low' : 'none',
+        should_show_warning: false,
+      },
+    },
+  }
+}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -73,32 +122,29 @@ Deno.serve(async (req) => {
     const cards = [...byKey.values()].map((c) => ({ ...c, _score: 0.4 * recency(c.published_at) + 0.2 * (TRUST[c.origin] ?? 0.5) + 0.2 * Math.min(c.source_support, 5) / 5 - (c.is_press_release ? 0.3 : 0) }))
       .sort((a, b) => b._score - a._score)
 
-    // Skip stories that already have a fresh shared card.
-    const top = cards.slice(0, limit * 3)
-    const { data: existing } = await admin.from('intel_shared_artifacts').select('evidence_hash')
+    // Skip stories that already have a fresh shared card for the current enriched
+    // source set. Keep evidence_hash as story_hash so dashboard lookup stays stable.
+    const top = []
+    for (const c of cards.slice(0, limit * 3)) top.push({ ...c, ...await buildStoryEvidence(admin, c) })
+    const { data: existing } = await admin.from('intel_shared_artifacts').select('evidence_hash, source_set_hash')
       .eq('artifact_type', 'story_card').in('evidence_hash', top.map((c) => c.story_hash)).gt('stale_after', new Date().toISOString())
-    const haveFresh = new Set((existing || []).map((e: any) => e.evidence_hash))
-    const todo = top.filter((c) => !haveFresh.has(c.story_hash)).slice(0, limit)
+    const haveFresh = new Set((existing || []).map((e: any) => `${e.evidence_hash}:${e.source_set_hash || ''}`))
+    const todo = top.filter((c) => !haveFresh.has(`${c.story_hash}:${c.source_set_hash}`)).slice(0, limit)
 
     let generated = 0
     for (const c of todo) {
-      const evidence = { story: { title: c.title, summary: c.summary, source: c.source_name, chains: c.chains, symbol: c.symbol, source_support: c.source_support, press_release: c.is_press_release }, note: 'Public crypto news story. Judge corroboration honestly; a single press release is weak evidence.' }
+      const evidence = c.evidence
       const { system } = buildPrompt('story_card', { context: evidence })
       let mm
       try { mm = await multiModelAnalyze({ entity: null, evidence, baseSystem: system, task: 'Analyze this public crypto news story for a retail investor (research / risk context, not advice).', keys }) }
       catch { mm = null }
       if (!mm?.structured) continue
       const st = mm.structured
-      reconcileCoverage(st, [c.source_name], {
-        used_sources: [c.source_name],
-        checked_sources: [c.source_name, c.origin].filter(Boolean),
-        material_gaps: [],
-        optional_gaps: c.source_support > 1 ? [] : ['Single-source story; corroboration is limited.'],
-      })
+      reconcileCoverage(st, [c.source_name, 'Story evidence pack (cached corroboration)'], evidence.data_coverage)
       const v = validateSafeLanguage([st.summary, st.what_happened, st.why_it_matters, st.crypto_market_impact, ...(Array.isArray(st.bullish_signals) ? st.bullish_signals : []), ...(Array.isArray(st.bearish_signals) ? st.bearish_signals : [])].filter((x) => typeof x === 'string').join('\n'))
       if (!v.ok) continue // never store advice-y output
       const { error } = await admin.from('intel_shared_artifacts').upsert({
-        artifact_type: 'story_card', entity_ref: '', evidence_hash: c.story_hash, source_set_hash: null,
+        artifact_type: 'story_card', entity_ref: '', evidence_hash: c.story_hash, source_set_hash: c.source_set_hash,
         contract_version: CONTRACT_VERSION, guardrail_version: GUARDRAIL_VERSION, models: mm.providersUsed, consensus: mm.consensus,
         structured: st, confidence: ['high', 'medium', 'low'].includes(st.confidence) ? st.confidence : 'low', net_signal: st.net_signal || null,
         sources: [c.source_name], data_freshness: {}, validation_status: 'passed', model_meta: { statuses: mm.statuses, synth_failed: !!mm.synthFailed },
