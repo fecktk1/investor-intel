@@ -1,5 +1,5 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
+import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
 import { Activity, Sparkles, ArrowRight, TrendingUp, TrendingDown, Newspaper, Radar, Bell, Bookmark, ExternalLink, RefreshCw } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
@@ -14,10 +14,15 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import SignalCard from '../components/SignalCard'
 import WhatChanged from '../components/WhatChanged'
 import { markSurfaceSeen } from '../lib/changes-api'
+import { getChain } from '../lib/chains'
 
 const STATUS_CLS = { hot: 'chip--err', emerging: 'chip--ok', cooling: 'chip--info' }
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
 const assetHref = (ref) => `/intel/asset/${encodeURIComponent(ref || '')}`
+const marketHrefForChain = (c) => {
+  const symbol = c?.symbol || getChain(c?.chain_id)?.nativeSymbol
+  return symbol ? `/intel/markets/${encodeURIComponent(symbol)}` : assetHref(c?.ref || `native:${c?.chain_id || ''}`)
+}
 const fmtPct = (v) => `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`
 const fmtPrice = (p) => p == null ? '—' : p < 1 ? `$${Number(p).toPrecision(3)}` : `$${Number(p).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 const SIG_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '', unclear: 'text-[var(--fg-4)]', data_limited: 'text-[var(--fg-4)]' }
@@ -70,6 +75,7 @@ export default function MarketPulsePage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase } = useSupabase()
+  const location = useLocation()
   const [dash, setDash] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
@@ -104,6 +110,7 @@ export default function MarketPulsePage() {
   // Client-side project filter within a chain.
   const movers = (dash?.movers || []).filter((m) => !project || m.symbol === project)
   const news = (dash?.news || []).filter((n) => !project || (n.entity_symbol || n.entity?.display_symbol) === project)
+  const returnState = useMemo(() => ({ from: `${location.pathname}${location.search}` }), [location.pathname, location.search])
 
   if (loading && !dash) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[var(--accent)]" /></div>
   const empty = dash && dash.total_following === 0 && (dash.notable || []).length === 0 && (dash.signals || []).length === 0 && (dash.movers || []).length === 0 && (dash.chain_perf || []).length === 0
@@ -194,7 +201,7 @@ export default function MarketPulsePage() {
               <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-4">
                 {/* skip rows without data — they'd render as empty shells */}
                 {dash.chain_perf.filter((c) => c.price != null || c.change_24h != null).map((c) => (
-                  <Link key={c.chain_id} to={assetHref(c.ref || `native:${c.chain_id}`)} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
+                  <Link key={c.chain_id} to={marketHrefForChain(c)} state={returnState} className="card p-3 block hover:bg-[var(--bg-2)] transition-colors">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-[var(--fg-1)] truncate">{c.label}</span>
                       {c.change_24h != null && <span className={`text-[13px] font-semibold flex items-center gap-0.5 ${c.change_24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{c.change_24h >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{fmtPct(c.change_24h)}</span>}
