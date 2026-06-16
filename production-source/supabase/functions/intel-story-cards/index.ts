@@ -12,6 +12,7 @@ import { buildPrompt, CONTRACT_VERSION, GUARDRAIL_VERSION } from '../_shared/int
 import { multiModelAnalyze } from '../_shared/intel-models.ts'
 import { validateSafeLanguage } from '../_shared/intel-guardrails.ts'
 import { isUsableStory, cleanSourceName, isPressRelease, storyHash } from '../_shared/news-clean.ts'
+import { reconcileCoverage } from '../_shared/intel/coverage.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -88,6 +89,12 @@ Deno.serve(async (req) => {
       catch { mm = null }
       if (!mm?.structured) continue
       const st = mm.structured
+      reconcileCoverage(st, [c.source_name], {
+        used_sources: [c.source_name],
+        checked_sources: [c.source_name, c.origin].filter(Boolean),
+        material_gaps: [],
+        optional_gaps: c.source_support > 1 ? [] : ['Single-source story; corroboration is limited.'],
+      })
       const v = validateSafeLanguage([st.summary, st.what_happened, st.why_it_matters, st.crypto_market_impact, ...(Array.isArray(st.bullish_signals) ? st.bullish_signals : []), ...(Array.isArray(st.bearish_signals) ? st.bearish_signals : [])].filter((x) => typeof x === 'string').join('\n'))
       if (!v.ok) continue // never store advice-y output
       const { error } = await admin.from('intel_shared_artifacts').upsert({

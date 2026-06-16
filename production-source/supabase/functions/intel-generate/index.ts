@@ -30,6 +30,7 @@ import {
   getOrAssembleAssetEvidencePack,
   type AssetEvidenceSubject,
 } from '../_shared/intel/asset-evidence-pack.ts'
+import { reconcileCoverage } from '../_shared/intel/coverage.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -61,6 +62,12 @@ function firstString(...values: unknown[]): string | null {
     if (s) return s
   }
   return null
+}
+
+function packCoverageFromContext(context: unknown): unknown {
+  if (!context || typeof context !== 'object') return null
+  const c = context as Record<string, any>
+  return c.asset_evidence_pack?.pack?.data_coverage || c.asset_evidence_pack?.data_coverage || c.evidence_coverage || null
 }
 
 function deriveExplainEvidenceSubject(args: {
@@ -482,6 +489,7 @@ Deno.serve(async (req) => {
         validationD = validateSafeLanguage(textOfArtifact(structuredD))
         outcomeD = validationD.ok ? 'rewrite' : 'block'
       }
+      structuredD = reconcileCoverage(structuredD, ['Delta update on prior analysis'], packCoverageFromContext({ evidence_coverage: pkg?.coverage || null, current_signal: signalSnap }))
       const contractD = validateArtifactContract(structuredD, DELTA_REQUIRED_FIELDS)
       const blockedD = !validationD.ok
       const validationStatusD = blockedD ? 'blocked' : (outcomeD === 'rewrite' ? 'rewritten' : 'passed')
@@ -717,6 +725,7 @@ Deno.serve(async (req) => {
       validation = validateSafeLanguage(textOfArtifact(structured))
       validatorOutcome = validation.ok ? 'rewrite' : 'block'
     }
+    structured = reconcileCoverage(structured, sourcesUsed, packCoverageFromContext(genContext))
     const contract = validateArtifactContract(structured, required)
     const blocked = !validation.ok
     const validationStatus = blocked ? 'blocked' : (validatorOutcome === 'rewrite' ? 'rewritten' : 'passed')
@@ -827,6 +836,7 @@ async function handleNarrativeBrief(req: Request, body: any) {
     } catch { /* keep prior */ }
     validation = validateSafeLanguage(textOfArtifact(structured))
   }
+  structured = reconcileCoverage(structured, structured?.sources || [], evidence?.data_coverage || evidence?.coverage || null)
   const contract = validateArtifactContract(structured, required)
   const blocked = !validation.ok
   const validationStatus = blocked ? 'blocked' : (rewrote ? 'rewritten' : 'passed')
