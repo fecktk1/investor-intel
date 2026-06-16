@@ -100,6 +100,12 @@ Deno.test('F1 asset mini pack compacts a cached evidence pack without provider f
           narrative_state: { status: 'missing' },
           news_state: { status: 'missing' },
           risk_state: { caution_flags: [] },
+          historical_context: {
+            status: 'available',
+            trend_windows: [{ subject_id: 'BTC', period_kind: 'month', source_count: 9 }],
+            material_events: [{ title: 'BTC prior cycle analog confirmed' }],
+            analogs: [{ analog_kind: 'market_regime_similarity', similarity_score: 0.7 }],
+          },
           data_coverage: {
             used_sources: ['exchange_latest_tickers'],
             checked_sources: ['exchange_latest_tickers', 'dex_pair_snapshots'],
@@ -141,6 +147,7 @@ Deno.test('F1 asset mini pack compacts a cached evidence pack without provider f
     assert(mini.content_hash === 'pack-hash', 'cached content hash is preserved')
     assert((mini.headlines.market as Record<string, unknown>).current_price === 66000, 'market headline included')
     assert((mini.headlines.cex as Record<string, unknown>).status === 'available', 'CEX headline included')
+    assert((mini.headlines.historical as Record<string, unknown>).status === 'available', 'historical headline included')
     assert(mini.coverage.optional_gaps.length === 1, 'coverage carried through')
     assert(!db.writes.intelligence_evidence_packs, 'fresh cache hit did not write a new full pack')
   } finally {

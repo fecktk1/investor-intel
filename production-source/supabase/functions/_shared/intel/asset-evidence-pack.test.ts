@@ -234,6 +234,10 @@ Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables o
       narrative_category_snapshots: [{ provider: 'coingecko', category_id: 'solana-ecosystem', category_label: 'Solana Ecosystem', rank: 4, top_3_coins: ['SOL'], as_of: '2026-06-16T10:00:00.000Z' }],
       intel_signal_state: [{ subject_type: 'asset', display_symbol: 'SOL', signal_key: 'asset:SOL', direction: 'bullish', confidence: 'high', source_count: 5, global_score: 0.8, generated_at: '2026-06-16T11:00:00.000Z', stale_after: FRESH }],
       intel_global_news: [{ entity_symbol: 'SOL', title: 'Solana network activity rises', source_name: 'Curated News', summary: 'Activity picked up.', published_at: '2026-06-16T09:00:00.000Z' }],
+      intel_rollups: [{ id: 'roll1', subject_type: 'asset_price', subject_id: 'SOL', period_kind: 'month', period_start: '2026-06-01', period_end: '2026-07-01', source_count: 12, source_diversity: 3, important_events: [{ kind: 'provider_snapshot_rollup', metrics: { avg_metric: 150 } }], computed_at: '2026-06-16T11:00:00.000Z' }],
+      intel_event_memory: [{ id: 'evt1', event_type: 'other', title: 'SOL liquidity regime changed', summary: 'SOL saw a material liquidity expansion.', occurred_at: '2026-06-15T10:00:00.000Z', importance_score: 88, assets: ['SOL'], chains: ['solana'], narratives: ['solana-ecosystem'], evidence_refs: [] }],
+      historical_analog_links: [{ id: 'ana1', current_subject_ref: 'SOL', current_subject_type: 'asset', analog_subject_ref: 'SOL:prior-cycle', analog_subject_type: 'asset', analog_kind: 'asset_cycle', similarity_score: 0.72, basis: { shared: 'liquidity expansion' }, observed_at: '2026-06-15T11:00:00.000Z' }],
+      intelligence_entity_timeline: [{ id: 'tl1', entity_type: 'asset', entity_ref: 'SOL', event_type: 'provider_snapshot_change', title: 'SOL snapshot trend persisted', summary: 'Month-to-date provider rollups kept improving.', impact_score: 0.8, confidence: 0.8, occurred_at: '2026-06-15T12:00:00.000Z' }],
       chain_capabilities: [{ chain: 'solana', capability: 'dex_market', status: 'live', verified_at: '2026-06-16T00:00:00.000Z' }],
     })
 
@@ -285,6 +289,9 @@ Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables o
     assert(pack.flow_state?.status === 'available', 'scoped flow data included')
     assert(pack.dex_state?.status === 'available', 'DEX state included')
     assert(pack.news_state?.status === 'available', 'news state included')
+    assert(pack.historical_context?.status === 'available', 'historical context included')
+    assert(pack.historical_context?.trend_windows?.length === 1, 'rollup trend window included')
+    assert(pack.data_coverage?.used_sources?.includes('intel_rollups'), 'historical rollups tracked as a source')
     assert((pack.data_coverage?.material_gaps || []).length === 0, 'rich pack has no material gaps')
     assert(pack.data_coverage?.used_sources?.includes('platform_intelligence_context'), 'selected AI context blocks are tracked as a source')
     assert(db.writes.intelligence_evidence_packs?.length === 1, 'evidence pack persisted')

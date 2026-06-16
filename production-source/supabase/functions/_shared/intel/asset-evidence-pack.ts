@@ -98,6 +98,10 @@ const CHECKED_SOURCES = [
   'narrative_category_snapshots',
   'intel_signal_state',
   'intel_global_news',
+  'intel_rollups',
+  'intel_event_memory',
+  'historical_analog_links',
+  'intelligence_entity_timeline',
   'chain_capabilities',
   'platform_intelligence_context',
 ]
@@ -301,6 +305,154 @@ function policyForStorage(policy: SurfaceIntelligencePolicy | Record<string, unk
   }
 }
 
+function textArray(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((v) => String(v || '').trim()).filter(Boolean) : []
+}
+
+function intersectsAny(values: unknown, refs: string[]): boolean {
+  const lower = new Set(refs.map((r) => r.toLowerCase()))
+  return textArray(values).some((value) => lower.has(value.toLowerCase()))
+}
+
+function uniqRows(rowsIn: unknown[], key: string): Record<string, unknown>[] {
+  const seen = new Set<string>()
+  const out: Record<string, unknown>[] = []
+  for (const row of rowsIn) {
+    if (!row || typeof row !== 'object') continue
+    const rec = row as Record<string, unknown>
+    const id = String(rec[key] || h32(JSON.stringify(rec)))
+    if (seen.has(id)) continue
+    seen.add(id)
+    out.push(rec)
+  }
+  return out
+}
+
+async function assembleHistoricalContext(
+  db: DB,
+  resolved: Awaited<ReturnType<typeof resolveAsset>>,
+  assetKeys: string[],
+  nowMs: number,
+) {
+  const sym = resolved.symbol
+  const chain = resolved.chain
+  const refs = [...new Set([
+    resolved.canonicalKey,
+    sym,
+    sym ? `asset:${sym}` : null,
+    chain,
+    ...assetKeys,
+  ].map((v) => String(v || '').trim()).filter(Boolean))].slice(0, 10)
+
+  const rollupsNested = await Promise.all(refs.map((ref) => rows(() => db.from('intel_rollups')
+    .select('*')
+    .eq('subject_id', ref)
+    .order('period_start', { ascending: false })
+    .limit(6))))
+  const rollups = uniqRows(rollupsNested.flat(), 'id')
+
+  const eventRows = await rows(() => db.from('intel_event_memory')
+    .select('*')
+    .order('occurred_at', { ascending: false })
+    .limit(80))
+  const events = eventRows.filter((row) =>
+    intersectsAny((row as Record<string, unknown>).assets, refs)
+    || intersectsAny((row as Record<string, unknown>).chains, refs)
+    || intersectsAny((row as Record<string, unknown>).narratives, refs)
+  )
+
+  const analogNested = await Promise.all([
+    ...refs.map((ref) => rows(() => db.from('historical_analog_links')
+      .select('*')
+      .eq('current_subject_ref', ref)
+      .order('observed_at', { ascending: false })
+      .limit(4))),
+    rows(() => db.from('historical_analog_links')
+      .select('*')
+      .eq('analog_kind', 'market_regime_similarity')
+      .order('observed_at', { ascending: false })
+      .limit(3)),
+  ])
+  const analogs = uniqRows(analogNested.flat(), 'id')
+
+  const timelineNested = await Promise.all(refs.map((ref) => rows(() => db.from('intelligence_entity_timeline')
+    .select('*')
+    .eq('entity_ref', ref)
+    .order('occurred_at', { ascending: false })
+    .limit(4))))
+  const timeline = uniqRows(timelineNested.flat(), 'id')
+
+  const used = {
+    intel_rollups: rollups.length > 0,
+    intel_event_memory: events.length > 0,
+    historical_analog_links: analogs.length > 0,
+    intelligence_entity_timeline: timeline.length > 0,
+  }
+  const thin = !Object.values(used).some(Boolean)
+  return {
+    status: thin ? 'thin' : 'available',
+    coverage_note: thin
+      ? `No rolled-up historical memory matched ${sym || resolved.canonicalKey}; use current cached context only.`
+      : null,
+    trend_windows: compactRows(rollups, [
+      'subject_type',
+      'subject_id',
+      'subject_label',
+      'period_kind',
+      'period_start',
+      'period_end',
+      'source_count',
+      'source_diversity',
+      'first_seen_at',
+      'last_seen_at',
+      'important_events',
+      'computed_at',
+    ], 8),
+    material_events: compactRows(events, [
+      'event_type',
+      'title',
+      'summary',
+      'occurred_at',
+      'importance_score',
+      'importance_source',
+      'assets',
+      'chains',
+      'narratives',
+      'evidence_refs',
+    ], 6),
+    analogs: compactRows(analogs, [
+      'current_subject_type',
+      'current_subject_ref',
+      'analog_subject_type',
+      'analog_subject_ref',
+      'analog_kind',
+      'similarity_score',
+      'basis',
+      'evidence_refs',
+      'observed_at',
+    ], 6),
+    entity_timeline: compactRows(timeline, [
+      'entity_type',
+      'entity_ref',
+      'event_type',
+      'title',
+      'summary',
+      'impact_score',
+      'confidence',
+      'narrative_refs',
+      'source_refs',
+      'occurred_at',
+    ], 6),
+    provenance: {
+      intel_rollups: provenanceFor('intel_rollups', rollups, nowMs, null),
+      intel_event_memory: provenanceFor('intel_event_memory', events, nowMs, null),
+      historical_analog_links: provenanceFor('historical_analog_links', analogs, nowMs, null),
+      intelligence_entity_timeline: provenanceFor('intelligence_entity_timeline', timeline, nowMs, null),
+    },
+    used_sources: Object.entries(used).filter(([, ok]) => ok).map(([name]) => name),
+  }
+}
+
 async function resolveAsset(db: DB, subject: AssetEvidenceSubject) {
   const symbol = normalizeSymbol(subject.symbol)
   const providerId = String(subject.providerId || '').trim() || null
@@ -443,6 +595,7 @@ export async function assembleAssetEvidencePack(
     }
   }
 
+  const historicalContext = await assembleHistoricalContext(db, resolved, assetKeys, nowMs)
   const cexFreshness = newestFreshness([resolved.cexProfile, ...tickerRows, signal, cap, spread, ...orderbooks].filter(Boolean), nowMs, 3)
   const dexFreshness = newestFreshness(dexRows, nowMs, 3)
   const flowFreshness = newestFreshness([...largeTransferRows, ...transferRows], nowMs, 3)
@@ -495,6 +648,10 @@ export async function assembleAssetEvidencePack(
   mark('narrative_category_snapshots', categoryRows.length > 0)
   mark('intel_signal_state', !!signalState)
   mark('intel_global_news', newsRows.length > 0)
+  mark('intel_rollups', (historicalContext.trend_windows as unknown[]).length > 0)
+  mark('intel_event_memory', (historicalContext.material_events as unknown[]).length > 0)
+  mark('historical_analog_links', (historicalContext.analogs as unknown[]).length > 0)
+  mark('intelligence_entity_timeline', (historicalContext.entity_timeline as unknown[]).length > 0)
   mark('chain_capabilities', coverageRows.length > 0)
 
   const materialGaps: string[] = []
@@ -517,6 +674,7 @@ export async function assembleAssetEvidencePack(
   else if (!transferRows.length && !largeTransferRows.length) optionalGaps.push(`No cached wallet or large-transfer flow rows matched ${sym || resolved.canonicalKey}.`)
   else if (flowFreshness.status === 'stale') optionalGaps.push('Cached flow data is stale or partial; webhooks remain dormant and polling cadence may lag.')
   if (!newsRows.length) optionalGaps.push(`No recent curated news rows matched ${sym || resolved.canonicalKey}.`)
+  if (historicalContext.status === 'thin' && historicalContext.coverage_note) optionalGaps.push(String(historicalContext.coverage_note))
   if (!bestDex?.socials && !bestDex?.links) optionalGaps.push(`No cached social/link metadata was present for ${sym || resolved.canonicalKey}.`)
   optionalGaps.push('Holder distribution was not materialized in the deployed cache tables; holder_state is derived only from available flow metadata.')
 
@@ -542,6 +700,7 @@ export async function assembleAssetEvidencePack(
     chain: provenanceFor('chain_tvl_snapshots/market_macro_snapshots', [...chainTvlRows, ...macroRows], nowMs, null),
     narrative: provenanceFor('intel_signal_state/narrative_category_snapshots', [signalState, ...categoryRows].filter(Boolean), nowMs, null),
     news: provenanceFor('intel_global_news', newsRows, nowMs, null),
+    historical: historicalContext.provenance,
   }
 
   const assembleContext = options.assembleContext ?? assembleIntelligenceContext
@@ -675,6 +834,7 @@ export async function assembleAssetEvidencePack(
       signal_confidence: signal?.confidence || signalState?.confidence || null,
       gaps_affecting_confidence: dataCoverage.material_gaps,
     },
+    historical_context: historicalContext,
     provider_coverage: providerCoverage,
     data_coverage: dataCoverage,
     confidence_inputs: {
@@ -834,6 +994,7 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       market_summary: (result.pack as Record<string, unknown>).market_summary,
       liquidity_state: (result.pack as Record<string, unknown>).liquidity_state,
       flow_state: (result.pack as Record<string, unknown>).flow_state,
+      historical_context: (result.pack as Record<string, unknown>).historical_context,
       provider_coverage: (result.pack as Record<string, unknown>).provider_coverage,
       data_coverage: (result.pack as Record<string, unknown>).data_coverage,
       source_provenance: (result.pack as Record<string, unknown>).source_provenance,
@@ -857,6 +1018,7 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       liquidity_state: (result.pack as Record<string, unknown>).liquidity_state,
       narrative_state: (result.pack as Record<string, unknown>).narrative_state,
       news_state: (result.pack as Record<string, unknown>).news_state,
+      historical_context: (result.pack as Record<string, unknown>).historical_context,
       data_coverage: (result.pack as Record<string, unknown>).data_coverage,
       stale_or_missing_material_gaps: (result.pack as Record<string, unknown>).stale_or_missing_material_gaps,
     },

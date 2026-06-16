@@ -77,6 +77,7 @@ export async function assembleAssetMiniPack(
   const narrative = rec(pack.narrative_state)
   const news = rec(pack.news_state)
   const risk = rec(pack.risk_state)
+  const historical = rec(pack.historical_context)
 
   return {
     subject: evidence.subject,
@@ -111,6 +112,13 @@ export async function assembleAssetMiniPack(
         stories: Array.isArray(news.stories) ? news.stories.slice(0, 3) : [],
       },
       risk: pick(risk, ['caution_flags', 'market_cap_estimated', 'signal_direction', 'signal_confidence', 'gaps_affecting_confidence']),
+      historical: {
+        status: historical.status || 'thin',
+        coverage_note: historical.coverage_note || null,
+        trend_windows: Array.isArray(historical.trend_windows) ? historical.trend_windows.slice(0, 3) : [],
+        material_events: Array.isArray(historical.material_events) ? historical.material_events.slice(0, 3) : [],
+        analogs: Array.isArray(historical.analogs) ? historical.analogs.slice(0, 2) : [],
+      },
     },
     coverage: evidence.dataCoverage,
     provenance: evidence.sourceProvenance,
