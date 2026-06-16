@@ -29,6 +29,7 @@ import {
   criticalSlicesForAssetEvidencePack,
   getOrAssembleAssetEvidencePack,
   type AssetEvidenceSubject,
+  type DataCoverage,
 } from '../_shared/intel/asset-evidence-pack.ts'
 import { reconcileCoverage } from '../_shared/intel/coverage.ts'
 
@@ -64,10 +65,112 @@ function firstString(...values: unknown[]): string | null {
   return null
 }
 
+function coverageStrings(value: unknown): string[] {
+  return Array.isArray(value) ? value.map((v) => String(v || '').trim()).filter(Boolean) : []
+}
+
+function uniqStrings(values: unknown[]): string[] {
+  const out: string[] = []
+  const seen = new Set<string>()
+  for (const value of values) {
+    const s = String(value || '').trim()
+    const key = s.toLowerCase()
+    if (!s || seen.has(key)) continue
+    seen.add(key)
+    out.push(s)
+  }
+  return out
+}
+
+function normalizeCoverage(value: unknown): Partial<DataCoverage> {
+  if (!value || typeof value !== 'object') return {}
+  const v = value as Record<string, unknown>
+  return {
+    used_sources: coverageStrings(v.used_sources),
+    checked_sources: coverageStrings(v.checked_sources),
+    unavailable_sources: coverageStrings(v.unavailable_sources),
+    material_gaps: coverageStrings(v.material_gaps),
+    optional_gaps: coverageStrings(v.optional_gaps),
+    confidence_impact: ['none', 'low', 'medium', 'high'].includes(String(v.confidence_impact))
+      ? v.confidence_impact as DataCoverage['confidence_impact']
+      : undefined,
+    should_show_warning: typeof v.should_show_warning === 'boolean' ? v.should_show_warning : undefined,
+  }
+}
+
+function mergeCoverageValues(values: unknown[]): Partial<DataCoverage> | null {
+  const parts = values.map(normalizeCoverage).filter((v) =>
+    (v.used_sources?.length || 0) ||
+    (v.checked_sources?.length || 0) ||
+    (v.unavailable_sources?.length || 0) ||
+    (v.material_gaps?.length || 0) ||
+    (v.optional_gaps?.length || 0)
+  )
+  if (!parts.length) return null
+  const material = uniqStrings(parts.flatMap((v) => v.material_gaps || []))
+  const optional = uniqStrings(parts.flatMap((v) => v.optional_gaps || []))
+  const impactRank: Record<string, number> = { none: 0, low: 1, medium: 2, high: 3 }
+  const confidenceImpact = parts
+    .map((v) => v.confidence_impact || 'none')
+    .sort((a, b) => (impactRank[b] || 0) - (impactRank[a] || 0))[0] as DataCoverage['confidence_impact']
+  return {
+    used_sources: uniqStrings(parts.flatMap((v) => v.used_sources || [])),
+    checked_sources: uniqStrings(parts.flatMap((v) => v.checked_sources || [])),
+    unavailable_sources: uniqStrings(parts.flatMap((v) => v.unavailable_sources || [])),
+    material_gaps: material,
+    optional_gaps: optional,
+    confidence_impact: confidenceImpact || (material.length ? 'high' : optional.length ? 'low' : 'none'),
+    should_show_warning: parts.some((v) => v.should_show_warning === true) || material.length > 0,
+  }
+}
+
+function evidencePackCoverage(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return null
+  const v = value as Record<string, any>
+  return v.pack?.data_coverage || v.data_coverage || null
+}
+
 function packCoverageFromContext(context: unknown): unknown {
   if (!context || typeof context !== 'object') return null
   const c = context as Record<string, any>
-  return c.asset_evidence_pack?.pack?.data_coverage || c.asset_evidence_pack?.data_coverage || c.evidence_coverage || null
+  return mergeCoverageValues([
+    evidencePackCoverage(c.asset_evidence_pack),
+    ...(Array.isArray(c.asset_evidence_packs) ? c.asset_evidence_packs.map(evidencePackCoverage) : []),
+    ...(Array.isArray(c.asset_comparison_evidence?.packs) ? c.asset_comparison_evidence.packs.map(evidencePackCoverage) : []),
+    c.asset_comparison_evidence?.data_coverage,
+    c.evidence_coverage,
+  ])
+}
+
+function deriveAssetEvidenceSubject(args: {
+  // deno-lint-ignore no-explicit-any
+  extra: any
+  // deno-lint-ignore no-explicit-any
+  context: any
+  // deno-lint-ignore no-explicit-any
+  ent: any
+  orgId: string
+  userId: string | null
+  symbolOverride?: unknown
+  publicOnly?: boolean
+}): AssetEvidenceSubject | null {
+  const { extra, context, ent, orgId, userId, symbolOverride, publicOnly } = args
+  const identity = context?.asset_identity || context?.exchange_market || {}
+  const symbol = cleanSymbol(firstString(symbolOverride, extra?.symbols, extra?.symbol, identity.symbol, context?.exchange_market?.symbol, ent?.display_symbol))
+  const providerId = firstString(extra?.providerId, identity.providerId, context?.exchange_market?.providerId)
+  const sourceProvider = firstString(extra?.sourceProvider, identity.sourceProvider, context?.exchange_market?.sourceProvider)
+  const canonicalKey = firstString(extra?.canonicalKey, identity.canonicalKey, ent?.canonical_ref_key)
+  if (!symbol && !providerId && !canonicalKey) return null
+  return {
+    symbol,
+    canonicalKey,
+    chain: firstString(extra?.primaryChain, extra?.chain, identity.primaryChain, identity.chain, context?.exchange_market?.primaryChain, context?.exchange_market?.chain, ent?.chain_id, ent?.chain_namespace),
+    providerId,
+    sourceProvider,
+    tokenAddress: firstString(extra?.tokenAddress, identity.tokenAddress, context?.dex?.tokenAddress, ent?.contract_address),
+    orgId: publicOnly ? null : orgId,
+    userId: publicOnly ? null : userId,
+  }
 }
 
 function deriveExplainEvidenceSubject(args: {
@@ -80,23 +183,42 @@ function deriveExplainEvidenceSubject(args: {
   orgId: string
   userId: string | null
 }): AssetEvidenceSubject | null {
-  const { extra, context, ent, orgId, userId } = args
-  const identity = context?.asset_identity || context?.exchange_market || {}
-  const symbol = cleanSymbol(firstString(extra?.symbols, extra?.symbol, identity.symbol, context?.exchange_market?.symbol, ent?.display_symbol))
-  const providerId = firstString(extra?.providerId, identity.providerId, context?.exchange_market?.providerId)
-  const sourceProvider = firstString(extra?.sourceProvider, identity.sourceProvider, context?.exchange_market?.sourceProvider)
-  const canonicalKey = firstString(extra?.canonicalKey, identity.canonicalKey, ent?.canonical_ref_key)
-  if (!symbol && !providerId && !canonicalKey) return null
-  return {
-    symbol,
-    canonicalKey,
-    chain: firstString(extra?.primaryChain, extra?.chain, identity.primaryChain, identity.chain, context?.exchange_market?.primaryChain, context?.exchange_market?.chain, ent?.chain_id, ent?.chain_namespace),
-    providerId,
-    sourceProvider,
-    tokenAddress: firstString(extra?.tokenAddress, identity.tokenAddress, context?.dex?.tokenAddress, ent?.contract_address),
-    orgId,
-    userId,
+  return deriveAssetEvidenceSubject(args)
+}
+
+function comparisonSymbols(extra: any, context: any, ent: any): string[] {
+  const values: unknown[] = [
+    ...(Array.isArray(extra?.symbols) ? extra.symbols : []),
+    ...(Array.isArray(extra?.compareSymbols) ? extra.compareSymbols : []),
+    ...(Array.isArray(extra?.assets) ? extra.assets : []),
+    extra?.baseSymbol,
+    extra?.quoteSymbol,
+    context?.base?.symbol,
+    context?.quote?.symbol,
+    ...(Array.isArray(context?.symbols) ? context.symbols : []),
+    ent?.display_symbol,
+  ]
+  return uniqStrings(values.map(cleanSymbol)).slice(0, 4)
+}
+
+function assetSubjectsForArtifact(args: {
+  artifactType: string
+  // deno-lint-ignore no-explicit-any
+  extra: any
+  // deno-lint-ignore no-explicit-any
+  context: any
+  // deno-lint-ignore no-explicit-any
+  ent: any
+  orgId: string
+  userId: string | null
+}): AssetEvidenceSubject[] {
+  if (args.artifactType === 'token_comparison') {
+    return comparisonSymbols(args.extra, args.context, args.ent)
+      .map((symbol) => deriveAssetEvidenceSubject({ ...args, symbolOverride: symbol, publicOnly: true }))
+      .filter(Boolean) as AssetEvidenceSubject[]
   }
+  const subject = deriveAssetEvidenceSubject({ ...args, publicOnly: true })
+  return subject ? [subject] : []
 }
 
 async function maybeRefreshCriticalEvidencePack(
@@ -361,6 +483,58 @@ Deno.serve(async (req) => {
       } catch { /* best-effort */ }
     }
 
+    // Stage F1: public asset evidence packs for asset-keyed artifacts. This runs
+    // before shared-cache lookup so the pack content hash participates in the
+    // reusable evidence key. The subject is intentionally public-scope for these
+    // shared artifact types; Explain keeps its D/E private-scoped path below.
+    const F1_ASSET_PACK_TYPES = ['token_breakdown', 'risk_panel', 'token_comparison']
+    // deno-lint-ignore no-explicit-any
+    let assetEvidenceContext: any = null
+    let assetEvidenceHash: string | null = null
+    if (F1_ASSET_PACK_TYPES.includes(artifactType)) {
+      try {
+        const subjects = assetSubjectsForArtifact({ artifactType, extra, context, ent, orgId, userId }).slice(0, artifactType === 'token_comparison' ? 4 : 1)
+        const packs = []
+        for (const subject of subjects) {
+          let assetPack = await getOrAssembleAssetEvidencePack(admin, subject, { staleMinutes: 30 })
+          assetPack = await maybeRefreshCriticalEvidencePack(admin, subject, assetPack, orgId, userId)
+          const compactPack = compactAssetEvidencePackForPrompt(assetPack, artifactType === 'token_comparison' ? 5200 : 9000)
+          if (compactPack) packs.push(compactPack)
+        }
+        if (packs.length) {
+          const packHashes = packs.map((pack) => String((pack as Record<string, any>).content_hash || '')).filter(Boolean)
+          assetEvidenceHash = hashStr(JSON.stringify({ artifactType, packHashes }))
+          const coverage = packCoverageFromContext({ asset_evidence_packs: packs })
+          assetEvidenceContext = artifactType === 'token_comparison'
+            ? {
+              asset_evidence_packs: packs,
+              asset_comparison_evidence: { packs, data_coverage: coverage },
+            }
+            : { asset_evidence_pack: packs[0] }
+          if (pkg) {
+            const items = Array.isArray(pkg.items) ? pkg.items : []
+            const coverageMerged = mergeCoverageValues([pkg.coverage, coverage]) || pkg.coverage
+            pkg = {
+              ...pkg,
+              evidence_hash: hashStr(`${pkg.evidence_hash || ''}:asset-pack:${assetEvidenceHash}`),
+              source_set_hash: hashStr(`${pkg.source_set_hash || ''}:asset-pack:${assetEvidenceHash}`),
+              coverage: coverageMerged,
+              items: [
+                ...items,
+                {
+                  kind: 'asset_evidence_pack',
+                  source: 'cached provider snapshots',
+                  subject_count: packs.length,
+                  content_hashes: packHashes,
+                },
+              ],
+              final_count: Number(pkg.final_count || items.length) + 1,
+            }
+          }
+        }
+      } catch { /* F1 grounding is additive; original artifact path still works */ }
+    }
+
     // Reusable SHARED artifact: when the evidence package is PUBLIC (no private
     // custom source contributed), the expensive multi-model analysis is generated
     // ONCE and reused across all users. On a fresh hit, copy the shared structured
@@ -560,6 +734,10 @@ Deno.serve(async (req) => {
       genContext = { ...(genContext || context || {}), evidence_package: pkg.items, evidence_coverage: pkg.coverage, evidence_scope_hint: pkg.scope_hint }
       evidenceCount = pkg.items.length
       if (pkg.items.length) sourcesUsed.push('Signal Layer / news corpus')
+    }
+    if (assetEvidenceContext) {
+      genContext = { ...(genContext || context || {}), ...assetEvidenceContext }
+      sourcesUsed.push('Asset evidence pack (cached provider snapshots)')
     }
 
     // Market regime context (one cached global read) so impact analysis is
