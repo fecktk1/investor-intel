@@ -1,12 +1,12 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Compass, Search, TrendingUp, TrendingDown, Star, ArrowRight, ExternalLink, BarChart3, Activity, AlertTriangle, ArrowLeftRight, Dices } from 'lucide-react'
+import { Compass, Search, TrendingUp, TrendingDown, Star, ArrowRight, ExternalLink, BarChart3, Activity, AlertTriangle, ArrowLeftRight, Dices, Globe } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { CHAINS, detectAddressKind, assetRef } from '../lib/chains'
 import { entityHref, listWatchlist } from '../lib/watchlist-api'
-import { loadMarkets, loadDegenMarkets, locateToken } from '../lib/markets-api'
+import { loadMarkets, loadDegenMarkets, locateToken, loadMarketMacro } from '../lib/markets-api'
 import { fmtPrice, fmtPct, fmtVol, timeAgo, pctClass } from '../lib/market-format'
 import MarketsTable from '../components/MarketsTable'
 import MemecoinTable from '../components/MemecoinTable'
@@ -14,6 +14,7 @@ import ChainHeatmap from '../components/ChainHeatmap'
 import MarketMoverCards from '../components/MarketMoverCards'
 import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import RegimeBanner from '../components/RegimeBanner'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
 const SORTS = ['market_cap', 'volume', 'gainers', 'losers', 'change_1h', 'change_24h', 'change_7d', 'exchange_availability', 'arbitrage', 'unusual_volume', 'multi_exchange_strength', 'recently_updated']
@@ -44,6 +45,7 @@ export default function MarketsPage() {
   const [err, setErr] = useState(null)
   const [candidates, setCandidates] = useState(null)
   const [marketsData, setMarketsData] = useState(null)
+  const [macro, setMacro] = useState(null)
   const [marketsLoading, setMarketsLoading] = useState(true)
   const [params, setParams] = useState({ sort: 'market_cap', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: PAGE_SIZE })
 
@@ -68,6 +70,14 @@ export default function MarketsPage() {
     })()
     return () => { alive = false }
   }, [org?.id, supabase, mode])
+
+  // Global crypto-market macro header (markets mode) — cached table read, no edge call.
+  useEffect(() => {
+    if (mode !== 'markets') return
+    let alive = true
+    loadMarketMacro(supabase).then((m) => { if (alive) setMacro(m) }).catch(() => {})
+    return () => { alive = false }
+  }, [supabase, mode])
 
   // markets data
   const paramsKey = JSON.stringify(params)
@@ -184,6 +194,8 @@ export default function MarketsPage() {
 
       {mode === 'markets' ? (
         <>
+          <RegimeBanner />
+          <MarketMacroBar macro={macro} />
           {/* 1. Global market snapshot */}
           {marketsData && (
             <section className="space-y-2">
@@ -449,6 +461,26 @@ export default function MarketsPage() {
 
       <IntelDisclaimer variant="block" />
     </div>
+  )
+}
+
+// Global crypto-market macro header: total cap (+24h), dominance, stablecoin cap.
+// All from market_macro_snapshots (cached); renders nothing until data loads.
+function MarketMacroBar({ macro }) {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  if (!macro) return null
+  const chg = macro.market_cap_change_24h_pct
+  return (
+    <section className="space-y-2">
+      <div className="eyebrow flex items-center gap-1.5"><Globe className="h-3.5 w-3.5" /> {t('markets.macro_title', { defaultValue: 'Crypto market — global' })}</div>
+      <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-5">
+        <Stat label={t('markets.macro_total_mcap', { defaultValue: 'Total market cap' })} value={macro.total_market_cap_usd ? fmtVol(macro.total_market_cap_usd) : '—'} sub={chg != null ? `${fmtPct(chg)} · 24h` : null} cls={chg != null ? pctClass(chg) : ''} />
+        <Stat label={t('markets.macro_volume', { defaultValue: '24h volume' })} value={macro.total_volume_24h_usd ? fmtVol(macro.total_volume_24h_usd) : '—'} />
+        <Stat label={t('markets.macro_btc_dom', { defaultValue: 'BTC dominance' })} value={macro.btc_dominance_pct != null ? `${Number(macro.btc_dominance_pct).toFixed(1)}%` : '—'} />
+        <Stat label={t('markets.macro_eth_dom', { defaultValue: 'ETH dominance' })} value={macro.eth_dominance_pct != null ? `${Number(macro.eth_dominance_pct).toFixed(1)}%` : '—'} />
+        <Stat label={t('markets.macro_stablecoin', { defaultValue: 'Stablecoin cap' })} value={macro.stablecoin_market_cap_usd ? fmtVol(macro.stablecoin_market_cap_usd) : '—'} />
+      </div>
+    </section>
   )
 }
 

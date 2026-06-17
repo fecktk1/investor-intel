@@ -9,6 +9,31 @@ export async function loadMarkets(supabase, orgId, params = {}) {
   return data
 }
 
+// Global crypto-market macro header (total cap, dominance, stablecoin cap) from
+// the cached market_macro_snapshots table (authenticated RLS read; no edge call,
+// no live provider call). Two providers populate it with different field coverage
+// (CoinGecko lacks stablecoin/defi; CMC has them), so coalesce the latest few
+// rows. Returns null on miss/error so the caller degrades silently.
+export async function loadMarketMacro(supabase) {
+  try {
+    const { data } = await supabase.from('market_macro_snapshots')
+      .select('total_market_cap_usd, total_volume_24h_usd, market_cap_change_24h_pct, btc_dominance_pct, eth_dominance_pct, stablecoin_market_cap_usd, defi_market_cap_usd, as_of')
+      .eq('snapshot_kind', 'global').order('as_of', { ascending: false }).limit(4)
+    if (!data || !data.length) return null
+    const pick = (k) => { for (const r of data) if (r[k] != null) return Number(r[k]); return null }
+    return {
+      total_market_cap_usd: pick('total_market_cap_usd'),
+      total_volume_24h_usd: pick('total_volume_24h_usd'),
+      market_cap_change_24h_pct: pick('market_cap_change_24h_pct'),
+      btc_dominance_pct: pick('btc_dominance_pct'),
+      eth_dominance_pct: pick('eth_dominance_pct'),
+      stablecoin_market_cap_usd: pick('stablecoin_market_cap_usd'),
+      defi_market_cap_usd: pick('defi_market_cap_usd'),
+      as_of: data[0].as_of,
+    }
+  } catch { return null }
+}
+
 // Degen (memecoin) terminal list. Reads memecoin_latest_tokens via intel-degen
 // (cache-only). Params: { page, limit, sort, search, chain, bucket, riskMax, minLiquidity }.
 export async function loadDegenMarkets(supabase, orgId, params = {}) {
