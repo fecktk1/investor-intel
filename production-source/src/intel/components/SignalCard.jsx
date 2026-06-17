@@ -23,8 +23,35 @@ const REASON_LABEL = {
 const assetHref = (ref) => `/intel/asset/${encodeURIComponent(ref || '')}`
 const fmtPct = (v) => `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`
 
+// Momentum from the stored score_delta. global_score is 0..1, so the threshold is
+// fractional — NOT the 0..100 narrative-subdelta scale (which would never fire).
+// New signals (d===0, no prev_direction) and fallback-radar cards ({} / undefined
+// score_delta) get no badge; a direction change reads as "Flipped".
+const MOMENTUM_D = 0.03
+function momentum(scoreDelta, direction) {
+  if (!scoreDelta || typeof scoreDelta !== 'object') return null
+  const prev = scoreDelta.prev_direction
+  if (prev && direction && prev !== direction) return { label: 'Flipped', cls: 'chip--info' }
+  const d = Number(scoreDelta.d_global_score)
+  if (!Number.isFinite(d)) return null
+  if (d >= MOMENTUM_D) return { label: 'Strengthening', cls: 'chip--ok', up: true }
+  if (d <= -MOMENTUM_D) return { label: 'Weakening', cls: 'chip--err', up: false }
+  return null
+}
+
+// Freshness dot from stale_after (= generated_at + ~90min). Missing on fallback
+// cards → no dot. Past stale_after → aging (amber), else fresh (green).
+function freshnessDot(staleAfter) {
+  if (!staleAfter) return null
+  const ts = new Date(staleAfter).getTime()
+  if (!Number.isFinite(ts)) return null
+  return Date.now() < ts ? 'fresh' : 'aging'
+}
+
 export default function SignalCard({ s }) {
   const reasons = s.reasons || []
+  const mom = momentum(s.score_delta, s.direction)
+  const fresh = freshnessDot(s.stale_after)
   return (
     <div className="card--flat p-3 space-y-1.5">
       <div className="flex items-center gap-2 flex-wrap">
@@ -32,6 +59,12 @@ export default function SignalCard({ s }) {
         {s.kind === 'chain' && <span className="text-[11px] text-[var(--fg-4)]">chain</span>}
         {s.kind === 'narrative' && <span className="text-[11px] text-[var(--fg-4)]">narrative</span>}
         <span className={`chip text-[10px] ${SIG_CLS[s.direction] || ''}`}>{SIG_LABEL[s.direction] || s.direction}</span>
+        {mom && (
+          <span className={`chip text-[10px] inline-flex items-center gap-0.5 ${mom.cls}`} title="Change vs the previous reading">
+            {mom.up === true && <TrendingUp className="h-3 w-3" />}{mom.up === false && <TrendingDown className="h-3 w-3" />}{mom.label}
+          </span>
+        )}
+        {fresh && <span title={fresh === 'fresh' ? 'Fresh signal' : 'Aging — past its refresh window'} className={`h-2 w-2 rounded-full ${fresh === 'fresh' ? 'bg-emerald-400' : 'bg-amber-400/80'}`} />}
         {s.has_official && <span className="chip text-[9px] chip--ok uppercase">Official</span>}
         {typeof s.change_24h === 'number' && <span className={`text-[11px] font-semibold flex items-center gap-0.5 ${s.change_24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{s.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{fmtPct(s.change_24h)}</span>}
         {s.ref && <Link to={assetHref(s.ref)} className="ml-auto text-[11px] text-[var(--accent)] flex items-center gap-0.5">Chart <ArrowRight className="h-3 w-3" /></Link>}
