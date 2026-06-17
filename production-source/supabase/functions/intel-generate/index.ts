@@ -18,6 +18,7 @@ import { buildEvidence } from '../_shared/intel-evidence.ts'
 import { multiModelAnalyze } from '../_shared/intel-models.ts'
 import { buildMarketMemoryPromptBlock } from '../_shared/exchange-market/memory.ts'
 import { materialityVerdict } from '../_shared/core-intel/materiality.ts'
+import { summarizeChange } from '../_shared/core-intel/changes.ts'
 import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { routeExplainContext, similarRecentExplain, computeQuestionHashes } from '../_shared/intel/intel-context-adapters.ts'
@@ -699,6 +700,8 @@ Deno.serve(async (req) => {
     const DELTA_TYPES = ['token_breakdown', 'risk_panel', 'narrative_report', 'defi_report', 'execution_report', 'wallet_summary', 'token_comparison', 'thesis_review']
     // deno-lint-ignore no-explicit-any
     let deltaPlan: any = null
+    // deno-lint-ignore no-explicit-any
+    let freshWhatChanged: { summary: string | null; drivers: string[] } | null = null
     if (!force && pkg) {
       try {
         const { data: prior } = await supabase.from('research_artifacts')
@@ -714,6 +717,21 @@ Deno.serve(async (req) => {
             prevSignal: ss.direction ? { polarity: ss.direction, score: ss.global_score, source_count: ss.source_count } : null,
             newSignal: signalSnap ? { polarity: signalSnap.direction, score: signalSnap.global_score, source_count: signalSnap.source_count } : null,
           })
+          // Capture a deterministic "what changed since your last read" while the prior
+          // is in hand — consumed by the fresh full-synthesis build below (the delta
+          // path writes its own LLM what_changed, so this never reaches it).
+          {
+            const wc = summarizeChange({
+              display_symbol: ent?.display_symbol ?? null,
+              subject_id: ent?.canonical_ref_key ?? null,
+              direction: signalSnap?.direction,
+              score_delta: {
+                prev_direction: ss.direction,
+                d_global_score: (signalSnap?.global_score != null && ss.global_score != null) ? Number(signalSnap.global_score) - Number(ss.global_score) : undefined,
+              },
+            })
+            if (wc?.summary || verdict.drivers.length) freshWhatChanged = { summary: wc?.summary ?? null, drivers: verdict.drivers }
+          }
           if (verdict.magnitude === 'none') {
             const newStale = new Date(Date.now() + staleMinutes * 60_000).toISOString()
             await supabase.from('research_artifacts').update({ stale_after: newStale, reuse_kind: 'reuse_stale_unchanged' }).eq('id', prior.id)
@@ -728,6 +746,33 @@ Deno.serve(async (req) => {
           }
         }
       } catch { /* 215 columns absent → fresh path */ }
+    }
+
+    // On a forced regen the reuse block above is skipped; still compute the
+    // deterministic "what changed" from the prior artifact so manual refreshes get
+    // the line too (one indexed lookup, force-only — no effect on the reuse flow).
+    if (force && pkg && signalSnap && !freshWhatChanged) {
+      try {
+        const { data: prior } = await supabase.from('research_artifacts')
+          .select('signal_snapshot, evidence_hash')
+          .eq('org_id', orgId).eq('cache_key', cacheKey).eq('status', 'ready').not('evidence_hash', 'is', null)
+          .gte('created_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
+          .order('created_at', { ascending: false }).limit(1).maybeSingle()
+        // deno-lint-ignore no-explicit-any
+        const ss: any = (prior as any)?.signal_snapshot || {}
+        if (ss.direction) {
+          const verdict = materialityVerdict({
+            prevEvidenceHash: (prior as any).evidence_hash, newEvidenceHash: pkg.evidence_hash,
+            prevSignal: { polarity: ss.direction, score: ss.global_score, source_count: ss.source_count },
+            newSignal: { polarity: signalSnap.direction, score: signalSnap.global_score, source_count: signalSnap.source_count },
+          })
+          const wc = summarizeChange({
+            display_symbol: ent?.display_symbol ?? null, subject_id: ent?.canonical_ref_key ?? null, direction: signalSnap.direction,
+            score_delta: { prev_direction: ss.direction, d_global_score: (signalSnap.global_score != null && ss.global_score != null) ? Number(signalSnap.global_score) - Number(ss.global_score) : undefined },
+          })
+          if (wc?.summary || verdict.drivers.length) freshWhatChanged = { summary: wc?.summary ?? null, drivers: verdict.drivers }
+        }
+      } catch { /* no prior / 215 absent */ }
     }
 
     // Governance gate: global kill switch + monthly cost cap (cache hits above
@@ -1033,10 +1078,13 @@ Deno.serve(async (req) => {
 
     const now = Date.now()
     const staleAfter = new Date(now + staleMinutes * 60_000).toISOString()
+    // Deterministic "what changed since your last read" — fresh path only, and only
+    // when the model didn't already emit one (don't clobber LLM prose).
+    if (freshWhatChanged?.summary && structured && !structured.what_changed) structured.what_changed = freshWhatChanged.summary
     const row = orgArtifactRow({
       orgId, userId, artifactType, ent, extra, structured, inputHash, cacheKey, staleAfter, model: modelUsed,
       validationStatus, sources: sourcesUsed,
-      validatorOutcome: { hits: validation.hits, contract_missing: contract.missing, consensus, providers: providerMeta?.providers || [] },
+      validatorOutcome: { hits: validation.hits, contract_missing: contract.missing, consensus, providers: providerMeta?.providers || [], ...(freshWhatChanged?.drivers?.length ? { drivers: freshWhatChanged.drivers } : {}) },
       evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, signalSnapshot: signalSnap || {},
       reuseKind: 'fresh',
       questionNormHash: explainHashes?.question_norm_hash || null, questionShingles: explainHashes?.question_shingles || null,
