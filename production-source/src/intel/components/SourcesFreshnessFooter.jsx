@@ -6,7 +6,7 @@ import ConfidenceChip from './ConfidenceChip'
 // Provenance footer shown on every Intel insight: confidence + sources +
 // per-source freshness + what could not be verified. Low confidence and stale
 // data are visually distinct, never hidden.
-export default function SourcesFreshnessFooter({ artifact }) {
+export default function SourcesFreshnessFooter({ artifact, showCoverageWarning = true }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   if (!artifact) return null
   const sources = artifact.sources || []
@@ -39,7 +39,7 @@ export default function SourcesFreshnessFooter({ artifact }) {
           <span>{freshEntries.map(([k, v]) => `${k}: ${v}`).join(' · ')}</span>
         </div>
       )}
-      {showWarning && materialGaps.length > 0 && (
+      {showCoverageWarning && showWarning && materialGaps.length > 0 && (
         <div className="flex items-start gap-1.5 text-amber-400/80">
           <AlertTriangle className="h-3.5 w-3.5 mt-0.5 flex-shrink-0" />
           <span>{t('sources.missing', { defaultValue: 'Could not verify' })}: {materialGaps.join('; ')}</span>

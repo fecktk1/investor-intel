@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, TrendingUp, TrendingDown, Minus, Eye, CheckCircle2, XCircle, Bookmark, Check, RefreshCw, History } from 'lucide-react'
 import SourcesFreshnessFooter from './SourcesFreshnessFooter'
+import CoverageStrip from './CoverageStrip'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { saveResearch } from '../lib/intel-data'
@@ -30,6 +31,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
   if (!result?.artifact) return null
   const a = result.artifact
   const s = a.structured || {}
+  const coverage = s.data_coverage || a.data_coverage || null
 
   // Reuse / delta provenance banner — honest about what was reused and why,
   // with deterministic change drivers as chips + an optional force refresh.
@@ -84,6 +86,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
     return (
       <div className="space-y-4">
         {reuseBanner}
+        <CoverageStrip coverage={coverage} />
         {s.summary && <div className="card p-4"><p className="text-[14px] text-[var(--fg-1)] leading-relaxed whitespace-pre-wrap">{s.summary}</p></div>}
         {po.what_it_is && <div className="card p-4"><Field label={t('defi.ai_what', { defaultValue: 'What this is' })}>{po.what_it_is}</Field></div>}
 
@@ -138,7 +141,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
 
         {saveBtn}
         {s.coverage_note && <div className="text-[11px] text-[var(--fg-4)] italic px-1">{s.coverage_note}</div>}
-        <SourcesFreshnessFooter artifact={a} />
+        <SourcesFreshnessFooter artifact={a} showCoverageWarning={false} />
       </div>
     )
   }
@@ -159,6 +162,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
   return (
     <div className="space-y-4">
       {reuseBanner}
+      <CoverageStrip coverage={coverage} />
       {s.summary && <div className="card p-4"><p className="text-[14px] text-[var(--fg-1)] leading-relaxed whitespace-pre-wrap">{s.summary}</p></div>}
 
       {/* Delta-mode sections — what changed / still holds / now different */}
@@ -273,7 +277,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
         </div>
       )}
       {s.coverage_note && <div className="text-[11px] text-[var(--fg-4)] italic px-1">{s.coverage_note}</div>}
-      <SourcesFreshnessFooter artifact={a} />
+      <SourcesFreshnessFooter artifact={a} showCoverageWarning={false} />
     </div>
   )
 }
