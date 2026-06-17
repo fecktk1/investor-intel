@@ -33,6 +33,8 @@ function rowToCard(r) {
     why_it_matters: r.why_it_matters,
     what_to_watch_next: r.what_to_watch_next,
     change_24h: r.metrics && typeof r.metrics.change_24h === 'number' ? r.metrics.change_24h : null,
+    score_delta: r.score_delta || null,
+    stale_after: r.stale_after || null,
     reasons: r.reasons || [],
   }
 }

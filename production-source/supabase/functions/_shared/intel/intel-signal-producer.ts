@@ -12,6 +12,7 @@
 
 import { buildNotable, buildSignalRadar } from '../intel-signals.ts'
 import { buildAssetResolver } from './asset-identity.ts'
+import { computeTrends } from './signal-trends.ts'
 import { makeCostWriter } from './intel-cost-writer.ts'
 import { h32 } from '../core-intel/hashing.ts'
 import { recordCostEvent } from '../core-intel/cost-ledger.ts'
@@ -235,6 +236,24 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
     })
   }
 
+  // ── snapshot-history trends (severity windows) — momentum/decay/streak the
+  // single-cron prev-delta can't express. One batched read per ~200 keys, hits
+  // iss_snap_key_time. No providers, no new tables. Severity is the stored basis.
+  const sevenAgo = new Date(now - 7 * 86_400_000).toISOString()
+  const allKeys = [...acc.keys()]
+  const histChunks: string[][] = []
+  for (let i = 0; i < allKeys.length; i += 200) histChunks.push(allKeys.slice(i, i + 200))
+  const histResults = await Promise.all(histChunks.map(async (chunk) => {
+    try {
+      const r = await admin.from('intel_signal_snapshots')
+        .select('signal_key, snapshot_at, severity, direction')
+        .gte('snapshot_at', sevenAgo).in('signal_key', chunk).order('snapshot_at', { ascending: true })
+      return (r?.data || []) as Any[]
+    } catch { return [] as Any[] }
+  }))
+  const histById = new Map<string, Any[]>()
+  for (const rows of histResults) for (const r of rows) { const a = histById.get(r.signal_key) || []; a.push(r); histById.set(r.signal_key, a) }
+
   // ── finalize: deltas vs prior, cache_key, write ───────────
   const snapRows: Any[] = []
   const stateRows: Any[] = []
@@ -243,11 +262,16 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
     const p = prior.get(sig.signal_key)
     const contentHash = h32(`${sig.direction}|${(sig.headlines || []).join('~')}|${sig.why_it_matters || ''}|${sig.global_score.toFixed(3)}`)
     const cache_key = h32(`${sig.signal_key}|${contentHash}|${CONTRACT}`)
+    const trends = computeTrends(
+      (histById.get(sig.signal_key) || []).map((r: Any) => ({ snapshot_at: r.snapshot_at, value: Number(r.severity), direction: r.direction })),
+      { value: sig.severity, direction: sig.direction }, now,
+    )
     const score_delta = {
       ...(sig.score_delta || {}),
       prev_direction: p?.direction ?? null,
       prev_global_score: p?.global_score ?? null,
       d_global_score: p ? Number((sig.global_score - p.global_score).toFixed(4)) : 0,
+      ...trends,
     }
     const changed = !p || p.cache_key !== cache_key
 

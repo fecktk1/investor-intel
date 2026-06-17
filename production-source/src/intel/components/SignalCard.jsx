@@ -23,19 +23,24 @@ const REASON_LABEL = {
 const assetHref = (ref) => `/intel/asset/${encodeURIComponent(ref || '')}`
 const fmtPct = (v) => `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`
 
-// Momentum from the stored score_delta. global_score is 0..1, so the threshold is
-// fractional — NOT the 0..100 narrative-subdelta scale (which would never fire).
-// New signals (d===0, no prev_direction) and fallback-radar cards ({} / undefined
-// score_delta) get no badge; a direction change reads as "Flipped".
+// Momentum from the stored score_delta. Prefers the 24h window (computed from
+// snapshot history) over the single 45-min prev-tick; values are 0..1 so the
+// threshold is fractional — NOT the 0..100 narrative-subdelta scale (never fires).
+// A multi-cron run appends the streak ("Strengthening · 3 cycles"). New signals
+// and fallback-radar cards ({} / undefined score_delta) get no badge; a direction
+// change reads as "Flipped".
 const MOMENTUM_D = 0.03
 function momentum(scoreDelta, direction) {
   if (!scoreDelta || typeof scoreDelta !== 'object') return null
   const prev = scoreDelta.prev_direction
   if (prev && direction && prev !== direction) return { label: 'Flipped', cls: 'chip--info' }
-  const d = Number(scoreDelta.d_global_score)
+  const d24 = Number(scoreDelta.d_24h)
+  const d = Number.isFinite(d24) ? d24 : Number(scoreDelta.d_global_score)
   if (!Number.isFinite(d)) return null
-  if (d >= MOMENTUM_D) return { label: 'Strengthening', cls: 'chip--ok', up: true }
-  if (d <= -MOMENTUM_D) return { label: 'Weakening', cls: 'chip--err', up: false }
+  const streak = Number(scoreDelta.streak) || 0
+  const tail = streak >= 2 ? ` · ${streak} cycles` : ''
+  if (d >= MOMENTUM_D) return { label: `Strengthening${tail}`, cls: 'chip--ok', up: true }
+  if (d <= -MOMENTUM_D) return { label: `Weakening${tail}`, cls: 'chip--err', up: false }
   return null
 }
 

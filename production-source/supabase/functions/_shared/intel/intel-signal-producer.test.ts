@@ -8,7 +8,7 @@ function makeAdmin(tables: Record<string, any>) {
   const make = (table: string) => {
     const result = tables[table] ?? { data: [], error: null }
     const b: any = {}
-    for (const m of ['select', 'order', 'limit', 'gte', 'gt', 'eq']) b[m] = () => b
+    for (const m of ['select', 'order', 'limit', 'gte', 'gt', 'eq', 'in']) b[m] = () => b
     b.upsert = (rows: any[]) => { sink.upserts.push({ table, rows }); return Promise.resolve({ error: null }) }
     b.insert = (rows: any[]) => { sink.inserts.push({ table, rows }); return Promise.resolve({ error: null }) }
     b.then = (res: any) => res(result)
