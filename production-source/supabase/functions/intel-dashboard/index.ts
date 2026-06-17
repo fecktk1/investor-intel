@@ -7,7 +7,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { birdeyeChainFor, birdeyeOverview } from '../_shared/intel-providers.ts'
 import { chainIdFor, getChain, CHAINS } from '../_shared/chains.ts'
-import { buildNotable, buildSignalRadar } from '../_shared/intel-signals.ts'
+import { buildNotable, buildSignalRadar, clusterTitles } from '../_shared/intel-signals.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { assembleBriefEvidencePack } from '../_shared/intel/brief-evidence-pack.ts'
@@ -235,7 +235,19 @@ Deno.serve(async (req) => {
     try {
       const { data: feed } = await supabase.rpc('signal_feed_v2', { p_org_id: orgId, p_subject_type: null, p_chains: (scope === 'chain' && chain) ? [chain] : null, p_limit: 48 })
       if (Array.isArray(feed) && feed.length) {
-        const cards = feed.map(storeRowToCard)
+        // Read-time guard: collapse residual near-duplicate NEWS cards (same event,
+        // different wording) so one story can't flood the feed before the curation/
+        // producer crons re-cluster it. Keep the highest-ranked per cluster (feed is
+        // already final_rank-ordered); non-news cards pass through untouched.
+        const rawCards = feed.map(storeRowToCard)
+        const newsClusters = clusterTitles(rawCards.map((c: any) => c.kind === 'news' ? String(c.name || (c.headlines || [])[0] || '') : ''))
+        const seenNews = new Set<number>()
+        const cards = rawCards.filter((c: any, i: number) => {
+          if (c.kind !== 'news') return true
+          const cid = newsClusters[i]
+          if (seenNews.has(cid)) return false
+          seenNews.add(cid); return true
+        })
         for_you = cards.filter((c: any) => (c.reasons || []).length).slice(0, 6)
         affects_holdings = cards.filter((c: any) => c.affects_holding).slice(0, 6)
         followed_signals = cards.filter((c: any) => (c.reasons || []).includes('followed narrative') || c.on_watchlist).slice(0, 6)
