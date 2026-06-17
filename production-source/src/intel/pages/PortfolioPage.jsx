@@ -338,6 +338,7 @@ export default function PortfolioPage() {
   const [sources, setSources] = useState([])
   const [txns, setTxns] = useState([])
   const [snapshots, setSnapshots] = useState([])
+  const [benchmarks, setBenchmarks] = useState({})
   const [ctxMap, setCtxMap] = useState({})
   const [intel, setIntel] = useState(null)
   const [loading, setLoading] = useState(true)
@@ -375,10 +376,10 @@ export default function PortfolioPage() {
     try {
       const { portfolio, holdings, sources } = await api.getPortfolio(supabase, org.id, id)
       setPortfolio(portfolio); setHoldings(holdings); setSources(sources); setHideDustState(!!portfolio?.hide_dust)
-      const [tx, snaps, ctx] = await Promise.all([
-        api.listActivity(supabase, org.id, id), api.getSnapshots(supabase, org.id, id), api.hydrateHoldingsContext(supabase, holdings),
+      const [tx, snaps, ctx, bench] = await Promise.all([
+        api.listActivity(supabase, org.id, id), api.getSnapshots(supabase, org.id, id), api.hydrateHoldingsContext(supabase, holdings), api.getBenchmarkSeries(supabase),
       ])
-      setTxns(tx); setSnapshots(snaps); setCtxMap(ctx); setIntel(null)
+      setTxns(tx); setSnapshots(snaps); setCtxMap(ctx); setBenchmarks(bench || {}); setIntel(null)
     } catch (e) { setError(e.message) }
   }, [org?.id, supabase])
 
@@ -447,7 +448,7 @@ export default function PortfolioPage() {
 
           <WalletSyncPanel supabase={supabase} orgId={org.id} userId={user?.id} portfolioId={activeId} sources={sources} onChange={() => loadPortfolio(activeId)} t={t} />
 
-          <PortfolioPerformanceChart series={snapshots} loading={false} />
+          <PortfolioPerformanceChart series={snapshots} compare={benchmarks} loading={false} />
 
           <section className="space-y-2">
             <div className="flex items-center justify-between flex-wrap gap-2">

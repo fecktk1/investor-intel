@@ -14,6 +14,8 @@ const fmtUsd = (p) => p == null ? '' : p >= 1000 ? `$${(p / 1000).toFixed(1)}k` 
 // Signed compact USD for P&L (losses must read as -$…, which fmtUsd never emits).
 const fmtSigned = (p) => { if (p == null) return ''; const n = Math.round(p); const s = n < 0 ? '-' : ''; const a = Math.abs(n); return a >= 1000 ? `${s}$${(a / 1000).toFixed(1)}k` : `${s}$${a}` }
 const fmtT = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}` }
+const fmtPctSigned = (v) => v == null ? '' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`
+const pctCls = (v) => v == null ? 'text-[var(--fg-4)]' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-[var(--fg-3)]'
 
 export default function PortfolioPerformanceChart({ series = [], compare = null, loading = false }) {
   const { t } = useTranslation('intel', { useSuspense: false })
@@ -38,6 +40,19 @@ export default function PortfolioPerformanceChart({ series = [], compare = null,
   const up = view === 'value' && points.length > 1 && points[points.length - 1].value >= points[0].value
   const color = up ? '#34d399' : '#f87171'
 
+  // Benchmark strip: rollups give a scalar 30d % per asset (not a series), so we
+  // compare the user's OWN trailing-30d return to BTC/ETH/SOL as a stat row —
+  // never a fabricated benchmark curve. Hidden until real rollup data arrives.
+  const benchRow = useMemo(() => {
+    const c = compare || {}
+    const syms = ['BTC', 'ETH', 'SOL'].filter((s) => typeof c[s] === 'number')
+    if (!syms.length) return null
+    const cutoff = Date.now() - 30 * 86400000
+    const win = (series || []).filter((p) => p.t >= cutoff && p.value != null)
+    const userRet = win.length >= 2 && win[0].value > 0 ? ((win[win.length - 1].value / win[0].value) - 1) * 100 : null
+    return { userRet, syms, c }
+  }, [series, compare])
+
   return (
     <div className="card p-3">
       <div className="flex items-center justify-between mb-2 px-1 gap-2 flex-wrap">
@@ -59,6 +74,13 @@ export default function PortfolioPerformanceChart({ series = [], compare = null,
           ))}
         </div>
       </div>
+      {view === 'value' && benchRow && (
+        <div className="flex items-center gap-2 flex-wrap text-[11px] mb-2 px-1">
+          <span className="text-[var(--fg-5)]">{t('portfolio.vs_market_30d', { defaultValue: 'vs market · 30d' })}</span>
+          {benchRow.userRet != null && <span className={pctCls(benchRow.userRet)}>{t('portfolio.you', { defaultValue: 'You' })} {fmtPctSigned(benchRow.userRet)}</span>}
+          {benchRow.syms.map((s) => <span key={s} className={pctCls(benchRow.c[s])}>{s} {fmtPctSigned(benchRow.c[s])}</span>)}
+        </div>
+      )}
       {loading ? (
         <div className="h-[240px] grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
       ) : points.length < 2 ? (
