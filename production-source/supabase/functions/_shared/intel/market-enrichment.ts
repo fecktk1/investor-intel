@@ -304,17 +304,19 @@ export async function assembleTokenUnlockState(
     .order('unlock_date', { ascending: true })
     .limit(6))
 
-  // Cache-first: token_unlocks is warmed per-token from Mobula's vesting schedule
-  // (free plan; per-token endpoint). Refresh when the cache is empty or older than
-  // ~24h — unlocks are slow-moving. No key / error -> Mobula returns [] and we
-  // simply serve whatever cache exists.
+  // Cache-first: token_unlocks is warmed from Mobula's vesting schedule (a cron
+  // pre-warms the auto-served universe; viewing any other token warms it on
+  // demand). Unlock schedules are effectively static, so cache ~30 days and
+  // refresh monthly rather than flagging stale. No key / error -> Mobula returns
+  // [] and we serve whatever cache exists.
+  const UNLOCK_TTL_MS = 30 * 24 * 3600 * 1000
   let data = await readCache()
   const freshestMs = data.length ? Math.max(...data.map((r: Any) => new Date(r.fetched_at || 0).getTime())) : 0
-  if (!data.length || (nowMs - freshestMs) > 24 * 3600 * 1000) {
+  if (!data.length || (nowMs - freshestMs) > UNLOCK_TTL_MS) {
     const fetched = await fetchMobulaTokenUnlocks(symbol || sym, nowMs)
     if (fetched.length) {
       const fetchedAtIso = new Date(nowMs).toISOString()
-      const staleAfterIso = new Date(nowMs + 24 * 3600 * 1000).toISOString()
+      const staleAfterIso = new Date(nowMs + UNLOCK_TTL_MS).toISOString()
       const upsertRows = fetched.slice(0, 24).map((u) => ({
         token: sym, token_symbol: sym, unlock_date: u.unlock_date, amount: u.amount,
         pct_supply: null, provider: 'mobula', source_ref: `mobula:unlocks:${sym}:${u.unlock_date}`,
