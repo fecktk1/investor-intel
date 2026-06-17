@@ -91,6 +91,18 @@ Deno.test('score_delta carries prev_direction + d_global_score from prior row', 
   assert(snaps.some((s: any) => s.signal_key === 'asset:cg:solana'), 'snapshot emitted on change')
 })
 
+Deno.test('corroboration: agreeing layers counted, divergence flagged', async () => {
+  const { admin, sink } = makeAdmin(fixtures())
+  await produceSignalState(admin as any, { now })
+  const sol = sink.upserts.flatMap((u) => u.rows).find((r: any) => r.signal_key === 'asset:cg:solana')
+  const corr = sol.metrics.corroboration
+  assert(corr, 'corroboration present on asset signal')
+  assertEquals(corr.divergence, false) // radar + exchange + narrative all bullish on SOL
+  assert(corr.count >= 2, `expected >=2 agreeing layers, got ${corr.count}`)
+  assertEquals(corr.layers.radar, 'bullish')
+  assertEquals(corr.layers.exchange, 'bullish')
+})
+
 Deno.test('NO private wallet/portfolio rows are written to the global store', async () => {
   const { admin, sink } = makeAdmin(fixtures())
   await produceSignalState(admin as any, { now })

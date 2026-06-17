@@ -255,6 +255,37 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
     })
   }
 
+  // ── cross-layer corroboration: do an asset's radar / exchange / narrative / news
+  // layers agree, or disagree (fakeout risk)? Surfaced inside metrics (returned by
+  // signal_feed_v2 as-is — no schema change). Narrative/news directions indexed by
+  // the canonical assets they mention; all from already-built rows.
+  const pickDir = (s: Set<string>): string => {
+    const hasB = s.has('bullish'), hasR = s.has('bearish')
+    if (hasB && hasR) return 'mixed'
+    if (hasB) return 'bullish'
+    if (hasR) return 'bearish'
+    return 'mixed'
+  }
+  const dirByAsset = (pred: (s: Sig) => boolean) => {
+    const m = new Map<string, Set<string>>()
+    for (const sig of acc.values()) if (pred(sig)) for (const a of sig.related_assets) { const set = m.get(a) || new Set<string>(); set.add(sig.direction); m.set(a, set) }
+    return m
+  }
+  const narrDirByAsset = dirByAsset((s) => s.subject_type === 'narrative')
+  const newsDirByAsset = dirByAsset((s) => s.subject_type === 'news')
+  for (const sig of acc.values()) {
+    if (sig.subject_type !== 'asset') continue
+    const layers: Record<string, string> = { radar: sig.direction }
+    const exDir = (sig.metrics as Any)?.exchange?.direction
+    if (exDir) layers.exchange = mapDirection(exDir)
+    const nd = narrDirByAsset.get(sig.subject_id); if (nd?.size) layers.narrative = pickDir(nd)
+    const sd = newsDirByAsset.get(sig.subject_id); if (sd?.size) layers.news = pickDir(sd)
+    const dirs = Object.values(layers)
+    const bull = dirs.filter((d) => d === 'bullish').length
+    const bear = dirs.filter((d) => d === 'bearish').length
+    ;(sig.metrics as Any).corroboration = { count: Math.max(bull, bear), divergence: bull > 0 && bear > 0, layers }
+  }
+
   // ── snapshot-history trends (severity windows) — momentum/decay/streak the
   // single-cron prev-delta can't express. One batched read per ~200 keys, hits
   // iss_snap_key_time. No providers, no new tables. Severity is the stored basis.

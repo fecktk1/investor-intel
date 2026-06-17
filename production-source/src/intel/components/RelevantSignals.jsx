@@ -35,6 +35,7 @@ function rowToCard(r) {
     change_24h: r.metrics && typeof r.metrics.change_24h === 'number' ? r.metrics.change_24h : null,
     score_delta: r.score_delta || null,
     stale_after: r.stale_after || null,
+    corroboration: r.metrics?.corroboration || null,
     reasons: r.reasons || [],
   }
 }

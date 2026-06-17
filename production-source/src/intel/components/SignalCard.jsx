@@ -1,6 +1,6 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
-import { ArrowRight, TrendingUp, TrendingDown } from 'lucide-react'
+import { ArrowRight, TrendingUp, TrendingDown, Layers, AlertTriangle } from 'lucide-react'
 import MarketContextCard from './MarketContextCard'
 
 // One ranked Signal Radar card — the stories driving it, why it's emerging, what to
@@ -67,6 +67,12 @@ export default function SignalCard({ s }) {
         {mom && (
           <span className={`chip text-[10px] inline-flex items-center gap-0.5 ${mom.cls}`} title="Change vs the previous reading">
             {mom.up === true && <TrendingUp className="h-3 w-3" />}{mom.up === false && <TrendingDown className="h-3 w-3" />}{mom.label}
+          </span>
+        )}
+        {s.corroboration && (s.corroboration.count >= 2 || s.corroboration.divergence) && (
+          <span className={`chip text-[10px] inline-flex items-center gap-0.5 ${s.corroboration.divergence ? 'text-amber-400' : 'chip--info'}`}
+            title={Object.entries(s.corroboration.layers || {}).map(([k, v]) => `${k}: ${v}`).join(' · ')}>
+            {s.corroboration.divergence ? <AlertTriangle className="h-3 w-3" /> : <Layers className="h-3 w-3" />}{s.corroboration.divergence ? 'Layers disagree' : `${s.corroboration.count} layers agree`}
           </span>
         )}
         {fresh && <span title={fresh === 'fresh' ? 'Fresh signal' : 'Aging — past its refresh window'} className={`h-2 w-2 rounded-full ${fresh === 'fresh' ? 'bg-emerald-400' : 'bg-amber-400/80'}`} />}
