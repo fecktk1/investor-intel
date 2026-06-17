@@ -104,6 +104,35 @@ export async function loadDegenToken(supabase, chain, address) {
   } catch { return null }
 }
 
+// Degen momentum trajectory — reads a memecoin's snapshot history (price /
+// momentum_score / volume over the last `hours`) from memecoin_token_snapshots
+// (authenticated RLS read; the entire history was written but never read by the
+// client). Returns a compact series + deltas, or null with < 2 points.
+export async function loadDegenMomentum(supabase, chain, address, { hours = 24, points = 24 } = {}) {
+  if (!chain || !address) return null
+  try {
+    const since = new Date(Date.now() - hours * 3600_000).toISOString()
+    const { data } = await supabase.from('memecoin_token_snapshots')
+      .select('price_usd, momentum_score, volume_24h_usd, as_of')
+      .eq('chain', chain).eq('token_address', address)
+      .gte('as_of', since).order('as_of', { ascending: true }).limit(200)
+    if (!data || data.length < 2) return null
+    const series = data.slice(-points)
+    const first = series[0], last = series[series.length - 1]
+    const fp = Number(first.price_usd), lp = Number(last.price_usd)
+    const priceChangePct = (Number.isFinite(fp) && fp > 0 && Number.isFinite(lp)) ? ((lp - fp) / fp) * 100 : null
+    const fm = first.momentum_score, lm = last.momentum_score
+    return {
+      hours, points: series.length,
+      priceSeries: series.map((r) => Number(r.price_usd)),
+      priceChangePct,
+      latestMomentum: lm != null ? Number(lm) : null,
+      momoDelta: (fm != null && lm != null) ? Number(lm) - Number(fm) : null,
+      volChangePct: (first.volume_24h_usd > 0 && last.volume_24h_usd != null) ? ((Number(last.volume_24h_usd) - Number(first.volume_24h_usd)) / Number(first.volume_24h_usd)) * 100 : null,
+    }
+  } catch { return null }
+}
+
 // Resolve an EVM contract address to the chain(s) it trades on (DexScreener
 // multichain search, restricted to enrichable chains). Returns candidates sorted
 // by liquidity desc: [{ chain, symbol, liquidityUsd, fdv }]. [] on miss/error so

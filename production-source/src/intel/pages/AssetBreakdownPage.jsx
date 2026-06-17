@@ -18,6 +18,7 @@ import IntelActionButton from '../components/IntelActionButton'
 import MarketContextCard from '../components/MarketContextCard'
 import ProfilePanel from '../components/ProfilePanel'
 import DegenSignalsCard from '../components/DegenSignalsCard'
+import DegenMomentum from '../components/DegenMomentum'
 import { loadMarketContextBySymbols, loadTokenProfile, loadDegenToken } from '../lib/markets-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 
@@ -233,6 +234,7 @@ export default function AssetBreakdownPage() {
 
           {/* Free cached Degen risk & quality signals (contract tokens) */}
           {entity._contract && degenSignals && <DegenSignalsCard token={degenSignals} />}
+          {entity._contract && entity._chain && entity._address && <DegenMomentum chain={entity._chain} address={entity._address} />}
 
           {/* Rich, globally-cached project profile */}
           <ProfilePanel profile={profile} state={profileState} />
