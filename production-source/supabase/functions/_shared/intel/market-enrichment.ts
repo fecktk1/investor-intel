@@ -6,6 +6,7 @@
 // deploy ahead of any data backfill.
 
 import { getTokenOverview, type BirdeyeContext } from '../birdeye-client.ts'
+import { fetchMobulaTokenUnlocks } from '../mobula-client.ts'
 
 // deno-lint-ignore no-explicit-any
 type DB = any
@@ -270,6 +271,78 @@ export async function assembleCatalystNewsState(
     curated_news,
     catalysts,
     freshness: newestTs([...curated, ...events], ['published_at', 'occurred_at']),
+  }
+}
+
+// ── 2b. Token unlock calendar (forward dilution catalyst/risk) ───────────────
+// token_unlocks is a forward-looking emissions calendar (DeFiLlama) that is
+// written + retained but read by nothing. Surfacing the next unlocks per asset
+// turns stored data into a forward dilution catalyst. token_symbol is stored
+// lowercased (slug()), so match on the lowercased symbol. pct_supply's unit is
+// provider-ambiguous (fraction vs percent), so we carry it raw and gate the
+// "material" flag on TIMING (an imminent unlock) rather than a maybe-wrong %.
+export interface TokenUnlockState {
+  status: 'available' | 'missing'
+  next_unlock: { unlock_date: string; days_until: number | null; pct_supply: number | null; amount: number | null } | null
+  upcoming: Array<{ unlock_date: string; days_until: number | null; pct_supply: number | null; amount: number | null }>
+  material: boolean
+  freshness: string | null
+}
+
+export async function assembleTokenUnlockState(
+  db: DB,
+  { symbol, nowMs }: { symbol: string | null; nowMs: number },
+): Promise<TokenUnlockState> {
+  const sym = String(symbol || '').toLowerCase().replace(/^\$/, '').trim()
+  const miss: TokenUnlockState = { status: 'missing', next_unlock: null, upcoming: [], material: false, freshness: null }
+  if (!sym) return miss
+  const today = new Date(nowMs).toISOString().slice(0, 10)
+  const readCache = () => rows(() => db.from('token_unlocks')
+    .select('token, token_symbol, unlock_date, amount, pct_supply, fetched_at')
+    .eq('token_symbol', sym)
+    .gte('unlock_date', today)
+    .order('unlock_date', { ascending: true })
+    .limit(6))
+
+  // Cache-first: token_unlocks is warmed per-token from Mobula's vesting schedule
+  // (free plan; per-token endpoint). Refresh when the cache is empty or older than
+  // ~24h — unlocks are slow-moving. No key / error -> Mobula returns [] and we
+  // simply serve whatever cache exists.
+  let data = await readCache()
+  const freshestMs = data.length ? Math.max(...data.map((r: Any) => new Date(r.fetched_at || 0).getTime())) : 0
+  if (!data.length || (nowMs - freshestMs) > 24 * 3600 * 1000) {
+    const fetched = await fetchMobulaTokenUnlocks(symbol || sym, nowMs)
+    if (fetched.length) {
+      const fetchedAtIso = new Date(nowMs).toISOString()
+      const staleAfterIso = new Date(nowMs + 24 * 3600 * 1000).toISOString()
+      const upsertRows = fetched.slice(0, 24).map((u) => ({
+        token: sym, token_symbol: sym, unlock_date: u.unlock_date, amount: u.amount,
+        pct_supply: null, provider: 'mobula', source_ref: `mobula:unlocks:${sym}:${u.unlock_date}`,
+        fetched_at: fetchedAtIso, stale_after: staleAfterIso, confidence: 0.7,
+      }))
+      try { await db.from('token_unlocks').upsert(upsertRows, { onConflict: 'token,unlock_date,provider' }) } catch { /* best-effort cache warm */ }
+      data = await readCache()
+    }
+  }
+  if (!data.length) return miss
+  const dayMs = 86400000
+  const upcoming = data.map((row: Any) => {
+    const d = new Date(`${row.unlock_date}T00:00:00Z`).getTime()
+    return {
+      unlock_date: String(row.unlock_date),
+      days_until: Number.isFinite(d) ? Math.max(0, Math.round((d - nowMs) / dayMs)) : null,
+      pct_supply: num(row.pct_supply),
+      amount: num(row.amount),
+    }
+  })
+  return {
+    status: 'available',
+    next_unlock: upcoming[0] || null,
+    upcoming,
+    // Timing-based: an unlock within ~30 days is a forward catalyst regardless
+    // of the (unit-ambiguous) supply percentage.
+    material: upcoming.some((u) => u.days_until != null && u.days_until <= 30),
+    freshness: newestTs(data, ['fetched_at']),
   }
 }
 

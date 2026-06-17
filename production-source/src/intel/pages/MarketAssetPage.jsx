@@ -18,7 +18,7 @@ import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import ThesisDriftCard from '../components/ThesisDriftCard'
 import AssetYearInReview from '../components/AssetYearInReview'
-import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard } from '../components/MarketEnrichmentCards'
+import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
 const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 'bg-amber-400', neutral: 'bg-[var(--fg-5)]' }
@@ -264,6 +264,7 @@ export default function MarketAssetPage() {
       <OnchainActivityCard onchain={d.onchain} />
       <EcosystemNarrativesCard data={d.ecosystemNarratives} />
       <CatalystsNewsCard data={d.catalysts} />
+      <UpcomingUnlocksCard data={d.unlocks} />
 
       {/* AI deep-dive (grounded in the exchange data above) */}
       <section className="space-y-2">

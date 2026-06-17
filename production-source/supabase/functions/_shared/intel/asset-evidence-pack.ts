@@ -8,6 +8,7 @@ import { h32 } from '../core-intel/hashing.ts'
 import {
   assembleEcosystemNarrativeState,
   assembleCatalystNewsState,
+  assembleTokenUnlockState,
   assemblePublicOnchainState,
 } from './market-enrichment.ts'
 
@@ -96,6 +97,7 @@ const CHECKED_SOURCES = [
   'protocol_tvl_snapshots',
   'chain_tvl_snapshots',
   'defi_pool_snapshots',
+  'token_unlocks',
   'kamino_vault_snapshots',
   'kamino_market_snapshots',
   'market_macro_snapshots',
@@ -624,7 +626,7 @@ export async function assembleAssetEvidencePack(
   // On-chain uses the central Birdeye client (cache-first, budget/kill-switch
   // enforced); live calls are allowed per product decision but bounded by the
   // 'request' budget and the pack's own 30-min reuse cache.
-  const [historicalContext, ecosystemNarrativeState, catalystState, onchainState] = await Promise.all([
+  const [historicalContext, ecosystemNarrativeState, catalystState, onchainState, unlockState] = await Promise.all([
     assembleHistoricalContext(db, resolved, assetKeys, nowMs),
     assembleEcosystemNarrativeState(db, { chain, symbol: sym }),
     assembleCatalystNewsState(db, { symbol: sym, chain }),
@@ -635,6 +637,7 @@ export async function assembleAssetEvidencePack(
       nowIso: now.toISOString(),
       birdeyeCtx: { supabase: db, jobName: 'asset-evidence-pack', caller: 'market-enrichment', kind: 'request', orgId: subject.orgId || null, userId: subject.userId || null },
     }),
+    assembleTokenUnlockState(db, { symbol: sym, nowMs }),
   ])
   const cexFreshness = newestFreshness([resolved.cexProfile, ...tickerRows, signal, cap, spread, ...orderbooks].filter(Boolean), nowMs, 3)
   const dexFreshness = newestFreshness(dexRows, nowMs, 3)
@@ -683,6 +686,7 @@ export async function assembleAssetEvidencePack(
   mark('defi_pool_snapshots', defiPools.length > 0)
   mark('kamino_vault_snapshots', kaminoVaults.length > 0)
   mark('kamino_market_snapshots', kaminoMarkets.length > 0)
+  mark('token_unlocks', unlockState.status === 'available')
   mark('market_macro_snapshots', macroRows.length > 0)
   mark('market_ranking_snapshots', rankingRows.length > 0)
   mark('narrative_category_snapshots', categoryRows.length > 0)
@@ -760,6 +764,7 @@ export async function assembleAssetEvidencePack(
     ecosystem_narrative: { source: 'narrative_taxonomy/narrative_state/narrative_signals', freshness: ecosystemNarrativeState.freshness, status: ecosystemNarrativeState.status },
     news: provenanceFor('intel_global_news', newsRows, nowMs, null),
     catalysts: { source: 'intel_curated_news/intel_event_memory', freshness: catalystState.freshness, status: catalystState.status },
+    unlocks: { source: 'token_unlocks', freshness: unlockState.freshness, status: unlockState.status },
     onchain: { source: onchainState.source || 'birdeye_token_overview', as_of: onchainState.as_of, status: onchainState.status },
     historical: historicalContext.provenance,
   }
@@ -882,6 +887,8 @@ export async function assembleAssetEvidencePack(
     ecosystem_narrative_state: ecosystemNarrativeState,
     // AI-curated news clusters + historic catalysts (the "what happened / why").
     catalyst_state: catalystState,
+    // Forward token-unlock calendar (emissions) — potential dilution catalyst.
+    unlock_state: unlockState,
     // Public token-level on-chain activity (holders, active wallets, volume).
     onchain_state: onchainState,
     news_state: {
@@ -896,7 +903,13 @@ export async function assembleAssetEvidencePack(
       news_sources: [...new Set(newsRows.map((row) => String(row.source_name || '')).filter(Boolean))].slice(0, 6),
     },
     risk_state: {
-      caution_flags: resolved.cexProfile?.caution_flags || spread?.caution_flags || [],
+      caution_flags: [
+        ...(resolved.cexProfile?.caution_flags || spread?.caution_flags || []),
+        ...(unlockState.material && unlockState.next_unlock
+          ? [`Token supply unlock scheduled in ${unlockState.next_unlock.days_until}d (${unlockState.next_unlock.unlock_date}) — potential forward dilution.`]
+          : []),
+      ],
+      upcoming_unlock: unlockState.next_unlock,
       market_cap_estimated: cap?.is_estimated === true,
       signal_direction: signal?.direction || signalState?.direction || null,
       signal_confidence: signal?.confidence || signalState?.confidence || null,
@@ -1065,6 +1078,7 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       onchain_state: (result.pack as Record<string, unknown>).onchain_state,
       ecosystem_narrative_state: (result.pack as Record<string, unknown>).ecosystem_narrative_state,
       catalyst_state: (result.pack as Record<string, unknown>).catalyst_state,
+      unlock_state: (result.pack as Record<string, unknown>).unlock_state,
       narrative_state: (result.pack as Record<string, unknown>).narrative_state,
       historical_context: (result.pack as Record<string, unknown>).historical_context,
       provider_coverage: (result.pack as Record<string, unknown>).provider_coverage,
@@ -1091,6 +1105,7 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       onchain_state: (result.pack as Record<string, unknown>).onchain_state,
       ecosystem_narrative_state: (result.pack as Record<string, unknown>).ecosystem_narrative_state,
       catalyst_state: (result.pack as Record<string, unknown>).catalyst_state,
+      unlock_state: (result.pack as Record<string, unknown>).unlock_state,
       narrative_state: (result.pack as Record<string, unknown>).narrative_state,
       news_state: (result.pack as Record<string, unknown>).news_state,
       historical_context: (result.pack as Record<string, unknown>).historical_context,

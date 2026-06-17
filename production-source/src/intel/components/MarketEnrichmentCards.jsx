@@ -1,6 +1,6 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Activity, Layers, Newspaper, Star, TrendingUp, TrendingDown, ExternalLink } from 'lucide-react'
+import { Activity, Layers, Newspaper, Star, TrendingUp, TrendingDown, ExternalLink, CalendarClock } from 'lucide-react'
 import { fmtVol, fmtNum, fmtPct, pctClass } from '../lib/market-format'
 
 // Always-visible Markets enrichment cards. They render from the intel-markets
@@ -154,6 +154,51 @@ export function CatalystsNewsCard({ data }) {
           </ul>
         </div>
       )}
+    </section>
+  )
+}
+
+// ── Upcoming token unlocks (forward emissions / dilution catalyst) ───────────
+// Always-visible (no AI run): renders the cached token_unlocks calendar that
+// also feeds the "Explain why" read + risk flags. pct_supply's unit is
+// provider-ambiguous, so it's shown as an approximate percent and absurd values
+// are dropped; the unlock DATE/timing is the unambiguous headline.
+export function UpcomingUnlocksCard({ data }) {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  const upcoming = (data && data.status === 'available' && Array.isArray(data.upcoming)) ? data.upcoming : []
+  if (!upcoming.length) return null
+  const next = data.next_unlock || upcoming[0]
+  const pctSupply = (v) => (v == null || v <= 0 || v > 100) ? null : `~${Number(v).toFixed(Number(v) < 1 ? 2 : 1)}%`
+  return (
+    <section className={`card p-4 space-y-3 ${data.material ? 'border border-amber-400/30' : ''}`}>
+      <div className="flex items-center gap-2">
+        <CalendarClock className="h-3.5 w-3.5 text-[var(--accent)]" />
+        <span className="text-[13px] font-semibold text-[var(--fg-1)]">{t('markets.unlocksTitle', { defaultValue: 'Upcoming token unlocks' })}</span>
+        {data.material && <span className="chip text-[9px] text-amber-400">{t('markets.unlocksDilution', { defaultValue: 'Forward dilution' })}</span>}
+      </div>
+      {next && (
+        <div className="card--flat p-2.5 flex items-center justify-between gap-2">
+          <div className="min-w-0">
+            <div className="text-[10px] text-[var(--fg-4)] uppercase">{t('markets.unlocksNext', { defaultValue: 'Next unlock' })}</div>
+            <div className="text-sm font-semibold text-[var(--fg-1)]">{shortDate(next.unlock_date)}{next.days_until != null ? ` · ${t('markets.unlocksIn', { defaultValue: 'in' })} ${next.days_until}d` : ''}</div>
+          </div>
+          <div className="text-right shrink-0">
+            {pctSupply(next.pct_supply) && <div className="text-sm font-semibold text-amber-400">{pctSupply(next.pct_supply)}</div>}
+            {next.amount != null && <div className="text-[10px] text-[var(--fg-5)]">{fmtNum(next.amount)} {t('markets.unlocksTokens', { defaultValue: 'tokens' })}</div>}
+          </div>
+        </div>
+      )}
+      {upcoming.length > 1 && (
+        <ul className="space-y-1">
+          {upcoming.slice(1, 5).map((u, i) => (
+            <li key={i} className="flex items-center justify-between gap-2 text-[12px]">
+              <span className="text-[var(--fg-2)]">{shortDate(u.unlock_date)}{u.days_until != null ? ` · ${u.days_until}d` : ''}</span>
+              <span className="text-[var(--fg-4)]">{pctSupply(u.pct_supply) || (u.amount != null ? fmtNum(u.amount) : '—')}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-[10px] text-[var(--fg-5)] leading-snug">{t('markets.unlocksNote', { defaultValue: 'Scheduled emissions/unlocks (DeFiLlama). Supply % is approximate. Forward dilution context — not advice.' })}</p>
     </section>
   )
 }

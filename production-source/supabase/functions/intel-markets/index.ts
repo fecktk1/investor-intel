@@ -15,7 +15,7 @@ import { getProvider } from '../_shared/exchange-market/provider-registry.ts'
 import { buildSymbolCounts, matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
 import { computeRowFlags, categoryLeaders } from '../_shared/intel/market-derived.ts'
 import { CHAIN_PROVIDERS } from '../_shared/chains.ts'
-import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState } from '../_shared/intel/market-enrichment.ts'
+import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -432,7 +432,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
   const ecoChain = String(canonical?.primary_chain || prof?.chain || '').toLowerCase() || null
   const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
   const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : null
-  const [ecosystemNarratives, catalysts, onchain] = await Promise.all([
+  const [ecosystemNarratives, catalysts, onchain, unlocks] = await Promise.all([
     assembleEcosystemNarrativeState(admin, { chain: ecoChain, symbol: sym }),
     assembleCatalystNewsState(admin, { symbol: sym, chain: ecoChain }),
     assemblePublicOnchainState({
@@ -442,6 +442,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
       nowIso: new Date().toISOString(),
       birdeyeCtx: { supabase: admin, jobName: 'intel-markets', caller: 'market-detail', kind: 'request' },
     }),
+    assembleTokenUnlockState(admin, { symbol: sym, nowMs: Date.now() }),
   ])
 
   return json({
@@ -458,7 +459,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
     marketCap: capR.data || (canonical ? { market_cap: canonical.market_cap, fdv: canonical.fdv, circulating_supply: canonical.circulating_supply, market_cap_source: canonical.source_provider } : dexSnapshot ? { market_cap: dexSnapshot.market_cap, fdv: dexSnapshot.fdv, circulating_supply: null, market_cap_source: 'dexscreener' } : null),
     spread: sprR.data || null, orderbook, rollups, providers, dex,
     memorySummary: memR.data?.[0]?.summary || null,
-    ecosystemNarratives, catalysts, onchain,
+    ecosystemNarratives, catalysts, onchain, unlocks,
     candles, bestPair, bestProvider, asOf: prof?.as_of || sig?.as_of || canonical?.as_of || dexSnapshot?.fetched_at || null,
   })
 }
