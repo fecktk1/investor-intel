@@ -1,18 +1,36 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Rss, Plus, Trash2, RefreshCw, ExternalLink } from 'lucide-react'
+import { Rss, Plus, Trash2, RefreshCw, ExternalLink, Sparkles, Search, X, CalendarRange } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
-import { listSources, addSource, removeSource, listNews, refreshNews, usageSummary, listGlobalNews } from '../lib/news-api'
+import { listSources, addSource, removeSource, listNews, refreshNews, usageSummary, pageGlobalNews, listCuratedNews } from '../lib/news-api'
 import { getIntelProfile } from '../lib/intel-api'
 import { toPlainText, cleanNewsTitle } from '../lib/text-clean'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
+import CuratedNewsCard from '../components/CuratedNewsCard'
 import { markSurfaceSeen } from '../lib/changes-api'
 
 const SOURCE_TYPES = ['x_account', 'keyword', 'rss', 'website']
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
+const SIGNAL_OPTS = ['bullish', 'bearish', 'caution', 'neutral']
+const PAGE_SIZE = 20
+// Signal/category refine the loaded set client-side; they (plus search + date)
+// also drive the server-side paginated query so page counts stay accurate.
+const normSig = (s) => { const v = String(s || '').toLowerCase(); if (SIGNAL_OPTS.includes(v)) return v; if (v === 'mixed') return 'caution'; return '' }
+const itemCategory = (x) => x.news_category || ''
+
+// Windowed page list with ellipsis gaps (1-based): 1 … 4 5 [6] 7 8 … 50
+const pageWindow = (cur, total) => {
+  const set = []
+  const add = (n) => { if (n >= 1 && n <= total && !set.includes(n)) set.push(n) }
+  add(1); add(2); add(cur - 1); add(cur); add(cur + 1); add(total - 1); add(total)
+  set.sort((a, b) => a - b)
+  const out = []
+  set.forEach((n, i) => { if (i && n - set[i - 1] > 1) out.push('…'); out.push(n) })
+  return out
+}
 
 // News & source following — track X accounts / keywords / outlets and get
 // news around followed tokens and the broader space (not only on-chain).
@@ -22,11 +40,20 @@ export default function NewsPage() {
   const { supabase, user } = useSupabase()
   const [sources, setSources] = useState([])
   const [news, setNews] = useState([])
+  const [curated, setCurated] = useState([])
   const [usage, setUsage] = useState(null)
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [form, setForm] = useState({ sourceType: 'x_account', value: '' })
   const [err, setErr] = useState(null)
+  const [qInput, setQInput] = useState('')
+  const [q, setQ] = useState('')
+  const [fCat, setFCat] = useState('')
+  const [fSig, setFSig] = useState('')
+  const [since, setSince] = useState('')
+  const [until, setUntil] = useState('')
+  const [page, setPage] = useState(0)
+  const [globalCount, setGlobalCount] = useState(0)
 
   const load = useCallback(async () => {
     if (!org?.id) return
@@ -34,14 +61,24 @@ export default function NewsPage() {
     try {
       const prof = await getIntelProfile(supabase, org.id).catch(() => null)
       const chains = prof?.chains_of_interest || null
-      const [s, custom, global, u] = await Promise.all([
-        listSources(supabase, org.id), listNews(supabase, org.id), listGlobalNews(supabase, { chains }), usageSummary(supabase),
+      const sopts = { search: q || null, since: since || null, until: until || null }
+      const onP1 = page === 0
+      const [s, custom, global, cur, u] = await Promise.all([
+        listSources(supabase, org.id),
+        onP1 ? listNews(supabase, org.id, sopts) : Promise.resolve([]),
+        pageGlobalNews(supabase, { chains, ...sopts, signal: fSig || null, category: fCat || null, page, pageSize: PAGE_SIZE }),
+        onP1 ? listCuratedNews(supabase, { chains, limit: 40, ...sopts }).catch(() => []) : Promise.resolve([]),
+        usageSummary(supabase),
       ])
-      setSources(s); setUsage(u)
-      const merged = [...global, ...custom].sort((a, b) => new Date(b.published_at || b.created_at || 0) - new Date(a.published_at || a.created_at || 0))
-      setNews(merged)
+      setSources(s); setUsage(u); setCurated(cur); setGlobalCount(global.count)
+      // Page 1 also carries the user's own tracked-source items on top; deeper
+      // pages are pure global history so 20-per-page stays exact.
+      const feed = onP1
+        ? [...global.rows, ...custom].sort((a, b) => new Date(b.published_at || b.created_at || 0) - new Date(a.published_at || a.created_at || 0))
+        : global.rows
+      setNews(feed)
     } catch (e) { setErr(e.message) } finally { setLoading(false) }
-  }, [org?.id, supabase])
+  }, [org?.id, supabase, q, since, until, fSig, fCat, page])
   useEffect(() => { load() }, [load])
   useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'news') }, [org?.id, supabase])
 
@@ -67,6 +104,24 @@ export default function NewsPage() {
     finally { setRefreshing(false) }
   }, [org?.id, supabase, load, t])
 
+  const searchMode = !!(q || since || until)
+  const dropdownActive = !!(fCat || fSig)
+  const anyActive = searchMode || dropdownActive
+  // Search, date and the signal/category dropdowns all run server-side (in load).
+  // This predicate just keeps the page-1 custom items consistent with them.
+  const matchesFilter = useCallback((x) => {
+    if (fCat && itemCategory(x) !== fCat) return false
+    if (fSig && normSig(x.signal || x.signal_bias || x.sentiment) !== fSig) return false
+    return true
+  }, [fCat, fSig])
+  const filterOpts = useMemo(() => ({
+    categories: [...new Set(curated.map(itemCategory).filter(Boolean))].sort((x, y) => x.localeCompare(y)),
+  }), [curated])
+  const curatedShown = useMemo(() => { const f = curated.filter(matchesFilter); return anyActive ? f : f.slice(0, 12) }, [curated, matchesFilter, anyActive])
+  const newsShown = useMemo(() => news.filter(matchesFilter), [news, matchesFilter])
+  const pageCount = Math.max(1, Math.ceil(globalCount / PAGE_SIZE))
+  const goPage = useCallback((p) => setPage(Math.min(Math.max(0, p), pageCount - 1)), [pageCount])
+  const clearFilters = useCallback(() => { setQ(''); setQInput(''); setFCat(''); setFSig(''); setSince(''); setUntil(''); setPage(0) }, [])
   const srcLimit = usage?.news_sources
 
   return (
@@ -109,13 +164,63 @@ export default function NewsPage() {
 
       <IntelErrorNotice error={err} />
 
+      {!loading && (curated.length > 0 || news.length > 0 || searchMode) && (
+        <div className="card p-3 space-y-3">
+          <form onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()); setPage(0) }} className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--fg-5)]" />
+              <input className="input w-full pl-8" placeholder={t('news.search_ph', { defaultValue: 'Search all news — stories, tokens, narratives…' })} value={qInput} onChange={(e) => setQInput(e.target.value)} />
+            </div>
+            <button type="submit" className="btn btn--primary btn--sm">{t('news.search', { defaultValue: 'Search' })}</button>
+          </form>
+          <div className="flex flex-wrap items-center gap-2">
+            <select className="select text-[12px]" value={fSig} onChange={(e) => { setFSig(e.target.value); setPage(0) }}>
+              <option value="">{t('news.f_signal', { defaultValue: 'Any signal' })}</option>
+              {SIGNAL_OPTS.map((s) => <option key={s} value={s}>{t(`market.signal.${s}`, { defaultValue: s[0].toUpperCase() + s.slice(1) })}</option>)}
+            </select>
+            {filterOpts.categories.length > 0 && (
+              <select className="select text-[12px]" value={fCat} onChange={(e) => { setFCat(e.target.value); setPage(0) }}>
+                <option value="">{t('news.f_category', { defaultValue: 'Any category' })}</option>
+                {filterOpts.categories.map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
+              </select>
+            )}
+            <span className="inline-flex items-center gap-1 text-[11px] text-[var(--fg-4)]">
+              <CalendarRange className="h-3.5 w-3.5" />
+              <input type="date" className="select text-[12px]" value={since} max={until || undefined} onChange={(e) => { setSince(e.target.value); setPage(0) }} aria-label={t('news.from', { defaultValue: 'From date' })} />
+              <span className="text-[var(--fg-5)]">–</span>
+              <input type="date" className="select text-[12px]" value={until} min={since || undefined} onChange={(e) => { setUntil(e.target.value); setPage(0) }} aria-label={t('news.to', { defaultValue: 'To date' })} />
+            </span>
+            {anyActive && <button type="button" onClick={clearFilters} className="text-[11px] text-[var(--fg-4)] hover:text-[var(--fg-1)] inline-flex items-center gap-1"><X className="h-3 w-3" />{t('news.clear', { defaultValue: 'Clear' })}</button>}
+          </div>
+          {searchMode && <p className="text-[11px] text-[var(--fg-5)]">{t('news.search_scope', { defaultValue: 'Searching the full history — newest first.' })}</p>}
+        </div>
+      )}
+
+      {!loading && page === 0 && curatedShown.length > 0 && (
+        <section className="space-y-2">
+          <div className="eyebrow flex items-center gap-1.5"><Sparkles className="h-3.5 w-3.5" /> {searchMode ? t('news.results_title', { defaultValue: 'Matching stories' }) : t('news.curated_title', { defaultValue: 'Top stories, analyzed' })}</div>
+          {!searchMode && <p className="text-[11px] text-[var(--fg-4)] -mt-1">{t('news.curated_sub', { defaultValue: 'The highest-signal stories across the space, scored and explained.' })}</p>}
+          <div className="space-y-2">{curatedShown.map((c) => <CuratedNewsCard key={c.id} c={c} />)}</div>
+        </section>
+      )}
+
       {loading ? (
         <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
-      ) : news.length === 0 ? (
-        <div className="card p-8 text-center text-[var(--fg-3)] text-sm">{t('news.empty', { defaultValue: 'No news yet. Add sources or tokens to your watchlist, then Fetch news.' })}</div>
-      ) : (
+      ) : (curatedShown.length === 0 && newsShown.length === 0) ? (
+        <div className="card p-8 text-center text-[var(--fg-3)] text-sm">
+          {anyActive
+            ? <>{t('news.no_match', { defaultValue: 'No stories match your search.' })} <button type="button" onClick={clearFilters} className="text-[var(--accent)] hover:underline">{t('news.clear', { defaultValue: 'Clear' })}</button></>
+            : t('news.empty', { defaultValue: 'No news yet. Add sources or tokens to your watchlist, then Fetch news.' })}
+        </div>
+      ) : newsShown.length > 0 ? (
         <div className="space-y-2">
-          {news.map((n) => (
+          <div className="flex items-center justify-between gap-2">
+            {page === 0 && curatedShown.length > 0
+              ? <div className="eyebrow flex items-center gap-1.5"><Rss className="h-3.5 w-3.5" /> {t('news.all_headlines', { defaultValue: 'More headlines' })}</div>
+              : <span />}
+            {globalCount > 0 && <span className="text-[11px] text-[var(--fg-5)]">{globalCount.toLocaleString()} {t('news.in_history', { defaultValue: 'in history' })}{pageCount > 1 ? ` · ${t('news.page', { defaultValue: 'page' })} ${page + 1}/${pageCount}` : ''}</span>}
+          </div>
+          {newsShown.map((n) => (
             <div key={n.id} className="card p-3">
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
@@ -145,8 +250,22 @@ export default function NewsPage() {
               </div>
             </div>
           ))}
+          {pageCount > 1 && (
+            <div className="flex items-center justify-center gap-1 flex-wrap pt-3">
+              <button type="button" disabled={page <= 0} onClick={() => goPage(0)} className="btn btn--sm disabled:opacity-40" aria-label={t('news.first', { defaultValue: 'First page' })}>«</button>
+              <button type="button" disabled={page <= 0} onClick={() => goPage(page - 1)} className="btn btn--sm disabled:opacity-40" aria-label={t('news.prev', { defaultValue: 'Previous page' })}>‹</button>
+              {pageWindow(page + 1, pageCount).map((n, i) => n === '…'
+                ? <span key={`g${i}`} className="px-1.5 text-[var(--fg-5)]">…</span>
+                : <button key={n} type="button" onClick={() => goPage(n - 1)} className={`min-w-[28px] px-2 py-1 rounded text-[12px] ${n - 1 === page ? 'bg-[var(--accent)] text-white' : 'text-[var(--fg-3)] hover:bg-[var(--bg-3)]'}`}>{n}</button>)}
+              <button type="button" disabled={page >= pageCount - 1} onClick={() => goPage(page + 1)} className="btn btn--sm disabled:opacity-40" aria-label={t('news.next', { defaultValue: 'Next page' })}>›</button>
+              <button type="button" disabled={page >= pageCount - 1} onClick={() => goPage(pageCount - 1)} className="btn btn--sm disabled:opacity-40" aria-label={t('news.last', { defaultValue: 'Last page' })}>»</button>
+              <select value={page} onChange={(e) => goPage(Number(e.target.value))} className="select text-[12px] ml-1" aria-label={t('news.jump', { defaultValue: 'Jump to page' })}>
+                {Array.from({ length: pageCount }, (_, i) => <option key={i} value={i}>{t('news.page', { defaultValue: 'Page' })} {i + 1}</option>)}
+              </select>
+            </div>
+          )}
         </div>
-      )}
+      ) : null}
 
       <RelevantSignals title={t('news.relevant_signals', { defaultValue: 'Signals relevant to you' })} seeAllHref="/intel" />
 
