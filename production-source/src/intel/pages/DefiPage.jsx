@@ -25,6 +25,9 @@ const fmtUsd = (v) => formatUsd(v)
 // no unit-guessing, which keeps high-yield (>200%) pools rendering correctly.
 const fmtPct = (v) => (v == null || Number.isNaN(Number(v)) ? '—' : `${(Number(v) * 100).toFixed(2)}%`)
 const apyClass = (v) => { const p = Number(v) * 100; return p >= 20 ? 'text-emerald-400' : p >= 5 ? 'text-[var(--accent)]' : 'text-[var(--fg-2)]' }
+// A cached snapshot is stale once its provider stale_after has passed. Live fallback
+// rows carry no stale_after, so they never flag — only cached snapshots do.
+const isStale = (staleAfter) => !!staleAfter && new Date(staleAfter).getTime() < Date.now()
 
 // Normalize a live Kamino vault (fetchAllKaminoVaults) into the shared row shape.
 function normKaminoVault(v) {
@@ -303,6 +306,7 @@ export default function DefiPage() {
         apy: selected.apy, apyBase: selected.apyBase, apyReward: selected.apyReward, apyMean30d: selected.apyMean30d,
         supplyApy: selected.supplyApy, borrowApy: selected.borrowApy, utilization: selected.utilization, ltv: selected.ltv,
         tvl_usd: selected.tvl_usd, il_7d: selected.il_7d,
+        staleAfter: selected.staleAfter, fetchedAt: selected.fetchedAt,
         tokens: [selected.tokenA, selected.tokenB].filter(Boolean), outlook: selected.prediction,
       }
     }
@@ -383,6 +387,12 @@ export default function DefiPage() {
                   <h2 className="text-[17px] font-semibold text-[var(--fg-1)] truncate">{detail.name}</h2>
                   <ProductPill type={detail.productType} />
                   <span className="text-[12px] text-[var(--fg-4)]">{detail.protocol ? `${detail.protocol} · ` : ''}{getChain(detail.chain)?.label || detail.chain}</span>
+                  {isStale(detail.staleAfter) && (
+                    <span title={detail.fetchedAt ? `${t('defi.data_as_of', { defaultValue: 'Data as of' })} ${new Date(detail.fetchedAt).toLocaleString()}` : undefined}
+                      className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
+                      <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />{t('defi.stale', { defaultValue: 'Stale' })}
+                    </span>
+                  )}
                 </div>
               )}
             </div>
@@ -504,6 +514,7 @@ export default function DefiPage() {
                       <span className="font-mono truncate">{shortenAddress(r.address, 4)}</span>
                       <CopyBtn text={r.address} />
                       {r.protocol && r.protocol !== 'Kamino' && <span className="truncate">· {r.protocol}</span>}
+                      {isStale(r.staleAfter) && <span className="text-amber-400/90" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>· {t('defi.stale', { defaultValue: 'stale' })}</span>}
                     </div>
                   </div>
                   <div className="text-right text-[13px] text-[var(--fg-2)]">{fmtUsd(r.tvl_usd)}</div>
@@ -530,7 +541,7 @@ export default function DefiPage() {
                 return (
                   <button key={r.key} onClick={() => onRowDeepDive(r)} className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 px-3 py-2.5 items-center text-left hover:bg-[var(--bg-2)] transition-colors">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5"><span className="text-[13px] text-[var(--fg-1)] truncate">{r.symbol}</span>{r.primary && <span className="chip chip--accent text-[9px]">Main</span>}</div>
+                      <div className="flex items-center gap-1.5"><span className="text-[13px] text-[var(--fg-1)] truncate">{r.symbol}</span>{r.primary && <span className="chip chip--accent text-[9px]">Main</span>}{isStale(r.staleAfter) && <span className="text-amber-400/90 text-[10px]" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>{t('defi.stale', { defaultValue: 'stale' })}</span>}</div>
                       <div className="text-[10px] text-[var(--fg-5)] truncate">{r.market}{r.ltv ? ` · LTV ${fmtPct(r.ltv)}` : ''}</div>
                     </div>
                     <div className="text-right text-[13px] font-medium text-emerald-400">{fmtPct(r.supplyApy)}</div>
