@@ -15,6 +15,7 @@ import MarketMoverCards from '../components/MarketMoverCards'
 import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import RegimeBanner from '../components/RegimeBanner'
+import RankMovers from '../components/RankMovers'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
 const SORTS = ['market_cap', 'volume', 'gainers', 'losers', 'change_1h', 'change_24h', 'change_7d', 'exchange_availability', 'arbitrage', 'unusual_volume', 'multi_exchange_strength', 'recently_updated']
@@ -196,6 +197,7 @@ export default function MarketsPage() {
         <>
           <RegimeBanner />
           <MarketMacroBar macro={macro} />
+          <RankMovers />
           {/* 1. Global market snapshot */}
           {marketsData && (
             <section className="space-y-2">

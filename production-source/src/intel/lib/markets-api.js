@@ -34,6 +34,45 @@ export async function loadMarketMacro(supabase) {
   } catch { return null }
 }
 
+// Leaderboard climbers/fallers — who moved up/down the market-cap rankings since
+// ~`days` ago, from the cached market_ranking_snapshots rank history (authenticated
+// RLS read; no edge/provider call). Compares the latest bucket to the nearest bucket
+// at/older than `days` ago (falls back to the earliest available if history is short).
+// Returns null on miss/short-history so the caller degrades silently.
+export async function loadRankMovers(supabase, { days = 7, limit = 6 } = {}) {
+  try {
+    const { data: latest } = await supabase.from('market_ranking_snapshots')
+      .select('normalized_symbol, symbol, name, rank, as_of')
+      .eq('rank_kind', 'market_cap')
+      .order('as_of', { ascending: false }).order('rank', { ascending: true })
+      .limit(400)
+    if (!latest || !latest.length) return null
+    const latestAsOf = latest[0].as_of
+    const current = latest.filter((r) => r.as_of === latestAsOf && r.normalized_symbol)
+    if (!current.length) return null
+    const priorIso = new Date(new Date(latestAsOf).getTime() - days * 86_400_000).toISOString()
+    let pick = (await supabase.from('market_ranking_snapshots').select('as_of').eq('rank_kind', 'market_cap').lte('as_of', priorIso).order('as_of', { ascending: false }).limit(1)).data
+    if (!pick || !pick.length) pick = (await supabase.from('market_ranking_snapshots').select('as_of').eq('rank_kind', 'market_cap').lt('as_of', latestAsOf).order('as_of', { ascending: true }).limit(1)).data
+    if (!pick || !pick.length) return null
+    const priorAsOf = pick[0].as_of
+    const { data: prior } = await supabase.from('market_ranking_snapshots')
+      .select('normalized_symbol, rank').eq('rank_kind', 'market_cap').eq('as_of', priorAsOf)
+      .in('normalized_symbol', current.map((r) => r.normalized_symbol))
+    const priorBySym = new Map((prior || []).map((r) => [r.normalized_symbol, r.rank]))
+    const movers = []
+    for (const r of current) {
+      const prev = priorBySym.get(r.normalized_symbol)
+      if (prev == null || prev === r.rank) continue
+      movers.push({ symbol: r.symbol || r.normalized_symbol, name: r.name, rank: r.rank, prevRank: prev, delta: prev - r.rank })
+    }
+    return {
+      days, asOf: latestAsOf, priorAsOf,
+      climbers: movers.filter((m) => m.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, limit),
+      fallers: movers.filter((m) => m.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, limit),
+    }
+  } catch { return null }
+}
+
 // Degen (memecoin) terminal list. Reads memecoin_latest_tokens via intel-degen
 // (cache-only). Params: { page, limit, sort, search, chain, bucket, riskMax, minLiquidity }.
 export async function loadDegenMarkets(supabase, orgId, params = {}) {
