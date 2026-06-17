@@ -10,6 +10,7 @@ import MarketSignalBadge from '../components/MarketSignalBadge'
 import ConfidenceChip from '../components/ConfidenceChip'
 import ProviderCoveragePill from '../components/ProviderCoveragePill'
 import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
+import OrderbookDepthCard from '../components/OrderbookDepthCard'
 import MarketMemorySummary from '../components/MarketMemorySummary'
 import TokenChart from '../components/TokenChart'
 import ProfilePanel from '../components/ProfilePanel'
@@ -237,6 +238,7 @@ export default function MarketAssetPage() {
                   <span className={pctClass(p.change24h)}>{fmtPct(p.change24h)}</span>
                   <span className="text-[var(--fg-4)] hidden sm:inline">{t('markets.volLabel', { defaultValue: 'Vol' })} {fmtVol(p.volume24h)}</span>
                   {p.spreadPct != null && <span className="text-[var(--fg-5)] hidden md:inline">{t('market.spread', { defaultValue: 'Spread' })} {Number(p.spreadPct).toFixed(3)}%</span>}
+                  {p.orderbook?.imbalancePct != null && <span className={`hidden lg:inline ${p.orderbook.imbalancePct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{t('market.imbalance', { defaultValue: 'Imb' })} {p.orderbook.imbalancePct >= 0 ? '+' : ''}{Number(p.orderbook.imbalancePct).toFixed(0)}%</span>}
                 </div>
               </div>
             ))}
@@ -251,6 +253,8 @@ export default function MarketAssetPage() {
           <CrossExchangeSpreadCard spread={d.spread} />
         </section>
       )}
+
+      <OrderbookDepthCard orderbook={d.orderbook} />
 
       {d.memorySummary && (
         <section className="space-y-1">

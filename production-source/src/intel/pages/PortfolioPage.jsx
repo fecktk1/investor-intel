@@ -315,6 +315,9 @@ function Transactions({ items, onReclassify, onDelete, processing, t }) {
 }
 
 // ── Portfolio intelligence ──────────────────────────────────────────────────
+const RISK_BAND_CLS = { low: 'chip--ok', medium: 'text-amber-400', high: 'chip--err' }
+const RISK_EFFECT_DOT = { risk: 'bg-red-400', elevated: 'bg-amber-400', stabilizing: 'bg-[var(--ok)]', protective: 'bg-[var(--ok)]', diversifying: 'bg-[var(--ok)]', neutral: 'bg-[var(--fg-5)]' }
+
 function IntelPanel({ intel, loading, onGenerate, t }) {
   const s = intel?.artifact?.structured
   return (
@@ -330,6 +333,21 @@ function IntelPanel({ intel, loading, onGenerate, t }) {
           {s.summary && <p>{s.summary}</p>}
           {[['what_changed', 'portfolio.what_changed', 'What changed'], ['contributors', 'portfolio.contributors', 'Top contributors'], ['signal_exposure', 'portfolio.signal_exposure', 'Signal exposure'], ['risks', 'portfolio.risks', 'Risks'], ['news_that_matters', 'portfolio.news', 'News that matters']].map(([k, kk, def]) =>
             s[k] ? <div key={k}><div className="eyebrow mt-1">{t(kk, { defaultValue: def })}</div><p className="text-[var(--fg-3)]">{s[k]}</p></div> : null)}
+          {intel?.artifact?.risk?.factors?.length > 0 && (
+            <div>
+              <div className="eyebrow mt-1 flex items-center gap-1.5">{t('portfolio.risk_drivers', { defaultValue: 'Risk drivers' })}
+                {intel.artifact.risk.band && <span className={`chip text-[9px] ${RISK_BAND_CLS[intel.artifact.risk.band] || ''}`}>{intel.artifact.risk.band}{intel.artifact.risk.score != null ? ` · ${Math.round(intel.artifact.risk.score)}` : ''}</span>}
+              </div>
+              <div className="space-y-1 mt-1">
+                {intel.artifact.risk.factors.filter((f) => f.detail).slice(0, 6).map((f, i) => (
+                  <div key={i} className="flex items-start gap-2">
+                    <span className={`h-1.5 w-1.5 rounded-full mt-1.5 shrink-0 ${RISK_EFFECT_DOT[f.effect] || 'bg-[var(--fg-5)]'}`} />
+                    <span className="text-[var(--fg-3)]"><b className="text-[var(--fg-2)]">{f.factor}:</b> {f.detail}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

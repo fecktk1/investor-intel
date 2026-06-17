@@ -62,7 +62,7 @@ export default function MemecoinTable({ rows = [], pageOffset = 0 }) {
                   {r.name ? <span className="text-[11px] text-[var(--fg-4)] truncate hidden sm:inline">{r.name}</span> : null}
                   <span className="text-[9px] text-[var(--fg-5)] px-1 rounded bg-[var(--bg-3)]">{r.chain}</span>
                 </div>
-                <div className="mt-0.5 flex items-center gap-1.5"><Flags r={r} t={t} />{r.listingState === 'pre_liquidity' && <span className="text-[9px] text-amber-400">{t('degen.preLiquidity', { defaultValue: 'pre-liquidity' })}</span>}</div>
+                <div className="mt-0.5 flex items-center gap-1.5"><Flags r={r} t={t} />{r.listingState === 'pre_liquidity' && <span className="text-[9px] text-amber-400">{t('degen.preLiquidity', { defaultValue: 'pre-liquidity' })}</span>}{(() => { const b = Number(r.buys24h) || 0, sl = Number(r.sells24h) || 0, tot = b + sl; if (!tot) return null; const bp = Math.round((b / tot) * 100); return <span className={`text-[9px] ${bp >= 55 ? 'text-emerald-400' : bp <= 45 ? 'text-red-400' : 'text-[var(--fg-5)]'}`} title={`${b} buys / ${sl} sells${r.txns24h ? ` · ${r.txns24h} txns` : ''} (24h)`}>{bp}% {t('degen.buy', { defaultValue: 'buy' })}</span> })()}</div>
               </div>
             </div>
             <span className="hidden md:block w-20 text-right text-[12px] text-[var(--fg-2)]">{fmtPrice(r.price)}</span>

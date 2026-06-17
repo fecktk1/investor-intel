@@ -64,6 +64,7 @@ export default function MacroPage() {
                       {trendIcon(m.trend)}
                     </div>
                     <div className="text-lg font-semibold text-[var(--fg-1)] mt-1">{m.value}{m.unit ? <span className="text-[12px] text-[var(--fg-4)] ml-0.5">{m.unit}</span> : null}</div>
+                    {m.change && String(m.change).trim() && String(m.change).trim() !== '—' && <div className={`text-[11px] mt-0.5 ${/up|ris|gain|pos/i.test(String(m.trend || '')) ? 'text-emerald-400' : /down|fall|drop|neg/i.test(String(m.trend || '')) ? 'text-red-400' : 'text-[var(--fg-4)]'}`}>{m.change}</div>}
                     {(m.as_of || m.period) && <div className="text-[10px] text-[var(--fg-5)] mt-0.5">{m.period || m.as_of}</div>}
                     <WhyImportant topic={`${m.label}${m.value ? ` is currently ${m.value}${m.unit || ''}` : ''}`} context="A macroeconomic indicator." />
                   </div>
