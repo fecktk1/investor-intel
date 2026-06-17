@@ -13,6 +13,7 @@ import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import SignalCard from '../components/SignalCard'
 import WhatChanged from '../components/WhatChanged'
+import TodaysPicture from '../components/TodaysPicture'
 import { markSurfaceSeen } from '../lib/changes-api'
 import { getChain } from '../lib/chains'
 
@@ -108,7 +109,10 @@ export default function MarketPulsePage() {
   }, [summary, dash, scope, chain])
 
   // Client-side project filter within a chain.
-  const movers = (dash?.movers || []).filter((m) => !project || m.symbol === project)
+  // Cold Birdeye cache → dash.movers is []; fall back to the exchange-layer
+  // market_movers (already in the response) so "Notable changes" doesn't vanish.
+  const moverList = dash?.movers?.length ? dash.movers : (dash?.market_movers || [])
+  const movers = moverList.filter((m) => !project || m.symbol === project)
   const news = (dash?.news || []).filter((n) => !project || (n.entity_symbol || n.entity?.display_symbol) === project)
   // Focused signal lenses the dashboard already returns; followed is deduped
   // against holdings so a card never appears in both focused rails.
@@ -118,7 +122,7 @@ export default function MarketPulsePage() {
   const returnState = useMemo(() => ({ from: `${location.pathname}${location.search}` }), [location.pathname, location.search])
 
   if (loading && !dash) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[var(--accent)]" /></div>
-  const empty = dash && dash.total_following === 0 && (dash.notable || []).length === 0 && (dash.signals || []).length === 0 && (dash.movers || []).length === 0 && (dash.chain_perf || []).length === 0
+  const empty = dash && dash.total_following === 0 && (dash.notable || []).length === 0 && (dash.signals || []).length === 0 && (dash.movers || []).length === 0 && (dash.market_movers || []).length === 0 && (dash.chain_perf || []).length === 0
 
   const ScopeBtn = ({ id, label }) => (
     <button onClick={() => pickScope(id)} className={`btn btn--sm ${scope === id ? 'btn--primary' : 'btn--ghost'}`}>{label}</button>
@@ -141,6 +145,31 @@ export default function MarketPulsePage() {
       </div>
 
       <RegimeBanner />
+
+      <TodaysPicture grounding={dash?.intelligence_grounding} />
+
+      {movers.length > 0 && (
+        <section className="space-y-2">
+          <div className="eyebrow">{t('pulse.notable_changes', { defaultValue: 'Notable changes' })}</div>
+          <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            {movers.map((m) => {
+              const inner = (
+                <>
+                  <div className="flex items-center justify-between">
+                    <span className="text-sm font-medium text-[var(--fg-1)] truncate">{m.symbol}</span>
+                    <span className={`text-[13px] font-semibold flex items-center gap-0.5 ${m.change24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{m.change24h >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{fmtPct(m.change24h)}</span>
+                  </div>
+                  {m.price != null && <div className="text-[12px] text-[var(--fg-4)] mt-0.5">{fmtPrice(m.price)}</div>}
+                  {m.market_context?.direction && <div className="mt-1"><MarketSignalBadge direction={m.market_context.direction} size="sm" /></div>}
+                </>
+              )
+              return m.ref
+                ? <Link key={m.ref} to={assetHref(m.ref)} className="card p-3 hover:bg-[var(--bg-2)] transition-colors">{inner}</Link>
+                : <div key={m.symbol} className="card p-3">{inner}</div>
+            })}
+          </div>
+        </section>
+      )}
 
       {/* Scope selector */}
       <div className="flex items-center gap-2 flex-wrap">
@@ -251,24 +280,6 @@ export default function MarketPulsePage() {
                 <span className="text-[11px] text-[var(--fg-5)]">{t('pulse.followed_signals_sub', { defaultValue: 'Watchlist & narratives you follow' })}</span>
               </div>
               <div className="grid gap-2 sm:grid-cols-2">{followedSignals.map((s) => <SignalCard key={s.id} s={s} />)}</div>
-            </section>
-          )}
-
-          {movers.length > 0 && (
-            <section className="space-y-2">
-              <div className="eyebrow">{t('pulse.notable_changes', { defaultValue: 'Notable changes' })}</div>
-              <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
-                {movers.map((m) => (
-                  <Link key={m.ref} to={assetHref(m.ref)} className="card p-3 hover:bg-[var(--bg-2)] transition-colors">
-                    <div className="flex items-center justify-between">
-                      <span className="text-sm font-medium text-[var(--fg-1)] truncate">{m.symbol}</span>
-                      <span className={`text-[13px] font-semibold flex items-center gap-0.5 ${m.change24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{m.change24h >= 0 ? <TrendingUp className="h-3.5 w-3.5" /> : <TrendingDown className="h-3.5 w-3.5" />}{fmtPct(m.change24h)}</span>
-                    </div>
-                    <div className="text-[12px] text-[var(--fg-4)] mt-0.5">{fmtPrice(m.price)}</div>
-                    {m.market_context?.direction && <div className="mt-1"><MarketSignalBadge direction={m.market_context.direction} size="sm" /></div>}
-                  </Link>
-                ))}
-              </div>
             </section>
           )}
 
