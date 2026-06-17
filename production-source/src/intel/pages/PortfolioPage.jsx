@@ -172,6 +172,16 @@ function HoldingsTable({ holdings, ctxMap, portfolioId, t }) {
       {holdings.map((h) => {
         const sym = (h.normalized_symbol || h.asset_symbol || '').toUpperCase()
         const sig = h.market_context?.signalDirection || ctxMap[sym]?.direction
+        // Surface the richer per-holding signal context already fetched into ctxMap
+        // (confidence + cross-provider corroboration + why) as a hover tooltip.
+        const ctx = ctxMap[sym]
+        const sigTip = ctx ? [
+          ctx.confidence ? `${ctx.confidence} confidence` : null,
+          (ctx.confirmingProviders != null && ctx.providerCount != null)
+            ? `${ctx.confirmingProviders}/${ctx.providerCount} sources confirm`
+            : (ctx.providerCount ? `${ctx.providerCount} sources` : null),
+          ctx.whyItMatters || ctx.title || ctx.summary,
+        ].filter(Boolean).join(' · ') : null
         const cbStatus = h.cost_basis_status
         const to = h.canonical_asset_key && portfolioId ? `/intel/portfolio/${portfolioId}/asset/${encodeURIComponent(h.canonical_asset_key)}` : null
         const inner = (
@@ -197,7 +207,7 @@ function HoldingsTable({ holdings, ctxMap, portfolioId, t }) {
             <span className="w-24 text-right text-[12px] text-[var(--fg-1)]">{h.current_value == null ? '—' : usd(h.current_value)}</span>
             <span className="w-14 text-right text-[11px] text-[var(--fg-4)]">{h.allocation_pct == null ? '—' : `${h.allocation_pct.toFixed(0)}%`}</span>
             <span className={`w-24 text-right text-[12px] ${pctClass(h.unrealized_pnl)}`}>{h.unrealized_pnl == null ? '—' : usd(h.unrealized_pnl)}</span>
-            <span className="w-28 flex items-center justify-end gap-1.5">{sig && <MarketSignalBadge direction={sig} size="sm" />}</span>
+            <span className="w-28 flex items-center justify-end gap-1.5">{sig && <MarketSignalBadge direction={sig} size="sm" title={sigTip} />}</span>
             <ChevronRight className={`w-4 h-3.5 flex-shrink-0 ${to ? 'text-[var(--fg-5)] group-hover:text-[var(--accent)]' : 'opacity-0'}`} />
           </>
         )
