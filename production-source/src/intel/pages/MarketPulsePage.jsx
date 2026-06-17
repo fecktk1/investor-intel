@@ -14,6 +14,7 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import SignalCard from '../components/SignalCard'
 import WhatChanged from '../components/WhatChanged'
 import TodaysPicture from '../components/TodaysPicture'
+import CatalystsRail from '../components/CatalystsRail'
 import { markSurfaceSeen } from '../lib/changes-api'
 import { getChain } from '../lib/chains'
 
@@ -212,6 +213,8 @@ export default function MarketPulsePage() {
 
       {/* What changed since your last visit (deterministic; stored-data only) */}
       <WhatChanged items={dash?.what_changed} title={t('pulse.what_changed', { defaultValue: 'What changed since your last visit' })} />
+
+      <CatalystsRail />
 
       {empty ? (
         <div className="card p-8 text-center text-[var(--fg-3)] text-sm">

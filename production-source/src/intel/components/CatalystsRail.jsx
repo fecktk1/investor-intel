@@ -1,0 +1,61 @@
+import React, { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { CalendarClock } from 'lucide-react'
+import { useSupabase } from '../../lib/useSupabase'
+import { loadMacroCalendar } from '../lib/macro-api'
+
+const IMP_CLS = { high: 'text-red-400', medium: 'text-amber-400', low: 'text-[var(--fg-4)]' }
+const fmtWhen = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleString(undefined, { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }
+
+// "Catalysts this week" — upcoming macro calendar events (CPI/FOMC/jobs/etc.) from
+// the shared intel_macro_calendar, so the dashboard shows what's coming, not just
+// what already happened. Self-contained (fetches its own data) and renders nothing
+// when the week is quiet, so any surface can drop it in with one line.
+export default function CatalystsRail({ days = 7, limit = 6 }) {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  const { supabase } = useSupabase()
+  const [events, setEvents] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    loadMacroCalendar(supabase, { days })
+      .then((rows) => { if (alive) setEvents(rows) })
+      .catch(() => { if (alive) setEvents([]) })
+    return () => { alive = false }
+  }, [supabase, days])
+
+  if (!events) return null
+  const now = Date.now()
+  const upcoming = events
+    .filter((e) => e.scheduled_at && new Date(e.scheduled_at).getTime() >= now - 3600_000)
+    .sort((a, b) => new Date(a.scheduled_at) - new Date(b.scheduled_at))
+    .slice(0, limit)
+  if (!upcoming.length) return null
+
+  return (
+    <section className="card p-4 space-y-2">
+      <div className="eyebrow flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" /> {t('pulse.catalysts', { defaultValue: 'Catalysts this week' })}</div>
+      <div className="space-y-1.5">
+        {upcoming.map((e) => (
+          <div key={e.id || `${e.event_key}-${e.scheduled_at}`} className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <div className="flex items-center gap-2 flex-wrap">
+                <span className="text-[13px] text-[var(--fg-1)] leading-snug">{e.title}</span>
+                {e.importance && <span className={`text-[10px] uppercase ${IMP_CLS[e.importance] || 'text-[var(--fg-4)]'}`}>{e.importance}</span>}
+                {e.country && <span className="text-[10px] text-[var(--fg-5)]">{e.country}</span>}
+              </div>
+              {(e.forecast || e.previous) && (
+                <div className="text-[11px] text-[var(--fg-4)] mt-0.5">
+                  {e.forecast ? `${t('macro.forecast', { defaultValue: 'forecast' })} ${e.forecast}` : ''}
+                  {e.forecast && e.previous ? ' · ' : ''}
+                  {e.previous ? `${t('macro.previous', { defaultValue: 'prev' })} ${e.previous}` : ''}
+                </div>
+              )}
+            </div>
+            <span className="text-[11px] text-[var(--fg-4)] whitespace-nowrap flex-shrink-0">{fmtWhen(e.scheduled_at)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
