@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { Activity, Sparkles, ArrowRight, TrendingUp, TrendingDown, Newspaper, Radar, Bell, Bookmark, ExternalLink, RefreshCw } from 'lucide-react'
+import { Activity, Sparkles, ArrowRight, TrendingUp, TrendingDown, Newspaper, Radar, Bell, Bookmark, Wallet, ExternalLink, RefreshCw } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { loadDashboard } from '../lib/dashboard-api'
@@ -110,6 +110,11 @@ export default function MarketPulsePage() {
   // Client-side project filter within a chain.
   const movers = (dash?.movers || []).filter((m) => !project || m.symbol === project)
   const news = (dash?.news || []).filter((n) => !project || (n.entity_symbol || n.entity?.display_symbol) === project)
+  // Focused signal lenses the dashboard already returns; followed is deduped
+  // against holdings so a card never appears in both focused rails.
+  const affectsHoldings = dash?.affects_holdings || []
+  const affectsIds = new Set(affectsHoldings.map((s) => s.id))
+  const followedSignals = (dash?.followed_signals || []).filter((s) => !affectsIds.has(s.id))
   const returnState = useMemo(() => ({ from: `${location.pathname}${location.search}` }), [location.pathname, location.search])
 
   if (loading && !dash) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[var(--accent)]" /></div>
@@ -226,6 +231,26 @@ export default function MarketPulsePage() {
                   <div className="grid gap-2 sm:grid-cols-2">{dash.outside_bubble.map((s) => <SignalCard key={s.id} s={s} />)}</div>
                 </div>
               )}
+            </section>
+          )}
+
+          {affectsHoldings.length > 0 && (
+            <section className="card p-4 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <div className="eyebrow flex items-center gap-1.5"><Wallet className="h-3.5 w-3.5" /> {t('pulse.affects_holdings', { defaultValue: 'Affects your holdings' })}</div>
+                <span className="text-[11px] text-[var(--fg-5)]">{t('pulse.affects_holdings_sub', { defaultValue: 'Signals touching coins you hold' })}</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">{affectsHoldings.map((s) => <SignalCard key={s.id} s={s} />)}</div>
+            </section>
+          )}
+
+          {followedSignals.length > 0 && (
+            <section className="card p-4 space-y-2">
+              <div className="flex items-center justify-between mb-1">
+                <div className="eyebrow flex items-center gap-1.5"><Bookmark className="h-3.5 w-3.5" /> {t('pulse.followed_signals', { defaultValue: 'Followed' })}</div>
+                <span className="text-[11px] text-[var(--fg-5)]">{t('pulse.followed_signals_sub', { defaultValue: 'Watchlist & narratives you follow' })}</span>
+              </div>
+              <div className="grid gap-2 sm:grid-cols-2">{followedSignals.map((s) => <SignalCard key={s.id} s={s} />)}</div>
             </section>
           )}
 
