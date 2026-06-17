@@ -84,7 +84,15 @@ export async function getSnapshots(supabase, orgId, portfolioId, { limit = 365 }
     .select('snapshot_date, total_value_usd, day_pnl_usd, unrealized_pnl_usd, realized_pnl_usd')
     .eq('portfolio_id', portfolioId).order('snapshot_date', { ascending: true }).limit(limit)
   if (error) throw error
-  return (data || []).map((s) => ({ t: new Date(s.snapshot_date).getTime(), value: s.total_value_usd }))
+  // Keep the P&L columns (already selected) instead of collapsing to {t,value},
+  // so the chart can plot realized/unrealized P&L. `value` stays for back-compat.
+  return (data || []).map((s) => ({
+    t: new Date(s.snapshot_date).getTime(),
+    value: s.total_value_usd,
+    dayPnl: s.day_pnl_usd,
+    unrealizedPnl: s.unrealized_pnl_usd,
+    realizedPnl: s.realized_pnl_usd,
+  }))
 }
 
 // ─── Transactions ────────────────────────────────────────────────────────────
