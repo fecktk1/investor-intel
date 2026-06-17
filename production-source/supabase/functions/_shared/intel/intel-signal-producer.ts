@@ -13,6 +13,7 @@
 import { buildNotable, buildSignalRadar } from '../intel-signals.ts'
 import { buildAssetResolver } from './asset-identity.ts'
 import { computeTrends } from './signal-trends.ts'
+import { loadTaxonomy, tagText } from '../signal-tagger.ts'
 import { makeCostWriter } from './intel-cost-writer.ts'
 import { h32 } from '../core-intel/hashing.ts'
 import { recordCostEvent } from '../core-intel/cost-ledger.ts'
@@ -82,7 +83,7 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
   const nowIso = new Date(now).toISOString()
   const since = new Date(now - 14 * 86_400_000).toISOString()
 
-  const resolver = await buildAssetResolver(admin)
+  const [resolver, tax] = await Promise.all([buildAssetResolver(admin), loadTaxonomy(admin)])
 
   // ── cached reads only (no providers) ───────────────────────
   const baseSel = 'title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol'
@@ -114,6 +115,24 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
   const { allCards } = buildNotable(rawCandidates, { wlSymbols: new Set(), wlChains: new Set(), moverBySymbol, scope: 'all' })
   const radar = buildSignalRadar(allCards, { wlSymbols: new Set(), wlChains: new Set(), moverBySymbol, scope: 'all' })
 
+  // co-mention index: tokens appearing together in the same stories, so a radar
+  // signal can personalize to a held/watched asset it merely co-mentions. Keys are
+  // canonical (same space as the wl/hold CTEs in signal_feed_v2). Narratives come
+  // from the deterministic taxonomy tagger. Both from already-fetched data; no provider.
+  const coByHash = new Map<string, Set<string>>()
+  for (const c of allCards) {
+    if (!c.symbol) continue
+    const set = coByHash.get(c.story_hash) || new Set<string>()
+    set.add(String(c.symbol).toUpperCase()); coByHash.set(c.story_hash, set)
+  }
+  const coMentionsFor = (ids: string[], selfSym: string | null): string[] => {
+    const syms = new Set<string>()
+    for (const h of (ids || [])) { const s = coByHash.get(h); if (s) for (const x of s) syms.add(x) }
+    if (selfSym) syms.delete(String(selfSym).toUpperCase())
+    return [...new Set([...syms].map((s) => resolver.toCanonicalKey(s)).filter(Boolean) as string[])].slice(0, 8)
+  }
+  const narrativesFor = (text: string): string[] => [...new Set(tagText(text, tax).narratives.map(lc))].slice(0, 6)
+
   // story_hash → latest published_at (for truthful freshness)
   const pubByHash = new Map<string, number>()
   for (const c of allCards) { const p = new Date(c.published_at || 0).getTime(); if (!Number.isNaN(p)) pubByHash.set(c.story_hash, Math.max(pubByHash.get(c.story_hash) || 0, p)) }
@@ -142,7 +161,7 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
     acc.set(`${subject_type}:${subject_id}`, {
       signal_key: `${subject_type}:${subject_id}`, signal_type: s.signal_type || null,
       subject_type, subject_id, display_symbol, chain,
-      related_assets: [], related_narratives: [], related_wallets: [],
+      related_assets: coMentionsFor(s.related_news_ids, display_symbol), related_narratives: narrativesFor([s.why_it_matters || '', ...(s.headlines || [])].join(' ')), related_wallets: [],
       direction: mapDirection(s.direction), confidence: s.confidence || (diversity >= 2 ? 'medium' : 'low'),
       source_count: s.source_count || s.mention_count || 0, source_diversity: diversity,
       severity, freshness, market_impact,
@@ -176,7 +195,7 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
       acc.set(skey, {
         signal_key: skey, signal_type: 'exchange_market', subject_type: 'asset', subject_id: key,
         display_symbol: resolver.displaySymbolFor(key) || sym, chain: null,
-        related_assets: [], related_narratives: [], related_wallets: [],
+        related_assets: [], related_narratives: narrativesFor([e.title || '', e.summary || '', e.why_it_matters || ''].join(' ')), related_wallets: [],
         direction: mapDirection(e.direction), confidence: e.confidence || 'medium',
         source_count: Number(e.provider_count) || 1, source_diversity: diversity,
         severity, freshness, market_impact: mi,
