@@ -5,7 +5,7 @@ import { Radar, ArrowLeft, Star, Bell, BellOff, ChevronDown, Bug } from 'lucide-
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import {
-  loadNarrativeDetail, loadNarrativeHistory, followNarrative, unfollowNarrative,
+  loadNarrativeDetail, loadNarrativeHistory, loadNarrativeXVelocity, followNarrative, unfollowNarrative,
   setNarrativeAlert, clearNarrativeAlert, logNarrativeInteraction, loadNarrativeDebug,
 } from '../lib/narratives-api'
 import { displayStatus, displayStatusMeta, stageMeta, signalMeta, onchainMeta, confirmationMeta } from '../lib/narrative-ui'
@@ -31,6 +31,33 @@ function Sparkline({ points }) {
   )
 }
 
+// Two-series trend: attention (chatter_score) vs confirmation (avg of price/volume
+// confirmation), shared 0..100 scale — reads "is the crowd ahead of price?".
+function TrendLines({ points }) {
+  const rows = (points || []).filter(Boolean)
+  if (rows.length < 2) return <div className="text-[12px] text-[var(--fg-4)] italic">Not enough history yet.</div>
+  const W = 320, H = 48
+  const clamp = (v) => Math.max(0, Math.min(100, v))
+  const attn = rows.map((p) => clamp(Number(p.chatter_score) || 0))
+  const conf = rows.map((p) => {
+    const vals = [Number(p.price_confirmation_score), Number(p.volume_confirmation_score)].filter((x) => Number.isFinite(x))
+    return clamp(vals.length ? vals.reduce((s, x) => s + x, 0) / vals.length : 0)
+  })
+  const line = (vals) => vals.map((v, i) => `${(i / (vals.length - 1)) * W},${(H - (v / 100) * H).toFixed(1)}`).join(' ')
+  return (
+    <div className="space-y-1">
+      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-12" preserveAspectRatio="none">
+        <polyline points={line(attn)} fill="none" stroke="var(--accent)" strokeWidth="1.5" />
+        <polyline points={line(conf)} fill="none" stroke="#34d399" strokeWidth="1.5" />
+      </svg>
+      <div className="flex items-center gap-3 text-[10px] text-[var(--fg-4)]">
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-1 w-3 rounded" style={{ background: 'var(--accent)' }} />Attention</span>
+        <span className="inline-flex items-center gap-1"><span className="inline-block h-1 w-3 rounded" style={{ background: '#34d399' }} />Confirmation</span>
+      </div>
+    </div>
+  )
+}
+
 export default function NarrativeDetailPage() {
   const { slug } = useParams()
   const { t } = useTranslation('intel', { useSuspense: false })
@@ -40,6 +67,7 @@ export default function NarrativeDetailPage() {
 
   const [detail, setDetail] = useState(null)
   const [history, setHistory] = useState([])
+  const [xvel, setXvel] = useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -50,8 +78,8 @@ export default function NarrativeDetailPage() {
     if (!org?.id || !slug) return
     setLoading(true); setErr(null)
     try {
-      const [d, h] = await Promise.all([loadNarrativeDetail(supabase, org.id, slug), loadNarrativeHistory(supabase, slug, 30)])
-      setDetail(d); setHistory(h)
+      const [d, h, xv] = await Promise.all([loadNarrativeDetail(supabase, org.id, slug), loadNarrativeHistory(supabase, slug, 30), loadNarrativeXVelocity(supabase, slug)])
+      setDetail(d); setHistory(h); setXvel(xv)
       logNarrativeInteraction(supabase, slug, 'open')
     } catch (e) { setErr(e.message) } finally { setLoading(false) }
   }, [org?.id, slug, supabase])
@@ -147,6 +175,14 @@ export default function NarrativeDetailPage() {
           <span className={`inline-flex items-center gap-1 text-[11px] ${mkt.text}`}><span className={`h-2 w-2 rounded-full ${mkt.dot}`} /> {t('narratives.market', { defaultValue: 'Market' })}: {mkt.label}</span>
           <span className={`inline-flex items-center gap-1 text-[11px] ${oc.text}`}><span className={`h-2 w-2 rounded-full ${oc.dot}`} /> {oc.label}</span>
         </div>
+        {xvel && xvel.velocity_pct != null && (
+          <div className="card--flat p-2 flex items-center gap-2 flex-wrap text-[12px]">
+            <span className="text-[var(--fg-5)]">{t('narratives.x_chatter', { defaultValue: 'X mentions' })}</span>
+            {xvel.counts_today != null && <span className="font-semibold text-[var(--fg-1)]">~{Math.round(xvel.counts_today)}/day</span>}
+            <span className={`font-semibold ${xvel.velocity_pct >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>{xvel.velocity_pct >= 0 ? '+' : ''}{Math.round(xvel.velocity_pct)}% {t('narratives.vs_7d', { defaultValue: 'vs 7d avg' })}</span>
+            {xvel.total_7d != null && <span className="text-[10px] text-[var(--fg-5)]">· {Math.round(xvel.total_7d)} {t('narratives.in_7d', { defaultValue: 'in 7d' })}</span>}
+          </div>
+        )}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-4 gap-y-2">
           <ConfBar label="Market" value={st.market_confirmation} />
           <ConfBar label="On-chain" value={st.onchain_confirmation} />
@@ -157,6 +193,15 @@ export default function NarrativeDetailPage() {
           <ConfBar label="Early" value={st.early_signal_score} />
           <ConfBar label="Chatter vel." value={st.chatter_velocity} signed />
         </div>
+      </div>
+
+      {/* attention vs confirmation — is the crowd ahead of price? */}
+      <div className="card p-4 space-y-2">
+        <div className="flex items-center justify-between flex-wrap gap-2">
+          <div className="eyebrow">{t('narratives.attn_vs_conf', { defaultValue: 'Attention vs confirmation (30d)' })}</div>
+          <span className="text-[10px] text-[var(--fg-5)]">{t('narratives.attn_vs_conf_hint', { defaultValue: 'Crowd ahead of price when blue leads green' })}</span>
+        </div>
+        <TrendLines points={history} />
       </div>
 
       {/* history */}

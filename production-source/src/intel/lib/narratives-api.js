@@ -27,6 +27,26 @@ export async function loadNarrativeHistory(supabase, slug, days = 30) {
   } catch { return [] }
 }
 
+// Real X (Twitter) 7-day chatter velocity for a narrative — the actual "mentions
+// +X% vs 7d avg" the X-API collector stores in narrative_signals.raw, read directly
+// (authenticated RLS) because the detail RPC's chatter blob prefers the Grok provider
+// and usually shadows it. Returns null on miss so the caller hides the line.
+export async function loadNarrativeXVelocity(supabase, slug) {
+  if (!slug) return null
+  try {
+    const { data: tax } = await supabase.from('narrative_taxonomy').select('id').eq('slug', slug).maybeSingle()
+    if (!tax?.id) return null
+    const { data } = await supabase.from('narrative_signals')
+      .select('raw, fetched_at')
+      .eq('narrative_id', tax.id).eq('provider', 'x_api').eq('signal_kind', 'social_chatter')
+      .order('fetched_at', { ascending: false }).limit(1).maybeSingle()
+    const raw = data?.raw
+    if (!raw || raw.velocity_pct == null) return null
+    const num = (v) => (v != null && Number.isFinite(Number(v))) ? Number(v) : null
+    return { velocity_pct: num(raw.velocity_pct), counts_today: num(raw.counts_today), prior_avg: num(raw.prior_avg), total_7d: num(raw.total_7d), fetched_at: data.fetched_at }
+  } catch { return null }
+}
+
 // Super-admin only — explainability for tuning.
 export async function loadNarrativeDebug(supabase, slug) {
   try {
