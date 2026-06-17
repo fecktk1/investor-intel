@@ -419,6 +419,18 @@ export default function DefiPage() {
             </div>
           )}
 
+          {/* Protocol real yield — annualized fee/revenue vs TVL from cached snapshots */}
+          {metrics?.current?.fee_yield != null && (
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              <Stat label={t('defi.fee_yield', { defaultValue: 'Fee yield (ann.)' })} value={fmtPct(metrics.current.fee_yield)} accent
+                sub={metrics.current.revenue_yield != null ? `${t('defi.rev_yield', { defaultValue: 'rev' })} ${fmtPct(metrics.current.revenue_yield)}` : null} />
+              {metrics.current.real_yield_flag && metrics.current.real_yield_flag !== 'unknown' && (
+                <Stat label={t('defi.yield_quality', { defaultValue: 'Yield quality' })}
+                  value={metrics.current.real_yield_flag === 'real' ? t('defi.ry_real', { defaultValue: 'Real yield' }) : t('defi.ry_emission', { defaultValue: 'Emission-led' })} />
+              )}
+            </div>
+          )}
+
           {/* Charts: DeFiLlama rich history, else accumulated snapshots */}
           {(loadingChart || chartData.length > 0) && <PoolDetailCharts history={chartData} loading={loadingChart} />}
 
