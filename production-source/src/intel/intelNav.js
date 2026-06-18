@@ -12,7 +12,29 @@
 import {
   Activity, Compass, Star, Radar, Wallet, BarChart3, LineChart, Scale,
   NotebookPen, Newspaper, Bell, HelpCircle, MessageSquare, Bookmark, Settings, Rss, Landmark, Briefcase, LifeBuoy,
+  LayoutDashboard, CalendarCheck,
 } from 'lucide-react'
+import { THESIS_JOURNAL_ENABLED } from './lib/flags'
+
+// Thesis Journal replaces the single "Thesis Tracker" item with a multi-item
+// section. Global kill switch: flag off → legacy single Thesis Tracker entry.
+const JOURNAL_SECTION = THESIS_JOURNAL_ENABLED
+  ? {
+      sectionKey: 'section.journal',
+      items: [
+        { to: '/intel/theses',           end: true, icon: LayoutDashboard, labelKey: 'journal.nav.dashboard', defaultLabel: 'Dashboard' },
+        { to: '/intel/theses/list',                 icon: NotebookPen,     labelKey: 'journal.nav.theses',    defaultLabel: 'Theses' },
+        { to: '/intel/theses/trades',               icon: LineChart,       labelKey: 'journal.nav.trades',    defaultLabel: 'Trades' },
+        { to: '/intel/theses/reviews',              icon: CalendarCheck,   labelKey: 'journal.nav.reviews',   defaultLabel: 'Reviews' },
+        { to: '/intel/theses/analytics',            icon: BarChart3,       labelKey: 'journal.nav.analytics', defaultLabel: 'Analytics' },
+      ],
+    }
+  : {
+      sectionKey: 'section.theses',
+      items: [
+        { to: '/intel/theses', icon: NotebookPen, labelKey: 'nav.theses', defaultLabel: 'Thesis Tracker' },
+      ],
+    }
 
 export const INTEL_NAV = [
   {
@@ -35,12 +57,7 @@ export const INTEL_NAV = [
       { to: '/intel/compare',    icon: Scale,     labelKey: 'nav.compare',    defaultLabel: 'Compare' },
     ],
   },
-  {
-    sectionKey: 'section.theses',
-    items: [
-      { to: '/intel/theses', icon: NotebookPen, labelKey: 'nav.theses', defaultLabel: 'Thesis Tracker' },
-    ],
-  },
+  JOURNAL_SECTION,
   {
     sectionKey: 'section.daily',
     items: [

@@ -167,6 +167,16 @@ export async function loadMarketDetail(supabase, orgId, symbol) {
   return data
 }
 
+// Lightweight per-timeframe candles for chart cycling (1H…1Y). The backend
+// returns candles already scoped to the requested range (real intraday for short
+// ranges via CEX klines). candlesOnly skips the full detail assembly.
+export async function loadMarketCandles(supabase, orgId, symbol, timeframe = '7D') {
+  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, symbol, timeframe, candlesOnly: true } })
+  if (error) throw new Error(error.message || 'candles_failed')
+  if (data?.error) throw new Error(data.error)
+  return data?.candles || []
+}
+
 // Hydrate exchange market context for a set of asset symbols, keyed by uppercase
 // symbol. Reads the cached latest tables directly (RLS authed read; no edge call,
 // no live exchange calls). Returns {} on any error so callers degrade silently.

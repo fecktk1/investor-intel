@@ -8,6 +8,7 @@ import { explorerTxUrl } from '../lib/chains'
 import { fmtPrice, fmtPct, pctClass, timeAgo } from '../lib/market-format'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import AssetThesisModule from '../components/thesis/AssetThesisModule'
 import * as api from '../lib/portfolio-api'
 
 const usd = (v) => v == null ? '—' : `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
@@ -144,6 +145,9 @@ export default function PortfolioAssetPage() {
           {t('portfolio.asset.open_market', { defaultValue: 'Open full market data' })} <ExternalLink className="h-3.5 w-3.5" />
         </Link>
       )}
+
+      {/* Why I own this — the thesis behind the position (or an entry point to create one) */}
+      {meta.symbol && <AssetThesisModule symbol={meta.symbol} chain={holding?.chain} />}
 
       <section className="space-y-2">
         <span className="eyebrow">{t('portfolio.asset.history', { defaultValue: 'Transaction history' })}</span>

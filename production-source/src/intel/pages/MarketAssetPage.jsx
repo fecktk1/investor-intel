@@ -4,7 +4,8 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Activity } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
-import { loadMarketDetail, loadTokenProfile } from '../lib/markets-api'
+import { loadMarketDetail, loadTokenProfile, loadMarketCandles } from '../lib/markets-api'
+import { thesisMarkersForSymbol } from '../lib/thesis-api'
 import { fmtPrice, fmtPct, fmtVol, fmtNum, pctClass, bucketConfidence } from '../lib/market-format'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import ConfidenceChip from '../components/ConfidenceChip'
@@ -17,7 +18,7 @@ import ProfilePanel from '../components/ProfilePanel'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
-import ThesisDriftCard from '../components/ThesisDriftCard'
+import AssetThesisModule from '../components/thesis/AssetThesisModule'
 import AssetYearInReview from '../components/AssetYearInReview'
 import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
 
@@ -40,6 +41,7 @@ export default function MarketAssetPage() {
   const [error, setError] = useState(null)
   const [profile, setProfile] = useState(null)
   const [profileState, setProfileState] = useState(null)
+  const [thesisMarkers, setThesisMarkers] = useState([])
   const analysis = useArtifact()
   const backTo = location.state?.from || '/intel/markets'
 
@@ -57,6 +59,14 @@ export default function MarketAssetPage() {
       } catch (e) { if (alive) setError(e.message) }
       finally { if (alive) setLoading(false) }
     })()
+    return () => { alive = false }
+  }, [org?.id, supabase, sym])
+
+  // Per-user thesis chart markers (RLS-scoped — never shown on another user's chart).
+  useEffect(() => {
+    if (!org?.id || !sym) return
+    let alive = true
+    thesisMarkersForSymbol(supabase, org.id, sym).then((m) => { if (alive) setThesisMarkers(m) }).catch(() => {})
     return () => { alive = false }
   }, [org?.id, supabase, sym])
 
@@ -211,7 +221,8 @@ export default function MarketAssetPage() {
       {/* Chart */}
       <div className="space-y-2">
         <div className="eyebrow">{t('breakdown.chart', { defaultValue: 'Price chart' })}</div>
-        <TokenChart candles={d.candles} />
+        <TokenChart candles={d.candles} markers={thesisMarkers} showDensityToggles defaultRange="7D"
+          loadCandles={(tf) => loadMarketCandles(supabase, org.id, sym, tf)} />
       </div>
 
       {/* Metrics */}
@@ -279,7 +290,7 @@ export default function MarketAssetPage() {
         {analysis.result && <ArtifactView result={analysis.result} loading={analysis.loading} onRefresh={explain ? () => explain(true) : undefined} />}
       </section>
 
-      <ThesisDriftCard symbol={symbol} />
+      <AssetThesisModule symbol={symbol} chain={d.chain || d.primaryChain} />
 
       <AssetYearInReview symbol={sym} />
 

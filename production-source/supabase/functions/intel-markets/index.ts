@@ -68,7 +68,10 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({})) as Record<string, unknown>
 
     if (typeof body.symbol === 'string' && body.symbol.trim()) {
-      return await marketDetail(admin, body.symbol.toUpperCase().replace(/^\$/, ''))
+      return await marketDetail(admin, body.symbol.toUpperCase().replace(/^\$/, ''), {
+        timeframe: typeof body.timeframe === 'string' ? body.timeframe : '7D',
+        candlesOnly: body.candlesOnly === true,
+      })
     }
 
     const orgId = typeof body.orgId === 'string' ? body.orgId : null
@@ -319,16 +322,31 @@ Deno.serve(async (req) => {
 })
 
 // ─── DETAIL mode (CEX breakdown + on-demand candles) — unchanged behavior ─────
+// Range → (kline interval, count). Intervals are provider-portable (1m/5m/15m/
+// 1h/4h/1d map across binance/coinbase/kraken/kucoin). Lets the chart cycle
+// 1H…1Y with real intraday data for short ranges.
+const CANDLE_TF: Record<string, { interval: string; limit: number }> = {
+  '1H': { interval: '1m', limit: 60 },
+  '12H': { interval: '5m', limit: 144 },
+  '24H': { interval: '15m', limit: 96 },
+  '3D': { interval: '1h', limit: 72 },
+  '7D': { interval: '1h', limit: 168 },
+  '1M': { interval: '4h', limit: 180 },
+  '3M': { interval: '1d', limit: 90 },
+  '6M': { interval: '1d', limit: 180 },
+  '1Y': { interval: '1d', limit: 365 },
+}
 // deno-lint-ignore no-explicit-any
-async function fetchCandles(admin: any, sym: string): Promise<{ candles: { t: number; c: number }[]; bestPair: string | null; bestProvider: string | null }> {
+async function fetchCandles(admin: any, sym: string, timeframe = '7D'): Promise<{ candles: { t: number; c: number }[]; bestPair: string | null; bestProvider: string | null }> {
   try {
+    const tf = CANDLE_TF[timeframe] || CANDLE_TF['7D']
     const { data: tk } = await admin.from('exchange_latest_tickers').select('provider, provider_symbol, volume_quote_24h').eq('normalized_symbol', sym).order('volume_quote_24h', { ascending: false }).limit(1).maybeSingle()
     if (!tk) return { candles: [], bestPair: null, bestProvider: null }
     const prov = getProvider(tk.provider)
     if (!prov) return { candles: [], bestPair: tk.provider_symbol, bestProvider: tk.provider }
     const ctx = { supabase: admin, jobName: 'intel-markets-detail', kind: 'request' as const }
-    let k = await prov.getKlines(tk.provider_symbol, '1h', 168, ctx)
-    if (!k || !k.length) k = await prov.getKlines(tk.provider_symbol, '1d', 90, ctx)
+    let k = await prov.getKlines(tk.provider_symbol, tf.interval, tf.limit, ctx)
+    if (!k || !k.length) k = await prov.getKlines(tk.provider_symbol, '1d', Math.min(tf.limit, 365), ctx)  // provider-safe fallback
     const candles = (k || []).map((x) => ({ t: x.openTime, c: x.close }))
     return { candles, bestPair: tk.provider_symbol, bestProvider: tk.provider }
   } catch { return { candles: [], bestPair: null, bestProvider: null } }
@@ -376,7 +394,13 @@ async function resolveCanonicalAsset(admin: any, sym: string) {
 }
 
 // deno-lint-ignore no-explicit-any
-async function marketDetail(admin: any, sym: string): Promise<Response> {
+async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; candlesOnly?: boolean } = {}): Promise<Response> {
+  const timeframe = opts.timeframe || '7D'
+  // Lightweight path for chart timeframe cycling — candles only, no full assembly.
+  if (opts.candlesOnly) {
+    const c = await fetchCandles(admin, sym, timeframe)
+    return json({ candles: c.candles, timeframe, bestPair: c.bestPair, bestProvider: c.bestProvider })
+  }
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR, maR] = await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
     admin.from('exchange_latest_market_signals').select('*').eq('normalized_symbol', sym).maybeSingle(),
@@ -419,7 +443,7 @@ async function marketDetail(admin: any, sym: string): Promise<Response> {
   // deno-lint-ignore no-explicit-any
   const rollups: Record<string, any> = {}
   for (const r of (rollR.data || [])) rollups[r.timeframe] = r
-  const { candles, bestPair, bestProvider } = await fetchCandles(admin, sym)
+  const { candles, bestPair, bestProvider } = await fetchCandles(admin, sym, timeframe)
   const prof = profR.data, sig = sigR.data
   const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null
   const dexSnapshot = await latestDexSnapshotForPlatforms(admin, canonicalPlatforms)

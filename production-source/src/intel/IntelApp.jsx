@@ -23,6 +23,16 @@ import MacroPage from './pages/MacroPage'
 import BriefsPage from './pages/BriefsPage'
 import AlertsPage from './pages/AlertsPage'
 import ThesisPage from './pages/ThesisPage'
+import ThesisJournalLayout from './pages/ThesisJournalLayout'
+import ThesisDashboardPage from './pages/ThesisDashboardPage'
+import ThesisListPage from './pages/ThesisListPage'
+import ThesisBuilderPage from './pages/ThesisBuilderPage'
+import ThesisDetailPage from './pages/ThesisDetailPage'
+import TradeJournalPage from './pages/TradeJournalPage'
+import ReviewsPage from './pages/ReviewsPage'
+import ThesisAnalyticsPage from './pages/ThesisAnalyticsPage'
+import ThesisSettingsPage from './pages/ThesisSettingsPage'
+import { THESIS_JOURNAL_ENABLED } from './lib/flags'
 import SavedResearchPage from './pages/SavedResearchPage'
 import IntelSettingsPage from './pages/IntelSettingsPage'
 import CommentKingPage from './pages/CommentKingPage'
@@ -90,8 +100,25 @@ export default function IntelApp() {
           <Route path="execution" element={<ExecutionPage />} />
           <Route path="compare" element={<ComparePage />} />
 
-          <Route path="theses" element={<ThesisPage />} />
-          <Route path="theses/:id" element={<ThesisPage />} />
+          {/* Thesis Journal (global kill switch: flag off → legacy Thesis Tracker
+              fallback retained for one release). Static children rank above :id in v6. */}
+          {THESIS_JOURNAL_ENABLED ? (
+            <Route path="theses" element={<ThesisJournalLayout />}>
+              <Route index element={<ThesisDashboardPage />} />
+              <Route path="list" element={<ThesisListPage />} />
+              <Route path="new" element={<ThesisBuilderPage />} />
+              <Route path="trades" element={<TradeJournalPage />} />
+              <Route path="reviews" element={<ReviewsPage />} />
+              <Route path="analytics" element={<ThesisAnalyticsPage />} />
+              <Route path="settings" element={<ThesisSettingsPage />} />
+              <Route path=":id" element={<ThesisDetailPage />} />
+            </Route>
+          ) : (
+            <>
+              <Route path="theses" element={<ThesisPage />} />
+              <Route path="theses/:id" element={<ThesisPage />} />
+            </>
+          )}
 
           <Route path="briefs" element={<BriefsPage />} />
           <Route path="briefs/:id" element={<BriefsPage />} />

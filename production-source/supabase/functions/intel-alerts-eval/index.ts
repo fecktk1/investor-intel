@@ -19,6 +19,7 @@ import {
   recordDecisionMemory,
   type IntelligenceContextBlock,
 } from '../_shared/intelligence-core.ts'
+import { evalThesisEvidenceBatch } from '../_shared/intel/thesis-monitor.ts'
 
 const DEFAULT_COOLDOWN_MIN = 720          // 12h (the historical hardcode, now per-rule)
 const NOISY_FIRES_48H = 4                 // ≥4 fires in 48h → cooldown ×2
@@ -412,8 +413,15 @@ Deno.serve(async (req) => {
 
     // Thesis drift pass — every ~6h window, same cron, no extra polling.
     let thesisReviewed = 0
+    let thesisEvidence: { evaluated: number; failed: number; dry_run: boolean } = { evaluated: 0, failed: 0, dry_run: false }
     const h = new Date().getUTCHours(), m = new Date().getUTCMinutes()
-    if (h % 6 === 0 && m < 15) thesisReviewed = await evalThesisDrift(admin)
+    if (h % 6 === 0 && m < 15) {
+      thesisReviewed = await evalThesisDrift(admin)   // legacy drift (old columns) — additive, harmless
+      // Thesis Journal evidence + status + quality pass (cache-first, error-isolated,
+      // cursor by last_evaluated_at). THESIS_JOURNAL_CRON_MODE=dry_run logs without writing.
+      const dryRun = (Deno.env.get('THESIS_JOURNAL_CRON_MODE') || 'write') === 'dry_run'
+      thesisEvidence = await evalThesisEvidenceBatch(admin, { dryRun, limit: 50 })
+    }
 
     // Precise job ledger row: this run made provider calls only via the capped
     // Birdeye client; suppressed/cooled rules are avoided work.
@@ -421,11 +429,11 @@ Deno.serve(async (req) => {
       await recordCostEvent(makeCostWriter(admin), {
         feature: 'alerts_eval', orgId: null, cacheStatus: 'no_ai', allowReason: 'n/a_no_ai',
         providerCallsMade: checked, providerCallsAvoided: Math.max(0, active.length - checked),
-        usage: { fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed },
+        usage: { fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed, thesis_evidence: thesisEvidence.evaluated, thesis_eval_failed: thesisEvidence.failed },
       }, { precision: 'exact', nowMs: Date.now() })
     } catch { /* ledger best-effort */ }
 
-    return json({ ok: true, checked, fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed })
+    return json({ ok: true, checked, fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed, thesis_evidence: thesisEvidence })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'eval_failed' }, 500)
   }
