@@ -124,23 +124,26 @@ export function IntelStatusBadge({ label, tone = 'default', className = '', titl
   return <IntelDataPill tone={tone} title={title} className={cx('text-[10px] uppercase', className)}>{label}</IntelDataPill>
 }
 
-export function IntelTabs({ items, value, onChange, className = '' }) {
+export function IntelTabs({ items, value, onChange, getLabel, className = '' }) {
   return (
     <div className={cx('intel-tabs', className)} role="tablist">
       {items.map((item) => {
-        const active = item.value === value
+        // Accept either `value` or `key`-shaped items; resolve a label via
+        // getLabel when provided (callers may pass i18n-resolved labels).
+        const itemValue = item.value !== undefined ? item.value : item.key
+        const active = itemValue === value
         const Icon = item.icon
         return (
           <button
-            key={item.value}
+            key={itemValue}
             type="button"
             role="tab"
             aria-selected={active}
             className="intel-tab"
-            onClick={() => onChange?.(item.value)}
+            onClick={() => onChange?.(itemValue)}
           >
             {Icon && <Icon className="h-3.5 w-3.5" />}
-            {item.label}
+            {getLabel ? getLabel(item) : item.label}
           </button>
         )
       })}
