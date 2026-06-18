@@ -1,17 +1,24 @@
-// Investor Intel — macro refresh (pg_cron, service-role).
+// Investor Intel — macro refresh (deterministic, multi-source, FREE).
 //
-// ONE shared, Google-grounded fetch per day populates the global macro store
-// (intel_macro_calendar + intel_macro_indicators) that every workspace reads.
-// Shared-once, not per-user — keeps provider cost flat regardless of user count.
-// Grounding ties values to live web sources (verified, not fabricated).
+// Replaces the prior Gemini-grounded fetch (which silently returned 0 rows,
+// freezing the macro page) with deterministic data from FREE sources via
+// per-metric fallback chains: Alpha Vantage + official keyless FRED/BLS +
+// Yahoo Finance + CoinGecko + alternative.me. Every value is sourced from a
+// real endpoint — no LLM grounding. Populates the GLOBAL macro store read by
+// every workspace:
+//   intel_macro_indicators (one row per metric, upserted on metric_key)
+//   intel_macro_calendar   (upcoming FOMC + NFP, upserted)
+// Shared-once; provider cost is flat regardless of user count.
+//
+// Env: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, CRON_SECRET (auth).
+//      ALPHAVANTAGE_API_KEY (optional — chain falls back to keyless sources),
+//      FRED_API_KEY (optional — keyless fredgraph.csv used when absent).
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { callGeminiGrounded, isGroundedError } from '../_shared/gemini-ground.ts'
+import { collectMacroIndicators, buildMacroCalendar } from '../_shared/macro-sources.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
-const isoOrNull = (s: any) => { if (!s) return null; const d = new Date(String(s)); return Number.isNaN(d.getTime()) ? null : d.toISOString() }
-const dateOrNull = (s: any) => { const iso = isoOrNull(s); return iso ? iso.slice(0, 10) : null }
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -27,65 +34,32 @@ Deno.serve(async (req) => {
       if (!prof?.is_super_admin) return json({ error: 'forbidden' }, 403)
     }
 
-    const geminiKey = Deno.env.get('GEMINI_API_KEY')
-    if (!geminiKey) return json({ error: 'GEMINI_API_KEY not configured' }, 500)
-
-    // 1. Economic calendar (next ~3 weeks).
-    let events = 0
-    const gCal = await callGeminiGrounded({
-      apiKey: geminiKey,
-      systemInstruction: 'You are an economic-calendar assistant. Use live web search to find SCHEDULED macro releases with real published dates. Respond with ONLY a JSON object. This is information, not financial advice.',
-      parts: [{ text: 'List upcoming scheduled US/global macroeconomic events in the next 21 days: FOMC meetings & rate decisions, CPI, PPI, PCE, jobs report (NFP), unemployment, and GDP releases. Return {"events":[{"event_key":"fomc|cpi|ppi|pce|nfp|gdp|rate_decision|unemployment","title":"","country":"US","importance":"high|medium|low","scheduled_at":"ISO 8601 datetime","period":"","forecast":"","previous":""}]}. Use only real published schedules and cite sources.' }],
-      temperature: 0,
-    })
-    if (!isGroundedError(gCal) && gCal.json && Array.isArray((gCal.json as any).events)) {
-      const srcUrl = gCal.citations?.[0]?.url || null
-      const rows = (gCal.json as any).events.map((e: any) => ({
-        event_key: String(e?.event_key || 'event').slice(0, 40),
-        title: String(e?.title || '').slice(0, 200) || 'Macro event',
-        country: e?.country ? String(e.country).slice(0, 8) : 'US',
-        importance: ['high', 'medium', 'low'].includes(e?.importance) ? e.importance : null,
-        scheduled_at: isoOrNull(e?.scheduled_at),
-        period: e?.period ? String(e.period).slice(0, 60) : null,
-        forecast: e?.forecast != null ? String(e.forecast).slice(0, 60) : null,
-        previous: e?.previous != null ? String(e.previous).slice(0, 60) : null,
-        source_url: srcUrl, raw: { via: 'gemini' }, updated_at: new Date().toISOString(),
-      })).filter((r: any) => r.scheduled_at)
-      if (rows.length) {
-        const { data, error } = await admin.from('intel_macro_calendar').upsert(rows, { onConflict: 'event_key,scheduled_at' }).select('id')
-        if (error) throw error
-        events = data?.length || rows.length
-      }
-    }
-
-    // 2. Current macro indicators.
+    // 1. Indicators — resolved through multi-source fallback chains. Never
+    //    throws on a single provider failure; a metric that fails everywhere
+    //    is simply skipped so it can't blank the others.
+    const { rows, sources, errors } = await collectMacroIndicators()
     let indicators = 0
-    const gInd = await callGeminiGrounded({
-      apiKey: geminiKey,
-      systemInstruction: 'You report current macro indicator values from live web search. Respond with ONLY a JSON object. Be factual; this is information, not financial advice.',
-      parts: [{ text: 'Give the latest published values (with as-of dates) for: US federal funds target rate upper bound; US CPI year-over-year; US core CPI year-over-year; US unemployment rate; US 10-year Treasury yield; US Dollar Index (DXY); Bitcoin dominance percent; Crypto Fear & Greed Index. Return {"indicators":[{"metric_key":"fed_funds_rate|cpi_yoy|core_cpi_yoy|unemployment|us10y|dxy|btc_dominance|fear_greed","label":"","value":"","unit":"","as_of":"YYYY-MM-DD","period":"","trend":"up|down|flat"}]}. Cite sources.' }],
-      temperature: 0,
-    })
-    if (!isGroundedError(gInd) && gInd.json && Array.isArray((gInd.json as any).indicators)) {
-      const srcUrl = gInd.citations?.[0]?.url || null
-      const rows = (gInd.json as any).indicators.map((m: any) => ({
-        metric_key: String(m?.metric_key || '').slice(0, 40),
-        label: String(m?.label || m?.metric_key || '').slice(0, 80) || 'Indicator',
-        value: m?.value != null ? String(m.value).slice(0, 40) : null,
-        unit: m?.unit ? String(m.unit).slice(0, 16) : null,
-        as_of: dateOrNull(m?.as_of),
-        period: m?.period ? String(m.period).slice(0, 40) : null,
-        trend: ['up', 'down', 'flat'].includes(m?.trend) ? m.trend : null,
-        source_url: srcUrl, raw: { via: 'gemini' }, updated_at: new Date().toISOString(),
-      })).filter((r: any) => r.metric_key && r.value != null)
-      if (rows.length) {
-        const { data, error } = await admin.from('intel_macro_indicators').upsert(rows, { onConflict: 'metric_key' }).select('id')
-        if (error) throw error
-        indicators = data?.length || rows.length
-      }
+    if (rows.length) {
+      const stamp = new Date().toISOString()
+      const upRows = rows.map((r) => ({ ...r, updated_at: stamp }))
+      const { data, error } = await admin.from('intel_macro_indicators').upsert(upRows, { onConflict: 'metric_key' }).select('id')
+      if (error) throw error
+      indicators = data?.length || rows.length
     }
 
-    return json({ ok: true, events, indicators })
+    // 2. Calendar — deterministic upcoming FOMC rate decisions + NFP releases
+    //    (official published schedules; no provider call).
+    let events = 0
+    const cal = buildMacroCalendar()
+    if (cal.length) {
+      const stamp = new Date().toISOString()
+      const calRows = cal.map((c) => ({ ...c, updated_at: stamp }))
+      const { data, error } = await admin.from('intel_macro_calendar').upsert(calRows, { onConflict: 'event_key,scheduled_at' }).select('id')
+      if (error) throw error
+      events = data?.length || cal.length
+    }
+
+    return json({ ok: true, indicators, events, sources, errors })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'macro_cron_failed' }, 500)
   }
