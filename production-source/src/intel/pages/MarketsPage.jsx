@@ -16,6 +16,7 @@ import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import RegimeBanner from '../components/RegimeBanner'
 import RankMovers from '../components/RankMovers'
+import { IntelMetricCard, IntelPageHeader, IntelPageShell, IntelTabs } from '../components/IntelPrimitives'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
 const SORTS = ['market_cap', 'volume', 'gainers', 'losers', 'change_1h', 'change_24h', 'change_7d', 'exchange_availability', 'arbitrage', 'unusual_volume', 'multi_exchange_strength', 'recently_updated']
@@ -177,8 +178,26 @@ export default function MarketsPage() {
   [perf])
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-end justify-between flex-wrap gap-2">
+    <IntelPageShell>
+      <IntelPageHeader
+        icon={Compass}
+        eyebrow={t('brand.name', { defaultValue: 'Investor Intel' })}
+        title={t('nav.markets', { defaultValue: 'Markets' })}
+        subtitle={mode === 'degen'
+          ? t('degen.subtitle', { defaultValue: 'Multi-chain memecoin discovery and risk context. Extremely high risk - not financial advice.' })
+          : t('markets.subtitle', { defaultValue: 'Top 1000 crypto assets by market cap with exchange & DEX enrichment. Market intelligence only - not financial advice.' })}
+        actions={(
+          <IntelTabs
+            value={mode}
+            onChange={setMode}
+            items={[
+              { value: 'markets', label: t('markets.tabMarkets', { defaultValue: 'Markets' }), icon: BarChart3 },
+              { value: 'degen', label: t('markets.tabDegen', { defaultValue: 'Degen' }), icon: Dices },
+            ]}
+          />
+        )}
+      />
+      <div className="hidden">
         <div>
           <div className="eyebrow flex items-center gap-1.5"><Compass className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
           <h1 className="page-title">{t('nav.markets', { defaultValue: 'Markets' })}</h1>
@@ -462,7 +481,7 @@ export default function MarketsPage() {
       )}
 
       <IntelDisclaimer variant="block" />
-    </div>
+    </IntelPageShell>
   )
 }
 
@@ -487,11 +506,8 @@ function MarketMacroBar({ macro }) {
 }
 
 function Stat({ label, value, sub, cls }) {
+  const tone = cls?.includes('red') ? 'negative' : cls?.includes('ok') || cls?.includes('emerald') ? 'positive' : cls?.includes('sky') ? 'info' : cls?.includes('amber') || cls?.includes('accent') ? 'warning' : 'default'
   return (
-    <div className="card p-3">
-      <div className="text-[10px] text-[var(--fg-4)] uppercase">{label}</div>
-      <div className={`text-sm font-semibold ${cls || 'text-[var(--fg-1)]'}`}>{value}</div>
-      {sub && <div className="text-[10px] text-[var(--fg-5)]">{sub}</div>}
-    </div>
+    <IntelMetricCard label={label} value={<span className={cls || ''}>{value}</span>} sub={sub} tone={tone} />
   )
 }

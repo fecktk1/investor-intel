@@ -53,7 +53,7 @@ export const ONCHAIN_META = {
   weak: { label: 'Weak on-chain', dot: 'bg-red-400', text: 'text-red-400' },
   stale: { label: 'On-chain stale', dot: 'bg-[var(--fg-4)]', text: 'text-[var(--fg-4)]' },
   not_checked: { label: 'Not checked', dot: 'bg-[var(--fg-5,#555)]', text: 'text-[var(--fg-4)]' },
-  unsupported: { label: 'Unsupported chain', dot: 'bg-[var(--fg-5,#555)]', text: 'text-[var(--fg-4)]' },
+  unsupported: { label: 'Limited coverage', dot: 'bg-[var(--fg-5,#555)]', text: 'text-[var(--fg-4)]' },
 }
 export function onchainMeta(st) { return ONCHAIN_META[st] || ONCHAIN_META.not_checked }
 

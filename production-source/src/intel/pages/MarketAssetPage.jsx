@@ -21,6 +21,7 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import AssetThesisModule from '../components/thesis/AssetThesisModule'
 import AssetYearInReview from '../components/AssetYearInReview'
 import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
+import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
 const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 'bg-amber-400', neutral: 'bg-[var(--fg-5)]' }
@@ -28,7 +29,7 @@ const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 
 // Exchange-asset detail — opens for ANY asset on the Markets page (not just the
 // 17 native chains). Leads with the market signal and explains WHY (the
 // deterministic factors), then chart, per-exchange reads, metrics, market cap,
-// spread, RAG memory, and an optional AI deep-dive.
+// spread, RAG memory, and an optional analyst brief.
 export default function MarketAssetPage() {
   const { symbol } = useParams()
   const sym = String(symbol || '').toUpperCase()
@@ -153,7 +154,7 @@ export default function MarketAssetPage() {
   ]
 
   return (
-    <div className="space-y-5">
+    <IntelPageShell>
       <Link to={backTo} className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
 
       {/* Header */}
@@ -173,6 +174,20 @@ export default function MarketAssetPage() {
         </div>
         {sig && <MarketSignalBadge direction={sig.direction} />}
       </div>
+
+      <IntelHeroRead
+        eyebrow={t('markets.assetDossier', { defaultValue: 'Asset dossier' })}
+        title={t('markets.assetDossierRead', { defaultValue: 'Start with the signal, then verify depth, exchange confirmation, narratives, catalysts, and thesis drift.' })}
+        meta={(
+          <>
+            <span>{d.providers?.length || 0} {t('markets.exchangeFeeds', { defaultValue: 'exchange feeds' })}</span>
+            <span>·</span>
+            <span>{d.catalysts?.curated_news?.length || 0} {t('markets.catalystStories', { defaultValue: 'catalyst stories' })}</span>
+            <span>·</span>
+            <span>{sig?.confidence != null ? `${Math.round(sig.confidence)} ${t('markets.confidenceScore', { defaultValue: 'confidence' })}` : t('markets.confidencePending', { defaultValue: 'confidence pending' })}</span>
+          </>
+        )}
+      />
 
       {/* Market signal + WHY (the point of this page) */}
       {sig && (
@@ -228,7 +243,7 @@ export default function MarketAssetPage() {
       {/* Metrics */}
       <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
         {stats.map(([label, val, cls], i) => (
-          <div key={i} className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{label}</div><div className={`text-sm font-semibold ${cls || 'text-[var(--fg-1)]'} truncate`}>{val}</div></div>
+          <IntelMetricCard key={i} label={label} value={<span className={cls || ''}>{val}</span>} />
         ))}
       </div>
 
@@ -284,8 +299,8 @@ export default function MarketAssetPage() {
       {/* AI deep-dive (grounded in the exchange data above) */}
       <section className="space-y-2">
         <div className="flex items-center justify-between">
-          <div className="eyebrow">{t('markets.aiExplain', { defaultValue: 'AI explanation' })}</div>
-          {!analysis.result && <button onClick={explain} disabled={analysis.loading} className="btn btn--primary btn--sm disabled:opacity-50">{analysis.loading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Sparkles className="h-4 w-4" /> {t('markets.explainWhy', { defaultValue: 'Explain why' })}</>}</button>}
+          <div className="eyebrow">{t('markets.aiExplain', { defaultValue: 'Analyst brief' })}</div>
+          {!analysis.result && <button onClick={explain} disabled={analysis.loading} className="btn btn--primary btn--sm disabled:opacity-50">{analysis.loading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Sparkles className="h-4 w-4" /> {t('markets.explainWhy', { defaultValue: 'Open brief' })}</>}</button>}
         </div>
         {analysis.result && <ArtifactView result={analysis.result} loading={analysis.loading} onRefresh={explain ? () => explain(true) : undefined} />}
       </section>
@@ -295,6 +310,6 @@ export default function MarketAssetPage() {
       <AssetYearInReview symbol={sym} />
 
       <IntelDisclaimer variant="block" />
-    </div>
+    </IntelPageShell>
   )
 }

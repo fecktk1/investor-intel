@@ -9,7 +9,7 @@
 import React from 'react'
 import { Link } from 'react-router-dom'
 import { useTranslation } from 'react-i18next'
-import { ArrowUpRight } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight } from 'lucide-react'
 
 const LIMIT_RE = /intel_limit_reached:([a-z_]+)/
 
@@ -33,7 +33,12 @@ export default function IntelErrorNotice({ error, className = '' }) {
 
   const key = intelLimitKeyFrom(error)
   if (!key) {
-    return <div className={`card--flat p-3 text-[13px] text-red-400 ${className}`}>{String(error)}</div>
+    return (
+      <div className={`card--flat p-3 text-[13px] text-red-400 flex items-start gap-2 ${className}`}>
+        <AlertTriangle className="h-4 w-4 mt-0.5 flex-shrink-0" />
+        <span>{String(error)}</span>
+      </div>
+    )
   }
 
   const label = t(`limits.${key}`, {
@@ -41,8 +46,9 @@ export default function IntelErrorNotice({ error, className = '' }) {
   })
 
   return (
-    <div className={`card--flat p-3 text-[13px] text-amber-300 flex flex-wrap items-center gap-x-2 gap-y-1 ${className}`}>
-      <span>{label}</span>
+    <div className={`card--flat p-3 text-[13px] text-amber-300 flex flex-wrap items-center gap-x-2 gap-y-1 border-[rgba(245,178,94,0.24)] ${className}`}>
+      <AlertTriangle className="h-4 w-4 flex-shrink-0" />
+      <span className="font-medium">{label}</span>
       <Link
         to="/intel/upgrade"
         className="inline-flex items-center gap-0.5 font-semibold text-[var(--accent)] hover:underline"

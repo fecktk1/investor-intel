@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
+import { useTranslation } from 'react-i18next'
 import { Radar, ArrowRight } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -41,6 +42,7 @@ function rowToCard(r) {
 }
 
 export default function RelevantSignals({ subjectType = null, title = 'Signals relevant to you', personalOnly = true, limit = 5, seeAllHref = '/intel' }) {
+  const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase } = useSupabase()
   const [rows, setRows] = useState(null)
@@ -59,10 +61,13 @@ export default function RelevantSignals({ subjectType = null, title = 'Signals r
   if (!cards.length) return null
 
   return (
-    <section className="card p-4 space-y-2">
-      <div className="flex items-center justify-between mb-1">
-        <div className="eyebrow flex items-center gap-1.5"><Radar className="h-3.5 w-3.5" /> {title}</div>
-        <Link to={seeAllHref} className="text-[12px] text-[var(--accent)] flex items-center gap-1">All <ArrowRight className="h-3 w-3" /></Link>
+    <section className="space-y-2">
+      <div className="intel-section-header">
+        <div>
+          <div className="eyebrow flex items-center gap-1.5"><Radar className="h-3.5 w-3.5" /> {title}</div>
+          <div className="intel-section-sub">{t('signals.personalized_sub', { defaultValue: 'Personalized from your watchlist, holdings, followed narratives, chains, and topics.' })}</div>
+        </div>
+        <Link to={seeAllHref} className="btn btn--quiet btn--sm">All <ArrowRight className="h-3 w-3" /></Link>
       </div>
       <div className="space-y-2">{cards.map((c) => <SignalCard key={c.id} s={c} />)}</div>
     </section>

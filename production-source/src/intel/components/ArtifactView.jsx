@@ -6,6 +6,7 @@ import CoverageStrip from './CoverageStrip'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { saveResearch } from '../lib/intel-data'
+import { IntelSkeleton } from './IntelPrimitives'
 
 const LEVEL_CLS = { low: 'text-[var(--ok)]', medium: 'text-amber-400', high: 'text-red-400', unknown: 'text-[var(--fg-4)]' }
 const SCOPE_LABEL = { local: 'Local to this asset', asset_specific: 'Asset-specific', chain: 'Chain-wide', chain_specific: 'Chain-wide', sector: 'Sector-wide', sector_specific: 'Sector-wide', narrative: 'Narrative-wide', narrative_specific: 'Narrative-wide', market_wide: 'Market-wide', unclear: 'Scope unclear' }
@@ -26,7 +27,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
   const [saved, setSaved] = useState(false)
 
   if (loading) {
-    return <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
+    return <IntelSkeleton className="h-32" />
   }
   if (!result?.artifact) return null
   const a = result.artifact

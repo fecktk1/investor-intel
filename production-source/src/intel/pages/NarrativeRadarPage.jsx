@@ -15,6 +15,7 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
 import { markSurfaceSeen } from '../lib/changes-api'
+import { IntelEmptyState, IntelHeroRead, IntelPageHeader, IntelPageShell, IntelSkeleton, IntelTabs } from '../components/IntelPrimitives'
 
 // Narrative Radar — AUTOMATIC discovery by default. A new user opens this page and
 // immediately sees which narratives are heating up / cooling / early / crowded /
@@ -73,10 +74,38 @@ export default function NarrativeRadarPage() {
       && (!chain || (n.related_chains || n.chains || []).includes(chain))
       && (!category || n.parent_category === category))
   }, [data.narratives, tab, chain, category])
+  const totalCount = data.count || data.narratives.length
+  const followedCount = data.narratives.filter((n) => n.is_followed).length
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-start justify-between gap-3">
+    <IntelPageShell>
+      <IntelPageHeader
+        icon={Radar}
+        eyebrow={t('brand.name', { defaultValue: 'Investor Intel' })}
+        title={t('nav.narratives', { defaultValue: 'Narrative Radar' })}
+        subtitle={t('pages.narratives_sub', { defaultValue: 'Which crypto narratives are heating up, cooling, early, crowded, bullish or high-risk - detected automatically.' })}
+        actions={(
+          <button onClick={() => load(true)} disabled={refreshing} className="btn btn--quiet btn--sm flex-shrink-0">
+            <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> {t('common.refresh', { defaultValue: 'Refresh' })}
+          </button>
+        )}
+      />
+
+      <IntelHeroRead
+        eyebrow={t('narratives.radar_read', { defaultValue: 'Narrative read' })}
+        title={totalCount
+          ? t('narratives.radar_title', { defaultValue: `${filtered.length.toLocaleString()} narratives in view` })
+          : t('narratives.radar_title_empty', { defaultValue: 'Automatic discovery is ready for the next refresh' })}
+        body={t('narratives.radar_body', { defaultValue: 'Start with the stage tabs, then narrow by category or chain. Personalized labels remain on cards when a narrative touches your watchlist, portfolio, or followed interests.' })}
+        meta={[
+          { label: t('narratives.total', { defaultValue: 'Tracked' }), value: totalCount.toLocaleString() },
+          { label: t('narratives.filtered', { defaultValue: 'Visible' }), value: filtered.length.toLocaleString() },
+          { label: t('narratives.followed', { defaultValue: 'Followed' }), value: followedCount.toLocaleString() },
+          { label: t('narratives.filters', { defaultValue: 'Filters' }), value: [category, chain].filter(Boolean).length || t('common.none', { defaultValue: 'None' }) },
+        ]}
+      />
+
+      <div className="hidden">
         <div>
           <div className="eyebrow flex items-center gap-1.5"><Radar className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
           <h1 className="page-title">{t('nav.narratives', { defaultValue: 'Narrative Radar' })}</h1>
@@ -90,13 +119,13 @@ export default function NarrativeRadarPage() {
       {tab !== 'custom' && <NarrativeSummaryRow summary={data.summary} onPick={setTab} />}
 
       {/* tabs */}
-      <div className="flex items-center gap-1.5 flex-wrap">
-        {NARRATIVE_TABS.map((tb) => (
-          <button key={tb.key} onClick={() => setTab(tb.key)}
-            className={`chip text-[11px] ${tab === tb.key ? 'chip--active bg-[var(--accent)] text-black' : ''}`}>
-            {t(`narratives.tab.${tb.key}`, { defaultValue: tb.label })}
-          </button>
-        ))}
+      <div className="flex items-start gap-3 flex-wrap">
+        <IntelTabs
+          items={NARRATIVE_TABS}
+          value={tab}
+          onChange={setTab}
+          getLabel={(tb) => t(`narratives.tab.${tb.key}`, { defaultValue: tb.label })}
+        />
         {tab !== 'custom' && (chains.length > 0 || categories.length > 0) && (
           <div className="flex items-center gap-1.5 ml-auto">
             <select value={category} onChange={(e) => setCategory(e.target.value)} className="input input--sm text-[11px]">
@@ -117,9 +146,9 @@ export default function NarrativeRadarPage() {
       {tab === 'custom' ? (
         <CustomNarratives onOpen={onOpen} />
       ) : loading ? (
-        <div className="grid sm:grid-cols-2 gap-3">{Array.from({ length: 6 }).map((_, i) => <div key={i} className="card p-4 h-44 animate-pulse opacity-50" />)}</div>
+        <div className="grid sm:grid-cols-2 gap-3">{Array.from({ length: 6 }).map((_, i) => <IntelSkeleton key={i} className="h-44" />)}</div>
       ) : filtered.length === 0 ? (
-        <div className="card p-8 text-center text-[var(--fg-3)] text-sm">{t('narratives.none_in_filter', { defaultValue: 'No narratives match this filter right now. Try another tab.' })}</div>
+        <IntelEmptyState title={t('narratives.none_in_filter', { defaultValue: 'No narratives match this filter right now. Try another tab.' })} />
       ) : (
         <div className="grid sm:grid-cols-2 gap-3">
           {filtered.map((n) => <NarrativeCard key={n.slug} n={n} onOpen={onOpen} onFollow={onFollow} busy={followBusy === n.slug} />)}
@@ -129,7 +158,7 @@ export default function NarrativeRadarPage() {
       <RelevantSignals title={t('narratives.relevant_signals', { defaultValue: 'Signals relevant to you' })} seeAllHref="/intel" />
 
       <IntelDisclaimer variant="block" />
-    </div>
+    </IntelPageShell>
   )
 }
 

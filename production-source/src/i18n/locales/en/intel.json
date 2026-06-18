@@ -259,7 +259,7 @@
     "compare_sub": "Compare assets across market, risk, narrative and execution.",
     "theses_sub": "Save bull, bear and neutral cases with baselines to track later.",
     "briefs_sub": "Your personalized daily investor brief.",
-    "alerts_sub": "Smart alerts with an AI explanation of why each one matters.",
+    "alerts_sub": "Smart alerts with source-backed context for why each one matters.",
     "explain_sub": "Clear, easy-to-understand explanations for any token, wallet, chart or narrative.",
     "comment_king_sub": "Draft replies and reactions — copy to clipboard.",
     "research_sub": "Your saved breakdowns, briefs, comparisons and explanations.",
@@ -274,6 +274,7 @@
     "banner_other": "Trial — {{count}} days left"
   },
   "disclaimer": {
+    "label": "Research note",
     "short": "Research & education, not financial advice. Verify before acting.",
     "long": "Investor Intel provides crypto research, education, and risk context — not financial advice. Always verify before acting."
   },
@@ -653,7 +654,7 @@
     "data": "Economic data",
     "calendar": "Economic calendar",
     "news": "Big macro news",
-    "why": "Why is this important?",
+    "why": "Explain impact",
     "forecast": "forecast",
     "previous": "prev",
     "sources": "sources",

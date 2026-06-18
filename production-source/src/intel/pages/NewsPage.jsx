@@ -11,6 +11,7 @@ import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
 import CuratedNewsCard from '../components/CuratedNewsCard'
 import { markSurfaceSeen } from '../lib/changes-api'
+import { IntelEmptyState, IntelHeroRead, IntelPageHeader, IntelPageShell, IntelSkeleton } from '../components/IntelPrimitives'
 
 const SOURCE_TYPES = ['x_account', 'keyword', 'rss', 'website']
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
@@ -123,10 +124,37 @@ export default function NewsPage() {
   const goPage = useCallback((p) => setPage(Math.min(Math.max(0, p), pageCount - 1)), [pageCount])
   const clearFilters = useCallback(() => { setQ(''); setQInput(''); setFCat(''); setFSig(''); setSince(''); setUntil(''); setPage(0) }, [])
   const srcLimit = usage?.news_sources
+  const sourceLimitText = srcLimit?.limit != null ? `${usage?.news_sources?.used ?? sources.length}/${srcLimit.limit}` : String(sources.length)
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
+    <IntelPageShell>
+      <IntelPageHeader
+        icon={Rss}
+        eyebrow={t('brand.name', { defaultValue: 'Investor Intel' })}
+        title={t('nav.news', { defaultValue: 'News' })}
+        subtitle={t('news.sub', { defaultValue: 'Follow X accounts, outlets and keywords to get news around your tokens and the broader market.' })}
+        actions={(
+          <button onClick={onRefresh} disabled={refreshing} className="btn btn--primary btn--sm disabled:opacity-50">
+            {refreshing ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><RefreshCw className="h-4 w-4" /> {t('news.refresh', { defaultValue: 'Fetch news' })}</>}
+          </button>
+        )}
+      />
+
+      <IntelHeroRead
+        eyebrow={t('news.feed_read', { defaultValue: 'Feed read' })}
+        title={anyActive
+          ? t('news.feed_title_filtered', { defaultValue: `${curatedShown.length + newsShown.length} matching stories` })
+          : t('news.feed_title', { defaultValue: 'Top stories first, full history underneath' })}
+        body={t('news.feed_body', { defaultValue: 'Curated stories surface the highest-signal items first. The source manager, search, date range, signal filter, category filter, and pagination remain available for deeper review.' })}
+        meta={[
+          { label: t('news.sources_label', { defaultValue: 'Sources' }), value: sourceLimitText },
+          { label: t('news.curated', { defaultValue: 'Curated' }), value: curatedShown.length.toLocaleString() },
+          { label: t('news.headlines', { defaultValue: 'Headlines' }), value: newsShown.length.toLocaleString() },
+          { label: t('news.history', { defaultValue: 'History' }), value: globalCount.toLocaleString() },
+        ]}
+      />
+
+      <div className="hidden">
         <div>
           <div className="eyebrow flex items-center gap-1.5"><Rss className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
           <h1 className="page-title">{t('nav.news', { defaultValue: 'News' })}</h1>
@@ -205,13 +233,12 @@ export default function NewsPage() {
       )}
 
       {loading ? (
-        <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
+        <IntelSkeleton className="h-40" />
       ) : (curatedShown.length === 0 && newsShown.length === 0) ? (
-        <div className="card p-8 text-center text-[var(--fg-3)] text-sm">
-          {anyActive
-            ? <>{t('news.no_match', { defaultValue: 'No stories match your search.' })} <button type="button" onClick={clearFilters} className="text-[var(--accent)] hover:underline">{t('news.clear', { defaultValue: 'Clear' })}</button></>
-            : t('news.empty', { defaultValue: 'No news yet. Add sources or tokens to your watchlist, then Fetch news.' })}
-        </div>
+        <IntelEmptyState
+          title={anyActive ? t('news.no_match', { defaultValue: 'No stories match your search.' }) : t('news.empty', { defaultValue: 'No news yet. Add sources or tokens to your watchlist, then Fetch news.' })}
+          action={anyActive ? <button type="button" onClick={clearFilters} className="btn btn--quiet btn--sm"><X className="h-3 w-3" />{t('news.clear', { defaultValue: 'Clear' })}</button> : null}
+        />
       ) : newsShown.length > 0 ? (
         <div className="space-y-2">
           <div className="flex items-center justify-between gap-2">
@@ -270,6 +297,6 @@ export default function NewsPage() {
       <RelevantSignals title={t('news.relevant_signals', { defaultValue: 'Signals relevant to you' })} seeAllHref="/intel" />
 
       <IntelDisclaimer variant="block" />
-    </div>
+    </IntelPageShell>
   )
 }

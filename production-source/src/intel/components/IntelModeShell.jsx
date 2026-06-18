@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
-import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio, Bug } from 'lucide-react'
+import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio, Bug, Flame } from 'lucide-react'
 import { useAuth } from '../../lib/auth-context'
 import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
@@ -49,45 +49,52 @@ export default function IntelModeShell({ children }) {
   }
 
   return (
-    <div className="h-screen flex bg-black overflow-hidden">
+    <div className="intel-root h-screen flex overflow-hidden">
       <Helmet>
         <title>{`${t('brand.name', { defaultValue: 'Investor Intel' })} · TheContentForge`}</title>
         <meta name="robots" content="noindex" />
       </Helmet>
 
-      {open && <div className="fixed inset-0 bg-black/50 z-30 lg:hidden" onClick={() => setOpen(false)} />}
+      {open && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden" onClick={() => setOpen(false)} />}
 
-      <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-64 bg-[var(--bg-1)] border-r border-[var(--border-subtle)] transform transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col`}>
-        <div className="p-4 border-b border-[var(--border-subtle)] flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg grid place-items-center flex-shrink-0" style={{ background: 'var(--accent-tint)' }}>
-            <Gauge className="h-5 w-5" style={{ color: 'var(--accent)' }} />
+      <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-72 bg-[rgba(8,8,8,0.92)] backdrop-blur-xl border-r border-[var(--intel-border-soft)] transform transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col shadow-2xl lg:shadow-none`}>
+        <div className="p-4 border-b border-[var(--intel-border-soft)]">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl grid place-items-center flex-shrink-0 border border-[var(--forge-gold-border)] shadow-[var(--intel-shadow-inset)]" style={{ background: 'radial-gradient(circle at 35% 20%, rgba(235,181,86,0.28), rgba(235,181,86,0.08) 54%, rgba(255,255,255,0.035))' }}>
+              <Gauge className="h-5 w-5" style={{ color: 'var(--forge-gold)' }} />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <h1 className="text-sm font-semibold text-white truncate">{t('brand.name', { defaultValue: 'Investor Intel' })}</h1>
+                <Flame className="h-3.5 w-3.5 text-[var(--ember-accent)]" />
+              </div>
+              <p className="text-[11px] text-[var(--fg-4)] truncate">TheContentForge</p>
+            </div>
           </div>
-          <div className="min-w-0">
-            <h1 className="text-sm font-bold text-white truncate">{t('brand.name', { defaultValue: 'Investor Intel' })}</h1>
-            <p className="text-[11px] text-[var(--fg-4)] truncate">{org?.name || t('brand.tagline', { defaultValue: 'Crypto intelligence & risk context' })}</p>
+          <div className="mt-3 rounded-2xl border border-[var(--intel-border-soft)] bg-white/[0.035] px-3 py-2 shadow-[var(--intel-shadow-inset)]">
+            <p className="text-[11px] text-[var(--fg-3)] truncate">{org?.name || t('brand.tagline', { defaultValue: 'Crypto intelligence & risk context' })}</p>
           </div>
         </div>
 
         {trialDaysRemaining != null && (
           <div className="px-3 pt-3">
-            <div className="card--accent px-3 py-2 text-[12px] text-[var(--fg-2)]">
+            <div className="intel-surface intel-surface--accent px-3 py-2 text-[12px] text-[var(--fg-2)]">
               {t('trial.banner', { count: trialDaysRemaining, defaultValue: `Trial — ${trialDaysRemaining} days left` })}
             </div>
           </div>
         )}
 
-        <nav className="flex-1 overflow-y-auto p-3 space-y-1">
+        <nav className="flex-1 overflow-y-auto p-3 space-y-3">
           {navGroups.map((group) => (
-            <div key={group.sectionKey}>
-              <div className="eyebrow px-3 pt-3 pb-1.5">{t(group.sectionKey, { defaultValue: group.sectionDefault })}</div>
+            <div key={group.sectionKey} className="space-y-1">
+              <div className="eyebrow px-3 pt-2 pb-1">{t(group.sectionKey, { defaultValue: group.sectionDefault })}</div>
               {group.items.map((item) => (
                 <NavLink key={item.to} to={item.to} end={item.end} onClick={() => setOpen(false)}>
                   {({ isActive }) => (
                     <span
-                      className={`relative flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${isActive ? 'font-medium' : 'text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg-2)]'}`}
-                      style={isActive ? { background: 'var(--accent-tint)', color: 'var(--accent)' } : undefined}
+                      className={`relative flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm border transition-all duration-200 ${isActive ? 'font-semibold bg-[var(--forge-gold-soft)] border-[var(--forge-gold-border)] text-[var(--forge-gold)] shadow-[var(--intel-shadow-inset)]' : 'border-transparent text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-white/[0.045] hover:border-[var(--intel-border-soft)]'}`}
                     >
-                      {isActive && <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-4 rounded-full" style={{ background: 'var(--accent)' }} />}
+                      {isActive && <span className="absolute left-1 top-1/2 -translate-y-1/2 w-1 h-5 rounded-full" style={{ background: 'var(--forge-gold)' }} />}
                       <item.icon className="h-4 w-4 flex-shrink-0" />
                       <span className="flex-1 min-w-0 truncate">{t(item.labelKey, { defaultValue: item.defaultLabel })}</span>
                     </span>
@@ -98,10 +105,10 @@ export default function IntelModeShell({ children }) {
           ))}
         </nav>
 
-        <div className="p-3 border-t border-[var(--border-subtle)] space-y-1">
+        <div className="p-3 border-t border-[var(--intel-border-soft)] space-y-1 bg-black/10">
           <button
             onClick={() => setReportOpen(true)}
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg-2)] w-full transition-colors"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-white/[0.045] w-full transition-colors"
           >
             <Bug className="h-4 w-4 flex-shrink-0" />
             <span className="flex-1 min-w-0 truncate text-left">{t('shell.report_issue', { defaultValue: 'Report Issue' })}</span>
@@ -109,7 +116,7 @@ export default function IntelModeShell({ children }) {
           {contentOrg && (
             <button
               onClick={() => switchOrg(contentOrg.id)}
-              className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-[var(--bg-2)] w-full transition-colors"
+              className="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-white/[0.045] w-full transition-colors"
             >
               <ArrowLeftRight className="h-4 w-4 flex-shrink-0" />
               <span className="flex-1 min-w-0 truncate text-left">{t('shell.switch_to_team', { defaultValue: 'Switch to a team workspace' })}</span>
@@ -117,7 +124,7 @@ export default function IntelModeShell({ children }) {
           )}
           <button
             onClick={handleSignOut}
-            className="flex items-center gap-3 px-3 py-2 rounded-lg text-sm text-[var(--fg-3)] hover:text-red-400 hover:bg-[var(--bg-2)] w-full transition-colors"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-[var(--fg-3)] hover:text-[var(--signal-red)] hover:bg-white/[0.045] w-full transition-colors"
           >
             <LogOut className="h-4 w-4" />
             {t('shell.sign_out', { defaultValue: 'Sign out' })}
@@ -129,13 +136,13 @@ export default function IntelModeShell({ children }) {
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="lg:hidden flex items-center gap-3 p-4 border-b border-[var(--border-subtle)] bg-[var(--bg-1)]">
-          <button onClick={() => setOpen(true)} className="text-[var(--fg-3)] hover:text-white"><Menu className="h-5 w-5" /></button>
-          <span className="font-bold text-sm text-white">{t('brand.name', { defaultValue: 'Investor Intel' })}</span>
+        <header className="lg:hidden flex items-center gap-3 p-4 border-b border-[var(--intel-border-soft)] bg-[rgba(8,8,8,0.86)] backdrop-blur-xl">
+          <button onClick={() => setOpen(true)} className="text-[var(--fg-3)] hover:text-white rounded-xl p-1.5 hover:bg-white/[0.055]"><Menu className="h-5 w-5" /></button>
+          <span className="font-semibold text-sm text-white">{t('brand.name', { defaultValue: 'Investor Intel' })}</span>
         </header>
         <IntelDisclaimer variant="bar" />
-        <main ref={scrollRef} className="flex-1 overflow-y-auto p-4 lg:p-6">
-          <div className="max-w-6xl mx-auto">{children}</div>
+        <main ref={scrollRef} className="flex-1 overflow-y-auto p-4 lg:p-6 xl:p-7">
+          <div className="max-w-7xl mx-auto">{children}</div>
         </main>
       </div>
 

@@ -15,6 +15,7 @@ import SignalCard from '../components/SignalCard'
 import WhatChanged from '../components/WhatChanged'
 import TodaysPicture from '../components/TodaysPicture'
 import CatalystsRail from '../components/CatalystsRail'
+import { IntelPageHeader, IntelPageShell, IntelHeroRead, IntelMetricCard, IntelEmptyState, IntelSectionHeader } from '../components/IntelPrimitives'
 import { markSurfaceSeen } from '../lib/changes-api'
 import { getChain } from '../lib/chains'
 
@@ -124,26 +125,51 @@ export default function MarketPulsePage() {
 
   if (loading && !dash) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[var(--accent)]" /></div>
   const empty = dash && dash.total_following === 0 && (dash.notable || []).length === 0 && (dash.signals || []).length === 0 && (dash.movers || []).length === 0 && (dash.market_movers || []).length === 0 && (dash.chain_perf || []).length === 0
+  const marketReadTitle = empty
+    ? t('pulse.today_read_empty', { defaultValue: 'Your desk is ready for the first signal.' })
+    : t('pulse.today_read_title', { defaultValue: 'Market, wallet, narrative, and source data are being forged into a live read.' })
+  const marketReadBody = scope === 'chain' && chain
+    ? t('pulse.today_read_chain', { defaultValue: 'Focused on the selected chain: notable moves, related stories, and signal changes are filtered below.' })
+    : t('pulse.today_read_body', { defaultValue: 'Start with regime context, then scan notable moves, what changed since your last visit, catalysts, and the personalized rails.' })
 
   const ScopeBtn = ({ id, label }) => (
     <button onClick={() => pickScope(id)} className={`btn btn--sm ${scope === id ? 'btn--primary' : 'btn--ghost'}`}>{label}</button>
   )
 
   return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <div>
-          <div className="eyebrow flex items-center gap-1.5"><Activity className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
-          <h1 className="page-title">{t('nav.market_pulse', { defaultValue: 'Market Pulse' })}</h1>
-          <p className="page-sub">{t('pages.market_pulse_sub', { defaultValue: 'A live update of everything you follow.' })}</p>
-        </div>
-        <div className="flex items-center gap-2">
+    <IntelPageShell>
+      <IntelPageHeader
+        icon={Activity}
+        eyebrow={t('brand.name', { defaultValue: 'Investor Intel' })}
+        title={t('nav.market_pulse', { defaultValue: 'Market Pulse' })}
+        subtitle={t('pages.market_pulse_sub', { defaultValue: 'A live update of everything you follow.' })}
+        actions={(
+          <>
           <button onClick={() => load(scope, chain)} disabled={loading} title={t('pulse.refresh', { defaultValue: 'Refresh' })} className="btn btn--ghost btn--sm disabled:opacity-50"><RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} /></button>
           <button onClick={genSummary} disabled={summary.loading || empty} className="btn btn--primary btn--sm disabled:opacity-50">
             {summary.loading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Sparkles className="h-4 w-4" /> {t('pulse.generate', { defaultValue: 'What matters now' })}</>}
           </button>
-        </div>
-      </div>
+          </>
+        )}
+      />
+
+      <IntelHeroRead
+        eyebrow={t('pulse.today_read', { defaultValue: "Today's Market Read" })}
+        title={marketReadTitle}
+        meta={(
+          <>
+            <span>{movers.length} {t('pulse.meta_moves', { defaultValue: 'notable moves' })}</span>
+            <span>·</span>
+            <span>{news.length} {t('pulse.meta_stories', { defaultValue: 'stories' })}</span>
+            <span>·</span>
+            <span>{(dash?.signals || []).length} {t('pulse.meta_signals', { defaultValue: 'signals' })}</span>
+            <span>·</span>
+            <span>{dash?.unread_alerts ?? 0} {t('pulse.meta_alerts', { defaultValue: 'new alerts' })}</span>
+          </>
+        )}
+      >
+        <p className="text-[13px] text-[var(--fg-2)] leading-relaxed max-w-4xl">{marketReadBody}</p>
+      </IntelHeroRead>
 
       <RegimeBanner />
 
@@ -151,7 +177,7 @@ export default function MarketPulsePage() {
 
       {movers.length > 0 && (
         <section className="space-y-2">
-          <div className="eyebrow">{t('pulse.notable_changes', { defaultValue: 'Notable changes' })}</div>
+          <IntelSectionHeader label={t('pulse.notable_changes', { defaultValue: 'Notable changes' })} subtitle={t('pulse.notable_changes_sub', { defaultValue: 'Price and signal moves from the current dashboard scope.' })} />
           <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-4">
             {movers.map((m) => {
               const inner = (
@@ -217,18 +243,19 @@ export default function MarketPulsePage() {
       <CatalystsRail />
 
       {empty ? (
-        <div className="card p-8 text-center text-[var(--fg-3)] text-sm">
-          {t('pulse.empty_home', { defaultValue: 'Add tokens, wallets and narratives to your watchlist and follow some sources — your dashboard fills in automatically.' })}
-          <div className="mt-3 flex justify-center gap-2"><Link to="/intel/watchlist" className="btn btn--primary btn--sm">{t('nav.watchlist', { defaultValue: 'My Watchlist' })}</Link><Link to="/intel/news" className="btn btn--ghost btn--sm">{t('nav.news', { defaultValue: 'News' })}</Link></div>
-        </div>
+        <IntelEmptyState
+          title={t('pulse.empty_title', { defaultValue: 'No personal signal feed yet' })}
+          body={t('pulse.empty_home', { defaultValue: 'Add tokens, wallets and narratives to your watchlist and follow some sources — your dashboard fills in automatically.' })}
+          action={<div className="flex justify-center gap-2 flex-wrap"><Link to="/intel/watchlist" className="btn btn--primary btn--sm">{t('nav.watchlist', { defaultValue: 'My Watchlist' })}</Link><Link to="/intel/news" className="btn btn--ghost btn--sm">{t('nav.news', { defaultValue: 'News' })}</Link></div>}
+        />
       ) : (
         <>
           {scope === 'all' && (
             <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
-              <Link to="/intel/watchlist" className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{t('pulse.following', { defaultValue: 'Following' })}</div><div className="text-2xl font-bold">{dash?.total_following ?? 0}</div></Link>
-              <Link to="/intel/alerts" className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{t('pulse.unread_alerts', { defaultValue: 'New alerts' })}</div><div className={`text-2xl font-bold ${dash?.unread_alerts ? 'text-[var(--accent)]' : ''}`}>{dash?.unread_alerts ?? 0}</div></Link>
-              <Link to="/intel/narratives" className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{t('nav.narratives', { defaultValue: 'Narratives' })}</div><div className="text-2xl font-bold">{(dash?.narratives || []).length}</div></Link>
-              <Link to="/intel/news" className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{t('nav.news', { defaultValue: 'News' })}</div><div className="text-2xl font-bold">{(dash?.news || []).length}</div></Link>
+              <Link to="/intel/watchlist" className="block"><IntelMetricCard label={t('pulse.following', { defaultValue: 'Following' })} value={dash?.total_following ?? 0} /></Link>
+              <Link to="/intel/alerts" className="block"><IntelMetricCard label={t('pulse.unread_alerts', { defaultValue: 'New alerts' })} value={dash?.unread_alerts ?? 0} tone={dash?.unread_alerts ? 'warning' : 'default'} /></Link>
+              <Link to="/intel/narratives" className="block"><IntelMetricCard label={t('nav.narratives', { defaultValue: 'Narratives' })} value={(dash?.narratives || []).length} /></Link>
+              <Link to="/intel/news" className="block"><IntelMetricCard label={t('nav.news', { defaultValue: 'News' })} value={(dash?.news || []).length} /></Link>
             </div>
           )}
 
@@ -363,6 +390,6 @@ export default function MarketPulsePage() {
       )}
 
       <IntelDisclaimer variant="block" />
-    </div>
+    </IntelPageShell>
   )
 }

@@ -13,6 +13,7 @@ import NarrativeScorecard from '../components/NarrativeScorecard'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
+import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 const pct = (v) => (typeof v === 'number' ? `${v > 0 ? '+' : ''}${v.toFixed(1)}%` : '—')
 const chgCls = (v) => (typeof v !== 'number' ? 'text-[var(--fg-4)]' : v > 0 ? 'text-emerald-400' : v < 0 ? 'text-red-400' : 'text-[var(--fg-3)]')
@@ -116,8 +117,8 @@ export default function NarrativeDetailPage() {
     if (!debug) setDebug(await loadNarrativeDebug(supabase, slug))
   }, [debug, slug, supabase])
 
-  if (loading) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
-  if (err || !detail) return <div className="space-y-4"><button onClick={() => navigate('/intel/narratives')} className="btn btn--quiet btn--sm"><ArrowLeft className="h-4 w-4" /> {t('common.back', { defaultValue: 'Back' })}</button><div className="card--flat p-4 text-amber-400">{err || t('narratives.not_found', { defaultValue: 'Narrative not found.' })}</div></div>
+  if (loading) return <IntelPageShell><div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div></IntelPageShell>
+  if (err || !detail) return <IntelPageShell><button onClick={() => navigate('/intel/narratives')} className="btn btn--quiet btn--sm"><ArrowLeft className="h-4 w-4" /> {t('common.back', { defaultValue: 'Back' })}</button><div className="card--flat p-4 text-amber-400">{err || t('narratives.not_found', { defaultValue: 'Narrative not found.' })}</div></IntelPageShell>
 
   const tax = detail.taxonomy || {}
   const st = detail.state || {}
@@ -133,7 +134,7 @@ export default function NarrativeDetailPage() {
   const briefResult = detail.brief?.structured ? { artifact: { artifact_type: 'narrative_brief', structured: detail.brief.structured, id: null, title: tax.name, confidence: detail.brief.confidence, sources: detail.brief.structured?.sources, data_freshness: detail.brief.structured?.data_freshness } } : null
 
   return (
-    <div className="space-y-5">
+    <IntelPageShell>
       <button onClick={() => navigate('/intel/narratives')} className="btn btn--quiet btn--sm"><ArrowLeft className="h-4 w-4" /> {t('nav.narratives', { defaultValue: 'Narrative Radar' })}</button>
 
       {/* header */}
@@ -160,7 +161,24 @@ export default function NarrativeDetailPage() {
 
       <IntelErrorNotice error={actionErr} />
 
-      {tax.description && <p className="text-[13px] text-[var(--fg-3)] -mt-2">{tax.description}</p>}
+      <IntelHeroRead
+        eyebrow={t('narratives.detail_read', { defaultValue: 'Narrative dossier' })}
+        title={tax.name}
+        body={tax.description || t('narratives.detail_read_body', { defaultValue: 'Review lifecycle stage, confirmation, source evidence, history, and the grounded brief before drawing conclusions.' })}
+        meta={[
+          { label: t('narratives.stage', { defaultValue: 'Stage' }), value: stage.label },
+          { label: t('narratives.market', { defaultValue: 'Market' }), value: mkt.label },
+          { label: t('narratives.onchain', { defaultValue: 'On-chain' }), value: oc.label },
+          { label: t('narratives.sources', { defaultValue: 'Sources' }), value: (sources.length || drivers.length).toLocaleString() },
+        ]}
+      />
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <IntelMetricCard label={t('narratives.momentum', { defaultValue: 'Momentum' })} value={typeof st.momentum_score === 'number' ? Math.round(st.momentum_score) : 'Pending'} />
+        <IntelMetricCard label={t('narratives.chatter', { defaultValue: 'Chatter' })} value={typeof st.chatter_score === 'number' ? Math.round(st.chatter_score) : 'Pending'} />
+        <IntelMetricCard label={t('narratives.confidence', { defaultValue: 'Confidence' })} value={typeof st.confidence_score === 'number' ? Math.round(st.confidence_score) : 'Pending'} />
+        <IntelMetricCard label={t('narratives.risk', { defaultValue: 'Risk' })} value={typeof st.risk_score === 'number' ? Math.round(st.risk_score) : 'Pending'} tone={typeof st.risk_score === 'number' && st.risk_score >= 66 ? 'danger' : typeof st.risk_score === 'number' && st.risk_score >= 40 ? 'warning' : 'positive'} />
+      </div>
 
       {/* scorecard */}
       <div className="card p-4 space-y-3">
@@ -263,14 +281,14 @@ export default function NarrativeDetailPage() {
         </div>
       )}
 
-      {/* AI brief — bull/bear/what-to-watch/confirm/invalidate */}
+      {/* Analyst brief - bull/bear/what-to-watch/confirm/invalidate */}
       {briefResult ? (
         <div className="space-y-2">
-          <div className="eyebrow">{t('narratives.ai_read', { defaultValue: 'AI read — why it matters, what changed, what to watch' })}</div>
+          <div className="eyebrow">{t('narratives.ai_read', { defaultValue: 'Analyst brief - why it matters, what changed, what to watch' })}</div>
           <ArtifactView result={briefResult} loading={false} />
         </div>
       ) : (
-        <div className="card--flat p-3 text-[12px] text-[var(--fg-4)] italic">{t('narratives.brief_pending', { defaultValue: 'A deeper AI read is generated for the most active narratives — check back shortly.' })}</div>
+        <div className="card--flat p-3 text-[12px] text-[var(--fg-4)] italic">{t('narratives.brief_pending', { defaultValue: 'A deeper analyst brief is generated for the most active narratives - check back shortly.' })}</div>
       )}
 
       {/* super-admin debug */}
@@ -282,7 +300,7 @@ export default function NarrativeDetailPage() {
       )}
 
       <IntelDisclaimer variant="block" />
-    </div>
+    </IntelPageShell>
   )
 }
 

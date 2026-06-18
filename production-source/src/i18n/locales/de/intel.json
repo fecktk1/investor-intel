@@ -146,6 +146,7 @@
     "banner_other": "Testphase — noch {{count}} Tage"
   },
   "disclaimer": {
+    "label": "Forschungsnotiz",
     "short": "Research & Bildung, keine Finanzberatung. Vor dem Handeln prüfen.",
     "long": "Investor Intel bietet Crypto-Research, Bildung und Risikokontext — keine Finanzberatung. Vor dem Handeln immer eigenständig prüfen."
   },

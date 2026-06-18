@@ -1,15 +1,32 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Landmark, CalendarClock, Newspaper, TrendingUp, TrendingDown, Minus } from 'lucide-react'
 import { useSupabase } from '../../lib/useSupabase'
 import { loadMacroNews, loadMacroIndicators, loadMacroCalendar } from '../lib/macro-api'
 import WhyImportant from '../components/WhyImportant'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import { IntelHeroRead, IntelPageHeader, IntelPageShell, IntelSkeleton } from '../components/IntelPrimitives'
 
 const trendIcon = (tr) => tr === 'up' ? <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> : tr === 'down' ? <TrendingDown className="h-3.5 w-3.5 text-red-400" /> : <Minus className="h-3.5 w-3.5 text-[var(--fg-4)]" />
 const fmtWhen = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }
 const fmtDay = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' }) }
 const sentClass = (s) => s === 'bullish' ? 'text-emerald-400' : s === 'bearish' ? 'text-red-400' : 'text-[var(--fg-4)]'
+const startOfDay = (d) => new Date(d.getFullYear(), d.getMonth(), d.getDate())
+const addDaysLocal = (d, days) => {
+  const next = new Date(d)
+  next.setDate(next.getDate() + days)
+  return next
+}
+const calendarBucket = (scheduledAt) => {
+  const date = scheduledAt ? new Date(scheduledAt) : null
+  if (!date || Number.isNaN(date.getTime())) return 'later'
+  const today = startOfDay(new Date())
+  const day = startOfDay(date)
+  if (day.getTime() === today.getTime()) return 'today'
+  if (day < addDaysLocal(today, 7)) return 'week'
+  if (day < addDaysLocal(today, 14)) return 'next'
+  return 'later'
+}
 
 // Macro Intelligence — market-wide context for retail investors. Reuses the
 // shared global macro store (indicators + calendar) and the high-signal macro
@@ -37,16 +54,47 @@ export default function MacroPage() {
     })()
     return () => { alive = false }
   }, [supabase])
+  const calendarGroups = useMemo(() => {
+    const defs = [
+      { key: 'today', label: t('macro.today', { defaultValue: 'Today' }), items: [] },
+      { key: 'week', label: t('macro.this_week', { defaultValue: 'This week' }), items: [] },
+      { key: 'next', label: t('macro.next_week', { defaultValue: 'Next week' }), items: [] },
+      { key: 'later', label: t('macro.later', { defaultValue: 'Later' }), items: [] },
+    ]
+    const byKey = Object.fromEntries(defs.map((g) => [g.key, g]))
+    for (const event of calendar) byKey[calendarBucket(event.scheduled_at)].items.push(event)
+    return defs.filter((g) => g.items.length > 0)
+  }, [calendar, t])
+  const highImportanceCount = calendar.filter((e) => e.importance === 'high').length
 
   return (
-    <div className="space-y-6">
-      <div>
+    <IntelPageShell>
+      <IntelPageHeader
+        icon={Landmark}
+        eyebrow={t('brand.name', { defaultValue: 'Investor Intel' })}
+        title={t('macro.title', { defaultValue: 'Macro Intelligence' })}
+        subtitle={t('macro.sub', { defaultValue: 'The big picture: market-moving news, key economic data and what is coming up.' })}
+      />
+
+      <IntelHeroRead
+        eyebrow={t('macro.read', { defaultValue: 'Macro read' })}
+        title={t('macro.read_title', { defaultValue: 'Indicators, scheduled events, and macro headlines in one review path' })}
+        body={t('macro.read_body', { defaultValue: 'Scan the current data first, then review upcoming economic events grouped by timing, and finish with corroborated macro headlines. Explain actions remain available on each item for education-only context.' })}
+        meta={[
+          { label: t('macro.data', { defaultValue: 'Economic data' }), value: indicators.length.toLocaleString() },
+          { label: t('macro.calendar', { defaultValue: 'Economic calendar' }), value: calendar.length.toLocaleString() },
+          { label: t('macro.high_importance', { defaultValue: 'High importance' }), value: highImportanceCount.toLocaleString() },
+          { label: t('macro.news', { defaultValue: 'Big macro news' }), value: news.length.toLocaleString() },
+        ]}
+      />
+
+      <div className="hidden">
         <div className="eyebrow flex items-center gap-1.5"><Landmark className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
         <h1 className="page-title">{t('macro.title', { defaultValue: 'Macro Intelligence' })}</h1>
         <p className="page-sub">{t('macro.sub', { defaultValue: 'The big picture: market-moving news, key economic data and what’s coming up.' })}</p>
       </div>
 
-      {loading && <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>}
+      {loading && <IntelSkeleton className="h-40" />}
 
       {!loading && (
         <>
@@ -79,8 +127,14 @@ export default function MacroPage() {
             {calendar.length === 0 ? (
               <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.no_calendar', { defaultValue: 'Upcoming economic events will appear here once the daily macro refresh has run.' })}</div>
             ) : (
-              <div className="space-y-2">
-                {calendar.map((e) => (
+              <div className="space-y-4">
+                {calendarGroups.map((group) => (
+                  <div key={group.key} className="space-y-2">
+                    <div className="flex items-center justify-between gap-2">
+                      <div className="text-[12px] font-semibold text-[var(--fg-2)]">{group.label}</div>
+                      <span className="chip text-[10px]">{group.items.length}</span>
+                    </div>
+                    {group.items.map((e) => (
                   <div key={e.id} className="card p-3">
                     <div className="flex items-start justify-between gap-3">
                       <div className="min-w-0">
@@ -98,6 +152,8 @@ export default function MacroPage() {
                       <div className="text-[11px] text-[var(--fg-4)] whitespace-nowrap">{fmtDay(e.scheduled_at)}</div>
                     </div>
                     <WhyImportant topic={`${e.title} (scheduled ${fmtWhen(e.scheduled_at)})`} context="An upcoming scheduled macroeconomic event." />
+                  </div>
+                ))}
                   </div>
                 ))}
               </div>
@@ -132,6 +188,6 @@ export default function MacroPage() {
       )}
 
       <IntelDisclaimer variant="block" />
-    </div>
+    </IntelPageShell>
   )
 }

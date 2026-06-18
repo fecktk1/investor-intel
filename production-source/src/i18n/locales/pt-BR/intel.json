@@ -146,6 +146,7 @@
     "banner_other": "Trial — {{count}} dias restantes"
   },
   "disclaimer": {
+    "label": "Nota de pesquisa",
     "short": "Pesquisa e educação, não conselho financeiro. Verifique antes de agir.",
     "long": "O Investor Intel fornece pesquisa cripto, educação e contexto de risco — não conselho financeiro. Sempre verifique antes de agir."
   },

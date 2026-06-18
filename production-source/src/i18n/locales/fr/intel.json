@@ -146,6 +146,7 @@
     "banner_other": "Essai — {{count}} jours restants"
   },
   "disclaimer": {
+    "label": "Note de recherche",
     "short": "Recherche & éducation, pas un conseil financier. Vérifiez avant d'agir.",
     "long": "Investor Intel fournit de la recherche crypto, de l'éducation et du contexte de risque — pas un conseil financier. Vérifiez toujours avant d'agir."
   },
