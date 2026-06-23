@@ -677,11 +677,17 @@ export default function IntelUpgradePage() {
                   <li>{t('intel_upgrade.feat_alerts', { defaultValue: '{{n}} active alerts', n: p.limits.alerts })}</li>
                   <li>{t('intel_upgrade.feat_watchlist', { defaultValue: '{{n}} watchlist items', n: p.limits.watchlist })}</li>
                   <li>{t('intel_upgrade.feat_portfolio', { defaultValue: '{{n}} synced portfolio wallets', n: p.limits.portfolio })}</li>
+                  <li>{t('intel_upgrade.feat_comparisons', { defaultValue: '{{n}} compares / day', n: p.limits.comparisons })}</li>
+                  <li>{t('intel_upgrade.feat_follows', { defaultValue: '{{n}} narrative follows', n: p.limits.follows })}</li>
                 </ul>
               </button>
             )
           })}
         </div>
+
+        <p className="text-center text-xs text-gray-500 -mt-5 mb-8">
+          {t('intel_upgrade.included_products', { defaultValue: 'Every plan includes Narrative Radar, the Markets terminal, Thesis Journal, Compare, DeFi, Wallet Watch, Daily Brief, and explainable AI — these limits just scale with your tier.' })}
+        </p>
 
         {/* payment method tabs */}
         <div className="flex items-center gap-2 mb-5">
@@ -712,6 +718,10 @@ export default function IntelUpgradePage() {
             {t('intel_upgrade.pay_crypto', { defaultValue: 'Pay with crypto' })}
           </button>
         </div>
+
+        <p className="text-[11px] text-gray-500 mb-5 -mt-2">
+          {t('intel_upgrade.crypto_fee_note', { defaultValue: 'Paying by card adds a processing fee. Pay with crypto (USDC, ETH, or SOL) to skip it.' })}
+        </p>
 
         {networkMismatch && (
           <div className="rounded-lg border border-red-500/40 bg-red-500/10 p-3 text-xs text-red-300 mb-5">

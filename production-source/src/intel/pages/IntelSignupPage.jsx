@@ -185,6 +185,21 @@ export default function IntelSignupPage() {
                   : t('signup.body', { defaultValue: 'Your account unlocks the 7-day free trial of Investor Intel — full access, no card required.' })}
               </p>
 
+              {!plan && (
+                <div className="flex flex-wrap gap-x-3 gap-y-1 text-[11px] text-[var(--fg-4)]">
+                  {[
+                    t('signup.recap_narratives', { defaultValue: 'Auto-detected narratives' }),
+                    t('signup.recap_markets', { defaultValue: 'Markets terminal' }),
+                    t('signup.recap_portfolio', { defaultValue: 'Read-only portfolio' }),
+                    t('signup.recap_signals', { defaultValue: 'Explainable signals' }),
+                  ].map((x) => (
+                    <span key={x} className="flex items-center gap-1">
+                      <Check className="h-3 w-3" style={{ color: 'var(--accent)' }} /> {x}
+                    </span>
+                  ))}
+                </div>
+              )}
+
               {error && <div className="card--flat p-3 text-[13px] text-red-400">{error}</div>}
 
               <form onSubmit={handleSubmit} className="space-y-4">
