@@ -6,6 +6,7 @@ import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio, Bug, Flame } from '
 import { useAuth } from '../../lib/auth-context'
 import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
+import SparqHolderBadge from '../../components/SparqHolderBadge'
 import { INTEL_NAV } from '../intelNav'
 import LanguageSwitcher from '../../components/LanguageSwitcher'
 import SubmitTicketModal from '../../components/support/SubmitTicketModal'
@@ -19,7 +20,7 @@ import { useScrollRestoration } from '../lib/useScrollRestoration'
 export default function IntelModeShell({ children }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { signOut } = useAuth()
-  const { org, switchOrg, isSuperAdmin } = useProfile()
+  const { org, switchOrg, isSuperAdmin, sparqHolder } = useProfile()
   const { contentOrg, trialDaysRemaining } = useIntel()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
@@ -75,6 +76,14 @@ export default function IntelModeShell({ children }) {
             <p className="text-[11px] text-[var(--fg-3)] truncate">{org?.name || t('brand.tagline', { defaultValue: 'Crypto intelligence & risk context' })}</p>
           </div>
         </div>
+
+        {sparqHolder && (
+          <div className="px-3 pt-3">
+            <div className="intel-surface intel-surface--accent px-3 py-2 flex items-center">
+              <SparqHolderBadge holder={sparqHolder} />
+            </div>
+          </div>
+        )}
 
         {trialDaysRemaining != null && (
           <div className="px-3 pt-3">

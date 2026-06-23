@@ -5,6 +5,8 @@ import { Bot, Check, Copy, Plus, Settings, Trash2, Coins } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useAuth } from '../../lib/auth-context'
 import { useSupabase } from '../../lib/useSupabase'
+import SparqHolderBadge from '../../components/SparqHolderBadge'
+import WorkspaceRenameCard from '../../components/WorkspaceRenameCard'
 
 const SparqAccessCard = lazy(() => import('../../components/sparq/SparqAccessCard'))
 import { CHAINS } from '../lib/chains'
@@ -53,7 +55,7 @@ function displayTelegramUser(row) {
 
 export default function IntelSettingsPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
-  const { org } = useProfile()
+  const { org, sparqHolder } = useProfile()
   const { session } = useAuth()
   const { supabase, user } = useSupabase()
   const [p, setP] = useState(null)
@@ -285,19 +287,27 @@ export default function IntelSettingsPage() {
         <p className="page-sub">{t('pages.settings_sub', { defaultValue: 'Risk profile, chains, topics, explanation style and Beginner Protection.' })}</p>
       </div>
 
+      <WorkspaceRenameCard />
+
       <div className="card p-4 flex items-center justify-between gap-3 flex-wrap">
         <div>
           <div className="text-sm font-medium text-[var(--fg-1)]">{t('settings.plan_heading', { defaultValue: 'Plan' })}</div>
-          <p className="text-[13px] text-[var(--fg-3)] capitalize">
-            {t('settings.plan_current', {
-              defaultValue: 'Current tier: {{tier}}',
-              tier: org?.plan_overrides?.intel_tier || 'trial',
-            })}
-          </p>
+          {sparqHolder ? (
+            <div className="mt-1"><SparqHolderBadge holder={sparqHolder} /></div>
+          ) : (
+            <p className="text-[13px] text-[var(--fg-3)] capitalize">
+              {t('settings.plan_current', {
+                defaultValue: 'Current tier: {{tier}}',
+                tier: org?.plan_overrides?.intel_tier || 'trial',
+              })}
+            </p>
+          )}
         </div>
-        <Link to="/intel/upgrade" className="btn btn--quiet btn--sm">
-          {t('settings.plan_manage', { defaultValue: 'Upgrade / manage plan' })}
-        </Link>
+        {!sparqHolder && (
+          <Link to="/intel/upgrade" className="btn btn--quiet btn--sm">
+            {t('settings.plan_manage', { defaultValue: 'Upgrade / manage plan' })}
+          </Link>
+        )}
       </div>
 
       <div className="card p-4 space-y-3">

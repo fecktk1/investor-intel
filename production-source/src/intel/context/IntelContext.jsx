@@ -7,7 +7,7 @@ import { useProfile } from '../../lib/profile-context'
 const IntelContext = createContext(null)
 
 export function IntelProvider({ children }) {
-  const { org, role, profileLoading, memberships } = useProfile()
+  const { org, role, profileLoading, memberships, sparqHolder } = useProfile()
 
   // A content workspace the user can switch back to (if any), used by the
   // shell's "Switch to a team workspace" affordance.
@@ -28,11 +28,14 @@ export function IntelProvider({ children }) {
     role,
     profileLoading,
     contentOrg,
-    trialDaysRemaining,
+    // Holder workspaces are SPARQ-gated, not trials — suppress the trial banner
+    // and label them as holders instead.
+    trialDaysRemaining: sparqHolder ? null : trialDaysRemaining,
+    sparqHolder,
     // Placeholder until intel_user_profiles lands (P1). Beginner Protection
     // defaults ON so safety is the default, not opt-in.
     beginnerProtection: true,
-  }), [org, role, profileLoading, contentOrg, trialDaysRemaining])
+  }), [org, role, profileLoading, contentOrg, trialDaysRemaining, sparqHolder])
 
   return <IntelContext.Provider value={value}>{children}</IntelContext.Provider>
 }
