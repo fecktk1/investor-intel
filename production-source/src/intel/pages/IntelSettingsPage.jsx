@@ -1,9 +1,12 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { Bot, Check, Copy, Plus, Settings, Trash2 } from 'lucide-react'
+import { Bot, Check, Copy, Plus, Settings, Trash2, Coins } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
+import { useAuth } from '../../lib/auth-context'
 import { useSupabase } from '../../lib/useSupabase'
+
+const SparqAccessCard = lazy(() => import('../../components/sparq/SparqAccessCard'))
 import { CHAINS } from '../lib/chains'
 import { getIntelProfile, getNotificationPrefs, saveIntelProfile, saveNotificationPrefs } from '../lib/intel-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
@@ -51,6 +54,7 @@ function displayTelegramUser(row) {
 export default function IntelSettingsPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
+  const { session } = useAuth()
   const { supabase, user } = useSupabase()
   const [p, setP] = useState(null)
   const [prefs, setPrefs] = useState(null)
@@ -294,6 +298,16 @@ export default function IntelSettingsPage() {
         <Link to="/intel/upgrade" className="btn btn--quiet btn--sm">
           {t('settings.plan_manage', { defaultValue: 'Upgrade / manage plan' })}
         </Link>
+      </div>
+
+      <div className="card p-4 space-y-3">
+        <div className="flex items-center gap-2">
+          <Coins className="h-4 w-4 text-[var(--accent)]" />
+          <div className="text-sm font-medium text-[var(--fg-1)]">{t('settings.sparq_heading', { defaultValue: 'SPARQ Holder Access' })}</div>
+        </div>
+        <Suspense fallback={<div className="text-[13px] text-[var(--fg-3)]">{t('settings.sparq_loading', { defaultValue: 'Loading holder access…' })}</div>}>
+          <SparqAccessCard session={session} scope="user" />
+        </Suspense>
       </div>
 
       <div className="card p-4 space-y-2">
