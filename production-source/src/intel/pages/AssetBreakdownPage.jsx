@@ -12,6 +12,7 @@ import { getChain, chainIdFor, normalizeAddressForChain, assetRef, loadChainCove
 import { cleanNewsTitle } from '../lib/text-clean'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
+import TokenRiskBadge from '../components/TokenRiskBadge'
 import TokenChart from '../components/TokenChart'
 import WalletHoldingsChart from '../components/WalletHoldingsChart'
 import IntelActionButton from '../components/IntelActionButton'
@@ -203,6 +204,9 @@ export default function AssetBreakdownPage() {
                 <span className="text-xl font-semibold text-[var(--fg-1)]">{fmtPrice(ov.price)}</span>
                 {typeof change === 'number' && <span className={`text-sm font-semibold flex items-center gap-0.5 ${change >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{change >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}{change >= 0 ? '+' : ''}{change.toFixed(1)}%</span>}
               </div>
+            )}
+            {entity._contract && entity._chain && entity._address && (
+              <TokenRiskBadge chain={entity._chain} address={entity._address} symbol={entity.display_symbol} source={degenSignals ? 'degen' : 'lookup'} />
             )}
           </div>
           <p className="page-sub font-mono text-[12px] break-all">{entity.canonical_ref_key}</p>
