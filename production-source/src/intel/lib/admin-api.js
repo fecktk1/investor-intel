@@ -74,6 +74,30 @@ export async function adminRunCoverage(supabase) {
   return invokeIntelFunction(supabase, 'intel-provider-coverage', {}, 'coverage_failed')
 }
 
+// ── Provider Integrations (v3.1) — registry + runtime status. All self-gate. ──
+// Additive: absent RPCs (pre-migration-363) must not break the admin page, so
+// callers wrap these in try/catch.
+export async function adminProviderOverview(supabase) {
+  const { data, error } = await supabase.rpc('intel_admin_provider_overview'); if (error) throw error; return data || []
+}
+export async function adminProviderEndpoints(supabase) {
+  const { data, error } = await supabase.rpc('intel_admin_provider_endpoints'); if (error) throw error; return data || []
+}
+export async function adminProviderRagCoverage(supabase) {
+  const { data, error } = await supabase.rpc('intel_admin_provider_rag_coverage'); if (error) throw error; return data || []
+}
+export async function adminProviderFreshness(supabase) {
+  const { data, error } = await supabase.rpc('intel_admin_provider_freshness'); if (error) throw error; return data || []
+}
+export async function adminProviderMark(supabase, { provider, endpoint, setupStatus, testStatus, realCallVerified }) {
+  const { error } = await supabase.rpc('intel_admin_provider_mark', {
+    p_provider: provider, p_endpoint: endpoint,
+    p_setup_status: setupStatus ?? null, p_test_status: testStatus ?? null,
+    p_real_call_verified: typeof realCallVerified === 'boolean' ? realCallVerified : null,
+  })
+  if (error) throw error
+}
+
 // ── Global curated sources ──
 export async function adminListGlobalSources(supabase) {
   const { data, error } = await supabase.rpc('intel_admin_list_global_sources'); if (error) throw error; return data || []
