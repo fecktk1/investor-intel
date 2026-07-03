@@ -21,6 +21,7 @@ export interface SecurityInput {
   // Optional CoinGecko on-chain cross-check
   gtScore?: number | null              // 0..100 (higher = safer)
   gtHoneypot?: string | null           // 'true' | 'false' | 'unknown'
+  _hasRawSignal?: boolean              // did the provider actually return security data?
 }
 
 export function toPct(v: number | null | undefined): number | null {
@@ -33,6 +34,7 @@ function clamp(n: number, lo = 0, hi = 100): number { return Math.max(lo, Math.m
 
 export interface RiskResult {
   score: number                 // 0..100 (higher = safer)
+  rated: boolean                // false = insufficient provider data; caller should NOT surface a score
   hard_fail: boolean
   hard_fail_flags: string[]
   sub_scores: Record<string, number>
@@ -65,6 +67,10 @@ export function computeTokenRisk(s: SecurityInput): RiskResult {
   const hardFail = hardFlags.length > 0
   const score = hardFail ? clamp(20 - penaltySum) : clamp(100 - penaltySum)
 
+  // "Rated" only if a provider actually returned security signal. Otherwise an
+  // empty response would score a misleading 100/100 ("safe" == "no data").
+  const rated = s._hasRawSignal === true || s.gtScore != null || s.gtHoneypot != null
+
   // Confidence: two independent sources (Birdeye + CoinGecko GT) => higher.
   const disagreements: string[] = []
   const crossProvider = s.gtScore != null || s.gtHoneypot != null
@@ -77,6 +83,7 @@ export function computeTokenRisk(s: SecurityInput): RiskResult {
 
   return {
     score,
+    rated,
     hard_fail: hardFail,
     hard_fail_flags: hardFlags,
     sub_scores: {
@@ -125,10 +132,25 @@ export function computeConcentration(top10Pct: number | null, topHolders?: Array
   return { score, top10_pct: t10, top1_pct, gini, band, score_version: RISK_SCORE_VERSION }
 }
 
+// Keys Birdeye returns when it actually has security data for a token. If none
+// are present, the response was empty (chain unsupported / token unknown) and
+// the token must be treated as UNRATED, not "100/100 safe".
+const SECURITY_SIGNAL_KEYS = [
+  'freezeAuthority', 'mutableMetadata', 'nonTransferable', 'isTrueToken', 'fakeToken',
+  'transferFeeEnable', 'top10HolderPercent', 'creatorPercentage', 'jupStrictList',
+  'mintable', 'ownerAddress', 'creatorAddress', 'metaplexUpdateAuthority', 'totalSupply', 'top10HolderBalance',
+]
+// deno-lint-ignore no-explicit-any
+export function hasSecuritySignal(raw: any): boolean {
+  if (!raw || typeof raw !== 'object') return false
+  return SECURITY_SIGNAL_KEYS.some((k) => raw[k] !== undefined && raw[k] !== null)
+}
+
 // Extract a SecurityInput from a stored Birdeye token_security raw_response.
 // deno-lint-ignore no-explicit-any
 export function securityInputFromRaw(raw: any, gt?: { gtScore?: number | null; gtHoneypot?: string | null }): SecurityInput {
   return {
+    _hasRawSignal: hasSecuritySignal(raw),
     freezeAuthority: raw?.freezeAuthority ?? null,
     mutableMetadata: typeof raw?.mutableMetadata === 'boolean' ? raw.mutableMetadata : null,
     nonTransferable: typeof raw?.nonTransferable === 'boolean' ? raw.nonTransferable : null,

@@ -50,7 +50,7 @@ Deno.serve(async (req) => {
 
     // Optional CoinGecko GT cross-check (present once coingecko rows exist).
     const results: any[] = []
-    let scored = 0, hardFails = 0, ragged = 0
+    let scored = 0, hardFails = 0, ragged = 0, skipped = 0
 
     for (const s of secRows) {
       const { data: gt } = await admin.from('token_security_snapshots')
@@ -80,6 +80,9 @@ Deno.serve(async (req) => {
 
       const input = securityInputFromRaw(s.raw_response, { gtScore: gtx?.gt_score ?? null, gtHoneypot: gtx?.is_honeypot ?? null })
       const risk = computeTokenRisk(input)
+      // No provider actually returned security data (e.g. Birdeye Solana-primary
+      // endpoint on an EVM token) → skip rather than write a false "100/100 safe".
+      if (!risk.rated) { skipped++; if (debug) results.push({ ref: s.canonical_ref_key || `${s.chain}:${s.token_address}`, skipped: 'insufficient_data' }); continue }
       const top10 = s.top10_holder_pct != null ? Number(s.top10_holder_pct) / 100 : (input.top10HolderPercent ?? null)
       const conc = computeConcentration(top10, holder?.top_holders ?? null)
       const ref = s.canonical_ref_key || `${s.chain}:${s.token_address}`
@@ -134,7 +137,7 @@ Deno.serve(async (req) => {
       if (debug) results.push({ ref, symbol, risk: risk.score, hard_fail: risk.hard_fail, top10_pct: conc.top10_pct, band: conc.band, summary })
     }
 
-    return json({ ok: true, scored, hard_fails: hardFails, ragged, ...(debug ? { results } : {}) })
+    return json({ ok: true, scored, skipped_insufficient_data: skipped, hard_fails: hardFails, ragged, ...(debug ? { results } : {}) })
   } catch (err) {
     return json({ error: (err as Error)?.message || 'risk_score_failed' }, 500)
   }

@@ -1,9 +1,24 @@
 import {
-  computeTokenRisk, computeConcentration, securityInputFromRaw, toPct, riskSummary, RISK_SCORE_VERSION,
+  computeTokenRisk, computeConcentration, securityInputFromRaw, hasSecuritySignal, toPct, riskSummary, RISK_SCORE_VERSION,
 } from './token-risk.ts'
 
 function assert(c: unknown, m: string) { if (!c) throw new Error(m) }
 function eq(a: unknown, b: unknown, m: string) { if (a !== b) throw new Error(`${m}: expected ${JSON.stringify(b)}, got ${JSON.stringify(a)}`) }
+
+Deno.test('unrated: empty provider response is NOT scored 100 (no false-safe)', () => {
+  // Birdeye returned nothing (e.g. EVM token on the Solana-primary endpoint).
+  eq(hasSecuritySignal(null), false, 'null raw → no signal')
+  eq(hasSecuritySignal({}), false, 'empty raw → no signal')
+  eq(hasSecuritySignal({ freezeAuthority: null, mutableMetadata: true }), true, 'a real key present → signal')
+  const empty = computeTokenRisk(securityInputFromRaw({}))
+  eq(empty.rated, false, 'empty security data → unrated')
+  // Even though the raw math yields 100, the caller must skip it because rated=false.
+  const withData = computeTokenRisk(securityInputFromRaw({ freezeAuthority: null, mutableMetadata: false, jupStrictList: true }))
+  eq(withData.rated, true, 'real Birdeye data → rated')
+  // CoinGecko GT cross-check alone (no Birdeye) is enough to rate an EVM token.
+  const gtOnly = computeTokenRisk(securityInputFromRaw({}, { gtScore: 80, gtHoneypot: 'false' }))
+  eq(gtOnly.rated, true, 'GT cross-check present → rated')
+})
 
 Deno.test('toPct: fraction → percent; already-pct passthrough', () => {
   eq(toPct(0.32), 32, 'fraction 0.32 → 32')
