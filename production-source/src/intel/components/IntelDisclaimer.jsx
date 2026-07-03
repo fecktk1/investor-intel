@@ -18,7 +18,7 @@ export default function IntelDisclaimer({ variant = 'bar' }) {
   }
 
   return (
-    <div role="note" className="px-4 lg:px-6 py-1.5 border-b border-[var(--intel-border-soft)] bg-[rgba(15,17,22,0.88)] backdrop-blur flex items-center gap-2 text-[11px] text-[var(--fg-4)]">
+    <div role="note" className="px-4 lg:px-6 py-1.5 border-b border-[var(--intel-border-soft)] bg-[var(--intel-disclaimer-bg)] backdrop-blur flex items-center gap-2 text-[11px] text-[var(--fg-4)]">
       <Info className="h-3.5 w-3.5 flex-shrink-0 text-[var(--forge-gold)]" />
       <span className="truncate">{t('disclaimer.short', { defaultValue: 'Research & education, not financial advice. Verify before acting.' })}</span>
     </div>

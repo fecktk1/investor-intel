@@ -9,6 +9,7 @@ import { useIntel } from '../context/IntelContext'
 import SparqHolderBadge from '../../components/SparqHolderBadge'
 import { INTEL_NAV } from '../intelNav'
 import LanguageSwitcher from '../../components/LanguageSwitcher'
+import ThemeSwitcher from '../../components/ThemeSwitcher'
 import SubmitTicketModal from '../../components/support/SubmitTicketModal'
 import IntelDisclaimer from './IntelDisclaimer'
 import { useScrollRestoration } from '../lib/useScrollRestoration'
@@ -56,9 +57,9 @@ export default function IntelModeShell({ children }) {
         <meta name="robots" content="noindex" />
       </Helmet>
 
-      {open && <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-30 lg:hidden" onClick={() => setOpen(false)} />}
+      {open && <div className="fixed inset-0 bg-pure-black/60 backdrop-blur-sm z-30 lg:hidden" onClick={() => setOpen(false)} />}
 
-      <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-72 bg-[rgba(8,8,8,0.92)] backdrop-blur-xl border-r border-[var(--intel-border-soft)] transform transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col shadow-2xl lg:shadow-none`}>
+      <aside className={`fixed lg:static inset-y-0 left-0 z-40 w-72 bg-[var(--intel-sidebar-bg)] backdrop-blur-xl border-r border-[var(--intel-border-soft)] transform transition-transform duration-200 ${open ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'} flex flex-col shadow-2xl lg:shadow-none`}>
         <div className="p-4 border-b border-[var(--intel-border-soft)]">
           <div className="flex items-center gap-3">
             <div className="h-10 w-10 rounded-2xl grid place-items-center flex-shrink-0 border border-[var(--forge-gold-border)] shadow-[var(--intel-shadow-inset)]" style={{ background: 'radial-gradient(circle at 35% 20%, rgba(235,181,86,0.28), rgba(235,181,86,0.08) 54%, rgba(255,255,255,0.035))' }}>
@@ -138,14 +139,15 @@ export default function IntelModeShell({ children }) {
             <LogOut className="h-4 w-4" />
             {t('shell.sign_out', { defaultValue: 'Sign out' })}
           </button>
-          <div className="px-1 pt-1">
+          <div className="px-1 pt-1 flex items-center gap-1">
             <LanguageSwitcher variant="footer" dropPosition="up" />
+            <ThemeSwitcher variant="footer" />
           </div>
         </div>
       </aside>
 
       <div className="flex-1 flex flex-col min-w-0">
-        <header className="lg:hidden flex items-center gap-3 p-4 border-b border-[var(--intel-border-soft)] bg-[rgba(8,8,8,0.86)] backdrop-blur-xl">
+        <header className="lg:hidden flex items-center gap-3 p-4 border-b border-[var(--intel-border-soft)] bg-[var(--intel-header-bg)] backdrop-blur-xl">
           <button onClick={() => setOpen(true)} className="text-[var(--fg-3)] hover:text-white rounded-xl p-1.5 hover:bg-white/[0.055]"><Menu className="h-5 w-5" /></button>
           <span className="font-semibold text-sm text-white">{t('brand.name', { defaultValue: 'Investor Intel' })}</span>
         </header>
