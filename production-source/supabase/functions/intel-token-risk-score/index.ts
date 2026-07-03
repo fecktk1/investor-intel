@@ -30,6 +30,14 @@ Deno.serve(async (req) => {
     }
     const limit = Math.min(Number(body?.limit) > 0 ? Number(body.limit) : 200, 500)
 
+    // CoinGecko on-chain cross-check (GT score / honeypot) — fetched inline when a
+    // token has no fresh coingecko row, raising risk confidence to 0.9.
+    const cgOnchain = await isFeatureEnabled(admin, 'COINGECKO_ONCHAIN_ENABLED', false)
+    const cgKey = Deno.env.get('COINGECKO_API_KEY')
+    const cgBase = cgKey ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3'
+    const cgHdr: Record<string, string> = cgKey ? { 'x-cg-pro-api-key': cgKey } : {}
+    const gtNet = (c: string) => c === 'ethereum' ? 'eth' : c === 'polygon' ? 'polygon_pos' : c
+
     // Tokens we have Birdeye security data for (optionally filtered to a list).
     let q = admin.from('token_security_snapshots')
       .select('id, entity_id, chain, token_address, canonical_ref_key, top10_holder_pct, raw_response, fetched_at')
@@ -46,17 +54,39 @@ Deno.serve(async (req) => {
 
     for (const s of secRows) {
       const { data: gt } = await admin.from('token_security_snapshots')
-        .select('gt_score, is_honeypot').eq('provider', 'coingecko').eq('chain', s.chain).eq('token_address', s.token_address).maybeSingle()
+        .select('gt_score, is_honeypot, raw_response').eq('provider', 'coingecko').eq('chain', s.chain).eq('token_address', s.token_address).maybeSingle()
       const { data: holder } = await admin.from('token_holder_snapshots')
         .select('top_holders, holder_count, top10_pct').eq('chain', s.chain).eq('token_address', s.token_address)
         .order('snapshot_at', { ascending: false }).limit(1).maybeSingle()
 
-      const input = securityInputFromRaw(s.raw_response, { gtScore: gt?.gt_score ?? null, gtHoneypot: gt?.is_honeypot ?? null })
+      // Fetch the CoinGecko cross-check inline if missing (keeps it ongoing).
+      // deno-lint-ignore no-explicit-any
+      let gtx: any = gt
+      if (!gtx && cgOnchain) {
+        try {
+          const res = await fetch(`${cgBase}/onchain/networks/${gtNet(s.chain)}/tokens/${s.token_address}/info`, { headers: cgHdr })
+          if (res.ok) {
+            const a = (await res.json())?.data?.attributes || {}
+            const gscore = a.gt_score ?? a.gt_score_details?.total ?? null
+            gtx = { gt_score: gscore != null ? Math.round(Number(gscore)) : null, is_honeypot: a.is_honeypot != null ? String(a.is_honeypot) : 'unknown', raw_response: a }
+            await admin.from('token_security_snapshots').upsert({
+              chain: s.chain, token_address: s.token_address, canonical_ref_key: s.canonical_ref_key || `${s.chain}:${s.token_address}`, provider: 'coingecko',
+              gt_score: gtx.gt_score, is_honeypot: gtx.is_honeypot, mint_authority: a.mint_authority ?? null, freeze_authority: a.freeze_authority ?? null,
+              raw_response: a, confidence: 0.75, fetched_at: new Date().toISOString(), stale_after: new Date(Date.now() + 86400000).toISOString(), updated_at: new Date().toISOString(),
+            }, { onConflict: 'chain,token_address,provider' })
+          }
+        } catch { /* best-effort */ }
+      }
+
+      const input = securityInputFromRaw(s.raw_response, { gtScore: gtx?.gt_score ?? null, gtHoneypot: gtx?.is_honeypot ?? null })
       const risk = computeTokenRisk(input)
       const top10 = s.top10_holder_pct != null ? Number(s.top10_holder_pct) / 100 : (input.top10HolderPercent ?? null)
       const conc = computeConcentration(top10, holder?.top_holders ?? null)
-      const symbol = (s.raw_response?.symbol as string) ?? null
       const ref = s.canonical_ref_key || `${s.chain}:${s.token_address}`
+      // symbol: Birdeye security has none → prefer CoinGecko on-chain, else the ref tail.
+      const refTail = ref.includes(':') ? ref.split(':').pop()!.toUpperCase() : null
+      const symbol = (gtx?.raw_response?.symbol ? String(gtx.raw_response.symbol).toUpperCase() : null)
+        ?? (s.raw_response?.symbol ? String(s.raw_response.symbol).toUpperCase() : null) ?? refTail
 
       // prior concentration (24h) for the delta.
       const { data: prior } = await admin.from('holder_concentration_scores')

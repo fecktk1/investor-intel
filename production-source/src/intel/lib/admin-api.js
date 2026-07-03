@@ -89,6 +89,12 @@ export async function adminProviderRagCoverage(supabase) {
 export async function adminProviderFreshness(supabase) {
   const { data, error } = await supabase.rpc('intel_admin_provider_freshness'); if (error) throw error; return data || []
 }
+export async function adminListFlags(supabase) {
+  const { data, error } = await supabase.rpc('intel_admin_list_flags'); if (error) throw error; return data || []
+}
+export async function adminSetFlag(supabase, flag, enabled) {
+  const { error } = await supabase.rpc('intel_admin_set_flag', { p_flag: flag, p_enabled: !!enabled, p_note: null }); if (error) throw error
+}
 export async function adminProviderMark(supabase, { provider, endpoint, setupStatus, testStatus, realCallVerified }) {
   const { error } = await supabase.rpc('intel_admin_provider_mark', {
     p_provider: provider, p_endpoint: endpoint,

@@ -21,6 +21,7 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import AssetThesisModule from '../components/thesis/AssetThesisModule'
 import AssetYearInReview from '../components/AssetYearInReview'
 import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
+import TokenRiskBadge from '../components/TokenRiskBadge'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
@@ -169,6 +170,7 @@ export default function MarketAssetPage() {
                 {d.change24h != null && <span className={`text-sm font-semibold flex items-center gap-0.5 ${pctClass(d.change24h)}`}>{d.change24h >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}{fmtPct(d.change24h)}</span>}
               </div>
             )}
+            <TokenRiskBadge symbol={sym} chain={d.chain || d.primaryChain} />
           </div>
           {d.bestPair && <p className="page-sub font-mono text-[12px]">{PROVIDER_LABELS[d.bestProvider] || d.bestProvider} · {d.bestPair}</p>}
         </div>

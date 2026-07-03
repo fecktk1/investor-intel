@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useState } from 'react'
 import { RefreshCw, CheckCircle2, XCircle, Clock3, Database, Loader2 } from 'lucide-react'
 import {
   adminProviderOverview, adminProviderEndpoints, adminProviderRagCoverage,
-  adminProviderFreshness, adminProviderMark,
+  adminProviderFreshness, adminProviderMark, adminListFlags, adminSetFlag,
 } from '../lib/admin-api'
 
 // Provider Integrations — operational source of truth for every provider
@@ -25,6 +25,7 @@ export default function ProviderIntegrationsPanel({ supabase }) {
   const [endpoints, setEndpoints] = useState([])
   const [rag, setRag] = useState([])
   const [fresh, setFresh] = useState([])
+  const [flags, setFlags] = useState([])
   const [loading, setLoading] = useState(true)
   const [installed, setInstalled] = useState(true)
   const [err, setErr] = useState(null)
@@ -33,13 +34,14 @@ export default function ProviderIntegrationsPanel({ supabase }) {
   const load = useCallback(async () => {
     setLoading(true); setErr(null)
     try {
-      const [ov, ep, rc, fr] = await Promise.all([
+      const [ov, ep, rc, fr, fl] = await Promise.all([
         adminProviderOverview(supabase),
         adminProviderEndpoints(supabase),
         adminProviderRagCoverage(supabase).catch(() => []),
         adminProviderFreshness(supabase).catch(() => []),
+        adminListFlags(supabase).catch(() => []),
       ])
-      setOverview(ov || []); setEndpoints(ep || []); setRag(rc || []); setFresh(fr || [])
+      setOverview(ov || []); setEndpoints(ep || []); setRag(rc || []); setFresh(fr || []); setFlags(fl || [])
       setInstalled(true)
     } catch (e) {
       // Missing RPC/table (pre-migration) → surface a hint, don't throw.
@@ -58,6 +60,12 @@ export default function ProviderIntegrationsPanel({ supabase }) {
       await adminProviderMark(supabase, { provider: row.provider, endpoint: row.endpoint, ...patch })
       await load()
     } catch (e) { setErr(e?.message || 'update failed') } finally { setSavingKey(null) }
+  }, [supabase, load])
+
+  const toggleFlag = useCallback(async (flag, next) => {
+    setSavingKey(`flag:${flag}`)
+    try { await adminSetFlag(supabase, flag, next); await load() }
+    catch (e) { setErr(e?.message || 'flag update failed') } finally { setSavingKey(null) }
   }, [supabase, load])
 
   if (!installed) {
@@ -100,6 +108,32 @@ export default function ProviderIntegrationsPanel({ supabase }) {
         ))}
         {overview.length === 0 && !loading && <p className="text-[11px] text-[var(--fg-5)]">No provider endpoints registered.</p>}
       </div>
+
+      {/* Feature flags (kill switches) */}
+      {flags.length > 0 && (
+        <div className="rounded-md border border-[var(--border-subtle)] p-2.5">
+          <div className="text-[11px] text-[var(--fg-4)] uppercase mb-1.5">Feature flags (kill switches)</div>
+          <div className="grid gap-1.5 sm:grid-cols-2 xl:grid-cols-3">
+            {flags.map((f) => {
+              const saving = savingKey === `flag:${f.flag}`
+              return (
+                <div key={f.flag} className="flex items-center justify-between gap-2 rounded border border-[var(--border-subtle)] px-2 py-1.5">
+                  <div className="min-w-0">
+                    <div className="font-mono text-[10px] text-[var(--fg-2)] truncate">{f.flag}</div>
+                    {f.note && <div className="text-[9px] text-[var(--fg-5)] truncate" title={f.note}>{f.note}</div>}
+                  </div>
+                  <button
+                    disabled={saving}
+                    onClick={() => toggleFlag(f.flag, !f.enabled)}
+                    className={`shrink-0 text-[10px] px-2 py-1 rounded ${f.enabled ? 'chip chip--ok' : 'chip'}`}
+                    title={f.enabled ? 'Click to disable' : 'Click to enable'}
+                  >{saving ? '…' : (f.enabled ? 'ON' : 'OFF')}</button>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      )}
 
       {/* Endpoint registry */}
       <div className="overflow-x-auto rounded-md border border-[var(--border-subtle)]">
