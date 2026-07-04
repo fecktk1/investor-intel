@@ -55,7 +55,7 @@ export default function IntelOnboardingPage() {
         beginner_protection: beginnerProtection,
         disclaimer_ack_at: new Date().toISOString(),
       })
-      await completeIntelOnboarding(supabase)
+      await completeIntelOnboarding(supabase, org.id)
       // Hard reload so the profile re-fetches with onboarding_completed = true.
       window.location.assign('/intel')
     } catch (e) {

@@ -28,8 +28,12 @@ export async function saveIntelProfile(supabase, orgId, userId, patch) {
   return data
 }
 
-export async function completeIntelOnboarding(supabase) {
-  const { error } = await supabase.rpc('complete_intel_onboarding')
+// Mark onboarding done for a specific Intel workspace. Pass the org explicitly
+// so completion targets the workspace being onboarded, not whatever org is
+// active in auth metadata (a dual-org holder's active org may be a different,
+// content, workspace). Falls back to the active org when omitted.
+export async function completeIntelOnboarding(supabase, orgId = null) {
+  const { error } = await supabase.rpc('complete_intel_onboarding', { p_org_id: orgId })
   if (error) throw error
 }
 
