@@ -313,7 +313,7 @@ export default function IntelSettingsPage() {
       <div className="card p-4 space-y-3">
         <div className="flex items-center gap-2">
           <Coins className="h-4 w-4 text-[var(--accent)]" />
-          <div className="text-sm font-medium text-[var(--fg-1)]">{t('settings.sparq_heading', { defaultValue: 'SPARQ Holder Access' })}</div>
+          <div className="text-sm font-medium text-[var(--fg-1)]">{t('settings.sparq_heading', { defaultValue: 'FORGE Holder Access' })}</div>
         </div>
         <Suspense fallback={<div className="text-[13px] text-[var(--fg-3)]">{t('settings.sparq_loading', { defaultValue: 'Loading holder access…' })}</div>}>
           <SparqAccessCard session={session} scope="user" />

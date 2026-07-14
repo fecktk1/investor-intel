@@ -28,7 +28,7 @@ export function IntelProvider({ children }) {
     role,
     profileLoading,
     contentOrg,
-    // Holder workspaces are SPARQ-gated, not trials — suppress the trial banner
+    // Holder workspaces are FORGE-gated, not trials — suppress the trial banner
     // and label them as holders instead.
     trialDaysRemaining: sparqHolder ? null : trialDaysRemaining,
     sparqHolder,
