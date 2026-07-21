@@ -6,6 +6,7 @@ import { useSupabase } from '../../lib/useSupabase'
 import { useArtifact } from '../lib/useArtifact'
 import { listBriefs, upsertBrief } from '../lib/intel-data'
 import { listWatchlist } from '../lib/watchlist-api'
+import { markSurfaceSeen } from '../lib/changes-api'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import { clarityMeta } from '../lib/narrative-ui'
@@ -90,6 +91,10 @@ export default function BriefsPage() {
   const [briefs, setBriefs] = useState([])
   const [loading, setLoading] = useState(true)
   const brief = useArtifact()
+
+  // Mark the brief surface as seen on unmount (powers the Intel onboarding
+  // checklist "review a brief" item, and the standard what-changed indicator).
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'brief') }, [org?.id, supabase])
 
   const load = useCallback(async () => {
     if (!org?.id) return

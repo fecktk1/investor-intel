@@ -6,6 +6,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { CHAINS, getChain } from '../lib/chains'
 import { listWatchlist, addWatchlistItem, removeWatchlistItem, setHolding, entityHref } from '../lib/watchlist-api'
+import { emitTutorialSignal } from '../../help/signals'
 import { ensureDefaultPortfolio, addTransaction } from '../lib/portfolio-api'
 import { loadMarketContextBySymbols } from '../lib/markets-api'
 import MarketSignalBadge from '../components/MarketSignalBadge'
@@ -70,9 +71,12 @@ export default function WatchlistPage() {
       const kind = form.itemType === 'wallet' ? 'wallet'
         : form.itemType === 'narrative' ? 'narrative'
         : form.itemType === 'protocol' ? 'protocol' : 'asset'
-      await addWatchlistItem(supabase, org.id, user?.id, {
+      const added = await addWatchlistItem(supabase, org.id, user?.id, {
         kind, chain: form.chain, value: form.value.trim(), itemType: form.itemType, label: form.label.trim() || null,
       })
+      // Tutorial receipt: the created row id (a duplicate returns the old row,
+      // whose created_at predates the run, so verification correctly fails it).
+      emitTutorialSignal('watchlist.item-added', added ? { item_id: added.id } : {})
       setForm((f) => ({ ...f, value: '', label: '' }))
       await load()
     } catch (e) {
@@ -130,10 +134,10 @@ export default function WatchlistPage() {
         <p className="page-sub">{t('pages.watchlist_sub', { defaultValue: 'Track tokens, wallets, narratives, ecosystems, protocols and DeFi markets.' })}</p>
       </div>
 
-      <form onSubmit={onAdd} className="card p-4 flex flex-wrap items-end gap-3">
+      <form onSubmit={onAdd} className="card p-4 flex flex-wrap items-end gap-3" data-tutorial="intel-watchlist.add-form">
         <label className="block">
           <span className="text-[11px] text-[var(--fg-4)]">{t('watchlist.type', { defaultValue: 'Type' })}</span>
-          <select className="select" value={form.itemType} onChange={(e) => setForm((f) => ({ ...f, itemType: e.target.value }))}>
+          <select className="select" data-tutorial="intel-watchlist.type-select" value={form.itemType} onChange={(e) => setForm((f) => ({ ...f, itemType: e.target.value }))}>
             {ITEM_TYPES.map((tp) => <option key={tp} value={tp}>{t(`watchlist.types.${tp}`, { defaultValue: tp })}</option>)}
           </select>
         </label>
@@ -147,9 +151,9 @@ export default function WatchlistPage() {
         )}
         <label className="block flex-1 min-w-[200px]">
           <span className="text-[11px] text-[var(--fg-4)]">{t('watchlist.value', { defaultValue: 'Identifier' })}</span>
-          <input className="input w-full" placeholder={placeholder} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
+          <input className="input w-full" data-tutorial="intel-watchlist.identifier-input" placeholder={placeholder} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
         </label>
-        <button type="submit" className="btn btn--primary" disabled={adding || !form.value.trim()}>
+        <button type="submit" className="btn btn--primary" data-tutorial="intel-watchlist.add-button" disabled={adding || !form.value.trim()}>
           {adding ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Plus className="h-4 w-4" /> {t('watchlist.add', { defaultValue: 'Add' })}</>}
         </button>
       </form>
