@@ -8,6 +8,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
 import SparqHolderBadge from '../../components/SparqHolderBadge'
 import { INTEL_NAV } from '../intelNav'
+import HelpLauncher from '../../components/help/HelpLauncher'
 import LanguageSwitcher from '../../components/LanguageSwitcher'
 import ThemeSwitcher from '../../components/ThemeSwitcher'
 import SubmitTicketModal from '../../components/support/SubmitTicketModal'
@@ -165,6 +166,7 @@ export default function IntelModeShell({ children }) {
         initialKind="bug"
         redirectBasePath="/intel/support"
       />
+      <HelpLauncher />
     </div>
   )
 }
