@@ -15,7 +15,7 @@ function whatChanged(delta) {
   return entries.slice(0, 2).map(([k, v]) => `${k.replace(/_/g, ' ')} ${v > 0 ? '+' : ''}${Math.round(v)}`).join(' · ')
 }
 
-export default function NarrativeCard({ n, onOpen, onFollow, busy }) {
+export default function NarrativeCard({ n, onOpen, onFollow, busy, followAnchor }) {
   const stage = displayStatusMeta(displayStatus(n))
   const sig = signalMeta(n.signal_class)
   const oc = onchainMeta(n.onchain_status)
@@ -61,7 +61,7 @@ export default function NarrativeCard({ n, onOpen, onFollow, busy }) {
           )}
         </div>
         <div className="flex items-center gap-1.5 flex-shrink-0">
-          <button onClick={() => onFollow(n.slug, !n.is_followed)} disabled={busy}
+          <button onClick={() => onFollow(n.slug, !n.is_followed)} disabled={busy} data-tutorial={followAnchor}
             className={`btn btn--quiet btn--sm ${n.is_followed ? 'text-amber-400' : ''}`} title={n.is_followed ? 'Unfollow' : 'Follow'}>
             <Star className={`h-4 w-4 ${n.is_followed ? 'fill-amber-400' : ''}`} />
           </button>

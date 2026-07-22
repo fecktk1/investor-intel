@@ -16,6 +16,7 @@ import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
 import { markSurfaceSeen } from '../lib/changes-api'
 import { IntelEmptyState, IntelHeroRead, IntelPageHeader, IntelPageShell, IntelSkeleton, IntelTabs } from '../components/IntelPrimitives'
+import { emitTutorialSignal } from '../../help/signals'
 
 // Narrative Radar — AUTOMATIC discovery by default. A new user opens this page and
 // immediately sees which narratives are heating up / cooling / early / crowded /
@@ -53,7 +54,16 @@ export default function NarrativeRadarPage() {
     setFollowErr(null)
     // optimistic
     setData((d) => ({ ...d, narratives: d.narratives.map((n) => n.slug === slug ? { ...n, is_followed: next } : n) }))
-    try { next ? await followNarrative(supabase, slug) : await unfollowNarrative(supabase, slug) }
+    try {
+      if (next) {
+        // Tutorial receipt: the follow row id. A re-follow returns the old row
+        // whose followed_at predates the run, so verification correctly fails it.
+        const followId = await followNarrative(supabase, slug)
+        emitTutorialSignal('narrative.followed', followId ? { follow_id: followId, slug } : {})
+      } else {
+        await unfollowNarrative(supabase, slug)
+      }
+    }
     catch (e) {
       setData((d) => ({ ...d, narratives: d.narratives.map((n) => n.slug === slug ? { ...n, is_followed: !next } : n) }))
       // Surface intel_limit_reached:narrative_follows with the upgrade link.
@@ -151,7 +161,8 @@ export default function NarrativeRadarPage() {
         <IntelEmptyState title={t('narratives.none_in_filter', { defaultValue: 'No narratives match this filter right now. Try another tab.' })} />
       ) : (
         <div className="grid sm:grid-cols-2 gap-3">
-          {filtered.map((n) => <NarrativeCard key={n.slug} n={n} onOpen={onOpen} onFollow={onFollow} busy={followBusy === n.slug} />)}
+          {/* First card's follow button carries the tutorial anchor. */}
+          {filtered.map((n, i) => <NarrativeCard key={n.slug} n={n} onOpen={onOpen} onFollow={onFollow} busy={followBusy === n.slug} followAnchor={i === 0 ? 'intel-narratives.follow-button' : undefined} />)}
         </div>
       )}
 

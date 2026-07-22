@@ -57,9 +57,12 @@ export async function loadNarrativeDebug(supabase, slug) {
 }
 
 // Follow ATTACHES to an existing global narrative (never creates one).
+// Returns the user_followed_narratives row id (a tutorial completion receipt).
+// On a re-follow the RPC returns the existing row id without bumping followed_at.
 export async function followNarrative(supabase, slug, alertPrefs = {}) {
-  const { error } = await supabase.rpc('narrative_follow', { p_slug: slug, p_alert_prefs: alertPrefs })
+  const { data, error } = await supabase.rpc('narrative_follow', { p_slug: slug, p_alert_prefs: alertPrefs })
   if (error) throw new Error(error.message || 'follow_failed')
+  return data
 }
 export async function unfollowNarrative(supabase, slug) {
   const { error } = await supabase.rpc('narrative_unfollow', { p_slug: slug })

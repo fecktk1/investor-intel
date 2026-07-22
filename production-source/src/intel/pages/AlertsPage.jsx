@@ -12,6 +12,7 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
 import { markSurfaceSeen } from '../lib/changes-api'
+import { emitTutorialSignal } from '../../help/signals'
 
 const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift']
 
@@ -45,7 +46,10 @@ export default function AlertsPage() {
     setBusy(true); setErr(null)
     try {
       const ent = await resolveEntity(supabase, org.id, { kind: 'asset', chain: form.chain, value: form.value.trim() })
-      await createAlertRule(supabase, org.id, user?.id, { entity_id: ent.id, trigger_type: form.trigger, config: { threshold_pct: Number(form.threshold) || null } })
+      const rule = await createAlertRule(supabase, org.id, user?.id, { entity_id: ent.id, trigger_type: form.trigger, config: { threshold_pct: Number(form.threshold) || null } })
+      // Tutorial receipt: every create is a fresh row, so its id + created_at
+      // uniquely identify this run's operation.
+      emitTutorialSignal('alerts.rule-created', rule ? { rule_id: rule.id } : {})
       setForm((f) => ({ ...f, value: '' })); await load()
     } catch (ex) {
       // Raw message — IntelErrorNotice maps intel_limit_reached:* to friendly
@@ -67,15 +71,15 @@ export default function AlertsPage() {
           <select className="select" value={form.chain} onChange={(e) => setForm((f) => ({ ...f, chain: e.target.value }))}>{CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
         </label>
         <label className="block flex-1 min-w-[160px]"><span className="text-[11px] text-[var(--fg-4)]">{t('watchlist.value', { defaultValue: 'Identifier' })}</span>
-          <input className="input w-full" placeholder={t('watchlist.ph.token', { defaultValue: 'Token mint / contract' })} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
+          <input className="input w-full" data-tutorial="intel-alerts.identifier-input" placeholder={t('watchlist.ph.token', { defaultValue: 'Token mint / contract' })} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
         </label>
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.trigger', { defaultValue: 'Trigger' })}</span>
-          <select className="select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: tr.replace(/_/g, ' ') })}</option>)}</select>
+          <select className="select" data-tutorial="intel-alerts.trigger-select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: tr.replace(/_/g, ' ') })}</option>)}</select>
         </label>
         <label className="block w-20"><span className="text-[11px] text-[var(--fg-4)]">%</span>
           <input className="input w-full" type="number" value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
         </label>
-        <button type="submit" disabled={busy || !form.value.trim()} className="btn btn--primary disabled:opacity-50"><Plus className="h-4 w-4" /> {t('alerts.add', { defaultValue: 'Add rule' })}</button>
+        <button type="submit" disabled={busy || !form.value.trim()} data-tutorial="intel-alerts.add-button" className="btn btn--primary disabled:opacity-50"><Plus className="h-4 w-4" /> {t('alerts.add', { defaultValue: 'Add rule' })}</button>
       </form>
 
       <IntelErrorNotice error={err} />
