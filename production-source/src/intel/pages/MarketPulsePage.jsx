@@ -18,6 +18,7 @@ import CatalystsRail from '../components/CatalystsRail'
 import { IntelPageHeader, IntelPageShell, IntelHeroRead, IntelMetricCard, IntelEmptyState, IntelSectionHeader } from '../components/IntelPrimitives'
 import { markSurfaceSeen } from '../lib/changes-api'
 import { getChain } from '../lib/chains'
+import OnboardingChecklistCard from '../../components/help/OnboardingChecklistCard'
 
 const STATUS_CLS = { hot: 'chip--err', emerging: 'chip--ok', cooling: 'chip--info' }
 const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
@@ -152,6 +153,11 @@ export default function MarketPulsePage() {
           </>
         )}
       />
+
+      {/* Intel onboarding checklist — self-gates on tutorials_enabled + completion.
+          Previously mounted only on the content dashboard, so intel users never
+          saw theirs on-surface. */}
+      <OnboardingChecklistCard />
 
       <IntelHeroRead
         eyebrow={t('pulse.today_read', { defaultValue: "Today's Market Read" })}
