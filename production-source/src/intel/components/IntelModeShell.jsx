@@ -8,7 +8,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
 import SparqHolderBadge from '../../components/SparqHolderBadge'
 import { INTEL_NAV } from '../intelNav'
-import HelpLauncher from '../../components/help/HelpLauncher'
+import AskButton from '../../components/help/AskButton'
 import LanguageSwitcher from '../../components/LanguageSwitcher'
 import ThemeSwitcher from '../../components/ThemeSwitcher'
 import SubmitTicketModal from '../../components/support/SubmitTicketModal'
@@ -141,6 +141,7 @@ export default function IntelModeShell({ children }) {
             {t('shell.sign_out', { defaultValue: 'Sign out' })}
           </button>
           <div className="px-1 pt-1 flex items-center gap-1">
+            <AskButton className="flex-1" />
             <LanguageSwitcher variant="footer" dropPosition="up" />
             <ThemeSwitcher variant="footer" />
           </div>
@@ -166,7 +167,6 @@ export default function IntelModeShell({ children }) {
         initialKind="bug"
         redirectBasePath="/intel/support"
       />
-      <HelpLauncher />
     </div>
   )
 }
