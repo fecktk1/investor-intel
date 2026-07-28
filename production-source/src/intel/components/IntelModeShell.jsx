@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { NavLink, useNavigate } from 'react-router-dom'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
-import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Radio, Bug, Flame } from 'lucide-react'
+import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Bug, Flame } from 'lucide-react'
 import { useAuth } from '../../lib/auth-context'
 import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
@@ -29,9 +29,8 @@ export default function IntelModeShell({ children }) {
   const [reportOpen, setReportOpen] = useState(false)
   const scrollRef = useScrollRestoration()
 
-  // Super admins get the Intel control center in the Intel shell too, so they
-  // never have to switch to a team workspace to manage Intel. Kept out of the
-  // shared INTEL_NAV (which is customer-facing) and appended only for admins.
+  // Super Admin is a product-independent control center. Intel exposes a
+  // single parent entry; the global admin shell owns all child navigation.
   const navGroups = isSuperAdmin
     ? [
         ...INTEL_NAV,
@@ -39,8 +38,7 @@ export default function IntelModeShell({ children }) {
           sectionKey: 'section.admin',
           sectionDefault: 'Super admin',
           items: [
-            { to: '/intel/super-admin', end: true, icon: Shield, labelKey: 'nav.intel_admin', defaultLabel: 'Intel controls' },
-            { to: '/intel/super-admin/signals', icon: Radio, labelKey: 'nav.signal_admin', defaultLabel: 'Signal sources' },
+            { to: '/super-admin', icon: Shield, labelKey: 'nav.super_admin', defaultLabel: 'Super Admin' },
           ],
         },
       ]

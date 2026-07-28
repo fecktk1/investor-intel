@@ -40,20 +40,6 @@ import NewsPage from './pages/NewsPage'
 import SupportInboxPage from '../pages/SupportInboxPage'
 import SupportTicketPage from '../pages/SupportTicketPage'
 
-// Super-admin surfaces — the same pages the content app mounts at
-// /super-admin/intel and /super-admin/signals. Mounted here too so a super
-// admin working inside an Intel workspace can manage Intel without switching
-// to a team workspace. Lazy so the customer-facing Intel bundle never ships
-// the admin chunks.
-const IntelAdminPage = React.lazy(() => import('../pages/IntelAdminPage'))
-const SignalAdminPage = React.lazy(() => import('../pages/SignalAdminPage'))
-
-const AdminLoading = () => (
-  <div className="flex items-center justify-center h-64">
-    <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]" />
-  </div>
-)
-
 // Investor Intel mode root. Mounted at /intel/* inside RequireAuth +
 // RequireIntelMode (see src/App.jsx) and lazy-loaded so content-only users
 // never download this chunk. Pages are stubs during the build; each feature
@@ -62,7 +48,7 @@ const AdminLoading = () => (
 // NOTE: nav labels live in src/intel/intelNav.js; page copy in the `intel`
 // i18n namespace (src/i18n/locales/<lng>/intel.json).
 export default function IntelApp() {
-  const { org, profileLoading, isSuperAdmin } = useProfile()
+  const { org, profileLoading } = useProfile()
 
   if (profileLoading) {
     return (
@@ -132,17 +118,6 @@ export default function IntelApp() {
           <Route path="settings" element={<IntelSettingsPage />} />
           <Route path="support" element={<SupportInboxPage basePath="/intel/support" />} />
           <Route path="support/:refCode" element={<SupportTicketPage basePath="/intel/support" />} />
-
-          {/* Super-admin control center — also reachable from the content app at
-              /super-admin/intel. Mounted here so a super admin can manage Intel
-              without leaving the Intel workspace. Non-admins fall through to the
-              catch-all below (→ /intel). */}
-          {isSuperAdmin && (
-            <Route path="super-admin" element={<React.Suspense fallback={<AdminLoading />}><IntelAdminPage /></React.Suspense>} />
-          )}
-          {isSuperAdmin && (
-            <Route path="super-admin/signals" element={<React.Suspense fallback={<AdminLoading />}><SignalAdminPage /></React.Suspense>} />
-          )}
 
           <Route path="*" element={<Navigate to="/intel" replace />} />
         </Routes>
