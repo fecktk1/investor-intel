@@ -10,6 +10,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { computeConcentration, computeTokenRisk, riskSummary, securityInputFromRaw } from '../_shared/intel/token-risk.ts'
 import { promoteProviderFact } from '../_shared/intel/provider-fact-rag.ts'
 import { isFeatureEnabled } from '../_shared/intel/runtime-flags.ts'
+import { fetchCoingeckoOnchainTokenInfo } from '../_shared/market-assets/coingecko-provider.ts'
 
 const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 const json = (b: unknown, s = 200) => new Response(JSON.stringify(b), { status: s, headers: { ...cors, 'Content-Type': 'application/json' } })
@@ -33,9 +34,6 @@ Deno.serve(async (req) => {
     // CoinGecko on-chain cross-check (GT score / honeypot) — fetched inline when a
     // token has no fresh coingecko row, raising risk confidence to 0.9.
     const cgOnchain = await isFeatureEnabled(admin, 'COINGECKO_ONCHAIN_ENABLED', false)
-    const cgKey = Deno.env.get('COINGECKO_API_KEY')
-    const cgBase = cgKey ? 'https://pro-api.coingecko.com/api/v3' : 'https://api.coingecko.com/api/v3'
-    const cgHdr: Record<string, string> = cgKey ? { 'x-cg-pro-api-key': cgKey } : {}
     const gtNet = (c: string) => c === 'ethereum' ? 'eth' : c === 'polygon' ? 'polygon_pos' : c
 
     // Tokens we have Birdeye security data for (optionally filtered to a list).
@@ -64,9 +62,15 @@ Deno.serve(async (req) => {
       let gtx: any = gt
       if (!gtx && cgOnchain) {
         try {
-          const res = await fetch(`${cgBase}/onchain/networks/${gtNet(s.chain)}/tokens/${s.token_address}/info`, { headers: cgHdr })
-          if (res.ok) {
-            const a = (await res.json())?.data?.attributes || {}
+          const response = await fetchCoingeckoOnchainTokenInfo(gtNet(s.chain), s.token_address, {
+            supabase: admin,
+            jobName: 'intel-token-risk-score',
+            caller: 'intel-token-risk-score',
+            kind: 'job',
+            maxCalls: limit,
+          })
+          if (response) {
+            const a = (response as any)?.data?.attributes || {}
             const gscore = a.gt_score ?? a.gt_score_details?.total ?? null
             gtx = { gt_score: gscore != null ? Math.round(Number(gscore)) : null, is_honeypot: a.is_honeypot != null ? String(a.is_honeypot) : 'unknown', raw_response: a }
             await admin.from('token_security_snapshots').upsert({

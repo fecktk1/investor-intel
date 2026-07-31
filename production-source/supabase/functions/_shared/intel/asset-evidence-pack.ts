@@ -63,6 +63,9 @@ export interface AssetEvidencePackOptions {
   force?: boolean
   staleMinutes?: number
   contextLimit?: number
+  // Callers that need a strictly cache-only assembly (tests, renders, or
+  // degraded operation) can suppress the bounded live enrichment fallback.
+  allowLiveEnrichment?: boolean
   // Tests can inject deterministic context assembly without touching the live
   // intelligence RPCs.
   assembleContext?: typeof assembleIntelligenceContext
@@ -633,7 +636,7 @@ export async function assembleAssetEvidencePack(
     assemblePublicOnchainState({
       chain,
       tokenAddress,
-      allowLive: true,
+      allowLive: options.allowLiveEnrichment !== false,
       nowIso: now.toISOString(),
       birdeyeCtx: { supabase: db, jobName: 'asset-evidence-pack', caller: 'market-enrichment', kind: 'request', orgId: subject.orgId || null, userId: subject.userId || null },
     }),

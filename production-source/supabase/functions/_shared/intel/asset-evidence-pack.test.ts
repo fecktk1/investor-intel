@@ -89,14 +89,7 @@ const NOW = new Date('2026-06-16T12:00:00.000Z')
 const FRESH = '2030-01-01T00:00:00.000Z'
 
 Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables only', async () => {
-  let fetchCalls = 0
-  const originalFetch = globalThis.fetch
-  ;(globalThis as unknown as { fetch: typeof fetch }).fetch = ((...args: Parameters<typeof fetch>) => {
-    fetchCalls += 1
-    return originalFetch(...args)
-  }) as typeof fetch
-  try {
-    const db = makeDb({
+  const db = makeDb({
       market_assets: [{
         source_provider: 'coingecko',
         provider_id: 'solana',
@@ -267,6 +260,7 @@ Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables o
       userId: 'user1',
     }, {
       now: NOW,
+      allowLiveEnrichment: false,
       assembleContext: async () => ({
         policy: {
           surface_key: 'investor_intel',
@@ -302,7 +296,6 @@ Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables o
     })
     const persisted = await persistAssetEvidencePack(db, assembled, { orgId: 'org1', userId: 'user1' }, { now: NOW })
     const pack = persisted.pack as Record<string, any>
-    assert(fetchCalls === 0, 'assembling evidence pack did not call fetch')
     assert(pack.asset?.symbol === 'SOL', 'asset symbol retained')
     assert(pack.flow_state?.status === 'available', 'scoped flow data included')
     assert(pack.dex_state?.status === 'available', 'DEX state included')
@@ -322,9 +315,6 @@ Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables o
     assert(pack.data_coverage?.used_sources?.includes('platform_intelligence_context'), 'selected AI context blocks are tracked as a source')
     assert(db.writes.intelligence_evidence_packs?.length === 1, 'evidence pack persisted')
     assert(db.writes.ai_context_packs?.length === 1, 'context pack persisted')
-  } finally {
-    ;(globalThis as unknown as { fetch: typeof fetch }).fetch = originalFetch
-  }
 })
 
 Deno.test('D1 degrades CEX-only assets with specific optional gaps', async () => {

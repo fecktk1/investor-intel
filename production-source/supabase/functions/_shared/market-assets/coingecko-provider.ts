@@ -105,6 +105,27 @@ export async function fetchCoingeckoOhlc(
   })
 }
 
+export async function fetchCoingeckoMarketChart(
+  id: string,
+  days: number,
+  interval: 'hourly' | 'daily',
+  ctx?: MarketAssetsContext,
+): Promise<Record<string, unknown> | null> {
+  const clean = String(id || '').trim()
+  if (!clean) return null
+  const d = Math.max(1, Math.trunc(Number(days) || 1))
+  return await marketAssetsGet<Record<string, unknown>>({
+    provider: ID,
+    url: `${baseUrl()}/coins/${encodeURIComponent(clean)}/market_chart?vs_currency=usd&days=${d}&interval=${interval}`,
+    endpoint: '/coins/{id}/market_chart',
+    cacheKey: `coins/${clean}/market_chart:${d}:${interval}`,
+    headers: authHeaders(),
+    ttlMs: 5 * 60_000,
+    symbolCount: 1,
+    ctx,
+  })
+}
+
 export async function fetchCoingeckoGlobal(ctx?: MarketAssetsContext): Promise<unknown | null> {
   return await marketAssetsGet<unknown>({
     provider: ID,
@@ -207,6 +228,44 @@ export async function fetchCoingeckoPlatforms(ctx?: MarketAssetsContext): Promis
 export async function fetchCoingeckoCoin(id: string, ctx?: MarketAssetsContext): Promise<any | null> {
   const url = `${baseUrl()}/coins/${encodeURIComponent(id)}?localization=false&tickers=false&market_data=true&community_data=false&developer_data=false&sparkline=false`
   return await marketAssetsGet<unknown>({ provider: ID, url, endpoint: '/coins/{id}', cacheKey: `coins/${id}`, headers: authHeaders(), ttlMs: 24 * 3600_000, ctx })
+}
+
+export async function fetchCoingeckoTickers(
+  id: string,
+  ctx?: MarketAssetsContext,
+): Promise<Record<string, unknown> | null> {
+  const clean = String(id || '').trim()
+  if (!clean) return null
+  return await marketAssetsGet<Record<string, unknown>>({
+    provider: ID,
+    url: `${baseUrl()}/coins/${encodeURIComponent(clean)}/tickers?page=1`,
+    endpoint: '/coins/{id}/tickers',
+    cacheKey: `coins/${clean}/tickers:p1`,
+    headers: authHeaders(),
+    ttlMs: 10 * 60_000,
+    symbolCount: 1,
+    ctx,
+  })
+}
+
+export async function fetchCoingeckoOnchainTokenInfo(
+  network: string,
+  address: string,
+  ctx?: MarketAssetsContext,
+): Promise<Record<string, unknown> | null> {
+  const cleanNetwork = String(network || '').trim()
+  const cleanAddress = String(address || '').trim()
+  if (!cleanNetwork || !cleanAddress) return null
+  return await marketAssetsGet<Record<string, unknown>>({
+    provider: ID,
+    url: `${baseUrl()}/onchain/networks/${encodeURIComponent(cleanNetwork)}/tokens/${encodeURIComponent(cleanAddress)}/info`,
+    endpoint: '/onchain/networks/{network}/tokens/{address}/info',
+    cacheKey: `onchain/${cleanNetwork}/${cleanAddress.toLowerCase()}/info`,
+    headers: authHeaders(),
+    ttlMs: 30 * 60_000,
+    symbolCount: 1,
+    ctx,
+  })
 }
 
 /** Deep: coin ids belonging to a CoinGecko category (top by market cap). Lets us
