@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import { useLocation, useNavigate } from 'react-router-dom'
+import { useLocation, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Sparkles, ArrowRight, ArrowLeft, Check, Wand2 } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'

@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2, ExternalLink, Briefcase, Check } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'

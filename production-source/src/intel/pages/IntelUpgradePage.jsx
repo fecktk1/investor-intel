@@ -23,7 +23,7 @@
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, Link, useSearchParams } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router'
 import {
   ArrowLeft, Loader2, ShieldCheck, CreditCard, CheckCircle2, Coins, Star,
 } from 'lucide-react'

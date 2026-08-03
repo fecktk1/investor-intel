@@ -7,7 +7,7 @@
 // do the mapping, so new limit keys never need per-page handling.
 
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ArrowUpRight } from 'lucide-react'
 

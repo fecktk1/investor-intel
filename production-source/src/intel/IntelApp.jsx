@@ -1,5 +1,5 @@
 import React from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate } from 'react-router'
 import { useProfile } from '../lib/profile-context'
 import { IntelProvider } from './context/IntelContext'
 import IntelModeShell from './components/IntelModeShell'

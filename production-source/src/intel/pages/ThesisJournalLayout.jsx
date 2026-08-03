@@ -1,5 +1,5 @@
 import React from 'react'
-import { NavLink, Outlet } from 'react-router-dom'
+import { NavLink, Outlet } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { LayoutDashboard, NotebookPen, LineChart, CalendarCheck, BarChart3, Settings, Plus } from 'lucide-react'
 

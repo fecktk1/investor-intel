@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { Link, Navigate, useSearchParams } from 'react-router-dom'
+import { Link, Navigate, useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Gauge, Mail, Lock, User, Eye, EyeOff, ArrowRight, CheckCircle2, Check } from 'lucide-react'
 import { useAuth } from '../../lib/auth-context'

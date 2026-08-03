@@ -1,5 +1,5 @@
 import React from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { ArrowRight, TrendingUp, TrendingDown, Layers, AlertTriangle } from 'lucide-react'
 import MarketContextCard from './MarketContextCard'
 

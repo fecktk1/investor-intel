@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { PieChart, ArrowRight } from 'lucide-react'
 import { useSupabase } from '../../lib/useSupabase'
 import { clarityMeta } from '../lib/narrative-ui'

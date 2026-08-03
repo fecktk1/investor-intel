@@ -1,5 +1,5 @@
 import React, { useState, useCallback, useEffect, useRef, useMemo } from 'react'
-import { useSearchParams } from 'react-router-dom'
+import { useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Search, Copy, Check, ExternalLink, RefreshCw, ArrowLeft, Layers, DollarSign, TrendingUp, Percent } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'

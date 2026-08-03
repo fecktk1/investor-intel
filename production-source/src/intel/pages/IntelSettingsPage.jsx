@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link } from 'react-router-dom'
+import { Link } from 'react-router'
 import { Bot, Check, Copy, Plus, Settings, Trash2, Coins } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useAuth } from '../../lib/auth-context'

@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams, Link } from 'react-router-dom'
+import { useParams, useSearchParams, Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Archive, RefreshCw } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'

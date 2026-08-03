@@ -1,5 +1,5 @@
 import React from 'react'
-import { Navigate } from 'react-router-dom'
+import { Navigate } from 'react-router'
 import { useProfile } from '../../lib/profile-context'
 
 // Gate for the Investor Intel mode. Access is data-driven, NOT slug-gated to

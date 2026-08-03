@@ -1,5 +1,5 @@
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Radar, ArrowLeft, Star, Bell, BellOff, ChevronDown, Bug } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
