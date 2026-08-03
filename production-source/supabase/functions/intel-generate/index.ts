@@ -796,7 +796,7 @@ Deno.serve(async (req) => {
 
     // ── DELTA path: cheap single-model UPDATE of the prior artifact ──────────────
     // Evidence changed (minor/material) vs a recent full answer → narrate the diff
-    // with gpt-5.4-mini instead of redoing the full (multi-model) analysis. Skips
+    // with gpt-5.6-luna instead of redoing the full (multi-model) analysis. Skips
     // live provider grounding entirely; gated by the same kill switch + rate above.
     if (deltaPlan) {
       const dp = buildDeltaPrompt({
@@ -1059,8 +1059,8 @@ Deno.serve(async (req) => {
     let validation = validateSafeLanguage(textOfArtifact(structured))
     let validatorOutcome: 'pass' | 'rewrite' | 'block' = 'pass'
     if (!validation.ok) {
-      // Validation-gated escalation: a guardrail miss is the ONLY place Intel reaches for
-      // a higher tier (gpt-5.4, never gpt-5.5). Record the rewrite so its cost is visible.
+      // A guardrail miss is the only place Intel retries the generated artifact. Keep the
+      // constrained Luna rewrite visible in the usage ledger.
       const escalateModel = intelModel('escalate')
       const fixSystem = `${system}\n\nYour previous answer used advice-style language (${validation.hits.map((h) => h.label).join(', ')}). Rewrite it to be strictly research/risk context. ${SAFE_LANGUAGE_RULES}`
       const retry = await callOpenAI(escalateModel, fixSystem, `${user}\n\nPrevious JSON to fix:\n${JSON.stringify(structured).slice(0, 8000)}`, apiKey)
@@ -1184,7 +1184,7 @@ async function handleNarrativeBrief(req: Request, body: any) {
   if (!validation.ok) {
     const fixSystem = `${system}\n\nYour previous answer used advice-style language (${validation.hits.map((h: { label: string }) => h.label).join(', ')}). Rewrite it to be strictly research/risk context. ${SAFE_LANGUAGE_RULES}`
     try {
-      // Validation-gated escalation (gpt-5.4) — only on a guardrail miss.
+      // One constrained Luna rewrite is permitted only on a guardrail miss.
       const retry = await callOpenAI(intelModel('escalate'), fixSystem, `${user}\n\nPrevious JSON to fix:\n${JSON.stringify(structured).slice(0, 8000)}`, apiKey)
       structured = JSON.parse(retry.content); rewrote = true
     } catch { /* keep prior */ }

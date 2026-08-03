@@ -229,8 +229,8 @@ Deno.serve(async (req) => {
 
     let structured: any
     let blocked = false
-    // Portfolio is a grounded compile over the user's holdings + cached market facts → the
-    // standard tier (gpt-5.4-mini); a guardrail miss escalates one rewrite to gpt-5.4. No gpt-5.5.
+    // Portfolio is a grounded compile over the user's holdings + cached market facts using
+    // gpt-5.6-luna; a guardrail miss permits one constrained rewrite on the same model.
     let modelUsed = 'deterministic'
     let usage: any = null            // final-call OpenAI usage → cost ledger
     let providerCalls = 0
@@ -245,7 +245,7 @@ Deno.serve(async (req) => {
       void recordAIUsage(serviceClient, { orgId: portfolio.org_id, userId: portfolio.user_id, provider: 'openai', model: modelUsed, surface: 'investor_intel', subMode: 'portfolio_intel', providerUsage: first.usage, status: 'success' })
       let check = validateSafeLanguage(textOf(structured))
       if (!check.ok) {
-        // one constrained rewrite, escalated to gpt-5.4 only because the guardrail failed
+        // One constrained Luna rewrite is permitted only because the guardrail failed.
         modelUsed = intelModel('escalate')
         const retry = await callOpenAI(modelUsed, system, `${userMsg}\n\nYour previous draft used advice-like language (${check.hits.map((h: any) => h.match).slice(0, 5).join(', ')}). Rewrite as neutral research/risk context with NO buy/sell/hold guidance.`, openaiKey)
         structured = retry.structured; usage = retry.usage; providerCalls++

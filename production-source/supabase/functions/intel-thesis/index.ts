@@ -78,7 +78,7 @@ function evidenceBlock(cards: Any[], max = 14): string {
   }).join('\n')
 }
 
-// Single-model, cost-capped JSON call (gpt-5.4 standard tier, effort capped at
+// Single-model, cost-capped JSON call (gpt-5.6-luna standard tier, effort capped at
 // medium). The coach DRAFTS/CRITIQUES — it never invents metrics; it organizes the
 // provided evidence. Output is research framing, not advice.
 async function callCoach(system: string, userMsg: string): Promise<{ obj: Any; usage: Any; model: string }> {
