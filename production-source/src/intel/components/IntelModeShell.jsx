@@ -44,10 +44,9 @@ export default function IntelModeShell({ children }) {
       ]
     : INTEL_NAV
 
-  const handleSignOut = () => {
-    signOut()
-    navigate('/login')
-  }
+  // signOut() navigates the document to /login itself (see auth-context) so the
+  // previous account's cached org state is flushed; no navigate() to race it.
+  const handleSignOut = () => { signOut() }
 
   return (
     <div className="intel-root h-screen flex overflow-hidden">
