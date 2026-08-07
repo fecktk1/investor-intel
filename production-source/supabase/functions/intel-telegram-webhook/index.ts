@@ -72,6 +72,21 @@ Deno.serve(async (req) => {
     return json({ error: 'investor_telegram_env_missing' }, 500)
   }
 
+  // Everything below is keyed off a chat id taken from the request body, so
+  // without proof the delivery came from Telegram a forged update can act as a
+  // linked workspace. Telegram replays the secret_token from setWebhook on
+  // every delivery.
+  // Set with: setWebhook?secret_token=$INVESTOR_TELEGRAM_WEBHOOK_SECRET
+  const TELEGRAM_WEBHOOK_SECRET =
+    Deno.env.get('INVESTOR_TELEGRAM_WEBHOOK_SECRET') || Deno.env.get('TELEGRAM_WEBHOOK_SECRET') || ''
+  if (!TELEGRAM_WEBHOOK_SECRET) {
+    console.error('[intel-telegram-webhook] refusing request: webhook secret not configured')
+    return json({ error: 'webhook_secret_not_configured' }, 500)
+  }
+  if (req.headers.get('x-telegram-bot-api-secret-token') !== TELEGRAM_WEBHOOK_SECRET) {
+    return json({ error: 'unauthorized' }, 401)
+  }
+
   let update: any
   try {
     update = await req.json()
