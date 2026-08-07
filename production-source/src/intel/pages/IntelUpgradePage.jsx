@@ -17,9 +17,10 @@
 // after validating paylink → tier, amount, and signature. The page polls the
 // org row until the tier lands.
 //
-// Display prices here MUST stay in sync with intel-subscribe's
-// INTEL_PLAN_PRICING_CENTS (server truth), InvestorLandingPage, and
-// docs/reference/pricing.md.
+// Display prices derive from src/config/intel-plans.js; the server truth is
+// intel-subscribe's INTEL_PLAN_PRICING_CENTS (kept aligned by
+// src/lib/__tests__/pricing-sync.test.js). Limits remain display copies of
+// migration 207.
 
 import React, { useEffect, useRef, useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -32,6 +33,7 @@ import SEO from '../../components/SEO'
 import { useAuth } from '../../lib/auth-context'
 import { useProfile } from '../../lib/profile-context'
 import { createAuthenticatedClient } from '../../lib/supabase'
+import { INTEL_PLAN_NUMBERS, INTEL_PLAN_LABELS } from '../../config/intel-plans'
 
 const SUPABASE_URL      = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
@@ -45,26 +47,28 @@ const FLUIDPAY_TOKENIZER_SRC = import.meta.env.VITE_FLUIDPAY_TOKENIZER_SRC
 
 const HELIO_SCRIPT_SRC = 'https://embed.hel.io/assets/index-v1.js'
 
-// Display copy of the server truth (intel-subscribe INTEL_PLAN_PRICING_CENTS).
+// Prices derive from the intel pricing config; limits are display copies of
+// migration 207 (intel_plan_limits).
+const intelCents = (id) => Math.round(INTEL_PLAN_NUMBERS[id].monthly * 100)
 const INTEL_TIERS = [
   {
     id: 'starter',
-    label: 'Starter',
-    priceCents: 999,
+    label: INTEL_PLAN_LABELS.starter,
+    priceCents: intelCents('starter'),
     popular: false,
     limits: { watchlist: 20, wallets: 3, breakdowns: 5, explains: 10, comparisons: 3, briefs: 1, alerts: 5, news: 5, portfolio: 1, follows: 5 },
   },
   {
     id: 'pro',
-    label: 'Pro',
-    priceCents: 2499,
+    label: INTEL_PLAN_LABELS.pro,
+    priceCents: intelCents('pro'),
     popular: true,
     limits: { watchlist: 100, wallets: 15, breakdowns: 25, explains: 50, comparisons: 15, briefs: 3, alerts: 50, news: 25, portfolio: 5, follows: 50 },
   },
   {
     id: 'elite',
-    label: 'Elite',
-    priceCents: 4999,
+    label: INTEL_PLAN_LABELS.elite,
+    priceCents: intelCents('elite'),
     popular: false,
     limits: { watchlist: 300, wallets: 50, breakdowns: 75, explains: 150, comparisons: 50, briefs: 10, alerts: 200, news: 100, portfolio: 20, follows: 200 },
   },

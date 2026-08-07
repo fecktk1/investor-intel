@@ -6,17 +6,18 @@ import { useAuth } from '../../lib/auth-context'
 import PublicNav from '../../components/PublicNav'
 import SEO from '../../components/SEO'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import { INTEL_PLAN_LABELS, INTEL_PLAN_PRICE_STRINGS } from '../../config/intel-plans'
 
 const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL
 const SUPABASE_ANON_KEY = import.meta.env.VITE_SUPABASE_ANON_KEY
 
-// Display copy of the server truth (intel-subscribe INTEL_PLAN_PRICING_CENTS);
-// must stay in sync with InvestorLandingPage and IntelUpgradePage.
-const PAID_PLANS = {
-  starter: { label: 'Starter', price: '$9.99' },
-  pro: { label: 'Pro', price: '$24.99' },
-  elite: { label: 'Elite', price: '$49.99' },
-}
+// Display source: src/config/intel-plans.js (server truth stays in
+// intel-subscribe; pricing-sync.test.js keeps them aligned).
+const PAID_PLANS = Object.fromEntries(
+  Object.keys(INTEL_PLAN_LABELS).map((id) => [
+    id, { label: INTEL_PLAN_LABELS[id], price: INTEL_PLAN_PRICE_STRINGS[id] },
+  ]),
+)
 
 // Public account creation for the Investor Intel retail funnel. The marketing
 // CTAs ("Start 7-day free trial") land here; existing users cross over to
