@@ -27,6 +27,12 @@ export async function adminMemoryHealth(supabase) {
     supabase.from('intel_source_reliability').select('source_id', { count: 'exact', head: true }),
     supabase.from('intel_event_memory').select('id', { count: 'exact', head: true }),
   ])
+  const failed = [
+    ['intel_rollups', rollups.error],
+    ['intel_source_reliability', reliability.error],
+    ['intel_event_memory', events.error],
+  ].find(([, error]) => error)
+  if (failed) throw new Error(`${failed[0]}: ${failed[1].message}`)
   return {
     rollup_rows: rollups.count ?? null,
     reliability_rows: reliability.count ?? null,
