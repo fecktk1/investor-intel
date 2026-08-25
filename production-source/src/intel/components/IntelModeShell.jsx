@@ -123,7 +123,7 @@ export default function IntelModeShell({ children }) {
           </button>
           {contentOrg && (
             <button
-              onClick={() => switchOrg(contentOrg.id)}
+              onClick={() => switchOrg(contentOrg.id, { to: '/dashboard' })}
               className="flex items-center gap-3 px-3 py-2.5 rounded-2xl text-sm text-[var(--fg-3)] hover:text-[var(--fg-1)] hover:bg-white/[0.045] w-full transition-colors"
             >
               <ArrowLeftRight className="h-4 w-4 flex-shrink-0" />
