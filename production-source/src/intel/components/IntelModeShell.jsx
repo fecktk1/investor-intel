@@ -12,6 +12,7 @@ import AskButton from '../../components/help/AskButton'
 import LanguageSwitcher from '../../components/LanguageSwitcher'
 import ThemeSwitcher from '../../components/ThemeSwitcher'
 import SubmitTicketModal from '../../components/support/SubmitTicketModal'
+import SupportEventLogger from '../../components/support/SupportEventLogger'
 import IntelDisclaimer from './IntelDisclaimer'
 import { useScrollRestoration } from '../lib/useScrollRestoration'
 
@@ -164,6 +165,7 @@ export default function IntelModeShell({ children }) {
         initialKind="bug"
         redirectBasePath="/intel/support"
       />
+      <SupportEventLogger />
     </div>
   )
 }
