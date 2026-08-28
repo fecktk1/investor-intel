@@ -161,7 +161,11 @@ export function explorerTxUrl(chainId, sigOrHash) {
   return base && sigOrHash ? base + sigOrHash : null
 }
 export function explorerAddressUrl(chainId, addr) {
-  const base = getChain(chainId)?.explorerAddress
+  // `evm` is the persisted sentinel for a wallet scanned across every EVM
+  // chain. Use Ethereum as its representative address explorer; never fall
+  // through to a Solana explorer for a 0x address.
+  const normalizedChainId = chainId === 'evm' ? 'ethereum' : chainId === 'bsc' ? 'bnb' : chainId
+  const base = getChain(normalizedChainId)?.explorerAddress
   return base && addr ? base + addr : null
 }
 

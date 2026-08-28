@@ -20,7 +20,7 @@ const SOL_RE = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 const shortAddr = (a) => a ? `${a.slice(0, 4)}…${a.slice(-4)}` : ''
 const IMPORTABLE = new Set(['full_history_pnl', 'beta_history', 'balance_only'])
 // Registry-driven explorer link (Solscan/Etherscan-family/HyperEVM/…) — no hardcoding.
-const explorerUrl = (s) => explorerAddressUrl(s.chain === 'bsc' ? 'bnb' : s.chain, s.address) || `https://solscan.io/account/${s.address}`
+const explorerUrl = (s) => explorerAddressUrl(s.chain, s.address)
 
 function Panel({ supabase, orgId, userId, portfolioId, sources, onChange, t }) {
   const { publicKey, signMessage, connected } = useWallet()
@@ -197,7 +197,7 @@ function Panel({ supabase, orgId, userId, portfolioId, sources, onChange, t }) {
                 {s.status === 'paused' ? t('portfolio.status.paused', { defaultValue: 'Paused' }) : t(`portfolio.status.${s.holdings_sync_status || 'ok'}`, { defaultValue: s.holdings_sync_status || 'synced' })}
               </span>
               <div className="ml-auto flex items-center gap-1">
-                <a href={explorerUrl(s)} target="_blank" rel="noopener noreferrer" className="p-1 text-[var(--fg-5)] hover:text-[var(--fg-2)]" title="Explorer"><ExternalLink className="h-3.5 w-3.5" /></a>
+                {explorerUrl(s) && <a href={explorerUrl(s)} target="_blank" rel="noopener noreferrer" className="p-1 text-[var(--fg-5)] hover:text-[var(--fg-2)]" title="Explorer"><ExternalLink className="h-3.5 w-3.5" /></a>}
                 <button onClick={() => onSync(s.id)} disabled={busy === `sync-${s.id}`} className="p-1 text-[var(--fg-4)] hover:text-[var(--accent)]" title={t('portfolio.sync_now', { defaultValue: 'Sync now' })}>
                   <RefreshCw className={`h-3.5 w-3.5 ${busy === `sync-${s.id}` ? 'animate-spin' : ''}`} />
                 </button>
