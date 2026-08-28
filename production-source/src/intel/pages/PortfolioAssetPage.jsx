@@ -14,7 +14,7 @@ import * as api from '../lib/portfolio-api'
 const usd = (v) => v == null ? '—' : `${v < 0 ? '-' : ''}$${Math.abs(v).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 const fmtAmt = (n) => n == null ? '—' : Number(n).toLocaleString(undefined, { maximumFractionDigits: 8 })
 // P&L is trustworthy only when cost basis is actually known (or manually set).
-const PNL_OK = new Set(['known', 'manual_override'])
+const PNL_OK = new Set(['known', 'estimated', 'manual_override'])
 
 function TokenLogo({ url, symbol }) {
   const [err, setErr] = useState(false)
@@ -72,6 +72,7 @@ export default function PortfolioAssetPage() {
 
   const sig = holding?.market_context?.signalDirection
   const pnlOk = holding && PNL_OK.has(holding.cost_basis_status) && holding.unrealized_pnl != null
+  const realizedOk = holding && PNL_OK.has(holding.cost_basis_status) && holding.realized_pnl != null
   const inMarkets = holding && holding.price_status !== 'unpriced' && meta.symbol
 
   const back = (
@@ -93,6 +94,7 @@ export default function PortfolioAssetPage() {
     [t('portfolio.asset.avg_cost', { defaultValue: 'Avg cost' }), pnlOk && holding?.average_cost != null ? fmtPrice(holding.average_cost) : '—', ''],
     [t('portfolio.cost_basis', { defaultValue: 'Cost basis' }), pnlOk ? usd(holding?.cost_basis_usd) : '—', ''],
     [t('portfolio.cols.unrealized', { defaultValue: 'Unreal. P&L' }), pnlOk ? `${usd(holding.unrealized_pnl)}${holding.unrealized_pnl_pct != null ? ` (${fmtPct(holding.unrealized_pnl_pct)})` : ''}` : '—', pnlOk ? pctClass(holding.unrealized_pnl) : ''],
+    [t('portfolio.realized_pnl', { defaultValue: 'Realized P&L' }), realizedOk ? usd(holding.realized_pnl) : '—', realizedOk ? pctClass(holding.realized_pnl) : ''],
   ]
   const mc = holding?.market_context || {}
 
@@ -127,7 +129,7 @@ export default function PortfolioAssetPage() {
         ))}
       </div>
 
-      {!pnlOk && (
+      {!pnlOk && !realizedOk && (
         <div className="card--flat p-2.5 text-[12px] text-[var(--fg-4)]">
           {t('portfolio.asset.pnl_withheld', { defaultValue: 'P&L is withheld until cost basis is known — value and allocation are shown from the current price.' })}
         </div>
@@ -171,6 +173,14 @@ export default function PortfolioAssetPage() {
                       {it.timestamp ? timeAgo(it.timestamp) : ''}
                       {exp && <a href={exp} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} className="inline-flex items-center gap-0.5 hover:text-[var(--accent)]">{t('portfolio.tx.view_explorer', { defaultValue: 'Explorer' })} <ExternalLink className="h-3 w-3" /></a>}
                     </div>
+                    {(it.feeAmount != null || it.feeUsd != null) && (
+                      <div className="text-[10px] text-[var(--fg-5)] mt-0.5">
+                        {t('portfolio.tx.fee', { defaultValue: 'Fee' })}{' '}
+                        {it.feeAmount != null ? `${fmtAmt(it.feeAmount)}${it.feeAsset ? ` ${it.feeAsset}` : ''}` : ''}
+                        {it.feeAmount != null && it.feeUsd != null ? ' · ' : ''}
+                        {it.feeUsd != null ? usd(Number(it.feeUsd)) : ''}
+                      </div>
+                    )}
                   </div>
                   <div className="text-right flex-shrink-0">
                     {leg?.amount != null && <div className={`text-[12px] ${out ? 'text-red-400' : 'text-[var(--ok)]'}`}>{out ? '-' : '+'}{fmtAmt(leg.amount)}</div>}

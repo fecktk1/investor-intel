@@ -157,7 +157,7 @@ Deno.serve(async (req) => {
       .select('id, org_id, user_id, name, base_currency').eq('id', portfolioId).maybeSingle()
     if (!portfolio) return json({ error: 'not_found' }, 404)   // RLS guarantees ownership
 
-    const { data: rows } = await db.from('investor_portfolio_holdings').select('*').eq('portfolio_id', portfolioId).order('current_value', { ascending: false, nullsFirst: false })
+    const { data: rows } = await db.from('investor_portfolio_holdings').select('*').eq('portfolio_id', portfolioId).eq('is_closed', false).order('current_value', { ascending: false, nullsFirst: false })
     const holdings: PortfolioHolding[] = (rows || []).map(rowToHolding)
     if (!holdings.length) return json({ ok: true, empty: true, artifact: { artifact_type: 'portfolio_intel', structured: { summary: 'No holdings yet — add a transaction or connect a wallet to generate portfolio intelligence.', confidence: 'low' } } })
 

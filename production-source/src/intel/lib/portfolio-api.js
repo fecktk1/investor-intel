@@ -7,6 +7,7 @@
 // invoke() for edge calls.
 
 import { loadMarketContextBySymbols } from './markets-api'
+import { getAuthenticatedAccessToken } from '../../lib/supabase'
 export { loadMarketContextBySymbols }
 
 const clean = (s) => String(s || '').trim()
@@ -126,7 +127,7 @@ function manualTitle(m) {
 export async function listActivity(supabase, orgId, portfolioId, { limit = 200 } = {}) {
   const [groupedRes, manualRes] = await Promise.all([
     supabase.from('investor_portfolio_tx')
-      .select('id, chain, tx_hash, signature, block_time, type, subtype, title, summary, protocol, counterparty, status, confidence, classification_status, original_type, line_items:investor_portfolio_tx_line_items(canonical_asset_key, chain, mint_or_contract, symbol, name, decimals, direction, amount, price_usd_at_tx, value_usd_at_tx, logo_url, verified)')
+      .select('id, chain, tx_hash, signature, block_time, type, subtype, title, summary, protocol, counterparty, status, confidence, classification_status, original_type, fee_asset, fee_amount, fee_usd, line_items:investor_portfolio_tx_line_items(canonical_asset_key, chain, mint_or_contract, symbol, name, decimals, direction, amount, price_usd_at_tx, value_usd_at_tx, price_source_at_tx, logo_url, verified)')
       .eq('portfolio_id', portfolioId).eq('is_display_mirror', false)
       .order('block_time', { ascending: false, nullsFirst: false }).limit(limit),
     supabase.from('investor_portfolio_transactions')
@@ -144,6 +145,7 @@ export async function listActivity(supabase, orgId, portfolioId, { limit = 200 }
       type: g.type, subtype: g.subtype, title: g.title, summary: g.summary, protocol: g.protocol,
       counterparty: g.counterparty, status: g.status, confidence: g.confidence,
       classification_status: g.classification_status, timestamp: g.block_time, lineItems: g.line_items || [],
+      feeAsset: g.fee_asset, feeAmount: g.fee_amount, feeUsd: g.fee_usd,
     })
   }
   for (const m of manual) {
@@ -152,7 +154,8 @@ export async function listActivity(supabase, orgId, portfolioId, { limit = 200 }
       type: m.transaction_type, subtype: null, title: manualTitle(m), summary: null, protocol: null,
       counterparty: null, status: 'success', confidence: m.confidence_score,
       classification_status: m.classification_status, timestamp: m.timestamp,
-      lineItems: [{ canonical_asset_key: m.canonical_asset_key, chain: m.chain, mint_or_contract: m.contract_address, symbol: m.asset_symbol, name: null, decimals: null, direction: m.direction, amount: m.quantity, price_usd_at_tx: m.price_per_unit, value_usd_at_tx: m.total_value, logo_url: null, verified: false }],
+      feeAsset: m.fee_currency, feeAmount: m.fee_amount, feeUsd: String(m.fee_currency || 'USD').toUpperCase() === 'USD' ? m.fee_amount : null,
+      lineItems: [{ canonical_asset_key: m.canonical_asset_key, chain: m.chain, mint_or_contract: m.contract_address, symbol: m.asset_symbol, name: null, decimals: null, direction: m.direction, amount: m.quantity, price_usd_at_tx: m.price_per_unit, value_usd_at_tx: m.total_value, price_source_at_tx: 'manual', logo_url: null, verified: false }],
     })
   }
   items.sort((a, b) => new Date(b.timestamp || 0) - new Date(a.timestamp || 0))
@@ -175,16 +178,20 @@ export async function addTransaction(supabase, orgId, userId, portfolioId, tx) {
   const symbol = clean(tx.symbol).toUpperCase().replace(/^\$/, '')
   const qty = tx.quantity === '' || tx.quantity == null ? null : Number(tx.quantity)
   const price = tx.pricePerUnit === '' || tx.pricePerUnit == null ? null : Number(tx.pricePerUnit)
+  const inferredDirection = ['buy', 'transfer_in', 'airdrop', 'staking_reward', 'deposit'].includes(tx.transactionType) ? 'in'
+    : ['sell', 'transfer_out', 'withdrawal', 'fee'].includes(tx.transactionType) ? 'out' : null
+  const direction = tx.transactionType === 'swap' ? tx.direction : (tx.direction || inferredDirection)
+  if (tx.transactionType === 'swap' && !direction) throw new Error('Choose whether this swap leg is the asset sent or received.')
   const row = {
     org_id: orgId, user_id: userId, portfolio_id: portfolioId, source_id: sourceId,
     transaction_type: tx.transactionType, original_transaction_type: tx.transactionType,
-    classification_status: 'confirmed', confidence_score: 1, direction: tx.direction || null,
+    classification_status: 'confirmed', confidence_score: 1, direction,
     asset_symbol: symbol, normalized_symbol: symbol || null, contract_address: tx.contractAddress || null,
     chain: tx.chain || null, quantity: qty, price_per_unit: price, quote_currency: tx.currency || 'USD',
     total_value: qty != null && price != null ? qty * price : null,
     fee_amount: tx.fees === '' || tx.fees == null ? null : Number(tx.fees), fee_currency: tx.feeCurrency || tx.currency || 'USD',
     timestamp: tx.datetime ? new Date(tx.datetime).toISOString() : new Date().toISOString(),
-    notes: tx.notes || null, tags: tx.tags || [], raw_metadata: { source: tx.source || null },
+    notes: tx.notes || null, tags: tx.tags || [], raw_metadata: { source: tx.source || null, networkFee: tx.transactionType === 'fee' },
   }
   const { data, error } = await supabase.from('investor_portfolio_transactions').insert(row).select('*').single()
   if (error) throw error
@@ -280,16 +287,33 @@ export async function removeSource(supabase, sourceId, { deactivate = false } = 
 
 // ─── Edge calls ──────────────────────────────────────────────────────────────
 
-export async function syncPortfolio(supabase, orgId, portfolioId, { sourceId = null, mode = 'holdings' } = {}) {
-  const { data, error } = await supabase.functions.invoke('portfolio-sync', { body: { orgId, portfolioId, sourceId, mode } })
-  if (error) throw new Error(error.message || 'sync_failed')
+async function invokePortfolioSync(supabase, body) {
+  // functions.invoke can fall back to the project's anon key when the Functions
+  // client was created before auth hydration. Pass the current user JWT
+  // explicitly so the Edge handler can validate the signed-in caller and RLS
+  // continues to scope every portfolio read/write to that user.
+  const accessToken = getAuthenticatedAccessToken()
+  if (!accessToken) throw new Error('unauthorized')
+  return supabase.functions.invoke('portfolio-sync', {
+    body,
+    headers: { Authorization: `Bearer ${accessToken}` },
+  })
+}
+
+export async function syncPortfolio(supabase, orgId, portfolioId, { sourceId = null, mode = 'holdings', force = false } = {}) {
+  const { data, error } = await invokePortfolioSync(supabase, { orgId, portfolioId, sourceId, mode, force })
+  if (error) {
+    let detail = null
+    try { detail = await error.context?.clone?.().json() } catch { /* non-JSON gateway response */ }
+    throw new Error(detail?.error || error.message || 'sync_failed')
+  }
   if (data?.error) throw new Error(data.error)
   return data
 }
 
 // Light recompute from existing data (after manual txn edits) — no wallet fetch.
 async function recompute(supabase, orgId, portfolioId) {
-  try { await supabase.functions.invoke('portfolio-sync', { body: { orgId, portfolioId, mode: 'recompute' } }) }
+  try { await invokePortfolioSync(supabase, { orgId, portfolioId, mode: 'recompute' }) }
   catch { /* non-blocking; UI re-fetches holdings regardless */ }
 }
 

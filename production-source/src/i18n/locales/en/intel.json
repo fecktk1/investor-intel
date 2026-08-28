@@ -363,7 +363,7 @@
       "estimated_mcap": "Est. market cap",
       "incomplete": "Cost basis incomplete",
       "wallet_only": "Wallet synced, tx history incomplete",
-      "pnl_incomplete": "P&L may be incomplete",
+      "pnl_incomplete": "Market pricing has gaps",
       "cost_basis_pending": "Cost basis and P&L are pending until your transaction history imports. Solana history imports automatically in the background (this can take a few minutes after connecting); for EVM or exchange holdings, add transactions manually.",
       "prices_updated": "Prices updated",
       "next_update_in": "next automatic update in",

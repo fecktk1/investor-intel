@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react'
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react'
 import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import {
@@ -32,12 +32,12 @@ const isHiddenDust = (h) =>
   h.asset_class !== 'native' && h.asset_class !== 'stablecoin' &&
   (h.current_value == null || h.current_value < 1)
 
-// Automatic price refresh cadence = the daily snapshot cron (04:30 UTC). Used to
-// tell the user when prices will next refresh on their own (they can also sync).
-function msUntilNextDailyRefresh() {
+// Portfolio cache repricing follows the canonical broad market-price refresh,
+// which runs every ten minutes. Provider-inline wallet quotes renew daily.
+function msUntilNextMarketRefresh() {
   const now = new Date(); const next = new Date(now)
-  next.setUTCHours(4, 30, 0, 0)
-  if (next.getTime() <= now.getTime()) next.setUTCDate(next.getUTCDate() + 1)
+  next.setUTCSeconds(0, 0)
+  next.setUTCMinutes((Math.floor(now.getUTCMinutes() / 10) + 1) * 10)
   return next.getTime() - now.getTime()
 }
 function fmtDuration(ms) {
@@ -82,10 +82,14 @@ function StateChips({ h, t }) {
   // Prefer the explicit cost_basis_status; fall back to the legacy pnl_state.
   const cb = h.cost_basis_status
   if (cb === 'manual_override') chips.push(['cbm', t('portfolio.cost_basis_status.manual_override', { defaultValue: 'Manual cost basis' }), 'text-[var(--accent)]'])
+  else if (cb === 'estimated') chips.push(['cbe', t('portfolio.cost_basis_status.estimated', { defaultValue: 'Estimated cost basis' }), 'text-[var(--accent)]'])
   else if (cb === 'none') chips.push(['cbn', t('portfolio.cost_basis_status.none', { defaultValue: 'Balance only — no P&L' }), 'text-[var(--fg-4)]'])
   else if (cb === 'incomplete' || cb === 'partial' || (!cb && h.pnl_state === 'incomplete_history')) chips.push(['inc', t('portfolio.cost_basis_status.incomplete', { defaultValue: 'Cost basis incomplete' }), 'text-[var(--fg-4)]'])
   if (h.reconciliation_status === 'wallet_only') chips.push(['wo', t('portfolio.states.wallet_only', { defaultValue: 'Wallet synced, tx history incomplete' }), 'text-[var(--fg-5)]'])
-  return chips.length ? <span className="flex flex-wrap gap-1">{chips.map(([k, label, cls]) => <span key={k} className={`chip text-[9px] ${cls}`}>{label}</span>)}</span> : null
+  else if (h.reconciliation_status === 'wallet_higher' || h.reconciliation_status === 'wallet_lower') chips.push(['drift', cb === 'estimated'
+    ? t('portfolio.states.wallet_reconciled', { defaultValue: 'Basis reconciled to wallet balance' })
+    : t('portfolio.states.wallet_mismatch', { defaultValue: 'Wallet and transaction history do not match' }), cb === 'estimated' ? 'text-[var(--fg-4)]' : 'text-amber-400'])
+  return chips.length ? <span className="flex flex-wrap gap-1">{chips.map(([k, label, cls]) => <span key={k} title={k === 'stale' ? t('portfolio.states.stale_hint', { defaultValue: 'Quote missed its daily refresh window (older than 30 hours)' }) : undefined} className={`chip text-[9px] ${cls}`}>{label}</span>)}</span> : null
 }
 
 // ── Overview ────────────────────────────────────────────────────────────────
@@ -107,7 +111,7 @@ function Overview({ portfolio, holdings, warnHoldings, t }) {
   const warn = warnHoldings || holdings
   const unpriced = warn.filter((h) => h.price_status === 'unpriced').length
   const stale = warn.filter((h) => h.price_status === 'stale').length
-  const nextRefresh = fmtDuration(msUntilNextDailyRefresh())
+  const nextRefresh = fmtDuration(msUntilNextMarketRefresh())
   const updatedAgo = portfolio?.last_synced_at ? timeAgo(portfolio.last_synced_at) : null
 
   return (
@@ -119,7 +123,7 @@ function Overview({ portfolio, holdings, warnHoldings, t }) {
         <div className="card--flat p-2.5 text-[12px] text-[var(--fg-3)] flex items-start gap-2">
           <Clock className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-400" />
           <div className="leading-relaxed">
-            <span className="text-amber-400">{t('portfolio.states.pnl_incomplete', { defaultValue: 'P&L may be incomplete' })}</span> — {unpriced} {t('portfolio.unpriced_n', { defaultValue: 'unpriced' })}, {stale} {t('portfolio.stale_n', { defaultValue: 'stale' })}.{' '}
+            <span className="text-amber-400">{t('portfolio.states.pnl_incomplete', { defaultValue: 'Market pricing has gaps' })}</span> — {unpriced} {t('portfolio.unpriced_n', { defaultValue: 'unpriced' })}, {stale} {t('portfolio.stale_n', { defaultValue: 'stale' })}.{' '}
             {updatedAgo ? `${t('portfolio.states.prices_updated', { defaultValue: 'Prices updated' })} ${updatedAgo} · ` : ''}
             {t('portfolio.states.next_update_in', { defaultValue: 'next automatic update in' })} ~{nextRefresh} ({t('portfolio.states.or_sync_now', { defaultValue: 'or sync now' })}).
           </div>
@@ -223,7 +227,7 @@ function HoldingsTable({ holdings, ctxMap, portfolioId, t }) {
 
 // ── Manual transaction form ─────────────────────────────────────────────────
 function ManualTxnForm({ onSubmit, onClose, t }) {
-  const [f, setF] = useState({ transactionType: 'buy', symbol: '', chain: 'solana', quantity: '', pricePerUnit: '', currency: 'USD', fees: '', datetime: new Date().toISOString().slice(0, 16), source: '', notes: '' })
+  const [f, setF] = useState({ transactionType: 'buy', direction: '', symbol: '', chain: 'solana', quantity: '', pricePerUnit: '', currency: 'USD', fees: '', datetime: new Date().toISOString().slice(0, 16), source: '', notes: '' })
   const [busy, setBusy] = useState(false)
   const set = (k) => (e) => setF((p) => ({ ...p, [k]: e.target.value }))
   const submit = async (e) => {
@@ -237,6 +241,7 @@ function ManualTxnForm({ onSubmit, onClose, t }) {
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('portfolio.cols.type', { defaultValue: 'Type' })}</span>
           <select className="select w-full" value={f.transactionType} onChange={set('transactionType')}>{TX_TYPES.map((ty) => <option key={ty} value={ty}>{t(`portfolio.txn_type.${ty}`, { defaultValue: ty })}</option>)}</select></label>
+        {f.transactionType === 'swap' && <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('portfolio.direction', { defaultValue: 'Swap leg' })}</span><select className="select w-full" required value={f.direction} onChange={set('direction')}><option value="">—</option><option value="out">{t('portfolio.sent', { defaultValue: 'Asset sent' })}</option><option value="in">{t('portfolio.received', { defaultValue: 'Asset received' })}</option></select></label>}
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('portfolio.cols.asset', { defaultValue: 'Asset' })}</span><input className="input w-full" required placeholder="SOL" value={f.symbol} onChange={set('symbol')} /></label>
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('portfolio.cols.chain', { defaultValue: 'Chain' })}</span>
           <select className="select w-full" value={f.chain} onChange={set('chain')}>{CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select></label>
@@ -290,6 +295,10 @@ function ActivityRow({ item, onReclassify, onDelete, t }) {
               ))}
             </div>
           ) : <div className="text-[var(--fg-5)]">{item.summary || '—'}</div>}
+          {item.feeAmount != null && <div className="flex items-center justify-between text-[11px] text-[var(--fg-4)]">
+            <span>{t('portfolio.network_fee', { defaultValue: 'Network fee' })}</span>
+            <span>{fmtAmt(item.feeAmount)} {item.feeAsset || ''}{item.feeUsd != null ? ` · ${usd(item.feeUsd)}` : ''}</span>
+          </div>}
           <div className="flex items-center gap-3 flex-wrap text-[11px] text-[var(--fg-5)]">
             {exp && <a href={exp} target="_blank" rel="noreferrer" className="hover:text-[var(--accent)]">{t('portfolio.tx.view_explorer', { defaultValue: 'View on explorer' })}</a>}
             {item.txRef && <span className="font-mono">{shortenId(item.txRef)}</span>}
@@ -375,11 +384,16 @@ export default function PortfolioPage() {
   const [error, setError] = useState(null)
   const [showForm, setShowForm] = useState(false)
   const [hideDust, setHideDustState] = useState(false)
+  const openedPortfolioIds = useRef(new Set())
+  const latestActiveId = useRef(null)
+  latestActiveId.current = activeId
 
   // Display filter (persisted per portfolio). Totals/allocation/P&L/AI all still
   // use the full holdings set — this only changes what the table renders.
-  const visibleHoldings = useMemo(() => hideDust ? holdings.filter((h) => !isHiddenDust(h)) : holdings, [hideDust, holdings])
-  const dustHiddenCount = useMemo(() => holdings.filter(isHiddenDust).length, [holdings])
+  const openHoldings = useMemo(() => holdings.filter((h) => !h.is_closed), [holdings])
+  const closedHoldings = useMemo(() => holdings.filter((h) => h.is_closed), [holdings])
+  const visibleHoldings = useMemo(() => hideDust ? openHoldings.filter((h) => !isHiddenDust(h)) : openHoldings, [hideDust, openHoldings])
+  const dustHiddenCount = useMemo(() => openHoldings.filter(isHiddenDust).length, [openHoldings])
 
   const onToggleDust = useCallback(async () => {
     const next = !hideDust
@@ -413,6 +427,22 @@ export default function PortfolioPage() {
 
   useEffect(() => { loadList() }, [loadList])
   useEffect(() => { if (activeId) loadPortfolio(activeId) }, [activeId, loadPortfolio])
+  useEffect(() => {
+    if (!activeId || !org?.id || openedPortfolioIds.current.has(activeId)) return
+    openedPortfolioIds.current.add(activeId)
+    void (async () => {
+      await markSurfaceSeen(supabase, 'portfolio', activeId)
+      setSyncing(true)
+      try {
+        await api.syncPortfolio(supabase, org.id, activeId, { mode: 'open' })
+        if (latestActiveId.current === activeId) await loadPortfolio(activeId)
+      } catch (e) {
+        if (latestActiveId.current === activeId) setError(e.message)
+      } finally {
+        if (latestActiveId.current === activeId) setSyncing(false)
+      }
+    })()
+  }, [activeId, org?.id, supabase, loadPortfolio])
   useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'portfolio') }, [org?.id, supabase])
 
   const createPortfolio = useCallback(async () => {
@@ -423,9 +453,10 @@ export default function PortfolioPage() {
   const onSync = useCallback(async () => {
     if (!activeId) return
     setSyncing(true); setError(null)
-    try { await api.syncPortfolio(supabase, org.id, activeId, {}); await loadPortfolio(activeId) }
+    const force = openHoldings.some((h) => h.price_status === 'stale')
+    try { await api.syncPortfolio(supabase, org.id, activeId, { force }); await loadPortfolio(activeId) }
     catch (e) { setError(e.message) } finally { setSyncing(false) }
-  }, [activeId, supabase, org?.id, loadPortfolio])
+  }, [activeId, supabase, org?.id, loadPortfolio, openHoldings])
 
   const onGenerate = useCallback(async () => {
     if (!activeId) return
@@ -472,7 +503,7 @@ export default function PortfolioPage() {
         </div>
       ) : (
         <>
-          <Overview portfolio={portfolio} holdings={holdings} warnHoldings={visibleHoldings} t={t} />
+          <Overview portfolio={portfolio} holdings={openHoldings} warnHoldings={visibleHoldings} t={t} />
 
           <WalletSyncPanel supabase={supabase} orgId={org.id} userId={user?.id} portfolioId={activeId} sources={sources} onChange={() => loadPortfolio(activeId)} t={t} />
 
@@ -498,6 +529,14 @@ export default function PortfolioPage() {
             </div>
             <HoldingsTable holdings={visibleHoldings} ctxMap={ctxMap} portfolioId={activeId} t={t} />
           </section>
+
+          {closedHoldings.length > 0 && <section className="space-y-2">
+            <span className="eyebrow">{t('portfolio.realized_positions', { defaultValue: 'Realized positions' })}</span>
+            <div className="space-y-1.5">{closedHoldings.map((h) => <Link key={h.id} to={`/intel/portfolio/${activeId}/asset/${encodeURIComponent(h.canonical_asset_key)}`} className="card--flat p-2.5 flex items-center justify-between hover:border-[var(--accent)]">
+              <span className="text-[13px] text-[var(--fg-1)]">{h.asset_symbol || h.normalized_symbol || 'Unknown'} <span className="text-[10px] text-[var(--fg-5)]">{h.chain}</span></span>
+              <span className={`text-[12px] ${pctClass(h.realized_pnl)}`}>{usd(h.realized_pnl)}</span>
+            </Link>)}</div>
+          </section>}
 
           <IntelPanel intel={intel} loading={intelLoading} onGenerate={onGenerate} t={t} />
 

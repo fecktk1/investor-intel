@@ -1,9 +1,10 @@
-import React, { useState } from 'react'
+import React, { useEffect, useState } from 'react'
 import { NavLink, useNavigate } from 'react-router'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
 import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Bug, Flame } from 'lucide-react'
 import { useAuth } from '../../lib/auth-context'
+import { useSupabase } from '../../lib/useSupabase'
 import { useProfile } from '../../lib/profile-context'
 import { useIntel } from '../context/IntelContext'
 import SparqHolderBadge from '../../components/SparqHolderBadge'
@@ -15,6 +16,7 @@ import SubmitTicketModal from '../../components/support/SubmitTicketModal'
 import SupportEventLogger from '../../components/support/SupportEventLogger'
 import IntelDisclaimer from './IntelDisclaimer'
 import { useScrollRestoration } from '../lib/useScrollRestoration'
+import { markSurfaceSeen } from '../lib/changes-api'
 
 // Investor Intel shell. Modeled on the demo shell (src/demo/components/
 // DemoLayout.jsx) — same design tokens — but auth-guarded and driven by real
@@ -23,12 +25,28 @@ import { useScrollRestoration } from '../lib/useScrollRestoration'
 export default function IntelModeShell({ children }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { signOut } = useAuth()
+  const { supabase } = useSupabase()
   const { org, switchOrg, isSuperAdmin, sparqHolder } = useProfile()
   const { contentOrg, trialDaysRemaining } = useIntel()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [reportOpen, setReportOpen] = useState(false)
   const scrollRef = useScrollRestoration()
+
+  // One cheap upsert on entry plus a visible-tab heartbeat. Background portfolio
+  // repricing uses this to stop work after 48 hours without Investor Intel use.
+  useEffect(() => {
+    const heartbeat = () => {
+      if (typeof document === 'undefined' || document.visibilityState === 'visible') markSurfaceSeen(supabase, 'intel_activity')
+    }
+    heartbeat()
+    const interval = window.setInterval(heartbeat, 15 * 60 * 1000)
+    document.addEventListener('visibilitychange', heartbeat)
+    return () => {
+      window.clearInterval(interval)
+      document.removeEventListener('visibilitychange', heartbeat)
+    }
+  }, [supabase])
 
   // Super Admin is a product-independent control center. Intel exposes a
   // single parent entry; the global admin shell owns all child navigation.
