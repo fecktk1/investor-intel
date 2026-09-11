@@ -88,6 +88,26 @@ function makeDb(seed: Record<string, any[]> = {}) {
 const NOW = new Date('2026-06-16T12:00:00.000Z')
 const FRESH = '2030-01-01T00:00:00.000Z'
 
+for (const scenario of [
+  { name: 'measured numeric zero', books: [{ bid_depth_usd: 0, ask_depth_usd: 0 }], bid: 0, ask: 0 },
+  { name: 'measured string zero and positive depth', books: [{ bid_depth_usd: '0', ask_depth_usd: '12.5' }, { bid_depth_usd: 4, ask_depth_usd: 0 }], bid: 4, ask: 12.5 },
+  { name: 'no observations', books: [], bid: null, ask: null },
+  { name: 'missing side', books: [{ bid_depth_usd: 0, ask_depth_usd: null }], bid: 0, ask: null },
+  { name: 'invalid observations', books: [{ bid_depth_usd: '', ask_depth_usd: ' ' }, { bid_depth_usd: false, ask_depth_usd: -1 }, { bid_depth_usd: Infinity, ask_depth_usd: 'bad' }, {}], bid: null, ask: null },
+]) {
+  Deno.test(`T05 depth aggregation preserves ${scenario.name}`, async () => {
+    const db = makeDb({
+      market_assets: [{ source_provider: 'coingecko', provider_id: 'bitcoin', normalized_symbol: 'BTC' }],
+      exchange_latest_orderbook: scenario.books.map((book, i) => ({ ...book, provider: `venue${i}`, normalized_symbol: 'BTC', as_of: NOW.toISOString() })),
+    })
+    const result = await assembleAssetEvidencePack(db, { canonicalKey: 'market:coingecko:bitcoin', symbol: 'BTC', sourceProvider: 'coingecko', providerId: 'bitcoin' },
+      { now: NOW, allowLiveEnrichment: false, assembleContext: async () => ({ policy: {} as any, blocks: [] }) })
+    const liquidity = result.pack.liquidity_state as Record<string, unknown>
+    assert(liquidity.cex_bid_depth_usd === scenario.bid, `bid: expected ${scenario.bid}, got ${liquidity.cex_bid_depth_usd}`)
+    assert(liquidity.cex_ask_depth_usd === scenario.ask, `ask: expected ${scenario.ask}, got ${liquidity.cex_ask_depth_usd}`)
+  })
+}
+
 Deno.test('D1 assembles a rich asset evidence pack from cached snapshot tables only', async () => {
   const db = makeDb({
       market_assets: [{

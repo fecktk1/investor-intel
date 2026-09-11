@@ -652,8 +652,17 @@ export async function assembleAssetEvidencePack(
   const bestTicker = tickerRows[0] || null
   const bestDex = dexRows[0] || null
   const bestOrderbook = orderbooks[0] || null
-  const orderbookBidDepth = orderbooks.reduce((sum, row) => sum + (Number((row as Record<string, unknown>).bid_depth_usd) || 0), 0)
-  const orderbookAskDepth = orderbooks.reduce((sum, row) => sum + (Number((row as Record<string, unknown>).ask_depth_usd) || 0), 0)
+  // Zero is a measured depth. No usable observations remain missing per side.
+  const sumDepth = (field: 'bid_depth_usd' | 'ask_depth_usd'): number | null => {
+    const values = orderbooks.map((row) => row[field]).filter((value) =>
+      typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')
+    ).map(Number).filter((value) => Number.isFinite(value) && value >= 0)
+    if (!values.length) return null
+    const total = values.reduce((sum, value) => sum + value, 0)
+    return Number.isFinite(total) ? total : null
+  }
+  const orderbookBidDepth = sumDepth('bid_depth_usd')
+  const orderbookAskDepth = sumDepth('ask_depth_usd')
 
   const providerCoverage: Record<string, unknown> = {
     chain,
@@ -845,8 +854,8 @@ export async function assembleAssetEvidencePack(
       freshness: cexFreshness,
     },
     liquidity_state: {
-      cex_bid_depth_usd: orderbookBidDepth || null,
-      cex_ask_depth_usd: orderbookAskDepth || null,
+      cex_bid_depth_usd: orderbookBidDepth,
+      cex_ask_depth_usd: orderbookAskDepth,
       cex_min_spread_pct: orderbooks.map((row) => Number(row.spread_pct)).filter(Number.isFinite).sort((a, b) => a - b)[0] ?? bestTicker?.spread_pct ?? null,
       dex_liquidity_usd: bestDex?.liquidity_usd ?? null,
       spread_watch: compactRow(spread, ['gross_spread_pct', 'estimated_net_spread_pct', 'caution_flags', 'as_of']),
