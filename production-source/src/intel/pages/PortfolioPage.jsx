@@ -19,7 +19,8 @@ import RelevantSignals from '../components/RelevantSignals'
 import PortfolioExposureCards from '../components/PortfolioExposureCards'
 import { markSurfaceSeen } from '../lib/changes-api'
 const WalletSyncPanel = React.lazy(() => import('../components/WalletSyncPanel'))
-import PortfolioPerformanceChart from '../components/PortfolioPerformanceChart'
+// Recharts is about 110 KB gzipped; the summary and holdings render without it.
+const PortfolioPerformanceChart = React.lazy(() => import('../components/PortfolioPerformanceChart'))
 const PortfolioHistoricalPerformance=React.lazy(()=>import('../components/PortfolioHistoricalPerformance'))
 import * as api from '../lib/portfolio-api'
 import { usePortfolioSelection } from '../lib/PortfolioSelectionContext'
@@ -496,7 +497,9 @@ export default function PortfolioPage() {
             {walletsOpen && <div id="portfolio-wallet-sync"><React.Suspense fallback={<p role="status" className="text-xs text-[var(--fg-4)]">{t('portfolio.loading_wallet_tools', { defaultValue: 'Loading wallet tools…' })}</p>}><WalletSyncPanel supabase={supabase} orgId={org.id} userId={user?.id} portfolioId={activeId} sources={sources} onChange={() => loadPortfolio(activeId)} t={t}/></React.Suspense>{sourcePage&&<PortfolioPageControls label="Wallet source pages" page={sourcePage.page} total={sourcePage.total} hasMore={sourcePage.hasMore} busy={sourceLoading} onPage={loadSources}/>}</div>}
           </section>
 
-          <PortfolioPerformanceChart series={snapshots} compare={benchmarks} loading={false} hasEarlier={hasEarlierSnapshots} loadingEarlier={loadingEarlierSnapshots} onLoadEarlier={loadEarlierSnapshots} />
+          <React.Suspense fallback={<div className="py-3"><div className="h-[272px] grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div></div>}>
+            <PortfolioPerformanceChart series={snapshots} compare={benchmarks} loading={false} hasEarlier={hasEarlierSnapshots} loadingEarlier={loadingEarlierSnapshots} onLoadEarlier={loadEarlierSnapshots} />
+          </React.Suspense>
           <React.Suspense fallback={null}><PortfolioHistoricalPerformance key={activeScope} supabase={supabase} orgId={org.id} portfolioId={activeId}/></React.Suspense>
 
           <PortfolioHoldingsSection supabase={supabase} orgId={org?.id} userId={user?.id} portfolioId={activeId} open={workspace?.open} closed={workspace?.closed} hideDust={hideDust} dustCount={workspace?.summary?.dustCount??dustHiddenCount} onToggleDust={onToggleDust} Table={HoldingsTable} t={t}/>
