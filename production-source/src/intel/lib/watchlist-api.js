@@ -2,6 +2,7 @@
 // Entity resolution happens server-side (intel-resolve); the watchlist rows
 // themselves are written under the user's RLS.
 import { normalizeAssetEntity, nativeAssetChain, assetLogoUrl } from './asset-identity'
+import { isRevisionConflict } from './revision-conflict'
 
 export async function resolveEntity(supabase, orgId, input) {
   const { data, error } = await supabase.functions.invoke('intel-resolve', { body: { orgId, ...input } })
@@ -133,12 +134,12 @@ export async function deleteWatchlist(supabase, orgId, list) {
 }
 export async function reorderWatchlist(supabase, orgId, list, itemIds) {
   const { data, error } = await supabase.rpc('intel_reorder_watchlist', { p_org_id: orgId, p_list_id: list.id, p_revision: list.revision, p_item_ids: itemIds })
-  if (error) throw new Error(error.code === '40001' || /members_changed/.test(error.message) ? 'This list changed in another tab. Reload and review the latest order.' : error.message)
+  if (error) throw new Error(isRevisionConflict(error) || /members_changed/.test(error.message) ? 'This list changed in another tab. Reload and review the latest order.' : error.message)
   return data
 }
 export async function pinWatchlistItem(supabase, orgId, list, itemId, pinned) {
   const { data, error } = await supabase.rpc('intel_pin_watchlist_item', { p_org_id: orgId, p_list_id: list.id, p_item_id: itemId, p_revision: list.revision, p_pinned: pinned })
-  if (error) throw new Error(error.code === '40001' ? 'This list changed in another tab. Reload and review the latest pins.' : error.message)
+  if (error) throw new Error(isRevisionConflict(error) ? 'This list changed in another tab. Reload and review the latest pins.' : error.message)
   if (!Number.isInteger(data)) throw new Error('The pin change was not confirmed saved.')
   return data
 }

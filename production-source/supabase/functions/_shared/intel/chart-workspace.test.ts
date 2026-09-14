@@ -40,6 +40,7 @@ Deno.test('comparison library reads filter before pagination and retain authenti
 })
 Deno.test('conflict and inaccessible chart responses stay distinguishable without leaking another owner',async()=>{
  await assertRejects(()=>chartWorkspaceService(dbMock(null,{code:'40001'}),{orgId,userId},{operation:'delete',id,revision:1}),Error,'chart_revision_conflict')
+ await assertRejects(()=>chartWorkspaceService(dbMock(null,{code:'PT409'}),{orgId,userId},{operation:'delete',id,revision:1}),Error,'chart_revision_conflict')
  await assertRejects(()=>chartWorkspaceService(dbMock(null),{orgId,userId},{operation:'get',id}),Error,'chart_layout_not_found')
  await assertRejects(()=>chartWorkspaceService(dbMock([]),{orgId,userId},{operation:'list',page:101}),Error,'invalid_chart_page')
 })

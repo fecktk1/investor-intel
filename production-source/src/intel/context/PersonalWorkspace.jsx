@@ -1,6 +1,7 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
+import { isRevisionConflict } from '../lib/revision-conflict'
 const PersonalWorkspace = createContext(null)
 const SLOTS = ['selection', 'desk', 'markets', 'dossier']
 
@@ -32,7 +33,7 @@ function Workspace({ scope, orgId, userId, supabase, children }) {
       if (snapshot.loading || snapshot.error) throw Error('Reload workspace preferences before saving changes.')
       const row = snapshot.rows[slot], value = { ...(row?.value || {}), ...(typeof patch === 'function' ? patch(row?.value || {}) : patch), schemaVersion: 1 }
       const { data, error } = await supabase.rpc('intel_save_workspace_preferences', { p_org_id: orgId, p_expected_user: userId, p_slot: slot, p_revision: row?.revision || 0, p_value: value })
-      if (error) throw Error(error.code === '40001' ? 'Preferences changed in another window. Reload to review the latest version.' : error.message)
+      if (error) throw Error(isRevisionConflict(error) ? 'Preferences changed in another window. Reload to review the latest version.' : error.message)
       if (!data?.revision) throw Error('Workspace preferences were not confirmed saved.')
       if (alive.current) { const next = { ...current.current, rows: { ...current.current.rows, [slot]: data } }; current.current = next; setState(next) }
       return data.value
