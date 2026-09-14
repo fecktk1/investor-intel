@@ -189,8 +189,14 @@ function CustomNarratives({ onOpen }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
 
-  const load = useCallback(async () => { if (org?.id) setList(await listCustomNarratives(supabase, org.id)) }, [org?.id, supabase])
-  useEffect(() => { load(); return()=>{request.current++} }, [load])
+  const request = useRef(0)
+  const load = useCallback(async () => {
+    if (!org?.id) return
+    const current = ++request.current
+    const next = await listCustomNarratives(supabase, org.id)
+    if (current === request.current) setList(next)
+  }, [org?.id, supabase])
+  useEffect(() => { load(); return () => { request.current++ } }, [load])
 
   const add = useCallback(async (e) => {
     e.preventDefault()
