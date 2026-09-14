@@ -1,9 +1,13 @@
+import { isRevisionConflict } from './revision-conflict'
 const blank = subject => ({ subject, id: crypto.randomUUID(), thread: null, question: '', decision: '', context: {}, title: subject, loaded: false, loading: false, dirty: false, change: 0, saving: false, error: null, entries: [], page: 0, hasMore: false, historyLoading: false, historyError: null })
-const message = error => error?.code === '40001' ? 'This thread changed in another window. Reload the saved thread before continuing; your unsaved text remains visible.' : error?.message || 'Research thread could not be saved.'
+const message = error => isRevisionConflict(error) ?'This thread changed in another window. Reload the saved thread before continuing; your unsaved text remains visible.' : error?.message || 'Research thread could not be saved.'
 
 // One private store per mounted user/workspace. No prices or model responses are
 // copied here. Navigation retains drafts; saved entries live in the journal DB.
-export function createResearchThreadStore({ supabase, orgId, userId, delay = 1000 }) {
+export function createResearchThreadStore({ supabase: client, orgId, userId, delay = 1000 }) {
+  // The provider passes a getter: a token refresh replaces the client, not the store.
+  const current = () => typeof client === 'function' ? client() : client
+  const supabase = { from: table => current().from(table), rpc: (name, params) => current().rpc(name, params) }
   const records = new Map(), listeners = new Set(), loads = new Map(), queues = new Map(), timers = new Map(), operations = new Map()
   let version = 0, active = true
   const get = subject => { if (!records.has(subject)) records.set(subject, blank(subject)); return records.get(subject) }
@@ -28,10 +32,10 @@ export function createResearchThreadStore({ supabase, orgId, userId, delay = 100
     loads.set(subject, promise); return promise
   }
   const schedule = subject => { if (!active) return; clearTimeout(timers.get(subject)); timers.set(subject, setTimeout(() => { timers.delete(subject); void flush(subject).catch(() => {}) }, delay)) }
-  const flush = subject => {
+  const flush = (subject, closing = false) => {
     clearTimeout(timers.get(subject)); timers.delete(subject)
     const promise = (queues.get(subject) || Promise.resolve()).catch(() => {}).then(async () => {
-      if (!active) throw Error('Workspace changed before saving.')
+      if (!active && !closing) throw Error('Workspace changed before saving.')
       await load(subject)
       const snapshot = get(subject)
       if (!snapshot.loaded) throw Error('Load the research thread before saving.')
@@ -98,5 +102,9 @@ export function createResearchThreadStore({ supabase, orgId, userId, delay = 100
     put(subject, { ...blank(subject), loaded: true }); operations.clear()
   }
   return { get, load, edit, flush, append, history, remove, subscribe: fn => { listeners.add(fn); return () => listeners.delete(fn) }, snapshot: () => version,
-    activate: () => { active = true }, dispose: () => { active = false; timers.forEach(clearTimeout); timers.clear() } }
+    activate: () => { active = true }, dispose: () => {
+      // A draft still waiting for its debounce is saved, not dropped.
+      const pending = [...timers.keys()]; timers.forEach(clearTimeout); timers.clear()
+      pending.forEach(subject => void flush(subject, true).catch(() => {})); active = false
+    } }
 }
