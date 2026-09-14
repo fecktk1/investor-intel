@@ -115,7 +115,10 @@ function emptySnap() { return { trackedMemecoins: 0, verifiedCount: 0, newLaunch
 function rowOut(r: Record<string, unknown>) {
   return {
     chain: r.chain, tokenAddress: r.token_address, symbol: r.symbol, name: r.name,
-    imageUrl: r.image_url, imageFallbackType: r.image_fallback_type,
+    // Prefer our own mirrored copy (market-asset-logo-verify); the provider URL
+    // stays alongside it as the client-side second chance before initials.
+    imageUrl: r.cached_image_url ?? r.image_url, imageSourceUrl: r.image_url,
+    imageFallbackType: r.image_fallback_type, imageVerifiedAt: r.image_verified_at ?? null,
     price: r.price_usd, change1hPct: r.change_1h_pct, change24hPct: r.change_24h_pct,
     volume24hUsd: r.volume_24h_usd, liquidityUsd: r.liquidity_usd, fdv: r.fdv, marketCap: r.market_cap,
     buys24h: r.buys_24h, sells24h: r.sells_24h, txns24h: r.txns_24h, pairAddress: r.pair_address, dexId: r.dex_id,

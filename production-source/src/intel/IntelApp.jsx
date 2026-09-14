@@ -49,6 +49,7 @@ const SavedResearchPage = React.lazy(() => import('./pages/SavedResearchPage'))
 const IntelSettingsPage = React.lazy(() => import('./pages/IntelSettingsPage'))
 const CommentKingPage = React.lazy(() => import('./pages/CommentKingPage'))
 const NewsPage = React.lazy(() => import('./pages/NewsPage'))
+const ChartLabPage = React.lazy(() => import('./pages/ChartLabPage'))
 const SupportInboxPage = React.lazy(() => import('../pages/SupportInboxPage'))
 const SupportTicketPage = React.lazy(() => import('../pages/SupportTicketPage'))
 
@@ -125,6 +126,9 @@ export default function IntelApp() {
           <Route path="explain" element={<ExplainPage />} />
 
           <Route path="comment-king" element={<CommentKingPage />} />
+
+          {/* Internal chart kit gallery; the page itself gates on super admin. */}
+          <Route path="lab/charts" element={<ChartLabPage />} />
 
           <Route path="research" element={<SavedResearchPage />} />
           <Route path="settings" element={<IntelSettingsPage />} />

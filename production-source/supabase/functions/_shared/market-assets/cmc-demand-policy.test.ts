@@ -17,7 +17,8 @@ Deno.test('all capabilities have a bounded selected-view policy or an explicit e
  for(const name of Object.keys(CMC_CAPABILITIES)){
   const policy=cmcDemandPolicy(name,{},'startup',true)
   if(policy){assert.equal(policy.demandSeconds,180);assert.ok(policy.cadenceSeconds>=CMC_CAPABILITIES[name].ttl)}
-  else assert.ok(['rwaPairs','marketPairs','content','community'].includes(name))
+  // blockchainStats joined the Growth-only set after the 2026-09-14 probe answered 403 / 1006 on the Startup key.
+  else assert.ok(['rwaPairs','marketPairs','content','community','blockchainStats'].includes(name))
  }
  assert.equal(cmcDemandPolicy('dexSwaps',{},'startup',false),null)
  assert.equal(cmcDemandPolicy('quotes',{},'basic',false)?.demandSeconds,1800)
@@ -45,6 +46,6 @@ Deno.test('the database candidate scan is bounded per feature and read failure c
   const q:any={select:()=>q,eq:()=>q,in:(field:string,values:string[])=>{input[field]=values;return q},gte:()=>q,lte:()=>q,order:()=>q,limit:(value:number)=>{input.limit=value;return Promise.resolve({data:fail?null:[],error:fail?{message:'offline'}:null})}};return q
  }})
  assert.equal(await refreshCmcDemand(db(),now),'idle');assert.equal(queries.length,7)
- assert.ok(queries.every(q=>q.limit===12));assert.equal(new Set(queries.flatMap(q=>q.capability)).size,50)
+ assert.ok(queries.every(q=>q.limit===12));assert.equal(new Set(queries.flatMap(q=>q.capability)).size,61)
  queries.length=0;assert.equal(await refreshCmcDemand(db(true),now),'error')
 })

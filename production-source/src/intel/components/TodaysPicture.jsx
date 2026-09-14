@@ -1,16 +1,14 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Compass, Waves, AlertTriangle } from 'lucide-react'
+import { formatUsd } from '../lib/market-format'
 
+// Unreadable values must stay null (not an em dash) so the strip can tell a
+// missing fact from a zero one and hide the row entirely.
 const fmtUsd = (n) => {
   if(n==null||n===''||typeof n==='boolean')return null
   const v = Number(n); if (!Number.isFinite(v)) return null
-  const a = Math.abs(v)
-  if (a >= 1e12) return `$${(v / 1e12).toFixed(2)}T`
-  if (a >= 1e9) return `$${(v / 1e9).toFixed(2)}B`
-  if (a >= 1e6) return `$${(v / 1e6).toFixed(1)}M`
-  if (a >= 1e3) return `$${(v / 1e3).toFixed(1)}K`
-  return `$${v.toFixed(0)}`
+  return formatUsd(v)
 }
 
 // "Today's picture" — a compact deterministic strip from the dashboard's already

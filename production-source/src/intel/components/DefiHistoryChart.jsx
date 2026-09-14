@@ -2,7 +2,9 @@ import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { ResponsiveContainer, ComposedChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts'
 
-const fmtUsd = (v) => v == null ? '—' : v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${Number(v).toFixed(0)}`
+import { formatUsd as fmtUsd } from '../lib/market-format'
+
+// APY axis stays unsigned: a yield is not a change, so it must not gain a "+".
 const fmtPct = (v) => v == null ? '—' : `${Number(v).toFixed(1)}%`
 const fmtT = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}` }
 // Kamino reports APY as a fraction (0.12 = 12%); normalize anything <= 2 to a percent.

@@ -1,9 +1,9 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip, Cell, CartesianGrid } from 'recharts'
+import { formatUsd as fmtUsd } from '../lib/market-format'
 
 const COLORS = ['#d4a72c', '#60a5fa', '#34d399', '#f472b6', '#a78bfa', '#fbbf24', '#22d3ee', '#fb7185']
-const fmtUsd = (v) => v == null ? '—' : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${Number(v).toFixed(0)}`
 
 // Holdings composition for a watched wallet (top holdings by USD value).
 export default function WalletHoldingsChart({ holdings, loading }) {

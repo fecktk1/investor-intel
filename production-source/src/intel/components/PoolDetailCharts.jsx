@@ -2,7 +2,8 @@ import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { ResponsiveContainer, ComposedChart, AreaChart, Area, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts'
 
-const fmtUsd = (v) => v == null ? '—' : v >= 1e9 ? `$${(v / 1e9).toFixed(2)}B` : v >= 1e6 ? `$${(v / 1e6).toFixed(2)}M` : v >= 1e3 ? `$${(v / 1e3).toFixed(1)}K` : `$${Number(v).toFixed(0)}`
+import { formatUsd as fmtUsd } from '../lib/market-format'
+
 // Inputs are fractions (0.12 = 12%) → plain ×100, no unit-guessing.
 const fmtPct = (v) => v == null ? '—' : `${(Number(v) * 100).toFixed(2)}%`
 const fmtT = (t) => { const d = new Date(t); return `${d.getMonth() + 1}/${d.getDate()}/${String(d.getFullYear()).slice(2)}` }

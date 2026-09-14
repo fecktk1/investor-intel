@@ -19,12 +19,19 @@ function hueFromSymbol(sym) {
   return h
 }
 
-export default function TokenAvatar({ src, symbol, name, size = 'md', className = '' }) {
-  const [failedSrc, setFailedSrc] = useState(null)
+const isHttps = (u) => typeof u === 'string' && /^https:\/\//.test(u)
+
+export default function TokenAvatar({ src, fallbackSrc, symbol, name, size = 'md', className = '' }) {
+  // Candidate chain: our mirrored copy first, then the provider's own URL, then
+  // the monogram. `failed` is a set rather than a single value so a stale entry
+  // from a previous row can never resurrect an image we already saw break.
+  const [failed, setFailed] = useState(() => new Set())
   const sz = SIZES[size] || SIZES.md
   const label = String(symbol || name || '?').replace(/^\$/, '')
   const initials = label.slice(0, 3).toUpperCase()
-  const showImg = typeof src==='string' && /^https:\/\//.test(src) && failedSrc!==src
+  const candidates = [src, fallbackSrc].filter((u, i, all) => isHttps(u) && all.indexOf(u) === i)
+  const active = candidates.find((u) => !failed.has(u)) || null
+  const showImg = active !== null
   const hue = hueFromSymbol(label)
   return (
     <span
@@ -34,13 +41,14 @@ export default function TokenAvatar({ src, symbol, name, size = 'md', className 
     >
       {showImg ? (
         <img
-          src={src}
+          key={active}
+          src={active}
           alt={`${label} logo`}
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover"
           referrerPolicy="no-referrer"
-          onError={() => setFailedSrc(src)}
+          onError={() => setFailed((prev) => prev.has(active) ? prev : new Set(prev).add(active))}
         />
       ) : (
         <span className="font-semibold leading-none" aria-label={`${label} logo`}>{initials}</span>

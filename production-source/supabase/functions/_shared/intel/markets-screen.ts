@@ -19,7 +19,11 @@ export function marketScreenResponse(data: any) {
       sourceProvider: a.source_provider, providerId: a.provider_id, symbol: a.symbol, displayName: a.name,
       normalizedSymbol: a.normalized_symbol, chain: a.primary_chain,
       contract: a.primary_chain ? platforms[a.primary_chain] || null : null,
-      rank: a.market_cap_rank, imageUrl: a.image_url, imageFallbackType: a.image_fallback_type,
+      rank: a.market_cap_rank,
+      // Prefer our own mirrored copy (market-asset-logo-verify); the provider URL
+      // stays alongside it as the client-side second chance before initials.
+      imageUrl: a.cached_image_url ?? a.image_url, imageSourceUrl: a.image_url,
+      imageFallbackType: a.image_fallback_type, imageVerifiedAt: a.image_verified_at ?? null,
       price: a.current_price, change1hPct: a.change_1h_pct, change24hPct: a.change_24h_pct, change7dPct: a.change_7d_pct,
       volumeQuote24h: a.volume_24h, marketCap: a.market_cap, marketCapIsEstimated: false, fdv: a.fdv,
       circulatingSupply: a.circulating_supply, totalSupply: a.total_supply, maxSupply: a.max_supply,

@@ -1,6 +1,6 @@
 import { hasVerifiedCexIdentity } from '../intel/market-read-quality.ts'
 import assert from 'node:assert/strict'
-import { cmcParams, cmcRows, estimateCmcCredits, cmcObservedAt } from './cmc-capabilities.ts'
+import { cmcParams, cmcRows, cmcRequestBody, estimateCmcCredits, cmcObservedAt } from './cmc-capabilities.ts'
 import { requestCmc, cmcPlan, cmcCreditCeiling } from './cmc-transport.ts'
 import { planCmcRefresh, refreshCmcDemand } from './cmc-refresh-planner.ts'
 import { assembleTokenUnlockState } from '../intel/market-enrichment.ts'
@@ -44,7 +44,7 @@ Deno.test('CMC request bounds and family-specific costs reject accidental fan-ou
   assert.equal(estimateCmcCredits('map',cmcParams('map')),0)
   assert.equal(cmcRows('performance',{data:{1:{id:1,periods:{all_time:{}}}}}).rows[0].id,1)
   assert.throws(()=>cmcParams('quotes',{id:1,symbol:'BTC'}),/multiple_identifier/)
-  assert.throws(()=>cmcParams('history',{id:1,interval:'5m'}),/daily/)
+  assert.throws(()=>cmcParams('history',{id:1,interval:'weekly'}),/daily/)
   assert.throws(()=>researchParams('quotes',{id:Array.from({length:21},(_,i)=>i+1).join(',')}),/maximum_identifiers/)
   assert.throws(()=>researchParams('listings',{limit:101}),/maximum_rows/)
   assert.throws(()=>cmcParams('listings',{url:'https://example.com'}),/invalid_parameter/)
@@ -274,6 +274,75 @@ Deno.test('legacy CoinGecko USDC offers exactly the reviewed issuer representati
  assert.deepEqual(marketIdentityChoices({source_provider:'coingecko',provider_id:'bridged-usdc',normalized_symbol:'USDC'}),[]);
 })
 
+const registered='0x45804880de22913dafe09f4980848ece6ecbaf78',solanaMint='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
+Deno.test('capabilities registered 2026-09-15 accept a documented request and reject a malformed one',()=>{
+ assert.deepEqual(cmcParams('listingsHistorical',{date:'2026-09-01',limit:250}),{date:'2026-09-01T00:00:00.000Z',limit:'250',start:'1'})
+ assert.equal(estimateCmcCredits('listingsHistorical',cmcParams('listingsHistorical',{date:'2026-09-01',limit:250})),3)
+ assert.throws(()=>cmcParams('listingsHistorical',{date:'whenever'}),/invalid_time:date/)
+ assert.throws(()=>cmcParams('listingsHistorical',{limit:1}),/missing_identifier/)
+ assert.equal(cmcParams('exchangeMap',{limit:1,slug:'Binance'}).slug,'binance')
+ assert.throws(()=>cmcParams('exchangeMap',{slug:'binance!'}),/invalid_identifier:slug/)
+ assert.equal(cmcParams('exchangeHistory',{id:270,count:1,interval:'daily'}).count,'1')
+ assert.equal(cmcParams('exchangeHistory',{id:270}).count,'30')
+ assert.throws(()=>cmcParams('exchangeHistory',{id:270,count:400}),/invalid_parameter:count/)
+ assert.throws(()=>cmcParams('exchangeHistory',{id:270,interval:'weekly'}),/daily/)
+ assert.throws(()=>cmcParams('exchangeHistory',{count:1}),/missing_identifier/)
+ assert.equal(cmcParams('blockchainStats',{id:1}).id,'1')
+ assert.throws(()=>cmcParams('blockchainStats',{}),/missing_identifier/)
+ assert.deepEqual(cmcParams('priceConversion',{amount:1,id:1}),{amount:'1',convert:'USD',id:'1'})
+ assert.throws(()=>cmcParams('priceConversion',{amount:0,id:1}),/invalid_amount/)
+ assert.throws(()=>cmcParams('priceConversion',{amount:1,id:1,convert:'USD,EUR,GBP,JPY'}),/invalid_parameter:convert/)
+ assert.throws(()=>cmcParams('priceConversion',{id:1}),/missing_amount/)
+ assert.equal(cmcParams('fiatMap',{limit:1}).limit,'1')
+ assert.throws(()=>cmcParams('fiatMap',{limit:0}),/invalid_parameter:limit/)
+})
+Deno.test('registered DEX paths keep exact-contract identity, bounded batches and named candle periods',()=>{
+ assert.deepEqual(cmcParams('dexHolderTags',{platform:'ethereum',tokenAddress:registered}),{platform:'ethereum',tokenAddress:registered})
+ assert.throws(()=>cmcParams('dexHolderTags',{platform:'solana',tokenAddress:registered}),/invalid_contract_address/)
+ assert.throws(()=>cmcParams('dexHolderTags',{platform:'ethereum'}),/missing_identifier/)
+ assert.equal(cmcParams('dexHolders',{platform:'ethereum',tokenAddress:registered,tag:'tag_whale',limit:5}).limit,'5')
+ // Probed 2026-09-14: the provider rejects a holders list without a tag, and only the published tags exist.
+ assert.throws(()=>cmcParams('dexHolders',{platform:'ethereum',tokenAddress:registered,limit:5}),/invalid_holder_tag/)
+ assert.throws(()=>cmcParams('dexHolders',{platform:'ethereum',tokenAddress:registered,tag:'tag_people'}),/invalid_holder_tag/)
+ assert.throws(()=>cmcParams('dexHolders',{platform:'ethereum',tokenAddress:registered,tag:'tag_whale',limit:300}),/invalid_parameter:limit/)
+ assert.throws(()=>cmcParams('dexHolders',{platform:'ethereum',tokenAddress:registered,tag:'tag_whale',lastId:'x&url=evil'}),/invalid_dex_cursor/)
+ const candles=cmcParams('dexCandles',{platform:'ethereum',address:registered,interval:'1h',limit:5,from:1700000000,to:1700003600})
+ assert.deepEqual(candles,{address:registered,from:'1700000000',interval:'1h',limit:'5',platform:'ethereum',to:'1700003600',unit:'usd'})
+ assert.throws(()=>cmcParams('dexCandles',{platform:'ethereum',address:registered,interval:'30s'}),/invalid_candle_interval/)
+ assert.throws(()=>cmcParams('dexCandles',{platform:'ethereum',address:registered,unit:'eur'}),/invalid_candle_unit/)
+ assert.throws(()=>cmcParams('dexCandles',{platform:'ethereum',address:registered,limit:1001}),/invalid_parameter:limit/)
+ assert.throws(()=>cmcParams('dexCandles',{platform:'ethereum',address:registered,from:'yesterday'}),/invalid_time:from/)
+ assert.equal(cmcParams('dexSearch',{q:'paxg',limit:3}).q,'paxg')
+ assert.throws(()=>cmcParams('dexSearch',{q:'a'}),/invalid_search_query/)
+ assert.throws(()=>cmcParams('dexSearch',{q:'paxg',platform:'unverified'}),/unverified_dex_platform/)
+ assert.equal(cmcParams('dexBatch',{platform:'ethereum',addresses:[registered.toUpperCase().replace('0X','0x')]}).addresses,registered)
+ assert.throws(()=>cmcParams('dexBatch',{platform:'ethereum',addresses:Array.from({length:51},()=>registered)}),/invalid_batch:addresses/)
+ assert.throws(()=>cmcParams('dexBatch',{platform:'solana',addresses:[registered]}),/invalid_contract_address/)
+ assert.equal(cmcParams('dexPriceBatch',{tokens:[{platform:'solana',address:solanaMint},{platform:'ethereum',address:registered}]}).tokens,`ethereum:${registered},solana:${solanaMint}`)
+ assert.throws(()=>cmcParams('dexPriceBatch',{tokens:[{platform:'bitcoin',address:registered}]}),/invalid_contract_address/)
+ assert.throws(()=>cmcParams('dexPriceBatch',{tokens:Array.from({length:51},()=>({platform:'ethereum',address:registered}))}),/invalid_batch:tokens/)
+ assert.deepEqual(cmcRequestBody('dexBatch',cmcParams('dexBatch',{platform:'ethereum',addresses:[registered]})),{platform:'ethereum',addresses:[registered]})
+ assert.deepEqual(cmcRequestBody('dexPriceBatch',cmcParams('dexPriceBatch',{tokens:[{platform:'ethereum',address:registered}]})),{tokens:[{platform:'ethereum',address:registered}]})
+ assert.equal(cmcRequestBody('dexHolders',cmcParams('dexHolders',{platform:'ethereum',tokenAddress:registered,tag:'tag_whale',limit:5})).limit,5)
+})
+Deno.test('quote history accepts documented sub-daily intervals only inside their published windows',()=>{
+ assert.equal(cmcParams('history',{id:1,interval:'hourly',count:744,time_start:'2026-08-15T00:00:00Z',time_end:'2026-09-14T00:00:00Z'}).interval,'hourly')
+ assert.throws(()=>cmcParams('history',{id:1,interval:'hourly',count:745}),/invalid_parameter:count/)
+ assert.throws(()=>cmcParams('history',{id:1,interval:'hourly',count:744,time_start:'2026-08-01T00:00:00Z',time_end:'2026-09-14T00:00:00Z'}),/history_window_too_large/)
+ assert.equal(cmcParams('history',{id:1,interval:'5m',count:576}).count,'576')
+ assert.throws(()=>cmcParams('history',{id:1,interval:'5m',count:577}),/history_window_too_large/)
+ assert.throws(()=>cmcParams('history',{id:1,count:367}),/history_window_too_large/)
+ assert.throws(()=>cmcParams('ohlcv',{id:1,interval:'hourly'}),/history_requires_daily_interval/)
+})
+Deno.test('k-line rows become named candle fields and dex holder responses have no observation clock',()=>{
+ const body={data:[[1,2,0.5,1.5,100,1700000000,7]]}
+ assert.deepEqual(cmcRows('dexCandles',body).rows,[{o:1,h:2,l:0.5,c:1.5,v:100,t:1700000000,traders:7}])
+ assert.equal(cmcObservedAt(body,'dexCandles'),new Date(1700000000000).toISOString())
+ assert.equal(cmcObservedAt({data:[[1,2,0.5,1.5,100,4102444800,7]]},'dexCandles'),null)
+ assert.deepEqual(cmcRows('dexHolders',{data:{holders:[{address:registered,balance:'1'}]}}).rows,[{address:registered,balance:'1'}])
+ assert.equal(cmcObservedAt({data:{holders:[{address:registered}]},status:{timestamp:'2026-09-15T00:00:00Z'}},'dexHolders'),null)
+ assert.equal(cmcObservedAt({data:{tags:[]},status:{timestamp:'2026-09-15T00:00:00Z'}},'dexHolderTags'),null)
+})
 Deno.test('known native provider IDs remain verified when a second provider catalog appears',()=>{
  assert.equal(hasVerifiedCexIdentity({source_provider:'coinmarketcap',provider_id:'1',normalized_symbol:'BTC'},null),true);
  assert.equal(hasVerifiedCexIdentity({source_provider:'coinmarketcap',provider_id:'999999',normalized_symbol:'BTC'},null),false);

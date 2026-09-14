@@ -1,0 +1,48 @@
+/* Sortable table headers for Investor Intel.
+   Plain header buttons only: no pills, chips or background fills. The affordance
+   is the underline on hover/focus plus the direction glyph. Token colours only,
+   so light and dark themes follow the workspace palette. */
+
+.intel-sortable-header { white-space: nowrap; }
+.intel-sortable-header[data-align='right'] { text-align: right; }
+
+.intel-sortable-header-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  max-width: 100%;
+  padding: 4px 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-align: inherit;
+  cursor: pointer;
+  text-decoration: none;
+  text-underline-offset: 4px;
+}
+
+.intel-sortable-header[data-align='right'] .intel-sortable-header-button { justify-content: flex-end; }
+
+.intel-sortable-header-button:hover,
+.intel-sortable-header-button:focus-visible { color: var(--fg-1); text-decoration: underline; }
+
+/* Visible focus is required: the header is the only way to change the order. */
+.intel-sortable-header-button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.intel-sortable-header-label { overflow: hidden; text-overflow: ellipsis; }
+
+.intel-sortable-header-glyph {
+  flex: none;
+  color: var(--fg-5);
+  font-size: .85em;
+  line-height: 1;
+  opacity: .6;
+}
+
+.intel-sortable-header-glyph[data-active='true'] { color: var(--accent); opacity: 1; }
+
+.intel-sortable-header-button:hover .intel-sortable-header-glyph,
+.intel-sortable-header-button:focus-visible .intel-sortable-header-glyph { opacity: 1; }
+
+.intel-sortable-header-static { display: inline-block; padding: 4px 0; }

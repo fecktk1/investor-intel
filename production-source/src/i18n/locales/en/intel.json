@@ -1253,6 +1253,46 @@
       "visible_period": "Visible period (UTC)"
     }
   },
+  "charts": {
+    "empty": "No observations are available for this chart.",
+    "legend": "Series",
+    "no_reason": "No reason was reported.",
+    "rank": "Rank",
+    "share": "Share",
+    "show_as_table": "Show as table",
+    "time": "Time",
+    "unavailable": "This chart could not be built.",
+    "value": "Value"
+  },
+  "lab": {
+    "charts_bump_sub": "Weekly rank over twelve weeks. A path that starts late is an entry; one that stops early is an exit.",
+    "charts_bump_title": "Market cap rank movement",
+    "charts_dataset": "Sample data set",
+    "charts_dataset_error": "Failed read",
+    "charts_dataset_populated": "Recorded observations",
+    "charts_dataset_zero": "All-zero observations",
+    "charts_gauge_sub": "Composite sentiment reading on its published 0–100 scale.",
+    "charts_gauge_title": "Fear and greed",
+    "charts_heat_sub": "Daily recorded liquidation totals over four weeks. Intensity is the share of the largest day.",
+    "charts_heat_title": "Liquidation calendar",
+    "charts_polar_sub": "Recorded liquidation totals by day of week.",
+    "charts_polar_title": "Liquidations by weekday",
+    "charts_radial_sub": "Each arc is that segment's share against the largest recorded share.",
+    "charts_radial_title": "Dominance by segment",
+    "charts_reason": "The provider returned no response for this period.",
+    "charts_ribbon_sub": "Recorded market regime over the period. Each segment keeps its own recorded start and end.",
+    "charts_ribbon_title": "Regime ribbon",
+    "charts_selected": "Last selection",
+    "charts_selected_none": "Nothing selected yet.",
+    "charts_sparkline_sub": "Inline lines with the latest observation emphasized. No table twin: the row around them carries the values.",
+    "charts_sparkline_title": "Sparklines",
+    "charts_stacked_sub": "Recorded share of total market capitalisation by segment.",
+    "charts_stacked_title": "Dominance share over time",
+    "charts_sub": "Every chart in the shared kit, rendered against recorded values, an all-zero set and a failed read. Super admin only.",
+    "charts_sunburst_sub": "Tokenized assets by underlying stock, issuer and token.",
+    "charts_sunburst_title": "Tokenized equity breakdown",
+    "charts_title": "Chart lab"
+  },
   "regime": {
     "eyebrow": "Market regime",
     "risk_on": "Risk-on",
@@ -2194,6 +2234,11 @@
     "retry_pinned": "Retry reading",
     "title": "Continuous investigation",
     "unpin": "Unpin"
+  },
+  "table": {
+    "sort_by": "Sort by {{column}}",
+    "sorted_desc": "sorted descending",
+    "sorted_asc": "sorted ascending"
   },
   "workspace": {
     "display_hint": "Choose what appears and its order. Hidden information remains available through these controls.",

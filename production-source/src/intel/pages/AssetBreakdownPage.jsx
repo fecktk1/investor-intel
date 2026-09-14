@@ -32,6 +32,7 @@ import AssetPortfolioPosition from '../components/AssetPortfolioPosition'
 import WalletHoldingsChart from '../components/WalletHoldingsChart'
 import IntelActionButton from '../components/IntelActionButton'
 import MarketContextCard from '../components/MarketContextCard'
+import { formatUsd, formatPrice } from '../lib/market-format'
 import ProfilePanel from '../components/ProfilePanel'
 import DegenSignalsCard from '../components/DegenSignalsCard'
 import DegenMomentum from '../components/DegenMomentum'
@@ -41,8 +42,6 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 
 const TIMEFRAMES = ['1H', '4H', '1D', '1W']
 const providerLabel = (p) => String(p || '').toLowerCase() === 'alchemy' ? 'Alchemy' : String(p || '').toLowerCase() === 'helius' ? 'Helius' : 'Provider'
-const fmtNum = (n) => n == null ? '—' : Number(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Number(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : Number(n) >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${Number(n).toFixed(0)}`
-const fmtPrice = (p) => p == null ? '—' : p < 1 ? `$${Number(p).toPrecision(4)}` : `$${Number(p).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
 
 // P4 — Token intelligence page: chart + live market stats + AI breakdown +
 // risk panel + news, unified for the selected token. Wallet entities show the
@@ -199,11 +198,11 @@ export default function AssetBreakdownPage() {
       : null
   const change = ov?.price_change_24h_pct
   const stats = [
-    ['price', t('breakdown.price', { defaultValue: 'Price' }), fmtPrice(ov?.price)],
-    ['mcap', t('breakdown.mcap', { defaultValue: 'Market cap' }), fmtNum(ov?.market_cap)],
-    ['fdv', 'FDV', fmtNum(ov?.fdv)],
-    ['liq', t('breakdown.liquidity_stat', { defaultValue: 'Liquidity' }), fmtNum(ov?.liquidity)],
-    ['vol', t('breakdown.volume', { defaultValue: '24h volume' }), fmtNum(ov?.volume_24h_usd)],
+    ['price', t('breakdown.price', { defaultValue: 'Price' }), formatPrice(ov?.price)],
+    ['mcap', t('breakdown.mcap', { defaultValue: 'Market cap' }), formatUsd(ov?.market_cap)],
+    ['fdv', 'FDV', formatUsd(ov?.fdv)],
+    ['liq', t('breakdown.liquidity_stat', { defaultValue: 'Liquidity' }), formatUsd(ov?.liquidity)],
+    ['vol', t('breakdown.volume', { defaultValue: '24h volume' }), formatUsd(ov?.volume_24h_usd)],
     ['holders', t('breakdown.holders', { defaultValue: 'Holders' }), ov?.holders != null ? Number(ov.holders).toLocaleString() : '—'],
   ]
 
@@ -218,7 +217,7 @@ export default function AssetBreakdownPage() {
             <h1 className="page-title">{entity.display_symbol || chart?.entity?.symbol || profile?.symbol || degenSignals?.symbol || (entity._address ? `${entity._address.slice(0, 4)}…${entity._address.slice(-4)}` : entity.asset_id)}</h1>
             {!isWallet && ov?.price != null && (
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-semibold text-[var(--fg-1)]">{fmtPrice(ov.price)}</span>
+                <span className="text-xl font-semibold text-[var(--fg-1)]">{formatPrice(ov.price)}</span>
                 {typeof change === 'number' && <span className={`text-sm font-semibold flex items-center gap-0.5 ${change >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{change >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}{change >= 0 ? '+' : ''}{change.toFixed(1)}%</span>}
               </div>
             )}
@@ -292,7 +291,7 @@ export default function AssetBreakdownPage() {
         <section className="space-y-2">
           <div className="flex items-center justify-between">
             <div className="eyebrow">{t('breakdown.holdings_section', { defaultValue: 'Holdings' })}</div>
-            {walletPf?.portfolio?.total_usd != null && <div className="text-sm font-semibold text-[var(--fg-1)]">{fmtNum(walletPf.portfolio.total_usd)} · {walletPf.portfolio.token_count} {t('breakdown.tokens', { defaultValue: 'tokens' })}</div>}
+            {walletPf?.portfolio?.total_usd != null && <div className="text-sm font-semibold text-[var(--fg-1)]">{formatUsd(walletPf.portfolio.total_usd)} · {walletPf.portfolio.token_count} {t('breakdown.tokens', { defaultValue: 'tokens' })}</div>}
           </div>
           <WalletHoldingsChart holdings={walletPf?.portfolio?.top_holdings} loading={walletLoading} />
           {walletPf?.unsupported && <div className="card--flat p-2 text-[12px] text-[var(--fg-4)]">{t('breakdown.wallet_unsupported', { defaultValue: 'Holdings data is not available for this chain yet.' })}</div>}
