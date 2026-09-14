@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { ShieldAlert, TrendingUp, TrendingDown, Minus, Eye, CheckCircle2, XCircle, Bookmark, Check, RefreshCw, History } from 'lucide-react'
 import SourcesFreshnessFooter from './SourcesFreshnessFooter'
@@ -7,6 +7,8 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { saveResearch } from '../lib/intel-data'
 import { IntelSkeleton } from './IntelPrimitives'
+import AlertExplanationReceipt from './AlertExplanationReceipt'
+import NarrativeInputReplay from './NarrativeInputReplay'
 
 const LEVEL_CLS = { low: 'text-[var(--ok)]', medium: 'text-amber-400', high: 'text-red-400', unknown: 'text-[var(--fg-4)]' }
 const SCOPE_LABEL = { local: 'Local to this asset', asset_specific: 'Asset-specific', chain: 'Chain-wide', chain_specific: 'Chain-wide', sector: 'Sector-wide', sector_specific: 'Sector-wide', narrative: 'Narrative-wide', narrative_specific: 'Narrative-wide', market_wide: 'Market-wide', unclear: 'Scope unclear' }
@@ -15,19 +17,37 @@ const NET_LABEL = { bullish: 'Leans bullish', bearish: 'Leans bearish', mixed: '
 const NET_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '', unclear: 'text-[var(--fg-4)]', data_limited: 'text-[var(--fg-4)]' }
 const CONSENSUS_LABEL = { strong_consensus: 'Strong model consensus', moderate_consensus: 'Moderate consensus', split_read: 'Split read', low_confidence: 'Low confidence', data_limited: 'Data-limited' }
 
+function AnalysisBody({ compact, children }) {
+  return compact ? <details className="intel-brief-analysis"><summary>Read full analysis</summary><div className="space-y-4">{children}</div></details> : <div className="space-y-4">{children}</div>
+}
+
+function BriefPositionContext({ context }) {
+  if (!context) return null
+  return <section className="intel-brief-position" aria-label="Portfolio at brief creation">
+    <h2>{context.portfolio?.name || 'Your portfolio'}</h2>
+    <p>Position context recorded with this brief{context.observed_at ? ` · ${new Date(context.observed_at).toLocaleString()}` : ''}.</p>
+    {context.holdings?.length ? <div className="intel-table-scroll"><table><thead><tr><th scope="col">Asset</th><th scope="col">Quantity</th><th scope="col">Value (USD)</th><th scope="col">Coverage</th></tr></thead><tbody>{context.holdings.map(h => <tr key={h.canonicalKey}><th scope="row"><span>{h.symbol}</span><small>{h.chain}</small></th><td>{Number(h.quantity).toLocaleString(undefined, {maximumFractionDigits:8})}</td><td>{h.value == null ? 'Unavailable' : Number(h.value).toLocaleString(undefined,{style:'currency',currency:'USD'})}</td><td>{h.priceStatus || 'No price status'} · {h.costBasisStatus || 'Unknown'} basis</td></tr>)}</tbody></table></div> : <p>No open holdings were recorded for this portfolio.</p>}
+    {Object.values(context.coverage || {}).some(Boolean) && <p>This brief uses a bounded sample; some positions or watchlist items are outside its coverage.</p>}
+  </section>
+}
+
 // Renders a research_artifact's structured output uniformly across every Intel
 // feature: summary, risk context, bull/bear/neutral, what-to-watch, thesis
 // confirm/invalidate, and the provenance footer. Honors the safety block.
 // `onRefresh` (optional) enables the "Refresh analysis" affordance shown on
 // reused / delta artifacts (force regeneration; plan-limited server-side).
-export default function ArtifactView({ result, loading, onRefresh }) {
+export default function ArtifactView({ result, loading, onRefresh, alreadySaved = false, savePrivately = false }) {
   const { t } = useTranslation('intel', { useSuspense: false })
-  const { supabase } = useSupabase()
+  const { supabase, user } = useSupabase()
   const { org } = useProfile()
-  const [saved, setSaved] = useState(false)
+  const saveScope = `${org?.id || ''}:${user?.id || ''}:${result?.artifact?.id || ''}:${savePrivately ? 'private' : 'default'}`
+  const activeSaveScope = useRef(saveScope); activeSaveScope.current = saveScope
+  const savingScope = useRef(null)
+  const [saveState, setSaveState] = useState({scope:null, saved:false, saving:false, error:null})
+  const { saved, saving, error: saveError } = saveState.scope === saveScope ? saveState : {saved:false,saving:false,error:null}
 
   if (loading) {
-    return <IntelSkeleton className="h-32" />
+    return <section aria-busy="true" aria-label="Research generation"><p role="status">Preparing research from the available evidence…</p><IntelSkeleton className="h-32" /></section>
   }
   if (!result?.artifact) return null
   const a = result.artifact
@@ -57,24 +77,37 @@ export default function ArtifactView({ result, loading, onRefresh }) {
     </div>
   ) : null
 
-  if (result.blocked) {
+  if (result.blocked || a.status === 'blocked' || a.validation_status === 'blocked' || s.evidence_quality?.status === 'needs_review') {
     return (
       <div className="card--flat p-4 flex items-start gap-2.5 text-amber-400">
         <ShieldAlert className="h-5 w-5 flex-shrink-0 mt-0.5" />
         <div>
           <div className="font-medium">{t('artifact.blocked_title', { defaultValue: 'Output withheld' })}</div>
-          <div className="text-[13px] text-[var(--fg-3)]">{t('artifact.blocked_body', { defaultValue: 'This response did not pass our non-financial-advice safety check and was not shown.' })}</div>
+          <div className="text-[13px] text-[var(--fg-3)]">{s.evidence_quality?.status === 'needs_review'
+            ? t('artifact.evidence_blocked_body', { defaultValue: 'This report misstates the meaning of its source evidence and has been withheld. Request an updated report; the original remains recorded.' })
+            : t('artifact.blocked_body', { defaultValue: 'This response did not pass our non-financial-advice safety check and was not shown.' })}</div>
+          {onRefresh && <button className="btn btn--quiet btn--sm mt-2" onClick={onRefresh}>{t('artifact.refresh', { defaultValue: 'Refresh analysis' })}</button>}
         </div>
       </div>
     )
   }
 
-  const saveBtn = a.id && (
-    <div className="flex justify-end">
+  const saveBtn = a.id && !alreadySaved && (
+    <div className="flex justify-end flex-wrap gap-2">
+      {saveError && <p role="alert" className="text-sm text-red-400">{saveError}</p>}
       <button
-        onClick={async () => { if (!org?.id) return; try { await saveResearch(supabase, org.id, null, { artifactId: a.id, title: a.title, snapshot: { summary: s.summary, confidence: a.confidence, artifact_type: a.artifact_type } }); setSaved(true) } catch { /* ignore */ } }}
-        className="btn btn--quiet btn--sm" disabled={saved}>
-        {saved ? <><Check className="h-4 w-4 text-[var(--ok)]" /> {t('artifact.saved', { defaultValue: 'Saved' })}</> : <><Bookmark className="h-4 w-4" /> {t('artifact.save', { defaultValue: 'Save to research' })}</>}
+        onClick={async () => {
+          if (!org?.id || !user?.id || savingScope.current === saveScope) return
+          savingScope.current = saveScope
+          setSaveState({scope:saveScope,saved:false,saving:true,error:null})
+          try {
+            await saveResearch(supabase, org.id, user.id, { artifactId: a.id, title: a.title, privateOwner: savePrivately || !!a.private_owner_id, snapshot: { summary: s.summary, confidence: a.confidence, artifact_type: a.artifact_type } })
+            if (activeSaveScope.current === saveScope) setSaveState({scope:saveScope,saved:true,saving:false,error:null})
+          } catch (error) { if (activeSaveScope.current === saveScope) setSaveState({scope:saveScope,saved:false,saving:false,error:error.message || 'Research could not be saved. Try again.'}) }
+          finally { if (savingScope.current === saveScope) savingScope.current = null }
+        }}
+        className="btn btn--quiet btn--sm" disabled={saved || saving || !user?.id}>
+        {saving ? 'Saving…' : saved ? <><Check className="h-4 w-4 text-[var(--ok)]" /> {t('artifact.saved', { defaultValue: 'Saved' })}</> : <><Bookmark className="h-4 w-4" /> {savePrivately ? 'Save privately to research' : t('artifact.save', { defaultValue: 'Save to research' })}</>}
       </button>
     </div>
   )
@@ -142,6 +175,7 @@ export default function ArtifactView({ result, loading, onRefresh }) {
 
         {saveBtn}
         {s.coverage_note && <div className="text-[11px] text-[var(--fg-4)] italic px-1">{s.coverage_note}</div>}
+        <NarrativeInputReplay artifact={a}/>
         <SourcesFreshnessFooter artifact={a} showCoverageWarning={false} />
       </div>
     )
@@ -163,10 +197,13 @@ export default function ArtifactView({ result, loading, onRefresh }) {
   return (
     <div className="space-y-4">
       {reuseBanner}
-      <CoverageStrip coverage={coverage} />
+      <CoverageStrip coverage={coverage} compact={a.artifact_type === 'daily_brief'} />
+      {s.alert_receipt&&<AlertExplanationReceipt receipt={s.alert_receipt}/>}
       {s.summary && <div className="card p-4"><p className="text-[14px] text-[var(--fg-1)] leading-relaxed whitespace-pre-wrap">{s.summary}</p></div>}
 
       {/* Delta-mode sections — what changed / still holds / now different */}
+      {a.artifact_type === 'daily_brief' && <BriefPositionContext context={s.personal_context} />}
+      <AnalysisBody compact={['daily_brief','alert_explanation'].includes(a.artifact_type)}>
       {(s.what_changed || s.still_holds || s.now_different) && (
         <div className="card p-4 space-y-3">
           {s.what_changed && <div><div className="eyebrow">{t('artifact.what_changed', { defaultValue: 'What changed' })}</div><p className="text-[13px] text-[var(--fg-2)] mt-1 leading-relaxed">{s.what_changed}</p></div>}
@@ -268,16 +305,10 @@ export default function ArtifactView({ result, loading, onRefresh }) {
         </div>
       )}
 
-      {a.id && (
-        <div className="flex justify-end">
-          <button
-            onClick={async () => { if (!org?.id) return; try { await saveResearch(supabase, org.id, null, { artifactId: a.id, title: a.title, snapshot: { summary: s.summary, confidence: a.confidence, artifact_type: a.artifact_type } }); setSaved(true) } catch { /* ignore */ } }}
-            className="btn btn--quiet btn--sm" disabled={saved}>
-            {saved ? <><Check className="h-4 w-4 text-[var(--ok)]" /> {t('artifact.saved', { defaultValue: 'Saved' })}</> : <><Bookmark className="h-4 w-4" /> {t('artifact.save', { defaultValue: 'Save to research' })}</>}
-          </button>
-        </div>
-      )}
+      </AnalysisBody>
+      {saveBtn}
       {s.coverage_note && <div className="text-[11px] text-[var(--fg-4)] italic px-1">{s.coverage_note}</div>}
+      <NarrativeInputReplay artifact={a}/>
       <SourcesFreshnessFooter artifact={a} showCoverageWarning={false} />
     </div>
   )

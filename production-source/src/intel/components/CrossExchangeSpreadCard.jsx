@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowRight } from 'lucide-react'
 import ConfidenceChip from './ConfidenceChip'
 import { fmtPrice, bucketConfidence } from '../lib/market-format'
+import { spreadReadState } from '../lib/spread-quality'
 
 const LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
 
@@ -10,6 +11,15 @@ const LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kuc
 // "arbitrage", never a profit promise. Shows the discrepancy + estimated net
 // (labeled estimate) + caution flags. Accepts the snake_case DB row shape.
 export default function CrossExchangeSpreadCard({ spread }) {
+  if (!spread) return null
+  const status = spreadReadState(spread)
+  return status ? <details className="intel-evidence-expand border-b border-[var(--border-default)] py-3">
+    <summary>{spread.normalized_symbol} · {status}</summary>
+    <SpreadObservation spread={spread} />
+  </details> : <SpreadObservation spread={spread} />
+}
+
+function SpreadObservation({ spread }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   if (!spread) return null
   const net = spread.estimated_net_spread_pct
@@ -32,9 +42,10 @@ export default function CrossExchangeSpreadCard({ spread }) {
       </div>
       {flags.length > 0 && (
         <div className="flex items-center gap-1 flex-wrap">
-          {flags.slice(0, 4).map((f) => <span key={f} className="chip text-[9px] text-amber-400">{f}</span>)}
+          {flags.map((f) => <span key={f} className="text-[10px] text-[var(--fg-4)]">{f}</span>)}
         </div>
       )}
+      {spread.as_of && <p className="text-[10px] text-[var(--fg-4)]">Observed <time dateTime={spread.as_of}>{new Date(spread.as_of).toLocaleString(undefined, { timeZoneName: 'short' })}</time></p>}
     </div>
   )
 }

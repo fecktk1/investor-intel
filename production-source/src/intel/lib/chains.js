@@ -116,12 +116,13 @@ export function getChain(id) {
 // Reverse-map an entity's CAIP namespace + reference to our app chain id (mirrors
 // the server chainIdFor in supabase/functions/_shared/chains.ts). EVM chains share
 // the 'eip155' namespace, so caip2Ref disambiguates (Base vs Ethereum); the
-// namespace-only fallback guarantees a non-null id for any registered namespace.
+// unknown or absent references stay unresolved instead of selecting a network.
 export function chainIdFor(ns, ref) {
-  if (!ns) return null
+  if (!ns || !ref) return null
   const exact = CHAINS.find((c) => c.namespace === ns && c.caip2Ref === ref)
   if (exact) return exact.id
-  return CHAINS.find((c) => c.namespace === ns)?.id || null
+  if (ns === 'eip155' && /^[1-9]\d*$/.test(ref)) return CHAINS.find((c) => c.evmChainId === Number(ref))?.id || null
+  return null
 }
 
 export function isEvmFamily(chainId) {

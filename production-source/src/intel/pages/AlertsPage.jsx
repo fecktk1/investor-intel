@@ -1,4 +1,4 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Bell, Plus, Trash2, Info } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
@@ -13,116 +13,192 @@ import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
 import { markSurfaceSeen } from '../lib/changes-api'
 import { emitTutorialSignal } from '../../help/signals'
+import { appendHistoryPage } from '../lib/history-page'
+import ChartAlertRow,{ChartAlertEvent} from '../components/ChartAlertRow'
+import AlertDelivery from '../components/AlertDelivery'
+import AlertRehearsal from '../components/AlertRehearsal'
+import MarketAlertControls,{MarketAlertFields,MARKET_TRIGGERS,marketAlertConfig,marketAlertForm} from '../components/MarketAlertControls'
+import AlertSourceReceipt,{alertValueLabel} from '../components/AlertSourceReceipt'
+import AlertRuleHistory from '../components/AlertRuleHistory'
+import {requestChartWorkspace} from '../lib/chart-workspace-api'
 
-const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift']
+const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift', 'unlock', 'supply_shock', 'metadata_migration']
 
 // P10 — Smart Alerts. Rules are created here; evaluation + the AI "why it
 // matters" artifact run server-side (cron + intel-generate) in production.
 export default function AlertsPage() {
+  const {org}=useProfile(),{user}=useSupabase()
+  return <ScopedAlertsPage key={`${org?.id}:${user?.id}`}/>
+}
+function ScopedAlertsPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase, user } = useSupabase()
   const [rules, setRules] = useState([])
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ chain: 'solana', value: '', trigger: 'price_move', threshold: '10' })
+  const [form, setForm] = useState({ ...marketAlertForm(), chain: 'solana', value: '', trigger: 'price_move', threshold: '10', active:false })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const why = useArtifact()
   const [whyId, setWhyId] = useState(null)
+  const [cursors, setCursors] = useState({ rules: null, events: null })
+  const [loadingMore, setLoadingMore] = useState(null)
+  const scope = `${org?.id || ''}:${user?.id || ''}`
+  const active = useRef(scope); active.current = scope
+  const sequence = useRef(0)
+  const createOperation=useRef(null)
+  const [loadedScope, setLoadedScope] = useState(null)
 
   const load = useCallback(async () => {
-    if (!org?.id) return
+    if (!org?.id || !user?.id) return
+    const seq = ++sequence.current
     setLoading(true)
-    try { const [r, e] = await Promise.all([listAlertRules(supabase, org.id), listAlertEvents(supabase, org.id)]); setRules(r); setEvents(e) }
-    catch (ex) { setErr(ex.message) } finally { setLoading(false) }
-  }, [org?.id, supabase])
-  useEffect(() => { load() }, [load])
-  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'alerts') }, [org?.id, supabase])
+    setErr(null)
+    try {
+      const [r, e] = await Promise.all([listAlertRules(supabase, org.id, { paged: true }), listAlertEvents(supabase, org.id, { paged: true })])
+      if (active.current !== scope || sequence.current !== seq) return
+      setRules(r.rows); setEvents(e.rows); setCursors({ rules: r.nextCursor, events: e.nextCursor }); setLoadedScope(scope)
+    } catch (ex) { if (active.current === scope && sequence.current === seq) setErr(ex.message) }
+    finally { if (active.current === scope && sequence.current === seq) setLoading(false) }
+  }, [org?.id, user?.id, supabase, scope])
+  useEffect(() => { setRules([]); setEvents([]); setBusy(false); setCursors({ rules: null, events: null }); setWhyId(null); setLoadingMore(null); load(); return () => { sequence.current++ } }, [load])
+  const loadMore = async kind => {
+    if (!cursors[kind] || loadingMore) return
+    const seq = sequence.current
+    setLoadingMore(kind); setErr(null)
+    try {
+      const page = await (kind === 'rules' ? listAlertRules : listAlertEvents)(supabase, org.id, { cursor: cursors[kind], paged: true })
+      if (active.current !== scope || sequence.current !== seq) return
+      ;(kind === 'rules' ? setRules : setEvents)(previous => appendHistoryPage(previous, page.rows))
+      setCursors(previous => ({ ...previous, [kind]: page.nextCursor }))
+    } catch (e) { if (active.current === scope) setErr(e.message) }
+    finally { if (active.current === scope) setLoadingMore(null) }
+  }
+  const mutate = async action => {
+    setErr(null)
+    try { await action(); if (active.current === scope) await load() }
+    catch (e) { if (active.current === scope) setErr(e.message) }
+  }
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'alerts', '', { orgId: org.id, userId: user?.id }) }, [org?.id, user?.id, supabase])
 
   const add = useCallback(async (e) => {
     e.preventDefault()
     if (!form.value.trim() || !org?.id) return
     setBusy(true); setErr(null)
     try {
-      const ent = await resolveEntity(supabase, org.id, { kind: 'asset', chain: form.chain, value: form.value.trim() })
-      const rule = await createAlertRule(supabase, org.id, user?.id, { entity_id: ent.id, trigger_type: form.trigger, config: { threshold_pct: Number(form.threshold) || null } })
+      const threshold = Number(form.threshold)
+      if (form.threshold==='' || !Number.isFinite(threshold) || threshold < 0) throw new Error('Enter a threshold of zero or greater')
+      let entityId = null, config
+      if (form.trigger === 'narrative_heat') {
+        const { data: narrative, error } = await supabase.from('narrative_taxonomy').select('slug').eq('slug', form.value.trim().toLowerCase()).maybeSingle()
+        if (error) throw error
+        if (!narrative) throw new Error('Enter an existing narrative slug')
+        config = { slug: narrative.slug, momentum_delta: threshold }
+      } else {
+        const ent = await resolveEntity(supabase, org.id, { kind: form.trigger === 'wallet_activity' ? 'wallet' : 'asset', chain: form.chain, value: form.value.trim() })
+        entityId = ent.id
+        config = form.trigger === 'liquidity_drop' ? { min_liquidity_usd: threshold } : form.trigger === 'wallet_activity' ? { min_usd: threshold } : form.trigger === 'unlock' ? {window_days:threshold} : form.trigger === 'metadata_migration' ? {} : { threshold_pct: threshold }
+      }
+      config={...config,title:form.title,note:form.note,visibility:'private',...(MARKET_TRIGGERS.includes(form.trigger)?marketAlertConfig(form):{})}
+      if(form.trigger==='unlock'&&threshold>90)throw Error('Choose an unlock window from zero to 90 days.')
+      if (active.current !== scope) return
+      const body={operation:'alert_general_save',entityId,trigger:form.trigger,config,active:form.active,revision:0,cooldownMinutes:720},signature=JSON.stringify([scope,body])
+      if(createOperation.current?.signature!==signature)createOperation.current={signature,id:crypto.randomUUID()}
+      const {rule}=await requestChartWorkspace({supabase,orgId:org.id,userId:user.id},{...body,operationId:createOperation.current.id})
       // Tutorial receipt: every create is a fresh row, so its id + created_at
       // uniquely identify this run's operation.
       emitTutorialSignal('alerts.rule-created', rule ? { rule_id: rule.id } : {})
-      setForm((f) => ({ ...f, value: '' })); await load()
+      if (active.current === scope) { createOperation.current=null;setForm((f) => ({ ...f, value: '' })); await load() }
     } catch (ex) {
       // Raw message — IntelErrorNotice maps intel_limit_reached:* to friendly
       // copy + the /intel/upgrade link.
-      setErr(ex.message || '')
-    } finally { setBusy(false) }
-  }, [form, org?.id, supabase, user?.id, load])
+      if (active.current === scope) setErr(ex.message || '')
+    } finally { if (active.current === scope) setBusy(false) }
+  }, [form, org?.id, supabase, user?.id, load, scope])
 
   return (
     <div className="space-y-5">
       <div>
         <div className="eyebrow flex items-center gap-1.5"><Bell className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
         <h1 className="page-title">{t('nav.alerts', { defaultValue: 'Alerts' })}</h1>
-        <p className="page-sub">{t('pages.alerts_sub', { defaultValue: 'Smart alerts with an AI explanation of why each one matters.' })}</p>
+        <p className="page-sub">{t('pages.alerts_sub', { defaultValue: 'Conditions, source evidence, and a record of what happened.' })}</p>
       </div>
 
-      <form onSubmit={add} className="card p-4 flex flex-wrap items-end gap-3">
+      <form onSubmit={add} className="intel-alert-create-form flex flex-wrap items-end gap-3">
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('watchlist.chain', { defaultValue: 'Chain' })}</span>
           <select className="select" value={form.chain} onChange={(e) => setForm((f) => ({ ...f, chain: e.target.value }))}>{CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
         </label>
         <label className="block flex-1 min-w-[160px]"><span className="text-[11px] text-[var(--fg-4)]">{t('watchlist.value', { defaultValue: 'Identifier' })}</span>
-          <input className="input w-full" data-tutorial="intel-alerts.identifier-input" placeholder={t('watchlist.ph.token', { defaultValue: 'Token mint / contract' })} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
+          <input className="input w-full" data-tutorial="intel-alerts.identifier-input" placeholder={form.trigger === 'narrative_heat' ? 'Narrative slug' : form.trigger === 'wallet_activity' ? 'Wallet address' : t('watchlist.ph.token', { defaultValue: 'Token mint / contract' })} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
         </label>
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.trigger', { defaultValue: 'Trigger' })}</span>
           <select className="select" data-tutorial="intel-alerts.trigger-select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: tr.replace(/_/g, ' ') })}</option>)}</select>
         </label>
-        <label className="block w-20"><span className="text-[11px] text-[var(--fg-4)]">%</span>
-          <input className="input w-full" type="number" value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
+        <label className="block w-28"><span className="text-[11px] text-[var(--fg-4)]">{form.trigger === 'liquidity_drop' ? 'Liquidity below $' : form.trigger === 'wallet_activity' ? 'Transfer above $' : form.trigger === 'narrative_heat' ? 'Momentum points' : form.trigger==='unlock' ? 'Days ahead' : form.trigger==='metadata_migration' ? 'All material changes' : '%'}</span>
+          <input className="input w-full" type="number" min="0" step="any" required disabled={form.trigger==='metadata_migration'} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
         </label>
-        <button type="submit" disabled={busy || !form.value.trim()} data-tutorial="intel-alerts.add-button" className="btn btn--primary disabled:opacity-50"><Plus className="h-4 w-4" /> {t('alerts.add', { defaultValue: 'Add rule' })}</button>
+        <details className="w-full"><summary>Condition, original note and activation</summary>
+          <label>Alert name<input maxLength={120} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/></label>
+          {MARKET_TRIGGERS.includes(form.trigger)&&<MarketAlertFields form={form} setForm={setForm} trigger={form.trigger} disabled={busy}/>}
+          <label>Your note<textarea maxLength={2000} rows={2} value={form.note} onChange={e=>setForm(f=>({...f,note:e.target.value}))}/></label>
+          <label className="intel-workstation-check"><input type="checkbox" checked={form.active} onChange={e=>setForm(f=>({...f,active:e.target.checked}))}/>Activate in-app</label>
+          <p className="intel-analysis-caption">Saved privately as a draft unless activated. External delivery requires separate channel consent. Holder-shift monitoring needs comparable population IDs and original source clocks, which the current source does not provide.</p>
+        </details>
+        <button type="submit" disabled={busy || !form.value.trim()} data-tutorial="intel-alerts.add-button" className="btn btn--primary disabled:opacity-50"><Plus className="h-4 w-4" /> {form.active?'Save active rule':'Save draft rule'}</button>
       </form>
 
       <IntelErrorNotice error={err} />
+      {err && <button className="btn btn--quiet btn--sm" onClick={load}>Retry loading alerts</button>}
+      {why.error && <IntelErrorNotice error={why.error} />}
 
-      <div className="card--flat p-3 flex items-start gap-2 text-[12px] text-[var(--fg-4)]">
-        <Info className="h-3.5 w-3.5 mt-0.5" /> {t('alerts.note', { defaultValue: 'Alert evaluation and the AI "why it matters" explanation run on a schedule server-side.' })}
+      <div className="intel-open-section p-3 flex items-start gap-2 text-[12px] text-[var(--fg-4)]">
+        <Info className="h-3.5 w-3.5 mt-0.5" /> Rules use shared retained data on a 15-minute schedule. Explanations are generated only when you request them. Source time, evaluation time and delivery status are recorded separately.
       </div>
 
-      <RelevantSignals title={t('alerts.relevant_signals', { defaultValue: 'Signals affecting your watchlist & holdings' })} seeAllHref="/intel" />
+      <details><summary>Signals affecting your watchlist & holdings</summary><RelevantSignals title={t('alerts.relevant_signals', { defaultValue: 'Signals affecting your watchlist & holdings' })} seeAllHref="/intel" /></details>
 
       {loading ? (
-        <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
-      ) : (
+        <div className="intel-open-section p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
+      ) : loadedScope !== scope ? null : (
         <>
           <div className="space-y-2">
             <div className="eyebrow">{t('alerts.rules', { defaultValue: 'Rules' })}</div>
-            {rules.length === 0 ? <p className="text-[13px] text-[var(--fg-3)]">{t('alerts.no_rules', { defaultValue: 'No alert rules yet.' })}</p> : rules.map((r) => (
-              <div key={r.id} className="card p-3 space-y-1.5">
-                <div className="flex items-center gap-3">
-                  <span className="chip chip--accent text-[10px] uppercase">{t(`alerts.triggers.${r.trigger_type}`, { defaultValue: r.trigger_type })}</span>
-                  <span className="flex-1 text-[13px] text-[var(--fg-2)] truncate">{r.entity?.display_symbol || r.entity?.canonical_ref_key}</span>
+            {rules.length === 0 ? <p className="text-[13px] text-[var(--fg-3)]">{t('alerts.no_rules', { defaultValue: 'No alert rules yet.' })}</p> : rules.map((r) => r.trigger_type==='chart_price'?<ChartAlertRow key={`${scope}:${r.id}:${r.chart_revision}`} rule={r} context={{supabase,userId:user?.id,orgId:org?.id,asset:r.config.asset}} onChanged={load} onDelete={()=>mutate(()=>deleteAlertRule(supabase,r.id))}/>: (
+              <div key={`${scope}:${r.id}:${r.chart_revision}`} className="intel-chart-alert-row space-y-1.5">
+                <div className="intel-alert-rule-heading">
+                  <span className="text-[10px] uppercase">{t(`alerts.triggers.${r.trigger_type}`, { defaultValue: r.trigger_type==='thesis_condition'?'Thesis condition':r.trigger_type.replaceAll('_',' ') })}</span>
+                  <span className="intel-alert-rule-title text-[13px] text-[var(--fg-2)]">{r.config?.title || r.entity?.display_symbol || r.entity?.canonical_ref_key || r.config?.slug || r.config?.asset}</span>
                   {r.quality_score != null && (
-                    <span className={`chip text-[10px] ${r.noisy ? 'chip--err' : r.quality_score >= 70 ? 'chip--ok' : ''}`} title={t('alerts.quality_tip', { defaultValue: 'Deterministic quality score: fewer repeats + opened alerts score higher.' })}>
+                    <span className={`text-[10px] ${r.noisy ? 'text-red-600' : r.quality_score >= 70 ? 'text-green-600' : ''}`} title={t('alerts.quality_tip', { defaultValue: 'Deterministic quality score: fewer repeats + opened alerts score higher.' })}>
                       {r.noisy ? t('alerts.noisy', { defaultValue: 'Noisy' }) : `Q ${Math.round(r.quality_score)}`}
                     </span>
                   )}
                   <select className="select text-[11px] py-0.5" value={r.cooldown_minutes ?? 720} title={t('alerts.cooldown', { defaultValue: 'Cooldown between fires' })}
-                    onChange={(e) => updateAlertRule(supabase, r.id, { cooldown_minutes: Number(e.target.value) }).then(load).catch(() => {})}>
-                    <option value={360}>6h</option><option value={720}>12h</option><option value={1440}>24h</option><option value={2880}>48h</option>
+                    onChange={(e) => mutate(() => updateAlertRule(supabase, r.id, { cooldown_minutes: Number(e.target.value) },r.chart_revision))}>
+                    <option value={15}>15m</option><option value={60}>1h</option><option value={360}>6h</option><option value={720}>12h</option><option value={1440}>24h</option><option value={2880}>48h</option>
                   </select>
-                  <span className="text-[11px] text-[var(--fg-4)]">{r.config?.threshold_pct != null ? `${r.config.threshold_pct}%` : ''}</span>
-                  <button onClick={() => deleteAlertRule(supabase, r.id).then(load)} className="p-1.5 rounded-lg text-[var(--fg-4)] hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
+                  <span className="text-[11px] text-[var(--fg-4)]">{r.config?.min_liquidity_usd != null ? `Below $${r.config.min_liquidity_usd}` : r.config?.min_usd != null ? `Above $${r.config.min_usd}` : r.config?.threshold_pct != null ? `${r.config.threshold_pct}%` : r.config?.momentum_delta != null ? `${r.config.momentum_delta} points` : ''}</span>
+                  <button aria-label="Delete alert rule" onClick={() => mutate(() => deleteAlertRule(supabase, r.id))} className="p-1.5 rounded-lg text-[var(--fg-4)] hover:text-red-400"><Trash2 className="h-4 w-4" /></button>
                 </div>
+                <p className="intel-analysis-caption">{r.is_active?'Active':'Paused'} · revision {r.chart_revision??1} · {r.evaluation_state?.status?.replaceAll('_',' ')||'Not evaluated yet'}{r.evaluation_state?.checkedAt?` · ${new Date(r.evaluation_state.checkedAt).toLocaleString()}`:''}</p>
+                {r.evaluation_state?.reason&&<p role={r.evaluation_state.status==='evaluation_failed'?'alert':undefined}>{r.evaluation_state.reason}</p>}
+                {r.trigger_type==='thesis_condition'&&<p>{r.config?.condition?.metric} {r.config?.condition?.comparator} {r.config?.condition?.threshold??'—'} {r.config?.condition?.threshold_unit} · {r.config?.condition?.time_window} · One-time thesis review condition</p>}
+                {r.trigger_type!=='thesis_condition'&&<MarketAlertControls rule={r} context={{supabase,userId:user?.id,orgId:org?.id}} onChanged={load}/>}
+                <details><summary>History preview and delivery</summary>{r.trigger_type!=='thesis_condition'&&<><AlertRehearsal rule={r} context={{supabase,userId:user?.id,orgId:org?.id}} operation="alert_market_rehearsal"/><AlertRuleHistory ruleId={r.id} context={{supabase,userId:user?.id,orgId:org?.id}}/></>}
+                {r.evaluation_state?.observation&&r.trigger_type!=='thesis_condition'&&<AlertSourceReceipt payload={{checkpoint:r.evaluation_state,config:r.config}}/>}
+                <AlertDelivery ruleId={r.id} context={{supabase,userId:user?.id,orgId:org?.id}}/></details>
                 {r.noisy && r.suggested_config?.threshold_pct != null && (
                   <div className="flex items-center gap-2 text-[12px] text-[var(--fg-3)]">
                     <span>{t('alerts.suggest', { defaultValue: 'Suggested threshold' })}: <b>{r.suggested_config.threshold_pct}%</b> — {r.suggested_config.reason}</span>
-                    <button className="btn btn--quiet btn--sm" onClick={() => updateAlertRule(supabase, r.id, { config: { ...(r.config || {}), threshold_pct: r.suggested_config.threshold_pct }, noisy: false, suggested_config: {} }).then(load).catch(() => {})}>
+                    <button className="btn btn--quiet btn--sm" onClick={() => mutate(() => updateAlertRule(supabase, r.id, { config: { ...(r.config || {}), threshold_pct: r.suggested_config.threshold_pct }, noisy: false, suggested_config: {} }))}>
                       {t('alerts.apply', { defaultValue: 'Apply suggestion' })}
                     </button>
                   </div>
                 )}
               </div>
             ))}
+            {cursors.rules && <button className="btn btn--quiet" disabled={!!loadingMore} onClick={() => loadMore('rules')}>{loadingMore === 'rules' ? 'Loading…' : 'Load more rules'}</button>}
           </div>
           {events.length > 0 && (
             <div className="space-y-2">
@@ -130,14 +206,16 @@ export default function AlertsPage() {
               {(() => {
                 // Collapse same-group events into one digest card (related alerts
                 // that fired in the same evaluation run).
-                const seenGroups = new Set()
+                const seenGroups = new Set(), groups = new Map()
+                for (const event of events) { const key = event.group_id || event.id; if (!groups.has(key)) groups.set(key, []); groups.get(key).push(event) }
                 return events.map((ev) => {
-                  const groupMates = ev.group_id ? events.filter((e) => e.group_id === ev.group_id) : [ev]
+                  if(ev.payload?.trigger_type==='chart_price')return <ChartAlertEvent key={scope+':'+ev.id} event={ev} context={{supabase,userId:user?.id,orgId:org?.id}} onRead={result=>{if(active.current===scope)setEvents(previous=>previous.map(row=>row.id===result.id?{...row,read_at:result.readAt}:row))}}/>
+                  const groupMates = groups.get(ev.group_id || ev.id)
                   if (ev.group_id) { if (seenGroups.has(ev.group_id)) return null; seenGroups.add(ev.group_id) }
                   const isDigest = groupMates.length > 1
                   return (
-                    <div key={ev.id} className="card p-3 space-y-2">
-                      {isDigest && <div className="chip chip--info text-[10px]">{t('alerts.digest', { defaultValue: '{{n}} related alerts fired together', n: groupMates.length })}</div>}
+                    <div key={ev.id} className="intel-open-section p-3 space-y-2">
+                      {isDigest && <div className=" text-[10px]">{t('alerts.digest', { defaultValue: '{{n}} related alerts fired together', n: groupMates.length })}</div>}
                       {groupMates.map((g) => (
                         <div key={g.id} className="space-y-1">
                           <div className="flex items-center justify-between gap-2">
@@ -145,25 +223,29 @@ export default function AlertsPage() {
                               <div className="text-[11px] text-[var(--fg-4)]">{new Date(g.fired_at).toLocaleString()}</div>
                               <div className="text-[13px] text-[var(--fg-2)]">
                                 {g.payload?.symbol ? <span className="font-medium">{g.payload.symbol} </span> : null}
-                                {t(`alerts.triggers.${g.payload?.trigger_type}`, { defaultValue: g.payload?.trigger_type || 'alert' })}
-                                {g.payload?.value != null ? ` — ${Number(g.payload.value).toFixed(1)}% (≥ ${g.payload.threshold_pct}%)` : ''}
-                                {g.payload?.signal_direction ? <span className={`chip text-[9px] ml-1.5 ${g.payload.signal_direction === 'bullish' ? 'chip--ok' : g.payload.signal_direction === 'bearish' ? 'chip--err' : 'chip--info'}`}>{g.payload.signal_direction}</span> : null}
+                                {t(`alerts.triggers.${g.payload?.trigger_type}`, { defaultValue: g.payload?.trigger_type==='thesis_condition'?'Thesis condition':g.payload?.trigger_type?.replaceAll('_',' ') || 'alert' })}
+                                {g.payload?.value != null ? ` — ${alertValueLabel(g.payload)}` : ''}
+                                {g.payload?.signal_direction ? <span className={`text-[9px] ml-1.5 ${g.payload.signal_direction === 'bullish' ? 'text-green-600' : g.payload.signal_direction === 'bearish' ? 'text-red-600' : ''}`}>{g.payload.signal_direction}</span> : null}
                               </div>
                             </div>
-                            <button onClick={() => { setWhyId(g.id); why.generate({ artifactType: 'alert_explanation', extra: { alert: g.payload, title: 'Alert' } }) }} disabled={why.loading && whyId === g.id} className="btn btn--quiet btn--sm">
+                            <button onClick={() => { setWhyId(g.id); why.setResult(null); why.generate({ artifactType: 'alert_explanation', alertEventId:g.id }) }} disabled={why.loading} className="btn btn--quiet btn--sm">
                               {why.loading && whyId === g.id ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : t('alerts.why', { defaultValue: 'Why it matters' })}
                             </button>
                           </div>
+                          {g.payload?.trigger_type!=='thesis_condition'&&<AlertSourceReceipt payload={g.payload}/>}
                           {/* Deterministic why-now + confirm/weaken from the linked stored signal — no AI */}
                           {g.payload?.why_now && <p className="text-[12px] text-[var(--fg-2)] leading-snug"><span className="text-[var(--fg-5)]">{t('alerts.why_now', { defaultValue: 'Why this fired now' })}: </span>{g.payload.why_now}</p>}
+                          {g.payload?.trigger_type==='thesis_condition'&&<details><summary>Original thesis condition and evidence</summary><blockquote className="whitespace-pre-wrap">{g.payload.checkpoint?.condition?.description}</blockquote><p>{g.payload.checkpoint?.condition?.metric} {g.payload.checkpoint?.condition?.comparator} {g.payload.checkpoint?.condition?.threshold??'—'} {g.payload.checkpoint?.condition?.threshold_unit} · {g.payload.checkpoint?.condition?.time_window}</p><p className="break-all">Evidence version {g.payload.checkpoint?.evidence_version}</p><p>Source observed {g.payload.checkpoint?.observation?.observedAt} · Known {g.payload.checkpoint?.observation?.recordedAt}</p><p className="break-all">{g.payload.checkpoint?.observation?.sourceRef}</p>{/^(venue|depth|liquidation):/.test(g.payload.checkpoint?.condition?.source_metric||'')&&<p className="break-all">Matched source: {g.payload.checkpoint?.observation?.sourceMetric||'Not recorded in this receipt'}</p>}<a className="intel-text-link" href={`/intel/theses/${g.payload.thesis_id}?tab=alerts`}>Review thesis condition</a></details>}
                           {g.payload?.confirm_or_weaken && <p className="text-[12px] text-[var(--fg-3)] leading-snug"><span className="text-[var(--fg-5)]">{t('alerts.confirm_weaken', { defaultValue: 'What would confirm or weaken this' })}: </span>{g.payload.confirm_or_weaken}</p>}
-                          {whyId === g.id && why.result && <ArtifactView result={why.result} loading={why.loading} onRefresh={() => why.refresh({ artifactType: 'alert_explanation', extra: { alert: g.payload, title: 'Alert' } })} />}
+                          {whyId===g.id&&why.error&&<p role="alert">{why.error}</p>}
+                          {whyId === g.id && (why.result||why.loading) && <ArtifactView result={why.result} loading={why.loading} onRefresh={() => why.refresh({ artifactType: 'alert_explanation', alertEventId:g.id })} />}
                         </div>
                       ))}
                     </div>
                   )
                 })
               })()}
+              {cursors.events && <button className="btn btn--quiet" disabled={!!loadingMore} onClick={() => loadMore('events')}>{loadingMore === 'events' ? 'Loading…' : 'Load older alerts'}</button>}
             </div>
           )}
         </>

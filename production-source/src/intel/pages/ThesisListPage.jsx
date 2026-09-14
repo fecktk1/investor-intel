@@ -1,85 +1,45 @@
-import React, { useCallback, useEffect, useState } from 'react'
-import { Link } from 'react-router'
-import { useTranslation } from 'react-i18next'
-import { NotebookPen } from 'lucide-react'
-import { useProfile } from '../../lib/profile-context'
-import { useSupabase } from '../../lib/useSupabase'
-import { listTheses } from '../lib/thesis-api'
-import ThesisStatusBadge from '../components/thesis/ThesisStatusBadge'
-import ThesisEmptyState from '../components/thesis/ThesisEmptyState'
+import React,{useCallback,useEffect,useRef,useState} from 'react'
+import {Link,useSearchParams} from 'react-router'
+import {useTranslation} from 'react-i18next'
+import {useProfile} from '../../lib/profile-context'
+import {useSupabase} from '../../lib/useSupabase'
+import {listThesesPage} from '../lib/thesis-api'
 import IntelErrorNotice from '../components/IntelErrorNotice'
 
-const STANCE_CLS = { bullish: 'text-[var(--ok)]', bearish: 'text-red-400', neutral: 'text-[var(--fg-3)]' }
-
-export default function ThesisListPage() {
-  const { t } = useTranslation('intel', { useSuspense: false })
-  const { org } = useProfile()
-  const { supabase } = useSupabase()
-  const [list, setList] = useState([])
-  const [loading, setLoading] = useState(true)
-  const [err, setErr] = useState(null)
-  const [filter, setFilter] = useState('')
-
-  const load = useCallback(async () => {
-    if (!org?.id) return
-    setLoading(true); setErr(null)
-    try { setList(await listTheses(supabase, org.id)) }
-    catch (e) { setErr(e.message) }
-    finally { setLoading(false) }
-  }, [org?.id, supabase])
-  useEffect(() => { load() }, [load])
-
-  const shown = filter ? list.filter((th) => th.status === filter) : list
-
-  return (
-    <div className="space-y-4">
-      <div>
-        <div className="eyebrow flex items-center gap-1.5"><NotebookPen className="h-3.5 w-3.5" /> {t('journal.brand', { defaultValue: 'Thesis Journal' })}</div>
-        <h1 className="page-title">{t('journal.nav.theses', { defaultValue: 'Theses' })}</h1>
-        <p className="page-sub">{t('journal.list_sub', { defaultValue: 'Every call you have made — with the evidence, baseline and review history behind it.' })}</p>
-      </div>
-
-      {err && <IntelErrorNotice error={err} />}
-
-      {!loading && list.length > 0 && (
-        <div className="flex items-center gap-1.5 flex-wrap">
-          {['', 'active', 'strengthening', 'weakening', 'needs_review', 'confirmed', 'invalidated', 'closed'].map((s) => (
-            <button key={s || 'all'} onClick={() => setFilter(s)}
-              className={`chip text-[11px] ${filter === s ? 'chip--active bg-[var(--accent)] text-black' : 'text-[var(--fg-4)]'}`}>
-              {s ? t(`journal.status.${s}`, { defaultValue: s }) : t('journal.filter_all', { defaultValue: 'All' })}
-            </button>
-          ))}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
-      ) : list.length === 0 ? (
-        <ThesisEmptyState />
-      ) : (
-        <div className="space-y-2">
-          {shown.map((th) => (
-            <Link key={th.id} to={`/intel/theses/${th.id}`} className="card p-4 block hover:border-[var(--accent)] transition-colors">
-              <div className="flex items-center justify-between gap-2">
-                <div className="text-sm font-medium text-[var(--fg-1)]">{th.title}</div>
-                <div className="flex items-center gap-1.5">
-                  {th.needs_user_review && <span className="chip text-[10px] text-amber-300">{t('journal.review_due', { defaultValue: 'Review' })}</span>}
-                  <ThesisStatusBadge status={th.status} />
-                </div>
-              </div>
-              <div className="flex items-center gap-2 flex-wrap mt-1.5 text-[11px]">
-                <span className={STANCE_CLS[th.stance] || 'text-[var(--fg-4)]'}>{th.stance || '—'}</span>
-                <span className="text-[var(--fg-5)]">·</span>
-                <span className="text-[var(--fg-4)]">{th.thesis_type || 'asset'}</span>
-                {th.time_horizon && <><span className="text-[var(--fg-5)]">·</span><span className="text-[var(--fg-4)]">{th.time_horizon}</span></>}
-                <span className="text-[var(--fg-5)]">·</span>
-                <span className="text-[var(--fg-5)]">{th.thesis_date || (th.created_at || '').slice(0, 10)}</span>
-                {typeof th.quality_score === 'number' && <><span className="text-[var(--fg-5)]">·</span><span className="text-[var(--fg-4)]">{t('journal.quality', { defaultValue: 'Quality' })} {th.quality_score}/100</span></>}
-              </div>
-            </Link>
-          ))}
-        </div>
-      )}
-    </div>
-  )
+const statuses=['','active','strengthening','weakening','needs_review','confirmed','invalidated','closed','archived']
+const date=value=>{if(!value)return '—';const parsed=/^\d{4}-\d{2}-\d{2}$/.test(value)?new Date(...String(value).split('-').map((n,i)=>Number(n)-(i===1?1:0))):new Date(value);return Number.isFinite(parsed.getTime())?parsed.toLocaleDateString():'—'}
+export default function ThesisListPage(){
+ const {t}=useTranslation('intel',{useSuspense:false}),{org}=useProfile(),{supabase,user}=useSupabase()
+ const [params,setParams]=useSearchParams(),status=statuses.includes(params.get('status')||'')?params.get('status')||'':'',q=(params.get('q')||'').slice(0,200),page=Math.max(0,Math.min(10000,Math.trunc(Number(params.get('page'))||0)))
+ const [search,setSearch]=useState(q),[state,setState]=useState({scope:null,rows:[],hasMore:false,loading:true,error:null})
+ const scope=JSON.stringify([org?.id,user?.id,status,q,page]),active=useRef(scope),sequence=useRef(0);active.current=scope
+ const load=useCallback(async()=>{
+  const id=++sequence.current
+  if(!org?.id||!user?.id)return
+  setState(previous=>({...previous,scope,loading:true,error:null,rows:previous.scope===scope?previous.rows:[]}))
+  try{const data=await listThesesPage(supabase,org.id,{status,q,page});if(active.current===scope&&sequence.current===id)setState({...data,scope,loading:false,error:null})}
+  catch(error){if(active.current===scope&&sequence.current===id)setState({scope,rows:[],hasMore:false,loading:false,error:error.message})}
+ },[scope,org?.id,user?.id,supabase,status,q,page])
+ useEffect(()=>{void load();return()=>{sequence.current++}},[load])
+ useEffect(()=>setSearch(q),[q])
+ const update=(key,value)=>{const next=new URLSearchParams(params);if(value)next.set(key,String(value));else next.delete(key);if(key!=='page')next.delete('page');setParams(next)}
+ const current=state.scope===scope,rows=current?state.rows:[],loading=!current||state.loading
+ return <section className="space-y-4" aria-label="Thesis journal index">
+  <div className="intel-investigation-analysis-heading"><div><h1 className="page-title">{t('journal.nav.theses',{defaultValue:'Theses'})}</h1><p className="page-sub">Your decisions, evidence and review history, including closed and archived research.</p></div></div>
+  <form className="intel-journal-filters" onSubmit={event=>{event.preventDefault();update('q',search.trim())}}>
+   <label>Find a thesis<input type="search" maxLength={200} value={search} onChange={event=>setSearch(event.target.value)}/></label><button type="submit" className="btn">Search</button>
+   <label>Status<select value={status} onChange={event=>update('status',event.target.value)}>{statuses.map(value=><option key={value} value={value}>{value?t(`journal.status.${value}`,{defaultValue:value.replaceAll('_',' ')}):'All statuses'}</option>)}</select></label>
+  </form>
+  {current&&state.error&&<div role="alert"><IntelErrorNotice error={state.error}/><button type="button" className="btn" onClick={load}>Retry journal</button></div>}
+  {loading?<p role="status">Loading theses…</p>:!state.error&&rows.length===0?<p>{q||status||page?'No theses match this view. Change the search or status, or return to the first page.':'No theses yet. Create a thesis to record your reasoning and track its history on the asset chart.'}</p>:rows.length>0&&<div className="intel-journal-table" tabIndex={0} role="region" aria-label="Thesis results; scroll horizontally for all columns"><table>
+   <thead><tr><th>Thesis and asset</th><th>Status / stance</th><th>Conviction</th><th>Next review</th><th>Details</th></tr></thead>
+   <tbody>{rows.map(row=><tr key={row.id}>
+    <td><Link to={`/intel/theses/${row.id}`} state={{journalReturn:{url:`/intel/theses/list${params.size?'?'+params.toString():''}`,orgId:org?.id,userId:user?.id}}} className="intel-text-link">{row.title||'Untitled thesis'}</Link><small>{row.subject_canonical_key||'Identity not recorded'}{row.user_id!==user?.id?' · Shared research':''}</small></td>
+    <td>{t(`journal.status.${row.status}`,{defaultValue:row.status})}<small>{row.stance||'—'}{row.needs_user_review?' · Review due':''}</small></td>
+    <td>{row.conviction==null?'—':`${Math.round(row.conviction*5)}/5`}</td><td>{date(row.next_review_at)}</td>
+    <td><details><summary>Research details</summary><dl><dt>Type</dt><dd>{row.thesis_type||'asset'}</dd><dt>Horizon</dt><dd>{row.time_horizon||'Unspecified'}</dd><dt>Recorded</dt><dd>{date(row.thesis_date||row.created_at)}</dd><dt>Quality</dt><dd>{row.quality_score==null?'—':`${row.quality_score}/100`}</dd></dl></details></td>
+   </tr>)}</tbody>
+  </table></div>}
+  <nav className="intel-chart-navigation" aria-label="Thesis pages"><button type="button" disabled={loading||page===0} onClick={()=>update('page',page-1)}>Previous page</button><span>Page {page+1}</span><button type="button" disabled={loading||!state.hasMore} onClick={()=>update('page',page+1)}>Next page</button>{page>0&&<button type="button" onClick={()=>update('page',0)}>First page</button>}</nav>
+ </section>
 }

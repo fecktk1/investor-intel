@@ -5,69 +5,34 @@ import MarketSignalBadge from './MarketSignalBadge'
 import ProviderCoveragePill from './ProviderCoveragePill'
 import TokenAvatar from './TokenAvatar'
 import { fmtPrice, fmtPct, fmtVol, pctClass } from '../lib/market-format'
-
-// CMC-style markets terminal row (responsive flex rows — no table lib, matching
-// the app idiom). Canonical fields (rank/price/mcap/FDV/changes) come from
-// market_assets; CEX availability + spread/arb come from enrichment. Sorting is
-// server-side; this is presentation only. Logos via TokenAvatar (clean fallback).
-export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/intel', assetPath = null }) {
+import { marketIdentityParams } from '../lib/asset-identity'
+import { useTableScrollRestoration } from '../lib/useTableScrollRestoration'
+export const MARKET_COLUMNS = [['price', 'Price'], ['1h', '1h'], ['24h', '24h'], ['7d', '7d'], ['volume', 'Volume'], ['cap', 'Market cap'], ['fdv', 'FDV'], ['exchanges', 'Exchange coverage']]
+export const marketRowKey = row => `${row.sourceProvider || 'unknown'}:${row.providerId || row.canonicalAssetKey || row.symbol}`
+export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/intel', assetPath = null, columns = MARKET_COLUMNS.map(c => c[0]), selected = [], onSelect, onInspect, sort, onSort, scrollScope }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const location = useLocation()
   const returnState = { from: `${location.pathname}${location.search}` }
-  if (!rows.length) return <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('markets.noData', { defaultValue: 'Market data is being gathered. Check back shortly.' })}</div>
-  return (
-    <div className="space-y-1.5">
-      <div className="hidden md:flex items-center gap-3 px-2.5 text-[10px] uppercase text-[var(--fg-5)]">
-        <span className="w-8 text-right">#</span>
-        <span className="flex-1">{t('markets.asset', { defaultValue: 'Asset' })}</span>
-        <span className="w-20 text-right">{t('markets.priceLabel', { defaultValue: 'Price' })}</span>
-        <span className="hidden lg:block w-14 text-right">1h</span>
-        <span className="w-14 text-right">24h</span>
-        <span className="hidden lg:block w-14 text-right">7d</span>
-        <span className="w-20 text-right">{t('markets.volLabel', { defaultValue: 'Volume' })}</span>
-        <span className="w-20 text-right">{t('markets.marketCap', { defaultValue: 'Mkt cap' })}</span>
-        <span className="hidden xl:block w-20 text-right">{t('markets.fdv', { defaultValue: 'FDV' })}</span>
-        <span className="w-40 text-right">{t('markets.exchanges', { defaultValue: 'Exchanges' })}</span>
-      </div>
-      {rows.map((r, i) => {
-        const rank = r.rank != null ? r.rank : pageOffset + i + 1
-        const cex = r.cex || null
-        const availCount = cex ? (cex.availableCount || 0) : 0
-        const inner = (
-          <div className="card--flat p-2.5 w-full flex items-center gap-3 hover:bg-[var(--bg-2)] transition-colors">
-            <span className="w-8 text-right text-[11px] text-[var(--fg-5)]">{rank}</span>
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <TokenAvatar src={r.imageUrl} symbol={r.symbol} name={r.displayName} size="md" />
-              <div className="min-w-0">
-                <div className="text-[13px] font-medium text-[var(--fg-1)] truncate flex items-center gap-1.5">
-                  {r.symbol}
-                  {r.displayName ? <span className="text-[11px] text-[var(--fg-4)] truncate hidden sm:inline">{r.displayName}</span> : null}
-                  {r.chain ? <span className="text-[9px] text-[var(--fg-5)] px-1 rounded bg-[var(--bg-3)]">{r.chain}</span> : null}
-                </div>
-                <div className="md:hidden text-[11px] text-[var(--fg-4)]">{fmtPrice(r.price)} · <span className={pctClass(r.change24hPct)}>{fmtPct(r.change24hPct)}</span></div>
-              </div>
-            </div>
-            <span className="hidden md:block w-20 text-right text-[12px] text-[var(--fg-2)]">{fmtPrice(r.price)}</span>
-            <span className={`hidden lg:block w-14 text-right text-[12px] ${pctClass(r.change1hPct)}`}>{fmtPct(r.change1hPct)}</span>
-            <span className={`hidden md:block w-14 text-right text-[12px] ${pctClass(r.change24hPct)}`}>{fmtPct(r.change24hPct)}</span>
-            <span className={`hidden lg:block w-14 text-right text-[12px] ${pctClass(r.change7dPct)}`}>{fmtPct(r.change7dPct)}</span>
-            <span className="hidden md:block w-20 text-right text-[12px] text-[var(--fg-2)]">{fmtVol(r.volumeQuote24h)}</span>
-            <span className="hidden md:block w-20 text-right text-[12px] text-[var(--fg-2)]">{r.marketCap != null ? fmtVol(r.marketCap) : <span className="text-[var(--fg-5)]">{t('markets.marketCapUnavailable', { defaultValue: 'N/A' })}</span>}</span>
-            <span className="hidden xl:block w-20 text-right text-[12px] text-[var(--fg-3)]">{r.fdv != null ? fmtVol(r.fdv) : <span className="text-[var(--fg-5)]">—</span>}</span>
-            <span className="w-40 flex items-center justify-end gap-1.5">
-              {r.signalDirection && <MarketSignalBadge direction={r.signalDirection} size="sm" />}
-              {availCount > 0
-                ? <span className="hidden lg:inline"><ProviderCoveragePill providers={r.providers} confirming={r.confirmingProviders} size="sm" /></span>
-                : <span className="hidden lg:inline text-[10px] text-[var(--fg-5)]">{t('markets.noCexCoverage', { defaultValue: 'No CEX' })}</span>}
-            </span>
-          </div>
-        )
-        const marketSymbol = r.symbol || r.normalizedSymbol || r.normalized_symbol || r.providerId
-        const href = r.detailHref || (assetPath ? assetPath(r) : (marketSymbol ? `${linkBase}/markets/${encodeURIComponent(marketSymbol)}` : null))
-        return href
-          ? <Link key={`${r.sourceProvider || ''}:${r.providerId || r.symbol}`} to={href} state={returnState} className="block">{inner}</Link>
-          : <div key={`${r.sourceProvider || ''}:${r.providerId || r.symbol}`}>{inner}</div>
-      })}
-    </div>
-  )
+  const tableRef = useTableScrollRestoration(scrollScope, returnState.from)
+  const orderedColumns = [...new Set(columns)].map(key => MARKET_COLUMNS.find(column => column[0] === key)).filter(Boolean)
+  if (!rows.length) return <p className="py-8 text-sm text-[var(--fg-4)]">{t('markets.noData', { defaultValue: 'No assets match this screen.' })}</p>
+  const sortKeys = { '1h': 'change_1h', '24h': 'change_24h', '7d': 'change_7d', volume: 'volume', cap: 'market_cap', exchanges: 'exchange_availability' }
+  return <div ref={tableRef} className={`intel-table-scroll intel-market-table ${onSelect ? 'has-selection' : ''}`} tabIndex={0} role="region" aria-label={t('markets.scroll_table', { defaultValue: 'Market results, scroll for more columns' })}><table>
+    <caption className="sr-only">{t('markets.title', { defaultValue: 'Crypto markets' })}</caption>
+    <thead><tr>{onSelect && <th scope="col" className="intel-select-cell">{t('markets.select', { defaultValue: 'Select' })}</th>}<th scope="col">#</th><th scope="col" className="intel-identity-cell">{t('markets.asset', { defaultValue: 'Asset' })}</th>{orderedColumns.map(([key, label]) => <th className="intel-number" scope="col" key={key} aria-sort={sortKeys[key] === sort ? 'descending' : undefined}>{onSort && sortKeys[key] ? <button type="button" onClick={() => onSort(sortKeys[key])}>{t(`markets.column_${key}`, { defaultValue: label })}{sortKeys[key] === sort && <span aria-hidden="true"> ↓</span>}</button> : t(`markets.column_${key}`, { defaultValue: label })}</th>)}{onInspect && <th scope="col">{t('inspector.preview', { defaultValue: 'Preview' })}</th>}</tr></thead>
+    <tbody>{rows.map((row, index) => {
+      const key = marketRowKey(row)
+      const symbol = row.symbol || row.normalizedSymbol || row.normalized_symbol || row.providerId
+      const href = row.detailHref || (assetPath ? assetPath(row) : symbol ? `${linkBase}/markets/${encodeURIComponent(symbol)}${marketIdentityParams(row)}` : null)
+      const values = { price: fmtPrice(row.price), '1h': fmtPct(row.change1hPct), '24h': fmtPct(row.change24hPct), '7d': fmtPct(row.change7dPct), volume: fmtVol(row.volumeQuote24h), cap: fmtVol(row.marketCap), fdv: fmtVol(row.fdv) }
+      const changes = { '1h': row.change1hPct, '24h': row.change24hPct, '7d': row.change7dPct }
+      const asset = <span className="intel-market-asset-label flex items-center gap-3"><TokenAvatar src={row.imageUrl} symbol={symbol} name={row.displayName} size="md"/><span><strong className="font-medium">{row.displayName || symbol}</strong><span className="block text-xs text-[var(--fg-4)]">{symbol}{row.chain ? ` · ${row.chain}` : ''}</span></span></span>
+      return <tr key={key} data-selected={selected.includes(key) || undefined}>{onSelect && <td className="intel-select-cell"><input type="checkbox" aria-label={`${t('markets.select', { defaultValue: 'Select' })} ${row.displayName || symbol}`} checked={selected.includes(key)} onChange={() => onSelect(row)}/></td>}<td className="intel-number">{row.rank ?? pageOffset + index + 1}</td><td className="intel-identity-cell">{href ? <Link to={href} state={returnState}>{asset}</Link> : asset}</td>
+        {orderedColumns.map(([column]) => <td key={column} className={`intel-number ${Object.hasOwn(changes, column) ? pctClass(changes[column]) : ''}`}>
+          {column !== 'exchanges' ? values[column] : <span className="flex gap-3 justify-end items-center">{row.signalDirection && <MarketSignalBadge direction={row.signalDirection} size="sm"/>}{row.cex?.availableCount > 0 ? <ProviderCoveragePill providers={row.providers} confirming={row.confirmingProviders} size="sm"/> : <span className="text-xs text-[var(--fg-4)]">{row.cex?.coverageState === 'verified_absent' ? t('markets.no_verified_venue', { defaultValue: 'No covered venue' }) : t('markets.coverage_unknown', { defaultValue: 'Not verified' })}</span>}</span>}
+        </td>)}
+        {onInspect && <td><button type="button" className="intel-inspect-button" aria-label={`${t('inspector.inspect', { defaultValue: 'Inspect' })} ${row.displayName || symbol}`} onClick={() => onInspect(row)}>{t('inspector.inspect', { defaultValue: 'Inspect' })}</button></td>}
+      </tr>
+    })}</tbody>
+  </table></div>
 }

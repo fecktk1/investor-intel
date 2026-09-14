@@ -20,11 +20,11 @@ function hueFromSymbol(sym) {
 }
 
 export default function TokenAvatar({ src, symbol, name, size = 'md', className = '' }) {
-  const [errored, setErrored] = useState(false)
+  const [failedSrc, setFailedSrc] = useState(null)
   const sz = SIZES[size] || SIZES.md
   const label = String(symbol || name || '?').replace(/^\$/, '')
   const initials = label.slice(0, 3).toUpperCase()
-  const showImg = !!src && !errored
+  const showImg = typeof src==='string' && /^https:\/\//.test(src) && failedSrc!==src
   const hue = hueFromSymbol(label)
   return (
     <span
@@ -39,7 +39,8 @@ export default function TokenAvatar({ src, symbol, name, size = 'md', className 
           loading="lazy"
           decoding="async"
           className="h-full w-full object-cover"
-          onError={() => setErrored(true)}
+          referrerPolicy="no-referrer"
+          onError={() => setFailedSrc(src)}
         />
       ) : (
         <span className="font-semibold leading-none" aria-label={`${label} logo`}>{initials}</span>

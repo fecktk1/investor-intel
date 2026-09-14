@@ -6,20 +6,22 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { getChain } from '../lib/chains'
 import { resolveEntity } from '../lib/watchlist-api'
-import { loadDefiBrowse, loadDefiMetrics } from '../lib/chart-api'
-import { fetchAllKaminoVaults, fetchKaminoMarkets, fetchKaminoVaultHistory, formatUsd, shortenAddress } from '../../lib/defi-intelligence'
-import { fetchLlamaPools, fetchLlamaLending, fetchLlamaPoolChart } from '../lib/defillama'
+import { loadDefiMetrics } from '../lib/chart-api'
+import { fetchKaminoVaultHistory, formatUsd, shortenAddress } from '../../lib/defi-intelligence'
+import { fetchLlamaPoolChart } from '../lib/defillama'
+import { createDefiBrowseCache, loadDefiPage, defiQuery, DEFI_PAGE_SIZE } from '../lib/defi-api'
 import { listEntityNews } from '../lib/news-api'
-import { useArtifact } from '../lib/useArtifact'
+import { generateArtifact } from '../lib/artifact-api'
 import ArtifactView from '../components/ArtifactView'
 import PoolDetailCharts from '../components/PoolDetailCharts'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import DefiMarketSummary from '../components/DefiMarketSummary'
 
 // Chains we have a live data source for: Solana → Kamino, the rest → DeFiLlama.
 const CHAIN_TABS = ['solana', 'ethereum', 'base', 'arbitrum', 'bnb', 'polygon', 'avalanche', 'sui', 'sei']
-const LEVERAGE_HINTS = ['multiply', 'loop', 'leverage', 'leveraged']
 
-const fmtUsd = (v) => formatUsd(v)
+
+const fmtUsd = (v) => v == null ? '—' : formatUsd(v)
 // Every APY/ratio fed to this page is normalized to a FRACTION (0.12 = 12%) at
 // its source (Kamino native; DeFiLlama ÷100), so formatting is a plain ×100 —
 // no unit-guessing, which keeps high-yield (>200%) pools rendering correctly.
@@ -29,62 +31,18 @@ const apyClass = (v) => { const p = Number(v) * 100; return p >= 20 ? 'text-emer
 // rows carry no stale_after, so they never flag — only cached snapshots do.
 const isStale = (staleAfter) => !!staleAfter && new Date(staleAfter).getTime() < Date.now()
 
-// Normalize a live Kamino vault (fetchAllKaminoVaults) into the shared row shape.
-function normKaminoVault(v) {
-  const isLev = LEVERAGE_HINTS.some((h) => String(v.strategyType || '').toLowerCase().includes(h))
-  const productType = v.productType === 'earn' ? 'single' : isLev ? 'multiply' : 'lp'
-  const apy = Number(v.apy || 0)
-  const apyBase = Number(v.feeApy || 0)
-  return {
-    key: v.address,
-    address: v.address,
-    name: v.strategyName || [v.tokenASymbol, v.tokenBSymbol].filter(Boolean).join('/') || shortenAddress(v.address),
-    productType,
-    tvl_usd: Number(v.totalValueLocked || 0),
-    apy,
-    apyBase,
-    apyReward: Math.max(0, apy - apyBase),
-    protocol: 'Kamino',
-    chain: 'solana',
-    tokenA: v.tokenASymbol || null,
-    tokenB: v.tokenBSymbol || null,
-    stable: String(v.strategyType || '').toLowerCase().includes('stable'),
-    url: productType === 'single'
-      ? `https://app.kamino.finance/earn/vaults/${v.address}`
-      : `https://app.kamino.finance/liquidity/${v.address}`,
-  }
-}
-
-// Normalize a live Kamino reserve (fetchKaminoMarkets) into the lending row shape.
-function normKaminoReserve(r) {
-  return {
-    key: `${r.marketAddress}:${r.reserveAddress}`,
-    address: r.mint,
-    symbol: r.symbol,
-    market: r.marketName,
-    primary: r.marketIsPrimary,
-    protocol: 'Kamino',
-    chain: 'solana',
-    supplyApy: Number(r.supplyApy || 0),
-    borrowApy: Number(r.borrowApy || 0),
-    tvl_usd: Number(r.totalSupplyUsd || 0),
-    totalBorrowUsd: Number(r.totalBorrowUsd || 0),
-    utilization: Number(r.utilization || 0),
-    ltv: Number(r.ltv || 0),
-  }
-}
-
 // Top-5 yield-arbitrage spreads (vault APY − lending supply APY), Solana/Kamino.
 function computeArb(vaults, reserves) {
   const supplyBySymbol = new Map()
   for (const r of reserves) {
+    if (r.supplyApy == null) continue
     const s = (r.symbol || '').toUpperCase()
     if (!s) continue
     if (!supplyBySymbol.has(s) || r.supplyApy > supplyBySymbol.get(s).supplyApy) supplyBySymbol.set(s, r)
   }
   const out = []
   for (const v of vaults) {
-    if (v.productType !== 'lp') continue
+    if (v.productType !== 'lp' || v.apy == null) continue
     for (const tok of [v.tokenA, v.tokenB]) {
       const s = (tok || '').toUpperCase()
       const res = supplyBySymbol.get(s)
@@ -118,16 +76,24 @@ export default function DefiPage() {
 
   const [chain, setChain] = useState(() => searchParams.get('chain') || 'solana')
   const [view, setView] = useState(() => searchParams.get('view') || 'vaults')      // 'vaults' | 'lending'
-  const [product, setProduct] = useState('all')   // vaults: all | lp | single | stable
-  const [search, setSearch] = useState('')
-  const [sort, setSort] = useState({ key: 'tvl_usd', dir: 'desc' })
+  const [product, setProduct] = useState(() => searchParams.get('product') || 'all')
+  const [search, setSearch] = useState(() => searchParams.get('q') || '')
+  const [debouncedSearch, setDebouncedSearch] = useState(search)
+  const [sort, setSort] = useState(() => ({ key: searchParams.get('sort') || 'tvl_usd', dir: searchParams.get('direction') || 'desc' }))
+  const [page, setPage] = useState(() => Math.max(0, Number(searchParams.get('page')) || 0))
+  const [total, setTotal] = useState(0)
+  const [summary, setSummary] = useState(null)
+  const [coverage,setCoverage]=useState(null)
 
   const [rows, setRows] = useState([])
   const [arb, setArb] = useState([])
   const [loadingRows, setLoadingRows] = useState(false)
   const [rowsErr, setRowsErr] = useState(null)
   const [rowsStatus, setRowsStatus] = useState('ok')
-  const cacheRef = useRef(new Map())
+  const cacheRef = useRef(null)
+  if (!cacheRef.current) cacheRef.current = createDefiBrowseCache()
+  const browseGeneration = useRef(0)
+  const deepGeneration = useRef(0)
 
   // Deep-dive (custom address or row click) → rich pool detail + AI + news.
   const [addrInput, setAddrInput] = useState(() => searchParams.get('dd') || '')
@@ -138,7 +104,7 @@ export default function DefiPage() {
   const [selected, setSelected] = useState(null)   // the clicked row (rich source)
   const [richChart, setRichChart] = useState([])   // DeFiLlama /chart history
   const [loadingChart, setLoadingChart] = useState(false)
-  const art = useArtifact()
+  const [art, setArt] = useState({ result: null, loading: false, error: null })
   const deepActive = !!(selected || metrics || art.result || art.loading || resolving)
   const updateUrl = useCallback((patch) => {
     setSearchParams((prev) => {
@@ -152,55 +118,43 @@ export default function DefiPage() {
   }, [setSearchParams])
 
   const chainLabel = getChain(chain)?.label || chain
+  useEffect(() => { const timer = setTimeout(() => setDebouncedSearch(search), 250); return () => clearTimeout(timer) }, [search])
+  useEffect(() => () => { browseGeneration.current += 1; deepGeneration.current += 1 }, [])
 
   const loadRows = useCallback(async (ch, vw, force = false) => {
-    const cacheKey = `${org?.id || 'anon'}:${ch}:${vw}`
-    if (!force && cacheRef.current.has(cacheKey)) {
-      const c = cacheRef.current.get(cacheKey); setRows(c.rows); setArb(c.arb || []); setRowsStatus(c.status || 'ok'); return
-    }
+    const generation = ++browseGeneration.current
+    const query = defiQuery({ chain: ch, view: vw, product, search: debouncedSearch, sort: sort.key, direction: sort.dir, page })
+    const cacheKey = JSON.stringify([org?.id, query])
     setLoadingRows(true); setRowsErr(null); setRows([]); setArb([]); setRowsStatus('loading')
     try {
-      let out = []; let arbOut = []; let status = 'ok'
-      if (org?.id) {
-        try {
-          const cached = await loadDefiBrowse(supabase, org.id, { chain: ch, view: vw })
-          out = cached.rows || []
-          status = cached.status || 'ok'
-          if (ch === 'solana' && vw === 'lending' && out.length) {
-            const cachedVaults = await loadDefiBrowse(supabase, org.id, { chain: ch, view: 'vaults' }).catch(() => ({ rows: [] }))
-            arbOut = computeArb(cachedVaults.rows || [], out)
-          }
-        } catch {
-          // Fallback only when the cached edge layer itself is unavailable.
-          if (ch === 'solana' && vw === 'vaults') {
-            out = (await fetchAllKaminoVaults()).map(normKaminoVault)
-          } else if (ch === 'solana' && vw === 'lending') {
-            const [reserves, vaults] = await Promise.all([fetchKaminoMarkets(), fetchAllKaminoVaults()])
-            out = reserves.map(normKaminoReserve)
-            arbOut = computeArb(vaults.map(normKaminoVault), out)
-          } else if (vw === 'vaults') {
-            const res = await fetchLlamaPools(ch)
-            out = res.rows || []
-            status = res.status || 'ok'
-          } else {
-            const res = await fetchLlamaLending(ch)
-            out = res.rows || []
-            status = res.status || 'ok'
-          }
-        }
-      } else {
-        status = 'provider_error'
+      const result = await cacheRef.current.load(cacheKey, () => loadDefiPage(supabase, org?.id, query), force)
+      if (generation !== browseGeneration.current) return
+      setRows(result.rows || []); setRowsStatus(result.status || 'ok'); setTotal(result.total || 0); setSummary(result.summary || null);setCoverage(result.coverage||null)
+      if (ch === 'solana' && vw === 'lending' && result.rows?.length) {
+        const vaultQuery = defiQuery({ chain: ch, view: 'vaults' })
+        void cacheRef.current.load(JSON.stringify([org.id, vaultQuery]), () => loadDefiPage(supabase, org.id, vaultQuery))
+          .then((vaults) => { if (generation === browseGeneration.current) setArb(computeArb(vaults.rows || [], result.rows)) }).catch(() => {})
       }
-      cacheRef.current.set(cacheKey, { rows: out, arb: arbOut, status })
-      setRows(out); setArb(arbOut)
-      setRowsStatus(status)
     } catch (e) {
+      if (generation !== browseGeneration.current) return
       setRowsStatus('provider_error')
       setRowsErr(e?.message || 'load_failed')
-    } finally { setLoadingRows(false) }
-  }, [org?.id, supabase])
+      setSummary(null); setTotal(0)
+    } finally { if (generation === browseGeneration.current) setLoadingRows(false) }
+  }, [org?.id, supabase, product, debouncedSearch, sort, page])
 
   useEffect(() => { loadRows(chain, view) }, [chain, view, loadRows])
+  useEffect(() => {
+    const urlChain = searchParams.get('chain') || 'solana'
+    const urlView = searchParams.get('view') || 'vaults'
+    setChain(CHAIN_TABS.includes(urlChain) ? urlChain : 'solana')
+    setView(urlView === 'lending' ? 'lending' : 'vaults')
+    setProduct(searchParams.get('product') || 'all')
+    setSearch(searchParams.get('q') || '')
+    setPage(Math.max(0, Math.min(2000, Number(searchParams.get('page')) || 0)))
+    const key = searchParams.get('sort') || 'tvl_usd', dir = searchParams.get('direction') || 'desc'
+    setSort((old) => old.key === key && old.dir === dir ? old : { key, dir })
+  }, [searchParams])
 
   // ── Deep-dive ───────────────────────────────────────────────────────────────
   // `poolContext` (when a row is clicked) is the exact pool's data, passed to the
@@ -208,32 +162,35 @@ export default function DefiPage() {
   const runDeepDive = useCallback(async (ch, value, poolContext = null) => {
     const v = (value || '').trim()
     if (!v || !org?.id) return
-    setResolving(true); setDdErr(null); setMetrics(null); setNews([])
+    const generation = ++deepGeneration.current
+    setResolving(true); setDdErr(null); setMetrics(null); setNews([]); setArt({ result: null, loading: false, error: null })
     if (typeof window !== 'undefined') window.scrollTo({ top: 0, behavior: 'smooth' })
     try {
       const e = await resolveEntity(supabase, org.id, { kind: 'asset', chain: ch, value: v })
+      if (generation !== deepGeneration.current) return
       const ctx = poolContext ? { pool_detail: poolContext } : undefined
-      const [, m] = await Promise.all([
-        art.generate({ artifactType: 'defi_report', entityId: e.id, ...(ctx ? { context: ctx } : {}) }),
-        loadDefiMetrics(supabase, org.id, { entityId: e.id }).catch((ex) => ({ _error: ex?.message || 'metrics_unavailable' })),
-      ])
-      setMetrics(m)
-      try { setNews(await listEntityNews(supabase, org.id, e.id, e.display_symbol)) } catch { /* */ }
-    } catch (ex) { setDdErr(ex.message) } finally { setResolving(false) }
-  }, [org?.id, supabase, art])
+      // Each section becomes useful independently. Generation never gates the
+      // observed metrics, source history, or related news.
+      setArt({ result: null, loading: true, error: null })
+      void generateArtifact(supabase, { orgId: org.id, artifactType: 'defi_report', entityId: e.id, ...(ctx ? { context: ctx } : {}) })
+        .then((result) => { if (generation === deepGeneration.current) setArt({ result, loading: false, error: null }) })
+        .catch((error) => { if (generation === deepGeneration.current) setArt({ result: null, loading: false, error: error.message }) })
+      void loadDefiMetrics(supabase, org.id, { entityId: e.id })
+        .then((m) => { if (generation === deepGeneration.current) setMetrics(m) })
+        .catch((error) => { if (generation === deepGeneration.current) setMetrics({ _error: error.message }) })
+      void listEntityNews(supabase, org.id, e.id, e.display_symbol)
+        .then((items) => { if (generation === deepGeneration.current) setNews(items) }).catch(() => {})
+    } catch (ex) { if (generation === deepGeneration.current) setDdErr(ex.message) }
+    finally { if (generation === deepGeneration.current) setResolving(false) }
+  }, [org?.id, supabase])
 
-  const closeDeepDive = useCallback(() => { setSelected(null); setRichChart([]); setMetrics(null); setNews([]); setDdErr(null); art.setResult(null); updateUrl({ dd: null }) }, [art, updateUrl])
+  const closeDeepDive = useCallback(() => { deepGeneration.current += 1; setResolving(false); setLoadingChart(false); setSelected(null); setRichChart([]); setMetrics(null); setNews([]); setDdErr(null); setArt({ result: null, loading: false, error: null }); updateUrl({ dd: null }) }, [updateUrl])
 
   const onRowDeepDive = useCallback(async (row) => {
     setSelected(row); setAddrInput(row.address); setRichChart([])
     updateUrl({ chain: row.chain, view, dd: row.address })
     // Rich history chart: DeFiLlama (pool UUID) for non-Solana, Kamino native
     // history for Solana vaults. Skip for Kamino lending reserves (no series).
-    setLoadingChart(true)
-    try {
-      if (row.poolId) setRichChart(await fetchLlamaPoolChart(row.poolId))
-      else if (row.chain === 'solana' && row.supplyApy == null) setRichChart(await fetchKaminoVaultHistory(row.address, row.productType === 'single'))
-    } catch { /* */ } finally { setLoadingChart(false) }
     const poolContext = {
       kind: row.supplyApy != null ? 'lending_market' : row.productType,
       name: row.name || row.symbol, protocol: row.protocol, chain: row.chain,
@@ -242,57 +199,28 @@ export default function DefiPage() {
       tvl_usd: row.tvl_usd, il_7d: row.il_7d, tokens: [row.tokenA, row.tokenB].filter(Boolean),
       stable: row.stable, outlook: row.prediction,
     }
-    runDeepDive(row.chain, row.address, poolContext)
+    void runDeepDive(row.chain, row.address, poolContext)
+    const generation = deepGeneration.current
+    setLoadingChart(true)
+    try {
+      const history = row.poolId ? await fetchLlamaPoolChart(row.poolId)
+        : row.chain === 'solana' && row.supplyApy == null ? await fetchKaminoVaultHistory(row.address, row.productType === 'single') : []
+      if (generation === deepGeneration.current) setRichChart(history)
+    } catch { /* metrics history remains available */ }
+    finally { if (generation === deepGeneration.current) setLoadingChart(false) }
   }, [runDeepDive, updateUrl, view])
 
   // Typed-address analyze: clear any row context so the chart falls back to the
   // resolved metrics history rather than reusing a previously clicked pool.
   const analyzeAddress = useCallback(() => { setSelected(null); setRichChart([]); updateUrl({ chain, view, dd: addrInput }); runDeepDive(chain, addrInput) }, [chain, view, addrInput, runDeepDive, updateUrl])
 
-  const pickChain = (c) => { setChain(c); setProduct('all'); setSearch(''); updateUrl({ chain: c, dd: null }) }
-  const pickView = (v) => { setView(v); setSearch(''); setSort({ key: 'tvl_usd', dir: 'desc' }); updateUrl({ view: v, dd: null }) }
+  const pickChain = (c) => { closeDeepDive(); setChain(c); setProduct('all'); setSearch(''); setPage(0); updateUrl({ chain: c, dd: null, product: null, q: null, page: null }) }
+  const pickView = (v) => { closeDeepDive(); setView(v); setSearch(''); setPage(0); setSort({ key: 'tvl_usd', dir: 'desc' }); updateUrl({ view: v, dd: null, q: null, page: null, sort: null, direction: null }) }
 
   // ── Filtered + sorted rows ───────────────────────────────────────────────────
-  const filtered = useMemo(() => {
-    const q = search.trim().toLowerCase()
-    let r = rows
-    if (view === 'vaults' && product !== 'all') {
-      r = r.filter((x) => product === 'stable' ? x.stable : x.productType === product)
-    }
-    if (q) {
-      r = r.filter((x) => [x.name, x.symbol, x.protocol, x.market, x.address, x.tokenA, x.tokenB]
-        .filter(Boolean).some((f) => String(f).toLowerCase().includes(q)))
-    }
-    const { key, dir } = sort
-    const sgn = dir === 'desc' ? -1 : 1
-    return [...r].sort((a, b) => sgn * ((Number(a[key]) || 0) - (Number(b[key]) || 0)))
-  }, [rows, view, product, search, sort])
+  const filtered = rows
 
-  const stats = useMemo(() => {
-    if (!rows.length) return null
-    if (view === 'lending') {
-      const tvl = rows.reduce((s, r) => s + (r.tvl_usd || 0), 0)
-      const topSupply = Math.max(...rows.map((r) => r.supplyApy || 0))
-      const avgUtil = rows.reduce((s, r) => s + (r.utilization || 0), 0) / rows.length
-      return [
-        { label: t('defi.stat_reserves', { defaultValue: 'Reserves' }), value: String(rows.length), icon: Layers },
-        { label: t('defi.stat_top_supply', { defaultValue: 'Top Supply APY' }), value: fmtPct(topSupply), icon: Percent, accent: true },
-        { label: t('defi.stat_total_supplied', { defaultValue: 'Total Supplied' }), value: fmtUsd(tvl), icon: DollarSign },
-        { label: t('defi.stat_avg_util', { defaultValue: 'Avg Utilization' }), value: fmtPct(avgUtil), icon: TrendingUp },
-      ]
-    }
-    const tvl = rows.reduce((s, r) => s + (r.tvl_usd || 0), 0)
-    const topApy = Math.max(...rows.map((r) => r.apy || 0))
-    const twApy = tvl > 0 ? rows.reduce((s, r) => s + (r.apy || 0) * (r.tvl_usd || 0), 0) / tvl : 0
-    return [
-      { label: t('defi.stat_pools', { defaultValue: 'Pools' }), value: String(rows.length), icon: Layers },
-      { label: t('defi.stat_top_apy', { defaultValue: 'Top APY' }), value: fmtPct(topApy), icon: Percent, accent: true },
-      { label: t('defi.stat_total_tvl', { defaultValue: 'Total TVL' }), value: fmtUsd(tvl), icon: DollarSign },
-      { label: t('defi.stat_twapy', { defaultValue: 'TVL-Wtd APY' }), value: fmtPct(twApy), icon: TrendingUp },
-    ]
-  }, [rows, view, t])
-
-  const toggleSort = (key) => setSort((s) => ({ key, dir: s.key === key && s.dir === 'desc' ? 'asc' : 'desc' }))
+  const toggleSort = (key) => { const next = { key, dir: sort.key === key && sort.dir === 'desc' ? 'asc' : 'desc' }; setSort(next); setPage(0); updateUrl({ sort: key, direction: next.dir, page: null }) }
   const sortArrow = (key) => sort.key === key ? (sort.dir === 'desc' ? ' ↓' : ' ↑') : ''
 
   // Unified header source for the pool detail: the clicked row (rich) or, for a
@@ -341,20 +269,10 @@ export default function DefiPage() {
         <p className="page-sub">{t('pages.defi_sub', { defaultValue: 'Vaults, pools, yields and collateral risk across chains — with AI analysis and TVL/APY history.' })}</p>
       </div>
 
-      {/* Stat cards */}
-      {stats && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-          {stats.map((s) => (
-            <div key={s.label} className="card p-3">
-              <div className="flex items-center gap-1.5 text-[11px] text-[var(--fg-4)]"><s.icon className="h-3.5 w-3.5" /> {s.label}</div>
-              <div className={`text-lg font-semibold mt-0.5 ${s.accent ? 'text-[var(--accent)]' : 'text-[var(--fg-1)]'}`}>{s.value}</div>
-            </div>
-          ))}
-        </div>
-      )}
+      <DefiMarketSummary summary={summary} view={view} loading={loadingRows} />
 
       {/* Deep-dive custom address bar */}
-      <div className="card p-4 space-y-2">
+      <div className="border-b border-[var(--border-default)] rounded-none p-4 space-y-2">
         <div className="flex flex-wrap items-end gap-3">
           <label className="block flex-1 min-w-[220px]">
             <span className="text-[11px] text-[var(--fg-4)]">{t('defi.analyze_on', { defaultValue: 'Analyze any address on' })} <span className="text-[var(--accent)]">{chainLabel}</span></span>
@@ -378,18 +296,18 @@ export default function DefiPage() {
 
       {/* Pool detail (deep dive) */}
       {deepActive && (
-        <section className="card--accent p-4 space-y-3">
+        <section className="border-y border-[var(--border-default)] rounded-none p-4 space-y-3">
           <div className="flex items-center justify-between gap-2">
             <div className="min-w-0">
               <div className="eyebrow">{t('defi.deep_dive', { defaultValue: 'Pool detail' })}</div>
               {detail && (
                 <div className="flex items-center gap-2 flex-wrap">
                   <h2 className="text-[17px] font-semibold text-[var(--fg-1)] truncate">{detail.name}</h2>
-                  <ProductPill type={detail.productType} />
+                  <ProductLabel type={detail.productType} />
                   <span className="text-[12px] text-[var(--fg-4)]">{detail.protocol ? `${detail.protocol} · ` : ''}{getChain(detail.chain)?.label || detail.chain}</span>
                   {isStale(detail.staleAfter) && (
                     <span title={detail.fetchedAt ? `${t('defi.data_as_of', { defaultValue: 'Data as of' })} ${new Date(detail.fetchedAt).toLocaleString()}` : undefined}
-                      className="shrink-0 inline-flex items-center gap-1 text-[10px] font-medium px-1.5 py-0.5 rounded bg-amber-500/15 text-amber-300">
+                      className="shrink-0 text-[10px] font-medium text-amber-300">
                       <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />{t('defi.stale', { defaultValue: 'Stale' })}
                     </span>
                   )}
@@ -399,8 +317,8 @@ export default function DefiPage() {
             <button onClick={closeDeepDive} className="btn btn--sm btn--ghost shrink-0"><ArrowLeft className="h-3.5 w-3.5" /> {t('defi.back', { defaultValue: 'Back to explorer' })}</button>
           </div>
 
-          {ddErr && <div className="card--flat p-3 text-[13px] text-red-400">{ddErr}</div>}
-          {metrics?._error && !detail && <div className="card--flat p-3 text-[13px] text-[var(--fg-4)]">{t('defi.metrics_unavailable', { defaultValue: 'Live metrics unavailable — verify the address and chain.' })}</div>}
+          {ddErr && <div className="border-b border-[var(--border-default)] rounded-none p-3 text-[13px] text-red-400">{ddErr}</div>}
+          {metrics?._error && !detail && <div className="border-b border-[var(--border-default)] rounded-none p-3 text-[13px] text-[var(--fg-4)]">{t('defi.metrics_unavailable', { defaultValue: 'Live metrics unavailable — verify the address and chain.' })}</div>}
 
           {/* Key stats */}
           {detail && (
@@ -436,12 +354,13 @@ export default function DefiPage() {
 
           {/* AI analysis (pool-framed) */}
           <ArtifactView result={art.result} loading={art.loading} />
+          {art.error && <p role="alert" className="text-sm text-[var(--fg-4)]">{t('defi.analysis_unavailable', { defaultValue: 'Analysis is unavailable. The recorded metrics and history remain available.' })}</p>}
 
           {news.length > 0 && (
             <div className="space-y-1.5">
               <div className="eyebrow">{t('breakdown.news', { defaultValue: 'Related news' })}</div>
               {news.map((n) => (
-                <a key={n.id} href={n.url} target="_blank" rel="noopener noreferrer" className="card--flat p-2.5 block hover:border-[var(--accent)] transition-colors">
+                <a key={n.id} href={n.url} target="_blank" rel="noopener noreferrer" className="border-b border-[var(--border-default)] rounded-none p-2.5 block hover:border-[var(--accent)] transition-colors">
                   <div className="text-[13px] text-[var(--fg-1)] leading-snug">{n.title}</div>
                   <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{n.source_name}{n.published_at ? ` · ${new Date(n.published_at).toLocaleDateString()}` : ''}</div>
                 </a>
@@ -459,7 +378,7 @@ export default function DefiPage() {
           {view === 'vaults' && (
             <div className="flex items-center gap-1.5 flex-wrap ml-1 pl-2 border-l border-[var(--border-subtle)]">
               {productChips.map(([id, label]) => (
-                <button key={id} onClick={() => setProduct(id)} className={product === id ? 'chip chip--accent' : 'chip'}>{label}</button>
+                <button key={id} onClick={() => { setProduct(id); setPage(0); updateUrl({ product: id === 'all' ? null : id, page: null }) }} className={`px-2 py-1 border-b ${product === id ? 'border-[var(--accent)] text-[var(--accent)]' : 'border-transparent text-[var(--fg-4)]'}`}>{label}</button>
               ))}
             </div>
           )}
@@ -468,7 +387,7 @@ export default function DefiPage() {
         <div className="flex items-center gap-2">
           <div className="relative flex-1">
             <Search className="h-4 w-4 absolute left-3 top-1/2 -translate-y-1/2 text-[var(--fg-5)]" />
-            <input className="input w-full pl-9" placeholder={t('defi.search_ph', { defaultValue: 'Search by name, token, protocol, address…' })} value={search} onChange={(e) => setSearch(e.target.value)} />
+            <input className="input w-full pl-9" placeholder={t('defi.search_ph', { defaultValue: 'Search by name, token, protocol, address…' })} value={search} onChange={(e) => { setSearch(e.target.value); setPage(0); updateUrl({ q: e.target.value, page: null }) }} />
           </div>
           <button onClick={() => loadRows(chain, view, true)} disabled={loadingRows} className="btn btn--ghost btn--sm disabled:opacity-50">
             <RefreshCw className={`h-3.5 w-3.5 ${loadingRows ? 'animate-spin' : ''}`} /> {t('defi.refresh', { defaultValue: 'Refresh' })}
@@ -477,8 +396,8 @@ export default function DefiPage() {
 
         {/* Yield arbitrage (Solana lending) */}
         {view === 'lending' && arb.length > 0 && (
-          <div className="card--flat p-3 space-y-1.5">
-            <div className="eyebrow">{t('defi.arb', { defaultValue: 'Yield arbitrage' })} <span className="text-[var(--fg-5)] normal-case">{t('defi.arb_hint', { defaultValue: 'vault APY − lending supply APY (top 5)' })}</span></div>
+          <div className="border-b border-[var(--border-default)] rounded-none p-3 space-y-1.5">
+            <div className="eyebrow">{t('defi.yield_comparison', { defaultValue: 'Yield comparison' })} <span className="text-[var(--fg-5)] normal-case">{t('defi.comparison_scope', { defaultValue: 'Current lending page versus the largest cached vaults; differing strategies carry different risks.' })}</span></div>
             {arb.map((a, i) => (
               <div key={i} className="flex items-center justify-between gap-3 text-[12px]">
                 <div className="min-w-0"><span className="font-semibold text-[var(--fg-1)]">{a.symbol}</span> <span className="text-[var(--fg-4)] truncate">{a.vaultName}</span></div>
@@ -492,13 +411,13 @@ export default function DefiPage() {
           </div>
         )}
 
-        {rowsErr && <div className="card--flat p-3 text-[13px] text-red-400">{t('defi.load_error', { defaultValue: 'Could not load data' })}: {rowsErr}</div>}
+        {rowsErr && <div role="alert" className="border-b border-[var(--border-default)] rounded-none p-3 text-[13px] text-red-400">{t('defi.load_error', { defaultValue: 'Could not load data' })}: {rowsErr}</div>}
 
         {/* Table */}
         {loadingRows ? (
-          <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
+          <div className="border-b border-[var(--border-default)] rounded-none p-10 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
         ) : filtered.length === 0 ? (
-          <div className="card p-8 text-center text-[var(--fg-4)] text-sm">
+          <div className="border-b border-[var(--border-default)] rounded-none p-8 text-center text-[var(--fg-4)] text-sm">
             {rowsStatus === 'provider_error'
               ? t('defi.provider_error', { defaultValue: 'Provider data is temporarily unavailable for this chain. Showing no rows until the next refresh.' })
               : rowsStatus === 'unmapped'
@@ -506,7 +425,7 @@ export default function DefiPage() {
                 : t('defi.no_rows', { defaultValue: 'No results for this chain / filter.' })}
           </div>
         ) : view === 'vaults' ? (
-          <div className="card overflow-hidden">
+          <div className="border-b border-[var(--border-default)] rounded-none overflow-hidden">
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-[var(--fg-5)] border-b border-[var(--border-subtle)]">
               <button onClick={() => toggleSort('name')} className="text-left">{t('defi.col_vault', { defaultValue: 'Vault / Pool' })}{sortArrow('name')}</button>
               <button onClick={() => toggleSort('tvl_usd')} className="text-right">{t('defi.tvl', { defaultValue: 'TVL' })}{sortArrow('tvl_usd')}</button>
@@ -515,12 +434,12 @@ export default function DefiPage() {
               <span className="text-right">{t('defi.col_actions', { defaultValue: '' })}</span>
             </div>
             <div className="divide-y divide-[var(--border-subtle)]">
-              {filtered.slice(0, 100).map((r) => (
-                <button key={r.key} onClick={() => onRowDeepDive(r)} className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 px-3 py-2.5 items-center text-left hover:bg-[var(--bg-2)] transition-colors">
+              {filtered.map((r) => (
+                <button data-defi-row key={r.key} onClick={() => onRowDeepDive(r)} className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_auto] gap-2 px-3 py-2.5 items-center text-left hover:bg-[var(--bg-2)] transition-colors">
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[13px] text-[var(--fg-1)] truncate">{r.name}</span>
-                      <ProductPill type={r.productType} />
+                      <ProductLabel type={r.productType} />
                     </div>
                     <div className="flex items-center gap-1.5 text-[10px] text-[var(--fg-5)]">
                       <span className="font-mono truncate">{shortenAddress(r.address, 4)}</span>
@@ -531,14 +450,14 @@ export default function DefiPage() {
                   </div>
                   <div className="text-right text-[13px] text-[var(--fg-2)]">{fmtUsd(r.tvl_usd)}</div>
                   <div className={`text-right text-[13px] font-medium ${apyClass(r.apy)}`}>{fmtPct(r.apy)}</div>
-                  <div className="text-right text-[12px] text-[var(--fg-3)]">{r.apyReward ? fmtPct(r.apyReward) : '—'}</div>
+                  <div className="text-right text-[12px] text-[var(--fg-3)]">{fmtPct(r.apyReward)}</div>
                   <a href={r.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-[var(--fg-5)] hover:text-[var(--accent)] justify-self-end" title="Open"><ExternalLink className="h-3.5 w-3.5" /></a>
                 </button>
               ))}
             </div>
           </div>
         ) : (
-          <div className="card overflow-hidden">
+          <div className="border-b border-[var(--border-default)] rounded-none overflow-hidden">
             <div className="grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 px-3 py-2 text-[10px] uppercase tracking-wide text-[var(--fg-5)] border-b border-[var(--border-subtle)]">
               <button onClick={() => toggleSort('symbol')} className="text-left">{t('defi.col_reserve', { defaultValue: 'Reserve' })}{sortArrow('symbol')}</button>
               <button onClick={() => toggleSort('supplyApy')} className="text-right">{t('defi.col_supply', { defaultValue: 'Supply APY' })}{sortArrow('supplyApy')}</button>
@@ -547,21 +466,21 @@ export default function DefiPage() {
               <button onClick={() => toggleSort('utilization')} className="text-right">{t('defi.col_util', { defaultValue: 'Utilization' })}{sortArrow('utilization')}</button>
             </div>
             <div className="divide-y divide-[var(--border-subtle)]">
-              {filtered.slice(0, 100).map((r) => {
-                const util = Number(r.utilization) * 100
+              {filtered.map((r) => {
+                const util = r.utilization == null ? null : Number(r.utilization) * 100
                 const utilCls = util >= 90 ? 'bg-red-500' : util >= 70 ? 'bg-yellow-500' : 'bg-emerald-500'
                 return (
-                  <button key={r.key} onClick={() => onRowDeepDive(r)} className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 px-3 py-2.5 items-center text-left hover:bg-[var(--bg-2)] transition-colors">
+                  <button data-defi-row key={r.key} onClick={() => onRowDeepDive(r)} className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 px-3 py-2.5 items-center text-left hover:bg-[var(--bg-2)] transition-colors">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5"><span className="text-[13px] text-[var(--fg-1)] truncate">{r.symbol}</span>{r.primary && <span className="chip chip--accent text-[9px]">Main</span>}{isStale(r.staleAfter) && <span className="text-amber-400/90 text-[10px]" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>{t('defi.stale', { defaultValue: 'stale' })}</span>}</div>
-                      <div className="text-[10px] text-[var(--fg-5)] truncate">{r.market}{r.ltv ? ` · LTV ${fmtPct(r.ltv)}` : ''}</div>
+                      <div className="flex items-center gap-1.5"><span className="text-[13px] text-[var(--fg-1)] truncate">{r.symbol}</span>{r.primary && <span className="text-[var(--accent)] text-[9px]">Main</span>}{isStale(r.staleAfter) && <span className="text-amber-400/90 text-[10px]" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>{t('defi.stale', { defaultValue: 'stale' })}</span>}</div>
+                      <div className="text-[10px] text-[var(--fg-5)] truncate">{r.market}{r.ltv != null ? ` · LTV ${fmtPct(r.ltv)}` : ''}</div>
                     </div>
                     <div className="text-right text-[13px] font-medium text-emerald-400">{fmtPct(r.supplyApy)}</div>
                     <div className="text-right text-[13px] text-red-400/90">{fmtPct(r.borrowApy)}</div>
                     <div className="text-right text-[13px] text-[var(--fg-2)]">{fmtUsd(r.tvl_usd)}</div>
                     <div className="text-right">
-                      <div className="text-[12px] text-[var(--fg-3)]">{util.toFixed(0)}%</div>
-                      <div className="h-1 w-full bg-[var(--bg-3)] rounded mt-0.5 overflow-hidden"><div className={`h-full ${utilCls}`} style={{ width: `${Math.min(100, util)}%` }} /></div>
+                      <div className="text-[12px] text-[var(--fg-3)]">{util == null ? '—' : `${util.toFixed(0)}%`}</div>
+                      {util != null && <div className="h-1 w-full bg-[var(--bg-3)] mt-0.5 overflow-hidden"><div className={`h-full ${utilCls}`} style={{ width: `${Math.min(100, Math.max(0, util))}%` }} /></div>}
                     </div>
                   </button>
                 )
@@ -569,7 +488,11 @@ export default function DefiPage() {
             </div>
           </div>
         )}
-        {filtered.length > 100 && <div className="text-center text-[11px] text-[var(--fg-5)]">{t('defi.showing_top', { defaultValue: 'Showing top 100 by' })} {sort.key === 'tvl_usd' ? 'TVL' : 'APY'}.</div>}
+        <div className="flex justify-between items-center gap-4 flex-wrap text-xs text-[var(--fg-4)]">
+          <span>{total ? `${page * DEFI_PAGE_SIZE + 1}–${Math.min((page + 1) * DEFI_PAGE_SIZE, total)} / ${total}` : '0'} {t('defi.matching_results', { defaultValue: 'matching results' })} · {t('defi.snapshot_coverage', { defaultValue: 'Latest observations from the past 7 days' })}</span>
+          <nav aria-label={t('defi.pagination', { defaultValue: 'Explorer pages' })} className="flex gap-5"><button disabled={loadingRows || page === 0} className="underline underline-offset-4 disabled:opacity-30" onClick={() => { setPage((v) => Math.max(0, v - 1)); updateUrl({ page: page > 1 ? page - 1 : null }) }}>{t('common.previous', { defaultValue: 'Previous' })}</button><button disabled={loadingRows || (page + 1) * DEFI_PAGE_SIZE >= total} className="underline underline-offset-4 disabled:opacity-30" onClick={() => { setPage((v) => v + 1); updateUrl({ page: page + 1 }) }}>{t('common.next', { defaultValue: 'Next' })}</button></nav>
+        </div>
+        {product==='stable'&&coverage?.stableClassification&&<p className="text-xs text-[var(--fg-4)]">{coverage.stableClassification}</p>}
       </div>
 
       <IntelDisclaimer variant="block" />
@@ -579,7 +502,7 @@ export default function DefiPage() {
 
 function Stat({ label, value, sub, accent }) {
   return (
-    <div className="card p-3">
+    <div className="py-3 [font-variant-numeric:tabular-nums]">
       <div className="text-[11px] text-[var(--fg-4)]">{label}</div>
       <div className={`text-lg font-semibold ${accent ? 'text-[var(--accent)]' : 'text-[var(--fg-1)]'}`}>{value}</div>
       {sub && <div className="text-[10px] text-[var(--fg-5)] mt-0.5">{sub}</div>}
@@ -587,13 +510,13 @@ function Stat({ label, value, sub, accent }) {
   )
 }
 
-function ProductPill({ type }) {
+function ProductLabel({ type }) {
   const map = {
-    lp: ['LP', 'bg-blue-500/15 text-blue-300'],
-    single: ['EARN', 'bg-emerald-500/15 text-emerald-300'],
-    multiply: ['LOOP', 'bg-orange-500/15 text-orange-300'],
-    lending: ['LEND', 'bg-purple-500/15 text-purple-300'],
+    lp: ['LP', 'text-blue-300'],
+    single: ['EARN', 'text-emerald-300'],
+    multiply: ['LOOP', 'text-orange-300'],
+    lending: ['LEND', 'text-purple-300'],
   }
   const [label, cls] = map[type] || [type?.toUpperCase?.() || '', 'bg-[var(--bg-3)] text-[var(--fg-4)]']
-  return <span className={`shrink-0 text-[9px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide ${cls}`}>{label}</span>
+  return <span className={`shrink-0 text-[9px] font-medium uppercase tracking-wide ${cls}`}>{label}</span>
 }

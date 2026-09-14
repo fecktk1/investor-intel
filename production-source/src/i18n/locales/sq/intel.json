@@ -1,4 +1,27 @@
 {
+  "cohort": {
+    "close": "Mbyll",
+    "coverage": {
+      "missing": "Nuk ka çmim të ruajtur për aktivin origjinal të saktë",
+      "observation_unknown": "Koha e vëzhgimit të çmimit nuk është raportuar",
+      "observed_later": "Vëzhguar pas kohës së zgjedhur",
+      "recorded_later": "Regjistruar pas kohës së zgjedhur",
+      "recording_unknown": "Koha e regjistrimit të çmimit nuk është raportuar",
+      "invalid": "Çmimi është i pavlefshëm",
+      "expiry_unknown": "Vlefshmëria e çmimit nuk është raportuar",
+      "stale": "Çmimi i ruajtur është i vjetruar",
+      "unavailable": "Çmimi nuk është i disponueshëm; anëtari origjinal ruhet",
+      "comparable": "I krahasueshëm",
+      "zero_baseline": "Çmimi fillestar është zero; kthimi në përqindje nuk është i përcaktuar",
+      "baseline_missing": "Mungon çmimi fillestar i krahasueshëm ose koha e vëzhgimit",
+      "retained_member": "Anëtari origjinal mbetet në këtë grup. Çmimet e padisponueshme nuk llogariten si kthime zero.",
+      "observed": "Çmimi i vëzhguar",
+      "recorded": "Regjistrimi i parë",
+      "expires": "I vlefshëm deri më",
+      "selected": "Koha e zgjedhur e provave"
+    },
+    "response_changed": "Rezultatet e zbulimit kanë ndryshuar. Grupi juaj i ruajtur vazhdon të hapë anëtarët origjinalë. Ruani shprehimisht këto rezultate për të ndjekur një grup tjetër."
+  },
   "market": {
     "source": "Exchange",
     "change_24h": "24h change",
@@ -85,7 +108,11 @@
     "sort_recently_updated": "Recently updated",
     "allCategories": "All categories",
     "category": "Category",
-    "sortBy": "Sort by"
+    "sortBy": "Sort by",
+    "auto_detect": "Zbulo automatikisht rrjetin",
+    "locate_not_found": "Ky token nuk u gjet në asnjë rrjet të mbështetur. Zgjidh një rrjet dhe provo sërish.",
+    "locate_choose": "U gjet në disa rrjete; zgjidh një:",
+    "pick_chain": "Zgjidh një rrjet për këtë identifikues dhe provo sërish."
   },
   "brand": {
     "name": "Investor Intel",
@@ -97,7 +124,8 @@
     "theses": "Tezat",
     "daily": "Ditore",
     "create": "Krijo",
-    "me": "Unë"
+    "me": "Unë",
+    "journal": "Ditari i tezave"
   },
   "nav": {
     "market_pulse": "Pulsi i tregut",
@@ -412,7 +440,13 @@
     "brief_b3": "Ndikimi në watchlist dhe tezë",
     "brief_b4": "Çfarë të monitorosh më pas",
     "gen_brief": "Gjenero Brifing Ditor",
-    "refresh": "Rifresko"
+    "refresh": "Rifresko",
+    "macro_observed": "Vëzhgimi makro",
+    "flow_source_times": "Kohët e burimeve të transfertave",
+    "time_unavailable": "Koha e vëzhgimit nuk është e disponueshme",
+    "partial_reads": "Disa seksione nuk mund të lexoheshin. Burimet e disponueshme mbeten të dukshme; seksionet që mungojnë nuk janë rezultate bosh.",
+    "flows_read_failed": "Përmbledhja e transfertave nuk mund të lexohej. Kjo nuk do të thotë se nuk ka pasur transferta.",
+    "picture_news_failed": "Konteksti i lajmeve të fundit nuk mund të lexohej."
   },
   "briefs": {
     "today": "Brifingu i sotëm",
@@ -530,7 +564,10 @@
     "body": "Hulumto token-e, wallet-e, narrativa, DeFi dhe cilësi ekzekutimi — me shpjegime të thjeshta dhe kontekst rreziku. 7 ditë provë falas, pa kartë të kërkuar.",
     "cta": "Fillo provën 7-ditore falas",
     "already_used": "Ke përdorur tashmë provën tënde të Investor Intel.",
-    "error": "Nuk u mund të nisej prova. Ju lutem provo përsëri."
+    "error": "Nuk u mund të nisej prova. Ju lutem provo përsëri.",
+    "plan_title": "Po konfigurohet hapësira jote e punës",
+    "plan_body": "Një çast: po krijojmë hapësirën tënde Investor Intel dhe po të kalojmë te pagesa.",
+    "retry": "Provo sërish"
   },
   "onboarding": {
     "title": "Konfiguro hapësirën tënde të punës",
@@ -760,7 +797,42 @@
       "open_market": "Hap të dhënat e plota të tregut",
       "history": "Historia e transaksioneve",
       "no_history": "Ende nuk ka transaksione të regjistruara për këtë aset."
-    }
+    },
+    "flow_return_title": "Kthimi pas lëvizjeve të kapitalit",
+    "flow_return_loading": "Po lexohet historiku…",
+    "flow_return_refresh": "Rifresko llogaritjen",
+    "flow_return_load": "Llogarit nga historiku i regjistruar",
+    "flow_return_method": "Metoda dhe versioni i të dhënave",
+    "flow_return_version": "Versioni i të dhënave të regjistruara",
+    "flow_return_estimate": "Kthimi i vlerësuar",
+    "flow_return_gain": "Ndryshimi pas lëvizjeve të kapitalit",
+    "flow_return_periods": "Periudhat e regjistruara · 90 ditët e fundit",
+    "flow_return_interval": "Intervali i vlerësimit",
+    "flow_return_flows": "Lëvizjet neto të kapitalit (USD)",
+    "flow_return_evidence": "Provat e llogaritjes",
+    "flow_return_inputs": "Të dhënat e regjistruara",
+    "flow_return_gap": "Arsyeja e mungesës",
+    "flow_return_values": "Vlera fillestare / përfundimtare (USD)",
+    "flow_return_capital": "Kapitali i ponderuar (USD)",
+    "flow_return_snapshots": "Referencat e gjendjeve të regjistruara",
+    "flow_return_previous": "Periudhat e mëparshme",
+    "flow_return_next": "Periudhat e mëvonshme",
+    "flow_return_time": "Koha efektive",
+    "flow_return_reference": "Referenca e aktivitetit",
+    "flow_return_previous_flows": "Lëvizjet e mëparshme",
+    "flow_return_next_flows": "Lëvizjet e ardhshme",
+    "flow_benchmark_title": "Krahasimi CMC me të njëjtat lëvizje kapitali",
+    "flow_benchmark_index": "Indeksi i krahasimit",
+    "flow_benchmark_difference": "Portofoli minus indeksi (pikë përqindjeje)",
+    "flow_benchmark_periods": "Kohë të njëjta vlerësimi dhe lëvizjesh kapitali",
+    "flow_benchmark_book": "Kthimi i portofolit të regjistruar",
+    "flow_benchmark_end": "Vlera përfundimtare hipotetike e indeksit (USD)",
+    "flow_benchmark_known": "Regjistruar",
+    "flow_benchmark_method": "Metoda dhe kërkesat për burimet",
+    "flow_benchmark_incomplete": "Krahasimi i plotë nuk është i disponueshëm. Çdo periudhë më poshtë shpjegon provat që mungojnë.",
+    "flow_return_error": "Historiku i performancës nuk mund të lexohej. Provo llogaritjen sërish; nuk është nxjerrë asnjë kthim.",
+    "flow_return_incomplete": "Kthimi i plotë nuk është i disponueshëm. Rishiko periudhat përkatëse; gjendjet e vjetra nuk rindërtohen nga bilancet aktuale.",
+    "flow_return_intro": "Vlerësimet e datuara dhe transaksionet e regjistruara ndajnë lëvizjet e kapitalit nga ndryshimet e portofolit. Periudhat pa prova mbeten boshllëqe."
   },
   "degen": {
     "subtitle": "Multi-chain memecoin discovery and risk context. Extremely high risk — not financial advice.",
@@ -827,7 +899,19 @@
     "sources": "Sources",
     "incomplete": "Partial",
     "updating": "updating…",
-    "refreshing": "Building this token’s profile… check back in a moment."
+    "refreshing": "Building this token’s profile… check back in a moment.",
+    "title": "Profili i projektit",
+    "description_context": "Përshkrimi i ofruesit. Shifrat pasqyrojnë metadatat e marra.",
+    "stale": "I vjetruar",
+    "loading": "Po ngarkohen hollësitë e projektit…",
+    "missing_details": "Nuk ka hollësi të verifikuara të projektit në memorien e përbashkët.",
+    "source_error": "Hollësitë e projektit nuk janë përkohësisht të disponueshme nga burimi i përbashkët. Provo sërish.",
+    "no_access": "Plani aktual i ofruesit nuk i përfshin këto hollësi.",
+    "links": "Lidhjet e burimeve të projektit",
+    "retrieved": "Metadatat u morën",
+    "retry": "Rifresko hollësitë e projektit",
+    "all_categories": "Të gjitha klasifikimet",
+    "read_full": "Lexo profilin e plotë"
   },
   "limits": {
     "watchlist_items": "U arrit kufiri i watchlist-ës i planit tënd.",
@@ -847,6 +931,107 @@
   },
   "common": {
     "refresh": "Rifresko",
-    "back": "Kthehu"
+    "back": "Kthehu",
+    "retry": "Provo sërish"
+  },
+  "investigation": {
+    "terms_calculation": "Njësitë e tokenit dhe kushtet e shlyerjes",
+    "research_quantity": "Sasia për studim (tokenë)",
+    "redemption_minimum": "Minimumi i regjistruar i shlyerjes",
+    "threshold_shortfall": "Sasia nën prag",
+    "keep_calculation": "Ruaj llogaritjen dhe burimet në një dëshmi kërkimi",
+    "fact_review_expired": "Rishikimi i burimit ka skaduar",
+    "quantity_scope": "Një sasi për studim. Pozicionet e tua mbeten të pandryshuara.",
+    "quantity_prompt": "Vendos një sasi për të llogaritur njësitë e dokumentuara të aktivit bazë.",
+    "terms_expired": "Këto kushte kërkojnë rishikim të ri të burimit para llogaritjes.",
+    "terms_scope": "Kushtet e burimit përshkruajnë njësitë dhe kërkesat. Nuk vërtetojnë rezervat aktuale, vlerën, shlyerjen e mundshme apo përshtatshmërinë tënde.",
+    "threshold_met": "Pragu i sasisë është arritur; tarifat, dorëzimi dhe kriteret e përshtatshmërisë mbeten në fuqi.",
+    "multiplier_missing": "Aksionet bazë nuk janë të disponueshme: ky token kërkon një shumëzues aksionesh të datuar.",
+    "independent_reviews": "Çdo fakt ka rishikimin dhe afatin e vet. Një rishikim më i ri nuk rifreskon dokumentet e tjera.",
+    "issuer_partially_reviewed": "Disa rishikime burimesh kanë skaduar. Vetëm faktet që janë veçmas aktuale përdoren për llogaritje dhe oraret e tregut."
+  },
+  "journal": {
+    "brand": "Ditari i tezave",
+    "new_thesis": "Tezë e re",
+    "list_sub": "Të gjitha vlerësimet e tua, me prova, gjendjen fillestare dhe historikun e rishikimeve.",
+    "builder_sub": "Fillimisht konteksti i aktivit, pastaj arsyetimi yt, me udhëzim në çdo hap.",
+    "reviews_sub": "Tezat për rishikim dhe historiku i rishikimeve të tua.",
+    "filter_all": "Të gjitha",
+    "review_due": "Rishikim",
+    "quality": "Cilësia",
+    "total": "Gjithsej",
+    "recent": "Tezat e fundit",
+    "view_all": "Shiko të gjitha",
+    "needs_review_q": "Kërkon rishikimin tënd",
+    "builder_wip": "Ndërtuesi me udhëzim po përgatitet në këtë version.",
+    "detail_wip": "Pamja e plotë e tezës (Përmbledhje · Prova · Grafik · Portofol · Tregtime · Rishikime · Njoftime) po përgatitet në këtë version.",
+    "trades_no_exec": "Ditari i tregtimeve shërben vetëm për planifikim dhe rishikim. Investor Intel nuk kryen tregtime.",
+    "trades_wip": "Planet, rishikimet dhe analizat e tregtimeve po përgatiten në këtë version.",
+    "reviews_wip": "Procesi i rishikimit po përgatitet në këtë version.",
+    "analytics_wip": "Analizat e tezave, tregtimeve dhe konflikteve të portofolit po përgatiten në këtë version.",
+    "settings_wip": "Preferencat e ditarit po përgatiten në këtë version.",
+    "nav": {
+      "dashboard": "Përmbledhje",
+      "theses": "Tezat",
+      "trades": "Tregtimet",
+      "reviews": "Rishikimet",
+      "analytics": "Analizat",
+      "settings": "Cilësimet"
+    },
+    "status": {
+      "draft": "Draft",
+      "active": "Aktive",
+      "strengthening": "Po forcohet",
+      "weakening": "Po dobësohet",
+      "needs_review": "Kërkon rishikim",
+      "confirmed": "E konfirmuar",
+      "partially_confirmed": "Pjesërisht e konfirmuar",
+      "invalidated": "E rrëzuar",
+      "closed": "E mbyllur",
+      "archived": "E arkivuar"
+    },
+    "empty": {
+      "title": "Krijo tezën tënde të parë të investimit",
+      "sub": "Nis nga gjendja jote aktuale: aplikacioni mbledh provat për ty.",
+      "examples": "Shembuj",
+      "start_portfolio": "Pozicion në portofol",
+      "start_watchlist": "Aktiv në listën e ndjekjes",
+      "start_market": "Faqja e tregut",
+      "start_news": "Lajmet e fundit",
+      "start_trade": "Ide tregtimi",
+      "start_bear": "Skenar rënës",
+      "example_0": "Krijo një tezë nga zhvillimet e fundit rreth SOL",
+      "example_1": "Rishiko një pozicion pa tezë",
+      "example_2": "Kthe një lajm në plan tregtimi",
+      "example_3": "Krijo një skenar rënës për pozicionin tënd më të madh"
+    }
+  },
+  "signup": {
+    "seo_title": "Krijo llogarinë tënde Investor Intel",
+    "title": "Krijo llogarinë tënde",
+    "body": "Llogaria jote aktivizon provën falas 7-ditore të Investor Intel: qasje e plotë, pa kartë.",
+    "name_label": "Emri",
+    "name_placeholder": "Emri yt",
+    "email_label": "Email",
+    "email_placeholder": "ti@shembull.com",
+    "password_label": "Fjalëkalimi",
+    "password_placeholder": "Të paktën 8 karaktere",
+    "password_too_short": "Fjalëkalimi duhet të ketë të paktën 8 karaktere.",
+    "cta": "Krijo llogari dhe nis provën falas",
+    "plan_body": "Krijo llogarinë dhe përfundo pagesën për të aktivizuar {{tier}} me {{price}}/muaj. Paguaj me kartë ose kripto.",
+    "plan_cta": "Krijo llogari dhe vazhdo te pagesa",
+    "trust_trial": "Provë falas 7-ditore",
+    "trust_card": "Pa kartë",
+    "trust_pay": "Paguaj me kartë ose kripto",
+    "trust_cancel": "Anulo kur të duash",
+    "have_account": "Ke tashmë një llogari?",
+    "sign_in": "Hyr",
+    "back": "Kthehu",
+    "sent_title": "Kontrollo emailin",
+    "sent_body_prefix": "Dërguam një lidhje konfirmimi te ",
+    "sent_body_suffix": ". Kliko për të aktivizuar llogarinë dhe për të nisur provën falas 7-ditore.",
+    "sent_body_suffix_plan": ". Kliko për të aktivizuar llogarinë dhe për të vazhduar te pagesa.",
+    "sent_hint": "Nuk erdhi gjë? Kontrollo dosjen spam ose dërgo formularin sërish. Nëse ke tashmë llogari, thjesht hyr.",
+    "error": "Llogaria jote nuk mund të krijohej. Provo sërish."
   }
 }

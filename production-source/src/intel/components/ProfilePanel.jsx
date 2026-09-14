@@ -1,88 +1,81 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
-import { Globe, FileText, BookOpen, Compass, ExternalLink, ShieldCheck, Users, Rocket } from 'lucide-react'
 import TokenAvatar from './TokenAvatar'
 
-const fmtNum = (n) => n == null ? '—' : Number(n) >= 1e9 ? `${(n / 1e9).toFixed(2)}B` : Number(n) >= 1e6 ? `${(n / 1e6).toFixed(2)}M` : Number(n) >= 1e3 ? `${(n / 1e3).toFixed(1)}K` : `${Number(n).toLocaleString()}`
-
-function Link2({ href, icon: Icon, label }) {
-  if (!href) return null
-  return <a href={href} target="_blank" rel="noopener noreferrer" className="btn btn--ghost btn--sm"><Icon className="h-3.5 w-3.5" /> {label}</a>
+const finite = value => value != null && value !== '' && Number.isFinite(Number(value))
+const fmtNum = value => !finite(value) ? '—' : Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
+function safeUrl(value) {
+  if (typeof value !== 'string') return false
+  try { return ['https:', 'http:'].includes(new URL(value).protocol) } catch { return false }
 }
 
-// Rich, globally-cached project profile (M5). Renders only provider-sourced
-// facts — no invented tokenomics. Degrades cleanly when a profile is missing,
-// incomplete, or refreshing.
-export default function ProfilePanel({ profile, state }) {
+// Provider facts retain their source clock. Missing data is an explicit state,
+// not an empty identity heading or an invented positive security assessment.
+export default function ProfilePanel({ profile, state, error, reason, onRetry }) {
   const { t } = useTranslation('intel', { useSuspense: false })
-  if (!profile && state === 'enqueued') return <div className="card--flat p-3 text-[12px] text-[var(--fg-4)]">{t('profile.refreshing', { defaultValue: 'Building this token’s profile… check back in a moment.' })}</div>
-  if (!profile) return null
-  const p = profile
-  const socials = p.socials && typeof p.socials === 'object' ? p.socials : {}
-  const links = p.links && typeof p.links === 'object' ? p.links : {}
-  const supply = p.supply || {}
-  const security = p.security || {}
-  const holders = p.holders || {}
-  const launch = p.launch_data || {}
-  const cats = Array.isArray(p.categories) ? p.categories.slice(0, 8) : []
-
+  if (!profile && !state && !error) return null
+  const p = profile || {}
+  const title = p.name || p.symbol || t('profile.title', { defaultValue: 'Project profile' })
+  const description = typeof p.description === 'string' ? p.description : ''
+  const supply = p.supply || {}, holders = p.holders || {}, security = p.security || {}
+  const categories = Array.isArray(p.categories) ? p.categories.filter(v => typeof v === 'string') : []
+  const links = [
+    [t('profile.website', { defaultValue: 'Website' }), p.website_url || p.links?.website],
+    [t('profile.docs', { defaultValue: 'Docs' }), p.docs_url],
+    [t('profile.whitepaper', { defaultValue: 'Whitepaper' }), p.whitepaper_url],
+    [t('profile.explorer', { defaultValue: 'Explorer' }), p.explorer_url],
+    ...Object.entries(p.socials || {}),
+    ['DexScreener', p.dexscreener_url], ['GeckoTerminal', p.geckoterminal_url],
+    ['CoinGecko', p.coingecko_url], ['CoinMarketCap', p.coinmarketcap_url],
+    ['Pump.fun', p.pumpfun_url], ['Jupiter', p.jupiter_url],
+    ...Object.entries(p.links || {}).filter(([key]) => key.toLowerCase() !== 'website'),
+  ].filter(([, href]) => safeUrl(href))
+  const facts = [
+    [t('profile.circulating', { defaultValue: 'Circulating' }), supply.circulating],
+    [t('profile.total_supply', { defaultValue: 'Total supply' }), supply.total],
+    [t('profile.max_supply', { defaultValue: 'Max supply' }), supply.max],
+    [t('breakdown.holders', { defaultValue: 'Holders' }), holders.count],
+  ].filter(([,value]) => finite(value)).map(([label,value]) => [label,fmtNum(value)])
+  const launched = p.launch_data?.pairCreatedAt
+  if (launched != null && Number.isFinite(new Date(launched).getTime())) facts.push([t('profile.launched', { defaultValue: 'Launched' }), new Date(launched).toLocaleDateString()])
+  if (finite(security.top10HolderPercent)) facts.push([t('profile.top10', { defaultValue: 'Top 10 hold' }), (Number(security.top10HolderPercent) * 100).toFixed(0) + '%'])
+  const sources = Array.isArray(p.enrichment_sources) ? p.enrichment_sources.filter(Boolean) : []
+  const sourceLabel = p.attribution_label || (sources.length ? t('profile.sources', { defaultValue: 'Sources' }) + ': ' + sources.join(', ') : null)
+  const hasFacts = Boolean(p.name || p.symbol || description || facts.length || links.length)
+  const busy = state === 'loading' || state === 'enqueued'
+  const unavailable = state === 'unavailable' || state === 'unsupported'
+  const failure = error || (!profile && unavailable && reason && !['missing_coverage','refresh_required','insufficient_entitlement'].includes(reason) ? t('profile.source_error', { defaultValue: 'Project details are temporarily unavailable from the shared source. Retry to check again.' }) : null)
+  const stale = state === 'stale' || state === 'stale_refreshing'
+  const fetched = p.last_enriched_at && Number.isFinite(Date.parse(p.last_enriched_at)) ? p.last_enriched_at : null
   return (
-    <section className="card p-4 space-y-3">
-      {p.header_image_url && <div className="h-20 -m-4 mb-1 rounded-t-lg bg-cover bg-center" style={{ backgroundImage: `url(${p.header_image_url})` }} />}
+    <section aria-label={t('profile.title', { defaultValue: 'Project profile' })} className="intel-project-profile py-4 space-y-3 border-y border-[var(--border)]">
+      {safeUrl(p.header_image_url) && <img src={p.header_image_url} alt="" className="w-full h-20 object-cover" />}
       <div className="flex items-start gap-3">
-        <TokenAvatar src={p.image_url} symbol={p.symbol} name={p.name} size="lg" />
+        {(p.name || p.symbol) && <TokenAvatar src={p.image_url} symbol={p.symbol} name={p.name} size="lg" />}
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-base font-semibold text-[var(--fg-1)]">{p.name || p.symbol}</h3>
-            {p.symbol && <span className="text-[12px] text-[var(--fg-4)]">{p.symbol}</span>}
-            {p.profile_complete === false && <span className="chip text-[9px] uppercase">{t('profile.incomplete', { defaultValue: 'Partial' })}</span>}
-            {state === 'stale_refreshing' && <span className="text-[10px] text-[var(--fg-5)]">{t('profile.updating', { defaultValue: 'updating…' })}</span>}
+          <div className="flex items-baseline gap-3 flex-wrap">
+            <h3 className="text-base font-semibold text-[var(--fg-1)]">{title}</h3>
+            {p.symbol && p.name && <span className="text-xs text-[var(--fg-4)]">{p.symbol}</span>}
+            {p.profile_complete === false && hasFacts && <span className="text-xs text-[var(--fg-4)]">{t('profile.incomplete', { defaultValue: 'Partial' })}</span>}
+            {stale && <span className="text-xs text-[var(--fg-4)]">{t('profile.stale', { defaultValue: 'Stale' })}</span>}
           </div>
-          {p.description && <p className="text-[13px] text-[var(--fg-3)] mt-1 line-clamp-4">{p.description}</p>}
-          {cats.length > 0 && <div className="flex flex-wrap gap-1 mt-2">{cats.map((c) => <span key={c} className="chip text-[9px]">{c}</span>)}</div>}
+          {description && <><p className="text-xs text-[var(--fg-4)] mt-2">{t('profile.description_context', { defaultValue: 'Provider description. Figures reflect the retrieved metadata snapshot.' })}</p><p className="text-sm text-[var(--fg-3)] mt-2 break-words">{description.length > 280 ? description.slice(0,280).replace(/\s+\S*$/, '') + '…' : description}</p>
+            {description.length > 280 && <details className="intel-evidence-expand mt-2"><summary>{t('profile.read_full', { defaultValue: 'Read full profile' })}</summary><p className="text-sm text-[var(--fg-3)] mt-2 break-words">{description}</p></details>}</>}
+          {categories.length > 0 && <p className="text-xs text-[var(--fg-4)] mt-2 break-words">{categories.slice(0,8).join(' · ')}</p>}
+          {categories.length > 8 && <details className="intel-evidence-expand mt-2"><summary>{t('profile.all_categories', { defaultValue: 'All classifications' })}</summary><p className="text-xs mt-2">{categories.join(' · ')}</p></details>}
         </div>
       </div>
-
-      {/* links */}
-      <div className="flex flex-wrap gap-1.5">
-        <Link2 href={p.website_url || links.website} icon={Globe} label={t('profile.website', { defaultValue: 'Website' })} />
-        <Link2 href={p.docs_url} icon={BookOpen} label={t('profile.docs', { defaultValue: 'Docs' })} />
-        <Link2 href={p.whitepaper_url} icon={FileText} label={t('profile.whitepaper', { defaultValue: 'Whitepaper' })} />
-        <Link2 href={p.explorer_url} icon={Compass} label={t('profile.explorer', { defaultValue: 'Explorer' })} />
-        {Object.entries(socials).map(([k, v]) => <Link2 key={k} href={v} icon={ExternalLink} label={k} />)}
-        <Link2 href={p.dexscreener_url} icon={ExternalLink} label="DexScreener" />
-        <Link2 href={p.geckoterminal_url} icon={ExternalLink} label="GeckoTerminal" />
-        <Link2 href={p.coingecko_url} icon={ExternalLink} label="CoinGecko" />
-        <Link2 href={p.coinmarketcap_url} icon={ExternalLink} label="CoinMarketCap" />
-        <Link2 href={p.pumpfun_url} icon={Rocket} label="Pump.fun" />
-        <Link2 href={p.jupiter_url} icon={ExternalLink} label="Jupiter" />
-        {Object.entries(links).filter(([k]) => !['website'].includes(String(k).toLowerCase())).map(([k, v]) => <Link2 key={`l-${k}`} href={v} icon={ExternalLink} label={k} />)}
-      </div>
-
-      {/* supply / launch / security (facts only — never invented) */}
-      <div className="grid gap-2 grid-cols-2 sm:grid-cols-4">
-        {supply.circulating != null && <Fact label={t('profile.circulating', { defaultValue: 'Circulating' })} value={fmtNum(supply.circulating)} />}
-        {supply.total != null && <Fact label={t('profile.total_supply', { defaultValue: 'Total supply' })} value={fmtNum(supply.total)} />}
-        {supply.max != null && <Fact label={t('profile.max_supply', { defaultValue: 'Max supply' })} value={fmtNum(supply.max)} />}
-        {holders.count != null && <Fact label={t('breakdown.holders', { defaultValue: 'Holders' })} value={Number(holders.count).toLocaleString()} icon={Users} />}
-        {(launch.pairCreatedAt) && <Fact label={t('profile.launched', { defaultValue: 'Launched' })} value={new Date(launch.pairCreatedAt).toLocaleDateString()} icon={Rocket} />}
-        {security.top10HolderPercent != null && <Fact label={t('profile.top10', { defaultValue: 'Top 10 hold' })} value={`${(Number(security.top10HolderPercent) * 100).toFixed(0)}%`} icon={ShieldCheck} />}
-      </div>
-
-      {/* attribution */}
-      <div className="text-[10px] text-[var(--fg-5)] flex items-center justify-between flex-wrap gap-1 pt-1 border-t border-[var(--border)]">
-        <span>{p.attribution_label || (Array.isArray(p.enrichment_sources) ? `${t('profile.sources', { defaultValue: 'Sources' })}: ${p.enrichment_sources.join(', ')}` : '')}</span>
-        {p.last_enriched_at && <span>{t('markets.lastUpdated', { defaultValue: 'Updated' })} {new Date(p.last_enriched_at).toLocaleString()}</span>}
-      </div>
+      {busy && <p role="status" className="text-sm text-[var(--fg-4)]">{state === 'enqueued' ? t('profile.refreshing', { defaultValue: 'Building this token’s profile… check back in a moment.' }) : t('profile.loading', { defaultValue: 'Loading project details…' })}</p>}
+      {failure && <p role="alert" className="text-sm text-[var(--fg-3)]">{failure}</p>}
+      {!busy && !failure && !hasFacts && <p className="text-sm text-[var(--fg-4)]">{t('profile.missing_details', { defaultValue: 'No verified project details are available in the shared cache.' })}</p>}
+      {unavailable && reason === 'insufficient_entitlement' && <p className="text-sm text-[var(--fg-4)]">{t('profile.no_access', { defaultValue: 'The current provider plan does not include these details.' })}</p>}
+      {links.length > 0 && <nav aria-label={t('profile.links', { defaultValue: 'Project source links' })} className="flex flex-wrap gap-x-4 gap-y-2 text-sm">{links.map(([label,href],index) => <a key={index} href={href} target="_blank" rel="noopener noreferrer" className="underline underline-offset-4 break-all">{label}</a>)}</nav>}
+      {facts.length > 0 && <dl className="flex flex-wrap gap-x-8 gap-y-3">{facts.map(([label,value]) => <div key={label}><dt className="text-xs text-[var(--fg-4)]">{label}</dt><dd className="text-sm text-[var(--fg-1)] font-mono">{value}</dd></div>)}</dl>}
+      {(sourceLabel || fetched || onRetry) && <footer className="text-xs text-[var(--fg-4)] flex items-center flex-wrap gap-x-4 gap-y-2">
+        {sourceLabel && <span>{sourceLabel}</span>}
+        {fetched && <span>{t('profile.retrieved', { defaultValue: 'Metadata retrieved' })} <time dateTime={fetched}>{new Date(fetched).toLocaleString()}</time></span>}
+        {onRetry && <button type="button" disabled={busy} onClick={onRetry} className="btn btn--ghost btn--sm">{t('profile.retry', { defaultValue: 'Refresh project details' })}</button>}
+      </footer>}
     </section>
-  )
-}
-
-function Fact({ label, value, icon: Icon }) {
-  return (
-    <div className="card--flat p-2">
-      <div className="text-[10px] text-[var(--fg-4)] uppercase flex items-center gap-1">{Icon && <Icon className="h-3 w-3" />}{label}</div>
-      <div className="text-[13px] font-semibold text-[var(--fg-1)] truncate">{value}</div>
-    </div>
   )
 }

@@ -1,0 +1,12 @@
+import React,{useState} from 'react'
+import {liquidationHistory} from '../../../supabase/functions/_shared/intel/liquidation-history.ts'
+import {InvestigationTable,time,value} from './InvestigationTable'
+export default function LiquidationHistory({observations,subject,at,from=at-86400000,onSelect,onTime}){
+ const [window,setWindow]=useState('1h'),r=liquidationHistory(observations,subject,window,from,at)
+ const x=t=>60+(Date.parse(t)-from)/(at-from||1)*560,max=Math.max(1,...r.rows.map(o=>Number(o.value))),y=v=>175-Number(v)/max*140
+ return <section className="intel-liquidation-history"><div className="intel-investigation-controls"><h3>Recorded liquidation windows</h3><label>Rolling window<select value={window} onChange={e=>setWindow(e.target.value)}><option value="1h">Preceding 1 hour</option><option value="4h">Preceding 4 hours</option><option value="24h">Preceding 24 hours</option></select></label></div><p className="intel-analysis-caption">{r.coverage}</p>
+  {r.rows.length>0?<><svg viewBox="0 0 660 220" className="intel-liquidation-plot" role="img" aria-label={`Recorded ${window} liquidation volumes in USD. Select an observation from the equivalent table below.`}><line x1="60" x2="620" y1="175" y2="175"/>{[0,.5,1].map(f=><g key={f}><text x="53" y={y(max*f)+4} textAnchor="end">{Intl.NumberFormat(undefined,{notation:'compact'}).format(max*f)}</text>{f>0&&<line x1="60" x2="620" y1={y(max*f)} y2={y(max*f)} strokeDasharray="2 4"/>}</g>)}<text x="60" y="18">USD / {window} window</text>{r.rows.map(o=><circle key={o.id} cx={x(o.observedAt)} cy={y(o.value)} r="4"><title>{time(o.observedAt)}: {value(o.value)} USD</title></circle>)}<text x="60" y="208">{time(from)}</text><text x="620" y="208" textAnchor="end">{time(at)}</text></svg><p className="intel-analysis-caption">Latest retained sample: {value(r.current.value)} USD · {r.currentState} at the selected cursor.</p><InvestigationTable rows={[...r.rows].reverse()} columns={[
+   ['Observed',o=><button className="intel-text-link" onClick={()=>onTime?.(Math.max(Date.parse(o.observedAt),Date.parse(o.recordedAt)))}>{time(o.observedAt)}</button>],['Liquidations (USD)',o=>value(o.value)],['Recorded',o=>time(o.recordedAt)],['Source',o=><button className="intel-text-link" onClick={()=>onSelect?.(o)}>{o.provider}</button>],
+  ]}/></>:<p>No retained liquidation observations match this asset, unit and window before the selected time.</p>}
+ </section>
+}

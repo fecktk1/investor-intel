@@ -1,30 +1,45 @@
-import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, Link } from 'react-router'
+import {useContractChartEvidence} from '../lib/useContractChartEvidence'
+import ContractChartEvidenceStatus from '../components/ContractChartEvidenceStatus'
+import {cmcDexIdentity} from '../../../supabase/functions/_shared/market-assets/cmc-dex.ts'
+import { useScreenParams } from '../lib/useScreenParams'
+import BookCalendar from '../components/BookCalendar'
+import { mergeLinkedAssetMarkers } from '../lib/chart-history'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
+import { useParams, Link, useLocation } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { Scale, HelpCircle, Star, RefreshCw, TrendingUp, TrendingDown, Newspaper, ExternalLink, Bell } from 'lucide-react'
+import { Scale, HelpCircle, Star, RefreshCw, TrendingUp, TrendingDown, Bell } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
-import { getEntityByRef } from '../lib/artifact-api'
+import { getEntityByRef, listArtifacts } from '../lib/artifact-api'
 import { addEntityToWatchlist, resolveEntity } from '../lib/watchlist-api'
 import { loadTokenChart, loadWalletPortfolio } from '../lib/chart-api'
-import { listEntityNews, listGlobalNews } from '../lib/news-api'
+import AssetNewsPanel from '../components/AssetNewsPanel'
 import { getChain, chainIdFor, normalizeAddressForChain, assetRef, loadChainCoverage, capabilityStatus } from '../lib/chains'
-import { cleanNewsTitle } from '../lib/text-clean'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
 import TokenRiskBadge from '../components/TokenRiskBadge'
-import TokenChart from '../components/TokenChart'
+import TokenAvatar from '../components/TokenAvatar'
+import TokenChart, { CHART_RANGE_MS } from '../components/TokenChart'
+import { entityPortfolioKey, nativeAssetEntity, contractAssetEntity, assetLogoUrl, assetChartRef } from '../lib/asset-identity'
+import AssetSectionNav from '../components/AssetSectionNav'
+import AssetVenueWorkspace from '../components/DeferredAssetVenueWorkspace'
+import ContractResearchWorkspace from '../components/ContractResearchWorkspace'
+import { useAssetPortfolioContext } from '../lib/useAssetPortfolioContext'
+import { useAssetThesisHistory } from '../lib/useAssetThesisHistory'
+import { useLiveHistoryEnd } from '../lib/useLiveHistoryEnd'
+import AssetThesisModule from '../components/thesis/AssetThesisModule'
+import AssetPortfolioPosition from '../components/AssetPortfolioPosition'
 import WalletHoldingsChart from '../components/WalletHoldingsChart'
 import IntelActionButton from '../components/IntelActionButton'
 import MarketContextCard from '../components/MarketContextCard'
 import ProfilePanel from '../components/ProfilePanel'
 import DegenSignalsCard from '../components/DegenSignalsCard'
 import DegenMomentum from '../components/DegenMomentum'
-import { loadMarketContextBySymbols, loadTokenProfile, loadDegenToken } from '../lib/markets-api'
+import { loadMarketContextBySymbols, loadDegenToken } from '../lib/markets-api'
+import { useTokenProfile } from '../lib/useTokenProfile'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 
 const TIMEFRAMES = ['1H', '4H', '1D', '1W']
-const SENT_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info', neutral: '' }
 const providerLabel = (p) => String(p || '').toLowerCase() === 'alchemy' ? 'Alchemy' : String(p || '').toLowerCase() === 'helius' ? 'Helius' : 'Provider'
 const fmtNum = (n) => n == null ? '—' : Number(n) >= 1e9 ? `$${(n / 1e9).toFixed(2)}B` : Number(n) >= 1e6 ? `$${(n / 1e6).toFixed(2)}M` : Number(n) >= 1e3 ? `$${(n / 1e3).toFixed(1)}K` : `$${Number(n).toFixed(0)}`
 const fmtPrice = (p) => p == null ? '—' : p < 1 ? `$${Number(p).toPrecision(4)}` : `$${Number(p).toLocaleString(undefined, { maximumFractionDigits: 2 })}`
@@ -34,27 +49,45 @@ const fmtPrice = (p) => p == null ? '—' : p < 1 ? `$${Number(p).toPrecision(4)
 // wallet summary instead of a price chart.
 export default function AssetBreakdownPage() {
   const { ref } = useParams()
+  const location = useLocation()
+  const returnTo = typeof location.state?.from === 'string' && /^\/intel(?:[/?]|$)/.test(location.state.from) ? location.state.from : '/intel/markets'
   const decoded = decodeURIComponent(ref || '')
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase, user } = useSupabase()
-  const [entity, setEntity] = useState(null)
+  const entityScope = `${user?.id}:${org?.id}:${decoded}`
+  const [entityState, setEntityState] = useState(null)
+  const entity = entityState?.scope === entityScope ? entityState.value : null
+  const setEntity = value => setEntityState({ scope: entityScope, value })
   const [loadingEntity, setLoadingEntity] = useState(true)
+  const [entityError, setEntityError] = useState(null)
+  const [entityRetry, setEntityRetry] = useState(0)
   const [saved, setSaved] = useState(false)
   const [chart, setChart] = useState(null)
-  const [chartLoading, setChartLoading] = useState(false)
-  const [timeframe, setTimeframe] = useState('1D')
-  const [news, setNews] = useState([])
+  const [chartOptions,setChartOptions]=useScreenParams('chart_', {range:'7D',interval:'auto'})
+  const timeframe=['auto','1H','4H','1D','1W'].includes(chartOptions.interval)?chartOptions.interval:'auto'
+  const setTimeframe=interval=>setChartOptions(previous=>({...previous,interval}))
   const [walletPf, setWalletPf] = useState(null)
   const [walletLoading, setWalletLoading] = useState(false)
   const [marketCtx, setMarketCtx] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [profileState, setProfileState] = useState(null)
   const [degenSignals, setDegenSignals] = useState(null)
   const [coverage, setCoverage] = useState({})
-  const breakdown = useArtifact()
-  const risk = useArtifact()
+  const breakdown = useArtifact(entityScope)
+  const risk = useArtifact(entityScope)
   const isWallet = entity?.entity_kind === 'wallet'
+  const projectProfile = useTokenProfile({supabase,orgId:org?.id,userId:user?.id,ident:!entity||isWallet?null:entity._chain&&entity._address?{chain:entity._chain,tokenAddress:entity._address}:{ref:entity.canonical_ref_key}})
+  const { profile } = projectProfile
+  const historyTo = useLiveHistoryEnd(org?.id)
+  const historyRange=Object.hasOwn(CHART_RANGE_MS,chartOptions.range)?chartOptions.range:'7D'
+  const setHistoryRange=range=>setChartOptions(previous=>({...previous,range}))
+  const canonicalKey = entityPortfolioKey(entity)
+  const historyFrom = historyTo - CHART_RANGE_MS[historyRange]
+  const position = useAssetPortfolioContext({ canonicalAssetKey: canonicalKey, from: historyFrom, to: historyTo })
+  const research = useAssetThesisHistory({ canonicalKey, entityId: isWallet ? null : entity?.id, from: historyFrom, to: historyTo })
+  const publicEvidence=useContractChartEvidence({canonicalKey,from:historyFrom,to:historyTo,portfolioId:position.portfolioId})
+  const chartScope = `${user?.id}:${org?.id}:${decoded}:${timeframe}`
+  const chartScopeRef = useRef(chartScope)
+  chartScopeRef.current = chartScope
 
   useEffect(() => {
     let alive = true
@@ -71,15 +104,13 @@ export default function AssetBreakdownPage() {
     let alive = true
     ;(async () => {
       if (!org?.id) return
-      setLoadingEntity(true)
+      setLoadingEntity(true); setEntityError(null); setEntity(null); setChart(null); setMarketCtx(null); setSaved(false); setDegenSignals(null); setWalletPf(null)
       try {
         let e = await getEntityByRef(supabase, org.id, decoded)
-        // Native chain coin (ref='native:<chain>') — chart it via CoinGecko with
-        // a lightweight synthetic entity; no watchlist row required.
-        if (!e && decoded.startsWith('native:')) {
-          const cid = decoded.slice('native:'.length); const ch = getChain(cid)
-          if (ch) e = { id: null, canonical_ref_key: decoded, entity_kind: 'asset', asset_type: 'native', display_symbol: ch.nativeSymbol, chain_namespace: ch.label, _native: true, _chain: cid }
-        }
+        // All registered native aliases reach the existing chart/portfolio path.
+        // A display ticker alone never creates an entity or resolves a network.
+        if (!e) e = nativeAssetEntity(decoded)
+        if (!e) e = contractAssetEntity(decoded)
         // Contract token by app `chain:address` (Degen rows + non-CoinGecko top-1000).
         // Synthetic entity — NO org `entities` row until Add to watchlist. id:null +
         // _synthetic signal every hook this is temporary (entity-scoped features guard on id).
@@ -98,16 +129,18 @@ export default function AssetBreakdownPage() {
           if (appId) e = { ...e, _chain: appId, _address: e.contract_address, _contract: true }
         }
         if (alive) setEntity(e)
-      } catch { /* */ } finally { if (alive) setLoadingEntity(false) }
+      } catch { if (alive) setEntityError(true) } finally { if (alive) setLoadingEntity(false) }
     })()
     return () => { alive = false }
-  }, [org?.id, decoded, supabase])
+  }, [org?.id, user?.id, decoded, supabase, entityRetry])
 
-  const loadChart = useCallback(async (tf) => {
-    if (!entity || isWallet) return
-    setChartLoading(true)
-    try { setChart(await loadTokenChart(supabase, org.id, { entityId: entity.id, ref: entity.canonical_ref_key, timeframe: tf })) } catch { /* */ } finally { setChartLoading(false) }
-  }, [entity, isWallet, org?.id, supabase])
+  const loadPriceCandles = useCallback(async (range) => {
+    if (!entity || isWallet) return []
+    const interval = timeframe === 'auto' ? ({ '1H':'1H','12H':'1H','24H':'1H','3D':'4H','7D':'4H','1M':'1D','3M':'1W','6M':'1W','1Y':'1W' })[range] || '1D' : timeframe
+    const value = await loadTokenChart(supabase, org.id, { entityId: entity.id, ref: assetChartRef(entity), timeframe: interval, range })
+    if (chartScopeRef.current === chartScope) setChart(value)
+    return {...value,candles:(value?.candles || []).filter(c => { const ts = Number(c.t) < 1e12 ? Number(c.t) * 1000 : Number(c.t); return ts >= historyTo - CHART_RANGE_MS[range] && ts <= historyTo })}
+  }, [entity, isWallet, org?.id, supabase, timeframe, chartScope, historyTo])
 
   const run = useCallback((force = false) => {
     if (!entity?.id) return // AI breakdown/risk need a real watchlist entity (native coins are chart+news only)
@@ -118,42 +151,23 @@ export default function AssetBreakdownPage() {
   useEffect(() => {
     if (!entity) return
     let alive = true
-    if (entity.id) run(false)
+    breakdown.setResult(null); risk.setResult(null)
+    if (entity.id) {
+      for (const [type, target] of [[isWallet ? 'wallet_summary' : 'token_breakdown', breakdown], ['risk_panel', risk]]) {
+        if (isWallet && type === 'risk_panel') continue
+        listArtifacts(supabase, org.id, { artifactType: type, entityId: entity.id, limit: 1 }).then(rows => { if (alive && rows[0]) target.setResult({ artifact: rows[0], cached: true }) }).catch(() => {})
+      }
+    }
     if (!isWallet) {
-      loadChart(timeframe)
-      ;(async () => {
-        try {
-          const n = entity._native
-            ? await listGlobalNews(supabase, { chains: [entity._chain], limit: 15, requireChain: true })
-            : await listEntityNews(supabase, org.id, entity.id, entity.display_symbol)
-          setNews(n)
-        } catch { /* */ }
-      })()
-      ;(async () => { try { const m = await loadMarketContextBySymbols(supabase, [entity.display_symbol]); setMarketCtx(m[String(entity.display_symbol || '').toUpperCase()] || null) } catch { /* */ } })()
-      // Global cached token/project profile (shared across users; lazy on open). A
-      // freshly-seen small token may first return state:'enqueued' (profile still
-      // building) — poll a couple of times so it fills in without a manual refresh.
-      ;(async () => {
-        const ident = entity._native ? { symbol: entity.display_symbol } : (entity._chain && entity._address) ? { chain: entity._chain, tokenAddress: entity._address } : { ref: entity.canonical_ref_key }
-        for (const wait of [0, 4000, 10000]) {
-          if (!alive) return
-          if (wait) await new Promise((r) => setTimeout(r, wait))
-          if (!alive) return
-          try {
-            const pr = await loadTokenProfile(supabase, ident)
-            if (!alive) return
-            if (pr) { setProfile(pr.profile); setProfileState(pr.state) }
-            if (pr?.profile && pr.state !== 'enqueued') return // real profile in hand — stop polling
-          } catch { /* keep trying the remaining delays */ }
-        }
-      })()
+
+      ;(async () => { try { const m = await loadMarketContextBySymbols(supabase, [entity.display_symbol]); if (alive) setMarketCtx(m[String(entity.display_symbol || '').toUpperCase()] || null) } catch { /* */ } })()
       // Free cached Degen signals (contract tokens) — useful before watchlist add.
       if (entity._chain && entity._address) ;(async () => { try { const d = await loadDegenToken(supabase, entity._chain, entity._address); if (d && alive) setDegenSignals(d) } catch { /* */ } })()
     } else {
-      ;(async () => { setWalletLoading(true); try { setWalletPf(await loadWalletPortfolio(supabase, org.id, { entityId: entity.id })) } catch { /* */ } finally { setWalletLoading(false) } })()
+      ;(async () => { setWalletLoading(true); try { const pf = await loadWalletPortfolio(supabase, org.id, { entityId: entity.id }); if (alive) setWalletPf(pf) } catch { /* */ } finally { if (alive) setWalletLoading(false) } })()
     }
     return () => { alive = false }
-  }, [entity?.canonical_ref_key]) // eslint-disable-line
+  }, [entity?.canonical_ref_key, entity?.id, org?.id, user?.id]) // eslint-disable-line
 
   const onSave = useCallback(async () => {
     if (!entity || !org?.id) return
@@ -170,7 +184,8 @@ export default function AssetBreakdownPage() {
     } catch { /* */ }
   }, [entity, org?.id, supabase, user?.id, isWallet])
 
-  if (loadingEntity) return <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
+  if (loadingEntity) return <p role="status" className="py-8 text-sm text-[var(--fg-4)]">{t('asset.loading', { defaultValue: 'Loading asset observations…' })}</p>
+  if (entityError) return <div role="alert" className="py-8 text-sm">{t('asset.read_failed', { defaultValue: 'The asset read could not be completed.' })} <button className="underline" onClick={() => setEntityRetry(value => value + 1)}>{t('common.retry', { defaultValue: 'Retry' })}</button></div>
   if (!entity) return <div className="card p-8 text-center text-[var(--fg-3)] text-sm">{t('breakdown.not_found', { defaultValue: 'Asset not found in this workspace. Add it from the Watchlist first.' })}</div>
 
   const ov = chart?.overview
@@ -180,7 +195,7 @@ export default function AssetBreakdownPage() {
   const coverageChip = isWallet && walletPf?.provider
     ? t('breakdown.holdings_via', { defaultValue: 'Holdings via {{provider}}', provider: providerLabel(walletPf.provider) })
     : (!isWallet && appChain && holderStatus !== 'live')
-      ? t('breakdown.holders_not_covered', { defaultValue: 'Holders not covered on {{chain}}', chain: appChain.label })
+      ? cmcDexIdentity(canonicalKey)?'CMC contract holder evidence is available in On-chain participation.':t('breakdown.holders_source_unavailable', { defaultValue: 'Current profile source does not cover holders on {{chain}}', chain: appChain.label })
       : null
   const change = ov?.price_change_24h_pct
   const stats = [
@@ -193,11 +208,13 @@ export default function AssetBreakdownPage() {
   ]
 
   return (
-    <div className="space-y-5">
+    <div className="intel-asset-workspace space-y-4">
+      <Link to={returnTo} className="text-xs text-[var(--accent)] underline underline-offset-4">{t('asset.back_to_research', { defaultValue: 'Back to research' })}</Link>
       <div className="flex items-start justify-between gap-3 flex-wrap">
         <div>
           <div className="eyebrow">{entity.chain_namespace || 'asset'}</div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            {!isWallet&&<TokenAvatar src={ov?.image_url||profile?.image_url||degenSignals?.image_url||assetLogoUrl(entity.canonical_ref_key)} symbol={entity.display_symbol||chart?.entity?.symbol||profile?.symbol} size="lg"/>}
             <h1 className="page-title">{entity.display_symbol || chart?.entity?.symbol || profile?.symbol || degenSignals?.symbol || (entity._address ? `${entity._address.slice(0, 4)}…${entity._address.slice(-4)}` : entity.asset_id)}</h1>
             {!isWallet && ov?.price != null && (
               <div className="flex items-baseline gap-2">
@@ -209,8 +226,9 @@ export default function AssetBreakdownPage() {
               <TokenRiskBadge chain={entity._chain} address={entity._address} symbol={entity.display_symbol} source={degenSignals ? 'degen' : 'lookup'} />
             )}
           </div>
-          <p className="page-sub font-mono text-[12px] break-all">{entity.canonical_ref_key}</p>
-          {coverageChip && <div className="mt-2"><span className="chip text-[10px]">{coverageChip}</span></div>}
+          <details className="intel-asset-identity"><summary>{t('asset.identity',{defaultValue:'Asset identity'})}</summary><p className="break-all">{entity.canonical_ref_key}</p></details>
+          {entity.entity_kind!=='wallet' && <Link className="intel-text-link text-sm" to={`/intel/investigate?${new URLSearchParams({asset:entity.canonical_ref_key})}`}>{t('investigation.open',{defaultValue:'Open connected research'})}</Link>}
+          {coverageChip && <p className="intel-analysis-caption mt-1">{coverageChip}</p>}
         </div>
         {!entity._native && (
           <div className="flex gap-2 flex-wrap">
@@ -227,12 +245,16 @@ export default function AssetBreakdownPage() {
 
       {!isWallet && (
         <>
+          <AssetSectionNav sections={[
+            { id: 'canonical-chart', key: 'asset.chart_position', label: 'Chart & position' },
+              { id: 'canonical-theses', key: 'asset.theses', label: 'Your theses' },
+              { id: 'asset-venue-evidence', key: 'asset.venueEvidence', label: 'Venues & positioning' },
+            { id: 'canonical-profile', key: 'asset.profile', label: 'Profile & sources' },
+            ...(entity.id ? [{ id: 'canonical-research', key: 'asset.research', label: 'Research' }] : []),
+            { id: 'asset-news', key: 'asset.news', label: 'News' },
+          ]}/>
           {/* Market stats */}
-          <div className="grid gap-2 grid-cols-2 sm:grid-cols-3 lg:grid-cols-6">
-            {stats.map(([k, label, val]) => (
-              <div key={k} className="card p-3"><div className="text-[10px] text-[var(--fg-4)] uppercase">{label}</div><div className="text-sm font-semibold text-[var(--fg-1)] truncate">{val}</div></div>
-            ))}
-          </div>
+          <div className="intel-asset-summary intel-table-scroll"><table aria-label={t('asset.market_summary',{defaultValue:'Asset market summary'})}><thead><tr>{stats.map(([k,label])=><th key={k}>{label}</th>)}</tr></thead><tbody><tr>{stats.map(([k,,val])=><td key={k}>{val}</td>)}</tr></tbody></table></div>
 
           {marketCtx && <MarketContextCard ctx={marketCtx} variant="card" />}
 
@@ -240,20 +262,18 @@ export default function AssetBreakdownPage() {
           {entity._contract && degenSignals && <DegenSignalsCard token={degenSignals} />}
           {entity._contract && entity._chain && entity._address && <DegenMomentum chain={entity._chain} address={entity._address} />}
 
-          {/* Rich, globally-cached project profile */}
-          <ProfilePanel profile={profile} state={profileState} />
-
           {/* Chart + timeframe */}
-          <div className="space-y-2">
-            <div className="flex items-center justify-between">
-              <div className="eyebrow">{t('breakdown.chart', { defaultValue: 'Price chart' })}</div>
-              <div className="flex gap-1">
-                {TIMEFRAMES.map((tf) => (
-                  <button key={tf} onClick={() => { setTimeframe(tf); loadChart(tf) }} className={`btn btn--sm ${timeframe === tf ? 'btn--primary' : 'btn--ghost'}`}>{tf}</button>
-                ))}
-              </div>
-            </div>
-            <TokenChart candles={chart?.candles} loading={chartLoading} />
+          <div id="canonical-chart" className="space-y-2">
+            <TokenChart key={`${user?.id}:${org?.id}:${canonicalKey}:${position.portfolioId}`} assetKey={`${user?.id}:${org?.id}:${canonicalKey}:${position.portfolioId}`} requestKey={timeframe}
+              persistence={{supabase,userId:user?.id,orgId:org?.id,asset:canonicalKey,interval:timeframe}}
+              defaultRange={historyRange} onRangeChange={setHistoryRange}
+              rangeExtra={<label className="intel-chart-interval">{t('chart.interval', { defaultValue: 'Price interval' })}<select className="select" value={timeframe} onChange={e => setTimeframe(e.target.value)}><option value="auto">{t('chart.automatic', { defaultValue: 'Automatic' })}</option>{TIMEFRAMES.map(tf => <option key={tf} value={tf}>{tf}</option>)}</select></label>}
+              loadCandles={loadPriceCandles}
+              markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles historyLoading={research.loading || position.loading}
+              historyError={research.error || position.error?.message} historyHasMore={!!(research.nextCursor || position.nextCursor)}
+              onLoadMoreHistory={() => { if (research.nextCursor) research.loadMore(); if (position.nextCursor) position.loadMore() }}/>
+            <AssetPortfolioPosition context={position}/>
+            <section id="canonical-theses"><AssetThesisModule symbol={entity.display_symbol || chart?.entity?.symbol} canonicalAssetKey={canonicalKey} entityId={entity.id} chain={entity._chain}/></section>
             {chart?.unsupported ? (
               <div className="card--flat p-2 text-[12px] text-[var(--fg-4)]">{
                 chart.state === 'pre_liquidity' ? t('breakdown.chart_pre_liquidity', { defaultValue: 'Pre-liquidity / no verified pool yet.' })
@@ -264,6 +284,7 @@ export default function AssetBreakdownPage() {
               <div className="text-[10px] text-[var(--fg-5)] flex items-center gap-1">{t('breakdown.chart_via', { defaultValue: 'Chart via' })} {chart.source_label || chart.source}{chart.pair_url && <> · <a href={chart.pair_url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline">{chart.dex_id || t('breakdown.pool', { defaultValue: 'pool' })}</a></>}</div>
             ) : null}
           </div>
+          <details id="canonical-profile" className="intel-asset-profile"><summary>{t('asset.project_profile',{defaultValue:'Project profile and source details'})}</summary><ProfilePanel {...projectProfile}/></details>
         </>
       )}
 
@@ -279,7 +300,7 @@ export default function AssetBreakdownPage() {
       )}
 
       {entity.id ? (
-        <section className="space-y-2">
+        <section id="canonical-research" className="space-y-2">
           <div className="eyebrow">{isWallet ? t('breakdown.wallet_section', { defaultValue: 'Wallet summary' }) : t('breakdown.section', { defaultValue: 'Breakdown' })}</div>
           <ArtifactView result={breakdown.result} loading={breakdown.loading} />
           {breakdown.error && <div className="card--flat p-3 text-[13px] text-red-400">{breakdown.error}</div>}
@@ -298,30 +319,11 @@ export default function AssetBreakdownPage() {
         </section>
       )}
 
-      {/* News for this token */}
-      {!isWallet && (
-        <section className="card p-4">
-          <div className="flex items-center justify-between mb-2">
-            <div className="eyebrow flex items-center gap-1.5"><Newspaper className="h-3.5 w-3.5" /> {t('breakdown.news', { defaultValue: 'News' })}</div>
-            <Link to="/intel/news" className="text-[12px] text-[var(--accent)]">{t('pulse.all', { defaultValue: 'All' })}</Link>
-          </div>
-          {news.length === 0 ? <p className="text-[13px] text-[var(--fg-3)]">{t('breakdown.no_news', { defaultValue: 'No news yet for this token. Add a source or fetch news.' })}</p> : (
-            <div className="space-y-2">
-              {news.map((n) => (
-                <div key={n.id} className="flex items-start gap-2">
-                  {n.curated && <span className="chip text-[9px] uppercase mt-0.5 flex-shrink-0">{t('news.curated', { defaultValue: 'Curated' })}</span>}
-                  {n.sentiment && <span className={`chip ${SENT_CLS[n.sentiment] || ''} text-[9px] uppercase mt-0.5 flex-shrink-0`}>{n.sentiment}</span>}
-                  <div className="min-w-0">
-                    {n.url ? <a href={n.url} target="_blank" rel="noopener noreferrer" className="text-[13px] text-[var(--fg-2)] hover:text-[var(--accent)] line-clamp-1 flex items-center gap-1">{cleanNewsTitle(n.title)} <ExternalLink className="h-3 w-3 flex-shrink-0 text-[var(--fg-5)]" /></a> : <span className="text-[13px] text-[var(--fg-2)] line-clamp-1">{cleanNewsTitle(n.title)}</span>}
-                    <div className="text-[11px] text-[var(--fg-4)]">{n.source_name}{n.published_at ? ` · ${new Date(n.published_at).toLocaleDateString()}` : ''}</div>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </section>
-      )}
+      {!isWallet && <AssetNewsPanel identity={{ key: canonicalKey || entity.canonical_ref_key, entityId: entity.id, symbol: entity.display_symbol || profile?.symbol, name: entity._native ? appChain?.label : profile?.display_name || profile?.name, chain: appChainId, address: entity._address || entity.contract_address, native: entity._native || entity.asset_type === 'native' }} />}
 
+      {!isWallet && canonicalKey && <AssetVenueWorkspace canonicalKey={canonicalKey}/>}
+      {!isWallet&&<><ContractChartEvidenceStatus evidence={publicEvidence}/><ContractResearchWorkspace canonicalKey={canonicalKey} onEvidence={publicEvidence.acceptEvidence}/></>}
+      {!isWallet && <BookCalendar key={canonicalKey} asset={canonicalKey} chartLane/>}
       <IntelDisclaimer variant="block" />
     </div>
   )

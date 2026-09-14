@@ -2,75 +2,70 @@
 // layer (latest/cached tables only) via the intel-markets edge function.
 // Pagination-first: pass { page, limit, sort, search, chain, provider,
 // signalDirection, marketCapAvailability, watchlistOnly }.
-export async function loadMarkets(supabase, orgId, params = {}) {
-  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, ...params } })
+export async function loadMarkets(supabase, orgId, params = {}, { signal } = {}) {
+  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, ...params }, ...(signal ? { signal } : {}) })
   if (error) throw new Error(error.message || 'markets_failed')
   if (data?.error) throw new Error(data.error)
   return data
 }
 
-// Global crypto-market macro header (total cap, dominance, stablecoin cap) from
-// the cached market_macro_snapshots table (authenticated RLS read; no edge call,
-// no live provider call). Two providers populate it with different field coverage
-// (CoinGecko lacks stablecoin/defi; CMC has them), so coalesce the latest few
-// rows. Returns null on miss/error so the caller degrades silently.
+// Global cached observations retain the clock of the selected field, not a combined age.
 export async function loadMarketMacro(supabase) {
-  try {
-    const { data } = await supabase.from('market_macro_snapshots')
-      .select('total_market_cap_usd, total_volume_24h_usd, market_cap_change_24h_pct, btc_dominance_pct, eth_dominance_pct, stablecoin_market_cap_usd, defi_market_cap_usd, as_of')
-      .eq('snapshot_kind', 'global').order('as_of', { ascending: false }).limit(4)
-    if (!data || !data.length) return null
-    const pick = (k) => { for (const r of data) if (r[k] != null) return Number(r[k]); return null }
-    return {
-      total_market_cap_usd: pick('total_market_cap_usd'),
-      total_volume_24h_usd: pick('total_volume_24h_usd'),
-      market_cap_change_24h_pct: pick('market_cap_change_24h_pct'),
-      btc_dominance_pct: pick('btc_dominance_pct'),
-      eth_dominance_pct: pick('eth_dominance_pct'),
-      stablecoin_market_cap_usd: pick('stablecoin_market_cap_usd'),
-      defi_market_cap_usd: pick('defi_market_cap_usd'),
-      as_of: data[0].as_of,
-    }
-  } catch { return null }
+  const { data, error } = await supabase.from('market_macro_available')
+    .select('total_market_cap_usd,total_volume_24h_usd,market_cap_change_24h_pct,btc_dominance_pct,eth_dominance_pct,stablecoin_market_cap_usd,defi_market_cap_usd,as_of')
+    .eq('snapshot_kind', 'global').order('as_of', { ascending: false }).limit(4)
+  if (error) throw error
+  if (!Array.isArray(data)) throw new Error('Invalid global market response')
+  if (!data.length) return null
+  const result = { fieldObservations: {} }
+  for (const key of ['total_market_cap_usd','total_volume_24h_usd','market_cap_change_24h_pct','btc_dominance_pct','eth_dominance_pct','stablecoin_market_cap_usd','defi_market_cap_usd']) {
+    const row = data.find(value => value[key] != null && value[key] !== '' && Number.isFinite(Number(value[key])))
+    result[key] = row ? Number(row[key]) : null
+    result.fieldObservations[key] = row ? { asOf: row.as_of || null } : null
+  }
+  return result
 }
 
 // Leaderboard climbers/fallers — who moved up/down the market-cap rankings since
 // ~`days` ago, from the cached market_ranking_snapshots rank history (authenticated
-// RLS read; no edge/provider call). Compares the latest bucket to the nearest bucket
-// at/older than `days` ago (falls back to the earliest available if history is short).
-// Returns null on miss/short-history so the caller degrades silently.
+// RLS read; no edge/provider call). Both snapshots use one provider and exact IDs.
+// The available comparison clocks remain visible when seven days are not retained.
 export async function loadRankMovers(supabase, { days = 7, limit = 6 } = {}) {
-  try {
-    const { data: latest } = await supabase.from('market_ranking_snapshots')
-      .select('normalized_symbol, symbol, name, rank, as_of')
-      .eq('rank_kind', 'market_cap')
-      .order('as_of', { ascending: false }).order('rank', { ascending: true })
-      .limit(400)
-    if (!latest || !latest.length) return null
-    const latestAsOf = latest[0].as_of
-    const current = latest.filter((r) => r.as_of === latestAsOf && r.normalized_symbol)
-    if (!current.length) return null
-    const priorIso = new Date(new Date(latestAsOf).getTime() - days * 86_400_000).toISOString()
-    let pick = (await supabase.from('market_ranking_snapshots').select('as_of').eq('rank_kind', 'market_cap').lte('as_of', priorIso).order('as_of', { ascending: false }).limit(1)).data
-    if (!pick || !pick.length) pick = (await supabase.from('market_ranking_snapshots').select('as_of').eq('rank_kind', 'market_cap').lt('as_of', latestAsOf).order('as_of', { ascending: true }).limit(1)).data
-    if (!pick || !pick.length) return null
-    const priorAsOf = pick[0].as_of
-    const { data: prior } = await supabase.from('market_ranking_snapshots')
-      .select('normalized_symbol, rank').eq('rank_kind', 'market_cap').eq('as_of', priorAsOf)
-      .in('normalized_symbol', current.map((r) => r.normalized_symbol))
-    const priorBySym = new Map((prior || []).map((r) => [r.normalized_symbol, r.rank]))
-    const movers = []
-    for (const r of current) {
-      const prev = priorBySym.get(r.normalized_symbol)
-      if (prev == null || prev === r.rank) continue
-      movers.push({ symbol: r.symbol || r.normalized_symbol, name: r.name, rank: r.rank, prevRank: prev, delta: prev - r.rank })
-    }
-    return {
-      days, asOf: latestAsOf, priorAsOf,
-      climbers: movers.filter((m) => m.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, limit),
-      fallers: movers.filter((m) => m.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, limit),
-    }
-  } catch { return null }
+  const read = async query => {
+    const { data, error } = await query
+    if (error) throw error
+    if (!Array.isArray(data)) throw new Error('Invalid ranking history response')
+    return data
+  }
+  const latest = await read(supabase.from('market_rankings_available')
+    .select('provider, provider_id, normalized_symbol, symbol, name, rank, as_of, fetched_at, snapshot_bucket')
+    .eq('rank_kind', 'market_cap').order('snapshot_bucket', { ascending: false }).order('provider', { ascending: false }).order('rank', { ascending: true }).limit(400))
+  if (!latest.length) return null
+  const latestBucket = latest[0].snapshot_bucket, latestAsOf = latest[0].fetched_at || latestBucket, provider = latest[0].provider
+  if (!['coingecko','coinmarketcap'].includes(provider) || !Number.isFinite(Date.parse(latestAsOf))) throw new Error('Ranking source identity is unavailable')
+  const current = latest.filter(r => r.snapshot_bucket === latestBucket && r.provider === provider && r.provider_id != null)
+  if (!current.length) throw new Error('Ranking asset identity is unavailable')
+  const priorIso = new Date(Date.parse(latestAsOf) - days * 86_400_000).toISOString()
+  const history = () => supabase.from('market_rankings_available').select('snapshot_bucket, fetched_at').eq('rank_kind', 'market_cap').eq('provider', provider)
+  let pick = await read(history().lte('snapshot_bucket', priorIso).order('snapshot_bucket', { ascending: false }).limit(1))
+  if (!pick.length) pick = await read(history().lt('snapshot_bucket', latestBucket).order('snapshot_bucket', { ascending: true }).limit(1))
+  if (!pick.length) return null
+  const priorAsOf = pick[0].fetched_at || pick[0].snapshot_bucket
+  const prior = await read(supabase.from('market_rankings_available').select('provider_id, rank')
+    .eq('rank_kind', 'market_cap').eq('provider', provider).eq('snapshot_bucket', pick[0].snapshot_bucket)
+    .in('provider_id', [...new Set(current.map(r => r.provider_id))]).limit(400))
+  const priorById = new Map(prior.map(r => [r.provider_id, r.rank]))
+  const movers = []
+  for (const r of current) {
+    const prev = priorById.get(r.provider_id)
+    if (prev == null || prev === r.rank) continue
+    movers.push({ sourceProvider: provider, providerId: r.provider_id, symbol: r.symbol || r.normalized_symbol, name: r.name, rank: r.rank, prevRank: prev, delta: prev - r.rank })
+  }
+  return {
+    days, sourceProvider: provider, asOf: latestAsOf, priorAsOf,
+    climbers: movers.filter(m => m.delta > 0).sort((a, b) => b.delta - a.delta).slice(0, limit),
+    fallers: movers.filter(m => m.delta < 0).sort((a, b) => a.delta - b.delta).slice(0, limit),
+  }
 }
 
 // Degen (memecoin) terminal list. Reads memecoin_latest_tokens via intel-degen
@@ -149,20 +144,18 @@ export async function locateToken(supabase, address) {
 
 // Global cached token/project profile (M5). Flexible identifiers; returns the
 // cached profile instantly and enqueues a background refresh when stale.
-export async function loadTokenProfile(supabase, ident = {}) {
-  try {
-    const { data, error } = await supabase.functions.invoke('token-profile-get', { body: ident })
-    if (error || data?.error) return null
-    return data
-  } catch { return null }
+export async function loadTokenProfile(supabase, ident = {}, { orgId, refresh = false, signal } = {}) {
+  const { data, error } = await supabase.functions.invoke('token-profile-get', { body: { ...ident, ...(orgId ? { orgId } : {}), refresh }, ...(signal ? { signal } : {}) })
+  if (error || data?.error || !data || typeof data.state !== 'string') throw new Error('Project details could not be loaded.')
+  return data
 }
 
 // Full single-asset detail (signal + WHY factors + per-provider reads + market
 // cap + spread + rollups + RAG memory + on-demand candles) for ANY exchange
 // symbol. Powers /intel/markets/:symbol.
-export async function loadMarketDetail(supabase, orgId, symbol) {
-  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, symbol } })
-  if (error) throw new Error(error.message || 'market_detail_failed')
+export async function loadMarketDetail(supabase, orgId, symbol, identity = {}) {
+  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, symbol, ...identity } })
+  if (error) { const details = await error.context?.json?.().catch(() => null); const failure = new Error(details?.error || error.message || 'market_detail_failed'); failure.code = details?.error; throw failure }
   if (data?.error) throw new Error(data.error)
   return data
 }
@@ -170,11 +163,15 @@ export async function loadMarketDetail(supabase, orgId, symbol) {
 // Lightweight per-timeframe candles for chart cycling (1H…1Y). The backend
 // returns candles already scoped to the requested range (real intraday for short
 // ranges via CEX klines). candlesOnly skips the full detail assembly.
-export async function loadMarketCandles(supabase, orgId, symbol, timeframe = '7D') {
-  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, symbol, timeframe, candlesOnly: true } })
+export async function loadMarketCandles(supabase, orgId, symbol, timeframe = '7D', identity = {}) {
+  return (await loadMarketCandleSnapshot(supabase, orgId, symbol, timeframe, identity)).candles
+}
+
+export async function loadMarketCandleSnapshot(supabase, orgId, symbol, timeframe = '7D', identity = {}) {
+  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, symbol, timeframe, candlesOnly: true, ...identity } })
   if (error) throw new Error(error.message || 'candles_failed')
   if (data?.error) throw new Error(data.error)
-  return data?.candles || []
+  return {...data,candles:data?.candles||[],capture:data?.captureProof?{proof:data.captureProof,bars:data.candles}:null,coverage:data?.coverage||null,state:data?.sourceState||null,provenance:data?.provenance||null}
 }
 
 // Hydrate exchange market context for a set of asset symbols, keyed by uppercase

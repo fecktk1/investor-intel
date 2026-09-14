@@ -1,4 +1,27 @@
 {
+  "cohort": {
+    "close": "Fechar",
+    "coverage": {
+      "missing": "Nenhum preço retido para o ativo original exato",
+      "observation_unknown": "Horário de observação do preço não informado",
+      "observed_later": "Observado após o momento selecionado",
+      "recorded_later": "Registrado após o momento selecionado",
+      "recording_unknown": "Horário de registro do preço não informado",
+      "invalid": "Preço inválido",
+      "expiry_unknown": "Validade do preço não informada",
+      "stale": "O preço retido está desatualizado",
+      "unavailable": "Preço indisponível; membro original mantido",
+      "comparable": "Comparável",
+      "zero_baseline": "O preço inicial é zero; o retorno percentual não está definido",
+      "baseline_missing": "Falta preço inicial comparável ou horário de observação",
+      "retained_member": "O membro original permanece nesta coorte. Preços indisponíveis não contam como retornos iguais a zero.",
+      "observed": "Preço observado",
+      "recorded": "Primeiro registro",
+      "expires": "Válido até",
+      "selected": "Momento de evidência selecionado"
+    },
+    "response_changed": "A resposta de descoberta mudou. Sua coorte salva ainda abre os membros originais. Capture esta resposta explicitamente para acompanhar outra coorte."
+  },
   "market": {
     "source": "Exchange",
     "change_24h": "24h change",
@@ -85,7 +108,11 @@
     "sort_recently_updated": "Recently updated",
     "allCategories": "All categories",
     "category": "Category",
-    "sortBy": "Sort by"
+    "sortBy": "Sort by",
+    "auto_detect": "Detectar rede automaticamente",
+    "locate_not_found": "Esse token não foi encontrado nas redes compatíveis. Escolha uma rede e tente novamente.",
+    "locate_choose": "Encontrado em várias redes; escolha uma:",
+    "pick_chain": "Selecione uma rede para este identificador e tente novamente."
   },
   "brand": {
     "name": "Investor Intel",
@@ -97,7 +124,8 @@
     "theses": "Teses",
     "daily": "Diário",
     "create": "Criar",
-    "me": "Eu"
+    "me": "Eu",
+    "journal": "Diário de teses"
   },
   "nav": {
     "market_pulse": "Pulso do Mercado",
@@ -412,7 +440,13 @@
     "brief_b3": "Impacto na watchlist e nas teses",
     "brief_b4": "O que monitorar a seguir",
     "gen_brief": "Gerar Briefing Diário",
-    "refresh": "Atualizar"
+    "refresh": "Atualizar",
+    "macro_observed": "Observação macro",
+    "flow_source_times": "Horários das fontes das transferências",
+    "time_unavailable": "Horário de observação indisponível",
+    "partial_reads": "Não foi possível ler algumas seções. As fontes disponíveis continuam visíveis; seções ausentes não são resultados vazios.",
+    "flows_read_failed": "Não foi possível ler os destaques de transferências. Isso não significa que não houve transferências.",
+    "picture_news_failed": "Não foi possível ler o contexto das notícias recentes."
   },
   "briefs": {
     "today": "Briefing de hoje",
@@ -530,7 +564,10 @@
     "body": "Pesquise tokens, wallets, narrativas, DeFi e qualidade de execução — com explicações em linguagem simples e contexto de risco. Trial gratuito de 7 dias, sem cartão.",
     "cta": "Iniciar trial gratuito de 7 dias",
     "already_used": "Você já utilizou seu trial do Investor Intel.",
-    "error": "Não foi possível iniciar seu trial. Tente novamente."
+    "error": "Não foi possível iniciar seu trial. Tente novamente.",
+    "plan_title": "Configurando seu espaço de trabalho",
+    "plan_body": "Um momento: estamos criando seu espaço Investor Intel e levando você ao pagamento.",
+    "retry": "Tentar novamente"
   },
   "onboarding": {
     "title": "Configure seu workspace",
@@ -760,7 +797,42 @@
       "open_market": "Abrir dados de mercado completos",
       "history": "Histórico de transações",
       "no_history": "Nenhuma transação registrada para este ativo ainda."
-    }
+    },
+    "flow_return_title": "Retorno após movimentações de capital",
+    "flow_return_loading": "Lendo histórico…",
+    "flow_return_refresh": "Atualizar cálculo",
+    "flow_return_load": "Calcular com o histórico registrado",
+    "flow_return_method": "Método e versão dos dados",
+    "flow_return_version": "Versão dos dados registrados",
+    "flow_return_estimate": "Retorno estimado",
+    "flow_return_gain": "Variação após movimentações de capital",
+    "flow_return_periods": "Períodos registrados · últimos 90 dias",
+    "flow_return_interval": "Intervalo de avaliação",
+    "flow_return_flows": "Movimentações líquidas de capital (USD)",
+    "flow_return_evidence": "Evidências do cálculo",
+    "flow_return_inputs": "Dados registrados",
+    "flow_return_gap": "Motivo da indisponibilidade",
+    "flow_return_values": "Valor inicial / final (USD)",
+    "flow_return_capital": "Capital ponderado (USD)",
+    "flow_return_snapshots": "Referências dos registros de posição",
+    "flow_return_previous": "Períodos anteriores",
+    "flow_return_next": "Períodos posteriores",
+    "flow_return_time": "Horário efetivo",
+    "flow_return_reference": "Referência da atividade",
+    "flow_return_previous_flows": "Movimentações anteriores",
+    "flow_return_next_flows": "Próximas movimentações",
+    "flow_benchmark_title": "Comparação CMC com as mesmas movimentações de capital",
+    "flow_benchmark_index": "Índice de comparação",
+    "flow_benchmark_difference": "Carteira menos índice (pontos percentuais)",
+    "flow_benchmark_periods": "Mesmos horários de avaliação e movimentação de capital",
+    "flow_benchmark_book": "Retorno da carteira registrada",
+    "flow_benchmark_end": "Valor final hipotético do índice (USD)",
+    "flow_benchmark_known": "Registrado",
+    "flow_benchmark_method": "Método e requisitos das fontes",
+    "flow_benchmark_incomplete": "A comparação completa está indisponível. Cada período abaixo informa quais evidências faltam.",
+    "flow_return_error": "Não foi possível ler o histórico de desempenho. Repita o cálculo; nenhum retorno foi inferido.",
+    "flow_return_incomplete": "O retorno completo está indisponível. Revise os períodos afetados; registros antigos não são reconstruídos a partir dos saldos atuais.",
+    "flow_return_intro": "Avaliações datadas e transações registradas separam movimentações de capital de mudanças na carteira. Períodos sem evidências permanecem lacunas."
   },
   "degen": {
     "subtitle": "Multi-chain memecoin discovery and risk context. Extremely high risk — not financial advice.",
@@ -827,7 +899,19 @@
     "sources": "Sources",
     "incomplete": "Partial",
     "updating": "updating…",
-    "refreshing": "Building this token’s profile… check back in a moment."
+    "refreshing": "Building this token’s profile… check back in a moment.",
+    "title": "Perfil do projeto",
+    "description_context": "Descrição do provedor. Os números refletem os metadados obtidos.",
+    "stale": "Desatualizado",
+    "loading": "Carregando detalhes do projeto…",
+    "missing_details": "Não há detalhes verificados do projeto no cache compartilhado.",
+    "source_error": "Os detalhes do projeto estão temporariamente indisponíveis na fonte compartilhada. Tente novamente.",
+    "no_access": "O plano atual do provedor não inclui esses detalhes.",
+    "links": "Links das fontes do projeto",
+    "retrieved": "Metadados obtidos",
+    "retry": "Atualizar detalhes do projeto",
+    "all_categories": "Todas as classificações",
+    "read_full": "Ler perfil completo"
   },
   "limits": {
     "watchlist_items": "Limite de watchlist do seu plano atingido.",
@@ -847,6 +931,107 @@
   },
   "common": {
     "refresh": "Atualizar",
-    "back": "Voltar"
+    "back": "Voltar",
+    "retry": "Tentar novamente"
+  },
+  "investigation": {
+    "terms_calculation": "Unidades do token e condições de resgate",
+    "research_quantity": "Quantidade em estudo (tokens)",
+    "redemption_minimum": "Mínimo de resgate registrado",
+    "threshold_shortfall": "Quantidade abaixo do limite",
+    "keep_calculation": "Salvar cálculo e fontes em um comprovante",
+    "fact_review_expired": "Revisão da fonte expirada",
+    "quantity_scope": "Uma quantidade para estudar. Suas posições não mudam.",
+    "quantity_prompt": "Informe uma quantidade para calcular as unidades subjacentes documentadas.",
+    "terms_expired": "Essas condições precisam de nova revisão da fonte antes do cálculo.",
+    "terms_scope": "As condições descrevem unidades e requisitos. Não comprovam reservas atuais, valor, resgate executável ou sua elegibilidade.",
+    "threshold_met": "O limite de quantidade foi atingido; taxas, entrega e elegibilidade ainda se aplicam.",
+    "multiplier_missing": "Ações subjacentes indisponíveis: este token precisa de um multiplicador de ações datado.",
+    "independent_reviews": "Cada dado tem sua própria revisão e validade. Uma revisão mais recente não atualiza os outros documentos.",
+    "issuer_partially_reviewed": "Algumas revisões expiraram. Apenas dados individualmente atuais são usados em cálculos e horários de mercado."
+  },
+  "journal": {
+    "brand": "Diário de teses",
+    "new_thesis": "Nova tese",
+    "list_sub": "Todas as suas avaliações, com evidências, contexto inicial e histórico de revisão.",
+    "builder_sub": "Primeiro o contexto do ativo, depois o seu raciocínio, com orientação em cada etapa.",
+    "reviews_sub": "Teses com revisão pendente e seu histórico de revisões.",
+    "filter_all": "Todas",
+    "review_due": "Revisão",
+    "quality": "Qualidade",
+    "total": "Total",
+    "recent": "Teses recentes",
+    "view_all": "Ver todas",
+    "needs_review_q": "Precisa da sua revisão",
+    "builder_wip": "O assistente guiado está sendo preparado nesta versão.",
+    "detail_wip": "A visualização completa da tese (Visão geral · Evidências · Gráfico · Carteira · Operações · Revisões · Alertas) está sendo preparada nesta versão.",
+    "trades_no_exec": "O diário de operações serve apenas para planejamento e revisão. Investor Intel não executa operações.",
+    "trades_wip": "Planos, revisões e análises de operações estão sendo preparados nesta versão.",
+    "reviews_wip": "O fluxo de revisão está sendo preparado nesta versão.",
+    "analytics_wip": "As análises de teses, operações e conflitos de carteira estão sendo preparadas nesta versão.",
+    "settings_wip": "As preferências do diário estão sendo preparadas nesta versão.",
+    "nav": {
+      "dashboard": "Visão geral",
+      "theses": "Teses",
+      "trades": "Operações",
+      "reviews": "Revisões",
+      "analytics": "Análises",
+      "settings": "Configurações"
+    },
+    "status": {
+      "draft": "Rascunho",
+      "active": "Ativa",
+      "strengthening": "Fortalecendo",
+      "weakening": "Enfraquecendo",
+      "needs_review": "Precisa de revisão",
+      "confirmed": "Confirmada",
+      "partially_confirmed": "Parcialmente confirmada",
+      "invalidated": "Invalidada",
+      "closed": "Encerrada",
+      "archived": "Arquivada"
+    },
+    "empty": {
+      "title": "Crie sua primeira tese de investimento",
+      "sub": "Comece de onde você está: o aplicativo reúne as evidências.",
+      "examples": "Exemplos",
+      "start_portfolio": "Posição da carteira",
+      "start_watchlist": "Ativo da lista de acompanhamento",
+      "start_market": "Página de mercado",
+      "start_news": "Notícias recentes",
+      "start_trade": "Ideia de operação",
+      "start_bear": "Cenário de baixa",
+      "example_0": "Crie uma tese com base em novidades sobre SOL",
+      "example_1": "Revise uma posição sem tese",
+      "example_2": "Transforme uma notícia em um plano de operação",
+      "example_3": "Crie um cenário de baixa para sua maior posição"
+    }
+  },
+  "signup": {
+    "seo_title": "Crie sua conta Investor Intel",
+    "title": "Crie sua conta",
+    "body": "Sua conta libera o teste gratuito de 7 dias do Investor Intel: acesso completo, sem cartão.",
+    "name_label": "Nome",
+    "name_placeholder": "Seu nome",
+    "email_label": "E-mail",
+    "email_placeholder": "voce@exemplo.com",
+    "password_label": "Senha",
+    "password_placeholder": "Mínimo de 8 caracteres",
+    "password_too_short": "A senha deve ter pelo menos 8 caracteres.",
+    "cta": "Criar conta e iniciar teste gratuito",
+    "plan_body": "Crie sua conta e conclua o pagamento para ativar {{tier}} por {{price}}/mês. Pague com cartão ou criptomoeda.",
+    "plan_cta": "Criar conta e continuar para o pagamento",
+    "trust_trial": "Teste gratuito de 7 dias",
+    "trust_card": "Sem cartão",
+    "trust_pay": "Pague com cartão ou criptomoeda",
+    "trust_cancel": "Cancele quando quiser",
+    "have_account": "Já tem uma conta?",
+    "sign_in": "Entrar",
+    "back": "Voltar",
+    "sent_title": "Verifique seu e-mail",
+    "sent_body_prefix": "Enviamos um link de confirmação para ",
+    "sent_body_suffix": ". Clique para ativar sua conta e iniciar o teste gratuito de 7 dias.",
+    "sent_body_suffix_plan": ". Clique para ativar sua conta e continuar para o pagamento.",
+    "sent_hint": "Não recebeu? Verifique o spam ou envie o formulário novamente. Se já tem uma conta, entre.",
+    "error": "Não foi possível criar sua conta. Tente novamente."
   }
 }

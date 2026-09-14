@@ -1,4 +1,27 @@
 {
+  "cohort": {
+    "close": "Sluiten",
+    "coverage": {
+      "missing": "Geen bewaarde prijs voor het exacte oorspronkelijke activum",
+      "observation_unknown": "Tijdstip van prijswaarneming niet vermeld",
+      "observed_later": "Waargenomen na het gekozen tijdstip",
+      "recorded_later": "Vastgelegd na het gekozen tijdstip",
+      "recording_unknown": "Tijdstip van prijsvastlegging niet vermeld",
+      "invalid": "Prijs is ongeldig",
+      "expiry_unknown": "Geldigheid van de prijs niet vermeld",
+      "stale": "Bewaarde prijs is verouderd",
+      "unavailable": "Prijs niet beschikbaar; oorspronkelijk lid behouden",
+      "comparable": "Vergelijkbaar",
+      "zero_baseline": "Beginprijs is nul; procentueel rendement is niet gedefinieerd",
+      "baseline_missing": "Vergelijkbare beginprijs of waarnemingstijd ontbreekt",
+      "retained_member": "Het oorspronkelijke lid blijft in dit cohort. Niet-beschikbare prijzen tellen niet als een rendement van nul.",
+      "observed": "Prijs waargenomen",
+      "recorded": "Eerste vastlegging",
+      "expires": "Geldig tot",
+      "selected": "Gekozen bewijstijdstip"
+    },
+    "response_changed": "De ontdekkingsresultaten zijn veranderd. Uw opgeslagen cohort toont nog steeds de oorspronkelijke leden. Leg deze resultaten expliciet vast om een ander cohort te volgen."
+  },
   "market": {
     "source": "Exchange",
     "change_24h": "24h change",
@@ -85,7 +108,11 @@
     "sort_recently_updated": "Recently updated",
     "allCategories": "All categories",
     "category": "Category",
-    "sortBy": "Sort by"
+    "sortBy": "Sort by",
+    "auto_detect": "Chain automatisch detecteren",
+    "locate_not_found": "Deze token is niet gevonden op een ondersteunde chain. Kies een chain en probeer het opnieuw.",
+    "locate_choose": "Gevonden op meerdere chains; kies er één:",
+    "pick_chain": "Selecteer een chain voor deze identificatie en probeer het opnieuw."
   },
   "brand": {
     "name": "Investor Intel",
@@ -97,7 +124,8 @@
     "theses": "Theses",
     "daily": "Dagelijks",
     "create": "Aanmaken",
-    "me": "Ik"
+    "me": "Ik",
+    "journal": "Thesedagboek"
   },
   "nav": {
     "market_pulse": "Marktpols",
@@ -412,7 +440,13 @@
     "brief_b3": "Watchlist- & these-impact",
     "brief_b4": "Wat je nu in de gaten moet houden",
     "gen_brief": "Dagelijkse brief genereren",
-    "refresh": "Vernieuwen"
+    "refresh": "Vernieuwen",
+    "macro_observed": "Macro-observatie",
+    "flow_source_times": "Brontijdstippen van transfers",
+    "time_unavailable": "Observatietijd niet beschikbaar",
+    "partial_reads": "Sommige onderdelen konden niet worden gelezen. Beschikbare bronnen blijven zichtbaar; ontbrekende onderdelen zijn geen lege resultaten.",
+    "flows_read_failed": "De transferhoogtepunten konden niet worden gelezen. Dit betekent niet dat er geen transfers waren.",
+    "picture_news_failed": "De context van recente berichten kon niet worden gelezen."
   },
   "briefs": {
     "today": "Brief van vandaag",
@@ -530,7 +564,10 @@
     "body": "Onderzoek tokens, wallets, narratives, DeFi en uitvoeringskwaliteit — met begrijpelijke uitleg en risicocontext. 7 dagen gratis proberen, geen creditcard vereist.",
     "cta": "7 dagen gratis starten",
     "already_used": "Je hebt je Investor Intel-proefperiode al gebruikt.",
-    "error": "Kon je proefperiode niet starten. Probeer het opnieuw."
+    "error": "Kon je proefperiode niet starten. Probeer het opnieuw.",
+    "plan_title": "Je werkruimte instellen",
+    "plan_body": "Een moment: we maken je Investor Intel-werkruimte aan en brengen je naar de betaling.",
+    "retry": "Opnieuw proberen"
   },
   "onboarding": {
     "title": "Stel je werkruimte in",
@@ -760,7 +797,42 @@
       "open_market": "Volledige marktgegevens openen",
       "history": "Transactiegeschiedenis",
       "no_history": "Nog geen transacties voor dit activum geregistreerd."
-    }
+    },
+    "flow_return_title": "Rendement na kapitaalstromen",
+    "flow_return_loading": "Historie lezen…",
+    "flow_return_refresh": "Berekening vernieuwen",
+    "flow_return_load": "Berekenen uit vastgelegde historie",
+    "flow_return_method": "Methode en versie van de invoer",
+    "flow_return_version": "Versie van de vastgelegde invoer",
+    "flow_return_estimate": "Geschat rendement",
+    "flow_return_gain": "Verandering na kapitaalstromen",
+    "flow_return_periods": "Vastgelegde perioden · afgelopen 90 dagen",
+    "flow_return_interval": "Waarderingsinterval",
+    "flow_return_flows": "Netto kapitaalstromen (USD)",
+    "flow_return_evidence": "Onderbouwing van de berekening",
+    "flow_return_inputs": "Vastgelegde invoer",
+    "flow_return_gap": "Waarom niet beschikbaar",
+    "flow_return_values": "Begin- / eindwaarde (USD)",
+    "flow_return_capital": "Gewogen kapitaal (USD)",
+    "flow_return_snapshots": "Verwijzingen naar momentopnamen",
+    "flow_return_previous": "Eerdere perioden",
+    "flow_return_next": "Latere perioden",
+    "flow_return_time": "Effectief tijdstip",
+    "flow_return_reference": "Activiteitsreferentie",
+    "flow_return_previous_flows": "Vorige stromen",
+    "flow_return_next_flows": "Volgende stromen",
+    "flow_benchmark_title": "CMC-vergelijking met dezelfde kapitaalstromen",
+    "flow_benchmark_index": "Vergelijkingsindex",
+    "flow_benchmark_difference": "Portefeuille minus index (procentpunten)",
+    "flow_benchmark_periods": "Dezelfde tijdstippen voor waardering en kapitaalstromen",
+    "flow_benchmark_book": "Rendement van de vastgelegde portefeuille",
+    "flow_benchmark_end": "Hypothetische eindwaarde van de index (USD)",
+    "flow_benchmark_known": "Vastgelegd",
+    "flow_benchmark_method": "Methode en bronvereisten",
+    "flow_benchmark_incomplete": "Een volledige vergelijking is niet beschikbaar. Elke periode hieronder vermeldt de ontbrekende onderbouwing.",
+    "flow_return_error": "De rendementshistorie kon niet worden gelezen. Probeer de berekening opnieuw; er is geen rendement afgeleid.",
+    "flow_return_incomplete": "Een volledig rendement is niet beschikbaar. Bekijk de betrokken perioden; oude momentopnamen worden niet uit huidige saldi gereconstrueerd.",
+    "flow_return_intro": "Gedateerde waarderingen en vastgelegde transacties scheiden kapitaalstromen van veranderingen in je portefeuille. Niet-onderbouwde perioden blijven hiaten."
   },
   "degen": {
     "subtitle": "Multi-chain memecoin discovery and risk context. Extremely high risk — not financial advice.",
@@ -827,7 +899,19 @@
     "sources": "Sources",
     "incomplete": "Partial",
     "updating": "updating…",
-    "refreshing": "Building this token’s profile… check back in a moment."
+    "refreshing": "Building this token’s profile… check back in a moment.",
+    "title": "Projectprofiel",
+    "description_context": "Beschrijving van de aanbieder. Cijfers komen uit de opgehaalde metadata.",
+    "stale": "Verouderd",
+    "loading": "Projectgegevens laden…",
+    "missing_details": "Er zijn geen geverifieerde projectgegevens in de gedeelde cache.",
+    "source_error": "Projectgegevens zijn tijdelijk niet beschikbaar bij de gedeelde bron. Probeer het opnieuw.",
+    "no_access": "Het huidige abonnement bij de aanbieder bevat deze gegevens niet.",
+    "links": "Bronlinks van het project",
+    "retrieved": "Metadata opgehaald",
+    "retry": "Projectgegevens vernieuwen",
+    "all_categories": "Alle classificaties",
+    "read_full": "Volledig profiel lezen"
   },
   "limits": {
     "watchlist_items": "Watchlist-limiet van je plan bereikt.",
@@ -847,6 +931,107 @@
   },
   "common": {
     "refresh": "Vernieuwen",
-    "back": "Terug"
+    "back": "Terug",
+    "retry": "Opnieuw proberen"
+  },
+  "investigation": {
+    "terms_calculation": "Tokeneenheden en terugbetalingsvoorwaarden",
+    "research_quantity": "Onderzochte hoeveelheid (tokens)",
+    "redemption_minimum": "Vastgelegd minimum voor terugbetaling",
+    "threshold_shortfall": "Hoeveelheid onder de drempel",
+    "keep_calculation": "Berekening en bronnen in een onderzoeksbewijs bewaren",
+    "fact_review_expired": "Bronbeoordeling verlopen",
+    "quantity_scope": "Een hoeveelheid voor onderzoek. Je posities blijven ongewijzigd.",
+    "quantity_prompt": "Voer een hoeveelheid in om de gedocumenteerde onderliggende eenheden te berekenen.",
+    "terms_expired": "Deze voorwaarden moeten vóór de berekening opnieuw aan de bron worden getoetst.",
+    "terms_scope": "De bronvoorwaarden beschrijven eenheden en voorwaarden. Ze bewijzen geen actuele reserves, waarde, uitvoerbare terugbetaling of jouw geschiktheid.",
+    "threshold_met": "De hoeveelheidsdrempel is bereikt; kosten, levering en toelatingsvoorwaarden blijven gelden.",
+    "multiplier_missing": "Onderliggende aandelen niet beschikbaar: deze token vereist een gedateerde aandelenfactor.",
+    "independent_reviews": "Elk gegeven heeft een eigen bronbeoordeling en vervaldatum. Een nieuwere beoordeling vernieuwt de andere documenten niet.",
+    "issuer_partially_reviewed": "Sommige bronbeoordelingen zijn verlopen. Alleen afzonderlijk actuele gegevens worden gebruikt voor berekeningen en markttijden."
+  },
+  "journal": {
+    "brand": "Thesedagboek",
+    "new_thesis": "Nieuwe these",
+    "list_sub": "Al je standpunten, met onderbouwing, uitgangssituatie en beoordelingshistorie.",
+    "builder_sub": "Eerst de context van het bezit, dan je redenering – stap voor stap begeleid.",
+    "reviews_sub": "Theses die aan beoordeling toe zijn en je beoordelingshistorie.",
+    "filter_all": "Alle",
+    "review_due": "Beoordeling",
+    "quality": "Kwaliteit",
+    "total": "Totaal",
+    "recent": "Recente theses",
+    "view_all": "Alles bekijken",
+    "needs_review_q": "Heeft je beoordeling nodig",
+    "builder_wip": "De begeleide opsteller wordt in deze versie ontwikkeld.",
+    "detail_wip": "De volledige theseweergave (Overzicht · Onderbouwing · Grafiek · Portefeuille · Transacties · Beoordelingen · Meldingen) wordt in deze versie ontwikkeld.",
+    "trades_no_exec": "Het transactiedagboek is alleen voor planning en beoordeling. Investor Intel voert geen transacties uit.",
+    "trades_wip": "Transactieplannen, beoordelingen en analyses worden in deze versie ontwikkeld.",
+    "reviews_wip": "Het beoordelingsproces wordt in deze versie ontwikkeld.",
+    "analytics_wip": "Theseanalyses, transactieanalyses en portefeuilleconflicten worden in deze versie ontwikkeld.",
+    "settings_wip": "De dagboekvoorkeuren worden in deze versie ontwikkeld.",
+    "nav": {
+      "dashboard": "Overzicht",
+      "theses": "Theses",
+      "trades": "Transacties",
+      "reviews": "Beoordelingen",
+      "analytics": "Analyses",
+      "settings": "Instellingen"
+    },
+    "status": {
+      "draft": "Concept",
+      "active": "Actief",
+      "strengthening": "Wordt sterker",
+      "weakening": "Wordt zwakker",
+      "needs_review": "Beoordeling nodig",
+      "confirmed": "Bevestigd",
+      "partially_confirmed": "Gedeeltelijk bevestigd",
+      "invalidated": "Weerlegd",
+      "closed": "Gesloten",
+      "archived": "Gearchiveerd"
+    },
+    "empty": {
+      "title": "Stel je eerste beleggingsthese op",
+      "sub": "Begin waar je nu bent: de app verzamelt de onderbouwing.",
+      "examples": "Voorbeelden",
+      "start_portfolio": "Portefeuillepositie",
+      "start_watchlist": "Bezit op de volglijst",
+      "start_market": "Marktpagina",
+      "start_news": "Recent nieuws",
+      "start_trade": "Transactie-idee",
+      "start_bear": "Negatief scenario",
+      "example_0": "Maak een these op basis van recente ontwikkelingen rond SOL",
+      "example_1": "Beoordeel een positie zonder these",
+      "example_2": "Zet een nieuwsgebeurtenis om in een transactieplan",
+      "example_3": "Maak een negatief scenario voor je grootste positie"
+    }
+  },
+  "signup": {
+    "seo_title": "Maak je Investor Intel-account aan",
+    "title": "Maak je account aan",
+    "body": "Met je account krijg je de gratis proefperiode van 7 dagen voor Investor Intel: volledige toegang, geen kaart nodig.",
+    "name_label": "Naam",
+    "name_placeholder": "Je naam",
+    "email_label": "E-mail",
+    "email_placeholder": "jij@voorbeeld.nl",
+    "password_label": "Wachtwoord",
+    "password_placeholder": "Minimaal 8 tekens",
+    "password_too_short": "Het wachtwoord moet minstens 8 tekens bevatten.",
+    "cta": "Account aanmaken en gratis proberen",
+    "plan_body": "Maak je account aan en rond de betaling af om {{tier}} voor {{price}}/maand te activeren. Betaal met kaart of crypto.",
+    "plan_cta": "Account aanmaken en naar betaling",
+    "trust_trial": "7 dagen gratis proberen",
+    "trust_card": "Geen kaart nodig",
+    "trust_pay": "Betaal met kaart of crypto",
+    "trust_cancel": "Altijd opzegbaar",
+    "have_account": "Heb je al een account?",
+    "sign_in": "Inloggen",
+    "back": "Terug",
+    "sent_title": "Controleer je e-mail",
+    "sent_body_prefix": "We hebben een bevestigingslink gestuurd naar ",
+    "sent_body_suffix": ". Klik erop om je account te activeren en je gratis proefperiode van 7 dagen te starten.",
+    "sent_body_suffix_plan": ". Klik erop om je account te activeren en naar de betaling te gaan.",
+    "sent_hint": "Niets ontvangen? Controleer je spammap of verstuur het formulier opnieuw. Heb je al een account, log dan in.",
+    "error": "Je account kon niet worden aangemaakt. Probeer het opnieuw."
   }
 }

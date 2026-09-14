@@ -1,15 +1,17 @@
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Newspaper, Sparkles } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { useArtifact } from '../lib/useArtifact'
 import { listBriefs, upsertBrief } from '../lib/intel-data'
-import { listWatchlist } from '../lib/watchlist-api'
+import { appendHistoryPage } from '../lib/history-page'
 import { markSurfaceSeen } from '../lib/changes-api'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import { clarityMeta } from '../lib/narrative-ui'
+import { usePortfolioSelection } from '../lib/PortfolioSelectionContext'
+import BriefLibrary from '../components/BriefLibrary'
 
 const SIG_CLS = { bullish: 'chip--ok', bearish: 'chip--err', mixed: 'chip--info' }
 
@@ -22,12 +24,14 @@ function AssembledBrief({ b }) {
   const Section = ({ title, children }) => children ? <div><div className="eyebrow">{title}</div><div className="mt-1 space-y-1">{children}</div></div> : null
   const has = (x) => Array.isArray(x) ? x.length > 0 : !!x
   return (
-    <div className="card p-4 space-y-3">
+    <div className="intel-assembled-brief space-y-4">
       <div className="flex items-center justify-between flex-wrap gap-2">
-        <span className="text-[12px] text-[var(--fg-4)]">{b.period_date} · {b.brief_type}</span>
+        <span className="text-[12px] text-[var(--fg-4)]">{b.period_date} · {b.brief_type} · {b.scope === 'personal' ? 'Private · only you' : 'Organization history · shared'}</span>
         <span className="text-[10px] text-[var(--fg-5)]">Assembled from cached intelligence · research context, not advice</span>
       </div>
+      {s.portfolio_scope?.name && <p className="text-sm">Portfolio: {s.portfolio_scope.name}</p>}
       {s.no_meaningful_change && <div className="card--flat p-3 text-[13px] text-[var(--fg-2)]">{s.no_meaningful_change}</div>}
+      {Object.values(s.context_coverage || {}).some(Boolean) && <p className="text-[12px] text-[var(--fg-4)]">Personal context uses up to 200 recent watchlist items, 200 holdings by value, and 8 recent transfers. Some older or smaller records are outside this brief.</p>}
       {s.market_regime && (
         <Section title="Market regime">
           <p className="text-[13px] text-[var(--fg-2)]"><b className="uppercase">{s.market_regime.regime}</b>{s.market_regime.flavor ? ` · ${s.market_regime.flavor}` : ''} — {s.market_regime.rationale}</p>
@@ -87,32 +91,55 @@ function AssembledBrief({ b }) {
 export default function BriefsPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
-  const { supabase } = useSupabase()
+  const { supabase, user } = useSupabase()
+  const selection = usePortfolioSelection()
   const [briefs, setBriefs] = useState([])
   const [loading, setLoading] = useState(true)
-  const brief = useArtifact()
+  const brief = useArtifact(selection.portfolioId || '')
+  const [error, setError] = useState(null)
+  const [nextCursor, setNextCursor] = useState(null)
+  const [loadingMore, setLoadingMore] = useState(false)
+  const [selectedKey, setSelectedKey] = useState(null)
+  const scope = `${org?.id || ''}:${user?.id || ''}`
+  const active = useRef(scope); active.current = scope
+  const generationScope = `${scope}:${selection.portfolioId || ''}`
+  const activeGeneration = useRef(generationScope); activeGeneration.current = generationScope
+  const operation = useRef(0)
+  const [loadedScope, setLoadedScope] = useState(null)
 
   // Mark the brief surface as seen on unmount (powers the Intel onboarding
   // checklist "review a brief" item, and the standard what-changed indicator).
-  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'brief') }, [org?.id, supabase])
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'brief', '', { orgId: org.id, userId: user?.id }) }, [org?.id, user?.id, supabase])
 
-  const load = useCallback(async () => {
-    if (!org?.id) return
-    setLoading(true)
-    try { setBriefs(await listBriefs(supabase, org.id)) } catch { /* ignore */ } finally { setLoading(false) }
-  }, [org?.id, supabase])
-  useEffect(() => { load() }, [load])
+  const load = useCallback(async (cursor = null) => {
+    if (!org?.id || !user?.id) return
+    const seq = ++operation.current
+    cursor ? setLoadingMore(true) : setLoading(true)
+    setError(null)
+    try {
+      const page = await listBriefs(supabase, org.id, { cursor, paged: true })
+      if (active.current !== scope || operation.current !== seq) return
+      setBriefs(previous => cursor ? appendHistoryPage(previous, page.rows) : page.rows)
+      setNextCursor(page.nextCursor); setLoadedScope(scope)
+    } catch (e) { if (active.current === scope && operation.current === seq) setError(e.message || 'Brief history could not be loaded') }
+    finally { if (active.current === scope && operation.current === seq) { setLoading(false); setLoadingMore(false) } }
+  }, [org?.id, user?.id, supabase, scope])
+  useEffect(() => { setBriefs([]); setSelectedKey(null); setNextCursor(null); load(); return () => { operation.current++ } }, [load])
 
   const generate = useCallback(async () => {
-    if (!org?.id) return
-    const items = await listWatchlist(supabase, org.id).catch(() => [])
+    if (!org?.id || !user?.id) return
+    setError(null)
     const res = await brief.generate({
-      artifactType: 'daily_brief', staleMinutes: 720,
+      artifactType: 'daily_brief', portfolioId: selection.portfolioId, staleMinutes: 720,
       extra: { title: t('briefs.today', { defaultValue: "Today's brief" }) },
-      context: { watchlist: items.map((i) => ({ type: i.item_type, ref: i.entity?.canonical_ref_key, label: i.label || i.entity?.display_symbol })) },
+      // Server assembly reads this user's verified cached portfolio/watchlist.
     })
-    if (res?.artifact) { await upsertBrief(supabase, org.id, { briefType: 'daily', artifactId: res.artifact.id }).catch(() => {}); load() }
-  }, [org?.id, supabase, brief, t, load])
+    if (activeGeneration.current !== generationScope) return
+    if (res?.artifact && !res.blocked) {
+      try { const saved = await upsertBrief(supabase, org.id, { briefType: 'daily', artifactId: res.artifact.id }); if (activeGeneration.current === generationScope) { setSelectedKey(`personal:${saved.id}`); await load(); if (activeGeneration.current === generationScope) brief.setResult(null) } }
+      catch (e) { if (activeGeneration.current === generationScope) setError(e.message || 'Generated brief could not be saved. Your result is still available above.') }
+    }
+  }, [org?.id, user?.id, supabase, brief, t, load, generationScope, selection.portfolioId])
 
   return (
     <div className="space-y-5">
@@ -122,33 +149,28 @@ export default function BriefsPage() {
           <h1 className="page-title">{t('nav.briefs', { defaultValue: 'Daily Brief' })}</h1>
           <p className="page-sub">{t('pages.briefs_sub', { defaultValue: 'Your personalized daily investor brief.' })}</p>
         </div>
-        <button onClick={generate} disabled={brief.loading} className="btn btn--primary btn--sm disabled:opacity-50">
-          {brief.loading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Sparkles className="h-4 w-4" /> {t('briefs.generate', { defaultValue: "Generate today's brief" })}</>}
+        <div className="intel-investigation-controls">
+        <label className="text-xs text-[var(--fg-3)]">Portfolio<select className="select ml-2" value={selection.portfolioId || ''} onChange={e=>selection.selectPortfolio(e.target.value)} disabled={selection.loading}>{!selection.portfolios.length&&<option value="">No portfolio</option>}{selection.portfolios.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+        <button onClick={generate} disabled={brief.loading || selection.loading || !!selection.error} className="btn btn--primary btn--sm disabled:opacity-50">
+          {brief.loading ? 'Preparing your brief…' : <><Sparkles className="h-4 w-4" /> {t('briefs.generate', { defaultValue: "Generate today's brief" })}</>}
         </button>
+        </div>
       </div>
 
-      {brief.result && <ArtifactView result={brief.result} loading={brief.loading} />}
+      {brief.loading && <p role="status" className="text-sm text-[var(--fg-3)]">Preparing your brief from saved evidence. You can keep reading the archive.</p>}
+      {brief.result && <ArtifactView key={brief.result.artifact?.id} result={brief.result} loading={brief.loading} />}
       {brief.error && <div className="card--flat p-3 text-[13px] text-red-400">{brief.error}</div>}
+      {error && <div role="alert" className="text-sm text-red-400">{error} <button className="btn btn--quiet btn--sm" onClick={() => load()}>Retry history</button></div>}
 
       {loading ? (
         <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
-      ) : briefs.length === 0 ? (
+      ) : loadedScope !== scope ? null : briefs.length === 0 ? (
         <div className="card p-8 text-center text-[var(--fg-3)] text-sm">{t('briefs.empty', { defaultValue: 'No briefs yet. Generate your first one above.' })}</div>
       ) : (
-        <div className="space-y-2">
-          {briefs.map((b) => (
-            b.assembled && Object.keys(b.assembled).length > 0
-              ? <AssembledBrief key={b.id} b={b} />
-              : (
-                <div key={b.id} className="card p-3">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[12px] text-[var(--fg-4)]">{b.period_date} · {b.brief_type}</span>
-                  </div>
-                  {b.artifact?.structured?.summary && <p className="text-[13px] text-[var(--fg-2)] mt-1 line-clamp-3">{b.artifact.structured.summary}</p>}
-                </div>
-              )
-          ))}
-        </div>
+        <BriefLibrary briefs={briefs} selectedKey={selectedKey} onSelect={setSelectedKey} nextCursor={nextCursor} loadingMore={loadingMore} onLoadMore={() => load(nextCursor)} renderBrief={b => <React.Fragment key={`${b.scope}:${b.id}`}>
+          {b.assembled && Object.keys(b.assembled).length > 0 ? <AssembledBrief b={b} /> : <p className="intel-brief-date">{b.period_date} · {b.brief_type} · {b.scope === 'personal' ? 'Private · only you' : 'Organization history · shared'}</p>}
+          {b.artifact && <ArtifactView key={b.artifact.id} result={{ artifact: b.artifact }} />}
+        </React.Fragment>} />
       )}
 
       <IntelDisclaimer variant="block" />

@@ -14,13 +14,13 @@ function isEvmFamilyDef(c) {
 }
 
 export function canonicalAssetKey(chain, address, nativeSymbol) {
-  const chainId = String(chain || '').trim()
+  const chainId = String(chain || '').trim().toLowerCase()
   if (!chainId) return null
   const c = getChain(chainId)
   const addr = String(address || '').trim()
 
   if ((c?.id === 'solana' || chainId.toLowerCase() === 'solana')
-      && addr && addr.toLowerCase() === WSOL_MINT.toLowerCase()) {
+      && addr === WSOL_MINT) {
     return SOL_NATIVE_KEY
   }
 

@@ -1,3 +1,5 @@
+import { attachCoachProvenance } from '../lib/thesis-coach-provenance'
+import RecordedEvidence from '../components/thesis/RecordedEvidence'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
@@ -13,6 +15,7 @@ import AssetContextPack, { cardKey } from '../components/thesis/AssetContextPack
 import ScenarioBuilder from '../components/thesis/ScenarioBuilder'
 import ThesisQualityScore from '../components/thesis/ThesisQualityScore'
 import IntelErrorNotice from '../components/IntelErrorNotice'
+import { thesisDraftPayload, applyResolvedThesisDefaults } from '../lib/thesis-draft'
 
 const THESIS_TYPES = ['asset', 'chain', 'protocol', 'narrative', 'portfolio_holding', 'trade', 'bear_case', 'watchlist']
 const STANCES = ['bullish', 'bearish', 'neutral', 'market_neutral']
@@ -43,6 +46,7 @@ export default function ThesisBuilderPage() {
   })
   const [entity, setEntity] = useState(null)
   const [pack, setPack] = useState({ cards: [], coverage: null, loading: false, err: null })
+  const [acceptedCoach, setAcceptedCoach] = useState(null)
   const [selections, setSelections] = useState({})
   const [draft, setDraft] = useState({ statement: '', why_now: '', whats_missing: '', supports: '', weakens: '', proves_wrong: '', opposing: '' })
   const [scenarios, setScenarios] = useState({ bull: {}, base: {}, bear: {} })
@@ -53,22 +57,21 @@ export default function ThesisBuilderPage() {
   const [err, setErr] = useState(null)
 
   const setB = (p) => setBasics((b) => ({ ...b, ...p }))
-  const symbol = entity?.display_symbol || null
+  const symbol = pack.subject?.canonical_key === entity?.canonical_ref_key ? pack.subject?.symbol || entity?.display_symbol || prefill.symbol || null : entity?.display_symbol || prefill.symbol || null
 
   // Resolve asset + load context pack
   const resolveAsset = useCallback(async () => {
     if (!org?.id || !basics.identifier.trim()) return
     setPack((p) => ({ ...p, loading: true, err: null }))
     try {
-      const ent = await resolveEntity(supabase, org.id, { kind: 'asset', chain: basics.chain, value: basics.identifier.trim() })
+      const ent = prefill.canonicalKey && basics.identifier.trim() === prefill.value && basics.chain === (prefill.chain || 'solana') ? { id: prefill.entityId || null, canonical_ref_key: prefill.canonicalKey, display_symbol: prefill.symbol || prefill.value } : await resolveEntity(supabase, org.id, { kind: 'asset', chain: basics.chain, value: basics.identifier.trim() })
       setEntity(ent)
-      if (!basics.benchmark) setB({ benchmark: defaultBenchmark(ent?.display_symbol) })
-      if (!basics.title) setB({ title: `${ent?.display_symbol || basics.identifier} thesis` })
+      setBasics(current => applyResolvedThesisDefaults(current, ent?.display_symbol, basics.identifier))
       const res = await getAssetContextPack(supabase, org.id, {
-        symbol: ent?.display_symbol, chain: basics.chain, canonicalKey: ent?.canonical_ref_key,
+        symbol: ent?.display_symbol, chain: basics.chain, canonicalKey: ent?.canonical_ref_key, sourceProvider: prefill.sourceProvider, providerId: prefill.providerId,
         tokenAddress: /^(0x[a-fA-F0-9]{40}|[1-9A-HJ-NP-Za-km-z]{32,44})$/.test(basics.identifier.trim()) ? basics.identifier.trim() : null,
       })
-      setPack({ cards: res?.cards || [], coverage: res?.coverage || null, loading: false, err: res?.error || null })
+      setPack({ content_hash: res?.content_hash, subject: res?.subject, fields: res?.pack?.market_summary?.field_evidence, specialist: { derivatives_state: res?.pack?.derivatives_state, holder_state: res?.pack?.holder_state, cmc_contract_state: res?.pack?.cmc_contract_state, rwa_state:res?.pack?.rwa_state, security_state:res?.pack?.security_state, benchmark_state:res?.pack?.benchmark_state, representation_state:res?.pack?.representation_state }, cards: res?.cards || [], coverage: res?.coverage || null, loading: false, err: res?.error || null })
     } catch (e) {
       setPack({ cards: [], coverage: null, loading: false, err: e.message })
     }
@@ -99,10 +102,11 @@ export default function ThesisBuilderPage() {
     const keyRisks = [...new Set(['bull', 'base', 'bear'].flatMap((k) => scenarios[k]?.risks || []))]
     return {
       idempotency_key: idemKey.current,
+      evidence_version: pack.content_hash || null,
       thesis_type: basics.thesis_type,
       title: basics.title || `${symbol || 'Asset'} thesis`,
       stance: basics.stance,
-      conviction: Math.max(0, Math.min(1, (Number(basics.conviction) || 3) / 5)),
+      conviction: Math.max(0, Math.min(1, (Number.isFinite(Number(basics.conviction)) ? Number(basics.conviction) : 3) / 5)),
       time_horizon: basics.time_horizon,
       review_cadence: basics.review_cadence,
       benchmark_key: `symbol:${(basics.benchmark || defaultBenchmark(symbol)).toUpperCase()}`,
@@ -113,19 +117,20 @@ export default function ThesisBuilderPage() {
       status: 'active',
       next_review_at: new Date(Date.now() + (cadenceDays[basics.review_cadence] || 7) * 86400000).toISOString(),
       ai_summary: draft.statement || null,
+      authored_draft: thesisDraftPayload(draft),
       bull_thesis: scenarios.bull?.narrative || draft.statement || null,
       neutral_thesis: scenarios.base?.narrative || null,
       bear_thesis: scenarios.bear?.narrative || null,
       what_would_confirm: allRules.filter((r) => r.rule_kind === 'confirmation').map((r) => r.description).join('; ') || null,
-      what_would_invalidate: allRules.filter((r) => r.rule_kind === 'invalidation').map((r) => r.description).join('; ') || null,
+      what_would_invalidate: draft.proves_wrong || allRules.filter((r) => r.rule_kind === 'invalidation').map((r) => r.description).join('; ') || null,
       watched_metrics: [...watched],
       key_risks: keyRisks,
       scenarios: scen,
       rules: allRules,
-      evidence,
+      evidence: attachCoachProvenance(evidence, acceptedCoach),
       symbol, chain: basics.chain,
     }
-  }, [pack.cards, selections, rules, scenarios, basics, entity, symbol, draft.statement])
+  }, [pack.cards, pack.content_hash, selections, rules, scenarios, basics, entity, symbol, draft, acceptedCoach])
 
   // Recompute quality on step changes (server-side engine; no logic drift)
   const recheckQuality = useCallback(async () => {
@@ -146,14 +151,17 @@ export default function ThesisBuilderPage() {
     try {
       const res = await getThesisDraft(supabase, org.id, {
         basics: { symbol, chain: basics.chain, canonicalKey: entity?.canonical_ref_key, stance: basics.stance, time_horizon: basics.time_horizon, notes: draft.statement },
+        evidenceVersion: pack.content_hash, evidenceSubject: pack.subject?.canonical_key,
         cards: selectedCards.length ? selectedCards : pack.cards.slice(0, 10),
       })
       setAi((a) => ({ ...a, loading: false, draft: res?.draft || null, err: res?.error || null }))
     } catch (e) { setAi((a) => ({ ...a, loading: false, err: e.message })) }
-  }, [org?.id, supabase, symbol, basics, entity, draft.statement, selectedCards, pack.cards])
+  }, [org?.id, supabase, symbol, basics, entity, draft.statement, selectedCards, pack.cards, pack.content_hash, pack.subject])
 
   const applyAiDraft = useCallback(() => {
     const d = ai.draft; if (!d) return
+    if (d.evidence_version && d.evidence_version !== pack.content_hash) { setAi(a => ({ ...a, err: 'The evidence version changed. Request a new draft before applying it.' })); return }
+    setAcceptedCoach({ version: d.evidence_version, sources: d.source_evidence })
     setDraft((prev) => ({ ...prev, statement: d.statement || prev.statement, why_now: d.why_now || prev.why_now, whats_missing: d.whats_missing || prev.whats_missing }))
     setScenarios((prev) => ({
       bull: { ...prev.bull, narrative: d.bull?.narrative || prev.bull.narrative, price_target: d.bull?.price_target ?? prev.bull.price_target, assumptions: d.bull?.assumptions || prev.bull.assumptions, risks: d.bull?.risks || prev.bull.risks },
@@ -162,22 +170,22 @@ export default function ThesisBuilderPage() {
     }))
     const aiRules = [...(d.confirmation_rules || []).map((r) => ({ ...r, rule_kind: 'confirmation', origin: 'ai_coach' })), ...(d.invalidation_rules || []).map((r) => ({ ...r, rule_kind: 'invalidation', origin: 'ai_coach' }))]
     if (aiRules.length) setRules((prev) => [...prev, ...aiRules])
-  }, [ai.draft])
+  }, [ai.draft, pack.content_hash])
 
   const runCritique = useCallback(async () => {
     if (!org?.id) return
     setAi((a) => ({ ...a, loading: true, err: null }))
     try {
-      const res = await getThesisCritique(supabase, org.id, { basics: { symbol, stance: basics.stance }, cards: selectedCards, draft: { ...draft, scenarios, rules } })
-      setAi((a) => ({ ...a, loading: false, critique: res?.critique || null }))
+      const res = await getThesisCritique(supabase, org.id, { evidenceVersion: pack.content_hash, evidenceSubject: pack.subject?.canonical_key, basics: { symbol, canonicalKey: pack.subject?.canonical_key, stance: basics.stance }, cards: selectedCards, draft: { ...draft, scenarios, rules } })
+      setAi((a) => ({ ...a, loading: false, critique: res?.critique || null, err: res?.error || null }))
     } catch (e) { setAi((a) => ({ ...a, loading: false, err: e.message })) }
-  }, [org?.id, supabase, symbol, basics.stance, selectedCards, draft, scenarios, rules])
+  }, [org?.id, supabase, symbol, basics.stance, selectedCards, draft, scenarios, rules, pack.content_hash, pack.subject])
 
-  const save = useCallback(async () => {
+  const save = useCallback(async (status = 'active') => {
     if (!org?.id) return
     setSaving(true); setErr(null)
     try {
-      const res = await createThesis(supabase, org.id, buildPayload())
+      const res = await createThesis(supabase, org.id, { ...buildPayload(), status })
       if (res?.thesis_id) navigate(`/intel/theses/${res.thesis_id}`)
       else setErr('Could not create thesis')
     } catch (e) { setErr(e.message) } finally { setSaving(false) }
@@ -264,7 +272,8 @@ export default function ThesisBuilderPage() {
               {ai.draft && (
                 <div className="card--flat p-3 space-y-1.5 border-l-2 border-[var(--accent)]">
                   <div className="text-[12px] text-[var(--fg-2)]"><b>{t('journal.ai_proposed', { defaultValue: 'AI proposed' })}:</b> {ai.draft.statement}</div>
-                  {ai.draft.why_now && <div className="text-[11px] text-[var(--fg-4)]">Why now: {ai.draft.why_now}</div>}
+                  <RecordedEvidence version={ai.draft.evidence_version} sources={ai.draft.source_evidence} omitted={ai.draft.omitted_evidence_count} />
+                {ai.draft.why_now && <div className="text-[11px] text-[var(--fg-4)]">Why now: {ai.draft.why_now}</div>}
                   <button onClick={applyAiDraft} className="btn btn--primary btn--sm"><Check className="h-3.5 w-3.5" /> {t('journal.use_draft', { defaultValue: 'Use this draft' })}</button>
                   <div className="text-[10px] text-[var(--fg-5)]">{t('journal.ai_note', { defaultValue: 'Research framing, not advice — review and edit before saving.' })}</div>
                 </div>
@@ -281,7 +290,8 @@ export default function ThesisBuilderPage() {
           {step === 4 && (
             <div className="card p-4 space-y-3">
               <div className="text-[13px] font-medium text-[var(--fg-1)]">{t('journal.rules_step', { defaultValue: 'Confirmation & invalidation rules' })}</div>
-              <p className="text-[12px] text-[var(--fg-4)]">{t('journal.rules_hint', { defaultValue: 'These become alerts. Evidence you marked as a rule is included automatically; add more below.' })}</p>
+              <p className="text-[12px] text-[var(--fg-4)]">{t('journal.rules_hint', { defaultValue: 'Free-text conditions require manual review. Supported structured rules can be connected to an alert after review.' })}</p>
+              <label className="block"><span>{t('journal.invalidated_if', { defaultValue: 'Invalidated if' })}</span><textarea className="textarea w-full" rows={3} value={draft.proves_wrong} onChange={e => setDraft(d => ({ ...d, proves_wrong: e.target.value }))} maxLength={16000}/><span className="text-xs text-[var(--fg-4)]">{t('journal.invalidated_if_hint', { defaultValue: 'Required to activate. State what observation would change your view; incomplete work can be saved as a draft.' })}</span></label>
               {rules.map((r, i) => (
                 <div key={i} className="card--flat p-2 flex items-center gap-2 text-[12px]">
                   <span className={`chip text-[10px] ${r.rule_kind === 'invalidation' ? 'chip--err' : 'chip--ok'}`}>{r.rule_kind}</span>
@@ -308,12 +318,14 @@ export default function ThesisBuilderPage() {
               <p className="text-[11px] text-[var(--fg-5)]">{t('journal.baseline_note', { defaultValue: 'Saving snapshots an immutable baseline (price, benchmark, fundamentals, selected evidence) so the Journal can show what changed since this call — forever.' })}</p>
               <div className="flex items-center gap-2">
                 <button onClick={runCritique} disabled={ai.loading} className="btn btn--quiet btn--sm"><Sparkles className="h-4 w-4" /> {t('journal.ai_critique', { defaultValue: 'AI critique' })}</button>
-                <button onClick={save} disabled={saving || !entity} className="btn btn--primary btn--sm disabled:opacity-50">{saving ? '…' : t('journal.save', { defaultValue: 'Save thesis' })}</button>
+                <button onClick={() => save('draft')} disabled={saving || !entity} className="btn btn--quiet btn--sm">{t('journal.save_draft', { defaultValue: 'Save draft' })}</button>
+                <button onClick={() => save('active')} disabled={saving || !entity} className="btn btn--primary btn--sm disabled:opacity-50">{saving ? '…' : t('journal.save', { defaultValue: 'Save thesis' })}</button>
               </div>
               {ai.critique && (
                 <div className="card--flat p-3 space-y-1 border-l-2 border-[var(--accent)] text-[12px]">
                   <div className="text-[var(--fg-2)]">{ai.critique.critique}</div>
-                  {Array.isArray(ai.critique.suggestions) && ai.critique.suggestions.map((s, i) => <div key={i} className="text-[11px] text-[var(--fg-4)]">• {s}</div>)}
+                  <RecordedEvidence version={ai.critique.evidence_version} sources={ai.critique.source_evidence} omitted={ai.critique.omitted_evidence_count} />
+                {Array.isArray(ai.critique.suggestions) && ai.critique.suggestions.map((s, i) => <div key={i} className="text-[11px] text-[var(--fg-4)]">• {s}</div>)}
                 </div>
               )}
             </div>
@@ -329,6 +341,7 @@ export default function ThesisBuilderPage() {
         {/* RIGHT — Asset Context Pack + live quality */}
         <div className="space-y-3">
           {entity && step >= 2 && <ThesisQualityScore quality={quality} loading={quality.loading} />}
+          <RecordedEvidence version={pack.content_hash} fields={pack.fields} specialist={pack.specialist} />
           <AssetContextPack cards={pack.cards} selections={selections} onSelect={onSelect} loading={pack.loading} coverage={pack.coverage}
             emptyHint={!entity ? t('journal.pick_asset_first', { defaultValue: 'Load an asset above to pull its Context Pack.' }) : null} />
         </div>

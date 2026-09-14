@@ -1,5 +1,6 @@
 import React from 'react'
 import { Flame, Sprout, Users, Snowflake, TrendingUp, AlertTriangle } from 'lucide-react'
+import { matchesTab } from '../lib/narrative-ui'
 
 // Top summary row — the at-a-glance "what's happening" counts. Clicking a stat
 // jumps to the matching tab.
@@ -12,15 +13,15 @@ const STATS = [
   { key: 'high_risk', tab: 'all', label: 'High Risk', Icon: AlertTriangle, cls: 'text-red-400' },
 ]
 
-export default function NarrativeSummaryRow({ summary, onPick }) {
+export default function NarrativeSummaryRow({ summary, narratives, onPick }) {
   const s = summary || {}
   return (
-    <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
+    <div className="flex flex-wrap gap-x-6 gap-y-3 border-y border-[var(--border-default)] py-3" aria-label="Narrative counts in the loaded feed">
       {STATS.map(({ key, tab, label, Icon, cls }) => (
-        <button key={key} onClick={() => onPick?.(tab)}
-          className="card p-3 flex flex-col items-start gap-1 hover:border-[var(--accent)] transition-colors text-left">
+        <button key={key} onClick={() => onPick?.(tab)} disabled={key === 'high_risk'}
+          className="flex items-center gap-2 text-left">
           <div className={`flex items-center gap-1.5 ${cls}`}><Icon className="h-3.5 w-3.5" /><span className="text-[10px] uppercase tracking-wide">{label}</span></div>
-          <span className="text-xl font-semibold text-[var(--fg-1)] tabular-nums">{s[key] ?? 0}</span>
+          <span className="font-semibold text-[var(--fg-1)] tabular-nums">{key !== 'high_risk' && Array.isArray(narratives) ? narratives.filter(row => matchesTab(row, tab)).length : (s[key] ?? '—')}</span>
         </button>
       ))}
     </div>

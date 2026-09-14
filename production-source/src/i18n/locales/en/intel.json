@@ -1,4 +1,27 @@
 {
+  "cohort": {
+    "close": "Close",
+    "coverage": {
+      "missing": "No retained price for the exact original asset",
+      "observation_unknown": "Price observation time is unreported",
+      "observed_later": "Observed after the selected time",
+      "recorded_later": "Recorded after the selected time",
+      "recording_unknown": "Price recording time is unreported",
+      "invalid": "Price is invalid",
+      "expiry_unknown": "Price freshness is unreported",
+      "stale": "Retained price is stale",
+      "unavailable": "Price is unavailable; original member retained",
+      "comparable": "Comparable",
+      "zero_baseline": "Initial price is zero; percentage return is undefined",
+      "baseline_missing": "Missing comparable initial price or observation time",
+      "retained_member": "The original member remains in this cohort. Unavailable prices do not count as zero returns.",
+      "observed": "Price observed",
+      "recorded": "First recorded",
+      "expires": "Freshness limit",
+      "selected": "Selected evidence time"
+    },
+    "response_changed": "The discovery response has changed. Your saved cohort still opens its original members. Capture this response explicitly to track another cohort."
+  },
   "market": {
     "source": "Exchange",
     "change_24h": "24h change",
@@ -144,6 +167,18 @@
     "sort_market_cap": "Market cap"
   },
   "profile": {
+    "title": "Project profile",
+    "description_context": "Provider description. Figures reflect the retrieved metadata snapshot.",
+    "stale": "Stale",
+    "loading": "Loading project details…",
+    "missing_details": "No verified project details are available in the shared cache.",
+    "source_error": "Project details are temporarily unavailable from the shared source. Retry to check again.",
+    "no_access": "The current provider plan does not include these details.",
+    "links": "Project source links",
+    "retrieved": "Metadata retrieved",
+    "retry": "Refresh project details",
+    "all_categories": "All classifications",
+    "read_full": "Read full profile",
     "website": "Website",
     "docs": "Docs",
     "whitepaper": "Whitepaper",
@@ -459,7 +494,42 @@
       "open_market": "Open full market data",
       "history": "Transaction history",
       "no_history": "No transactions recorded for this asset yet."
-    }
+    },
+    "flow_return_title": "Return after capital movements",
+    "flow_return_loading": "Reading history…",
+    "flow_return_refresh": "Refresh calculation",
+    "flow_return_load": "Calculate from recorded history",
+    "flow_return_method": "Method and input version",
+    "flow_return_version": "Recorded input version",
+    "flow_return_estimate": "Estimated return",
+    "flow_return_gain": "Change after capital movements",
+    "flow_return_periods": "Recorded periods · past 90 days",
+    "flow_return_interval": "Valuation interval",
+    "flow_return_flows": "Net capital movements (USD)",
+    "flow_return_evidence": "Calculation evidence",
+    "flow_return_inputs": "Recorded inputs",
+    "flow_return_gap": "Why unavailable",
+    "flow_return_values": "Opening / closing value (USD)",
+    "flow_return_capital": "Weighted capital (USD)",
+    "flow_return_snapshots": "Snapshot references",
+    "flow_return_previous": "Earlier periods",
+    "flow_return_next": "Later periods",
+    "flow_return_time": "Effective time",
+    "flow_return_reference": "Activity reference",
+    "flow_return_previous_flows": "Previous movements",
+    "flow_return_next_flows": "Next movements",
+    "flow_benchmark_title": "CMC comparison with the same capital movements",
+    "flow_benchmark_index": "Comparison index",
+    "flow_benchmark_difference": "Portfolio minus index (percentage points)",
+    "flow_benchmark_periods": "Identical valuation and capital-movement times",
+    "flow_benchmark_book": "Recorded book return",
+    "flow_benchmark_end": "Hypothetical index closing value (USD)",
+    "flow_benchmark_known": "Recorded",
+    "flow_benchmark_method": "Method and source requirements",
+    "flow_benchmark_incomplete": "A complete comparison is unavailable. Each period below explains its missing evidence.",
+    "flow_return_error": "Performance history could not be read. Retry the calculation; no return has been inferred.",
+    "flow_return_incomplete": "A complete return is unavailable. Review the affected periods below; older snapshots are not reconstructed from current balances.",
+    "flow_return_intro": "Use dated valuations and recorded transactions to separate capital movements from changes in your asset book. Unsupported periods remain gaps."
   },
   "watchlist": {
     "type": "Type",
@@ -719,7 +789,13 @@
     "brief_b3": "Watchlist & thesis impact",
     "brief_b4": "What to monitor next",
     "gen_brief": "Generate Daily Brief",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "macro_observed": "Macro observed",
+    "flow_source_times": "Transfer source times",
+    "time_unavailable": "Observation time unavailable",
+    "partial_reads": "Some parts of your desk could not be read. Available sources remain visible; missing sections are not empty results.",
+    "flows_read_failed": "Transfer highlights could not be read. This does not mean there were no transfers.",
+    "picture_news_failed": "Recent story context could not be read."
   },
   "briefs": {
     "today": "Today's brief",
@@ -939,6 +1015,23 @@
   },
   "common": {
     "refresh": "Refresh",
-    "back": "Back"
+    "back": "Back",
+    "retry": "Retry"
+  },
+  "investigation": {
+    "terms_calculation": "Token units and redemption conditions",
+    "research_quantity": "Research quantity (tokens)",
+    "redemption_minimum": "Recorded redemption minimum",
+    "threshold_shortfall": "Quantity below the threshold",
+    "keep_calculation": "Keep calculation and sources in a receipt",
+    "fact_review_expired": "Source review expired",
+    "quantity_scope": "A quantity to investigate. Your holdings are unchanged.",
+    "quantity_prompt": "Enter a quantity to calculate its documented underlying units.",
+    "terms_expired": "These terms need a new source review before calculating.",
+    "terms_scope": "Source terms describe units and conditions. They do not establish current reserves, value, executable redemption or your eligibility.",
+    "threshold_met": "The quantity threshold is met; fees, delivery and eligibility still apply.",
+    "multiplier_missing": "Underlying shares unavailable: this token needs a dated share multiplier.",
+    "independent_reviews": "Each fact has its own source review and expiry below. A newer review does not refresh the other documents.",
+    "issuer_partially_reviewed": "Some source reviews have expired. Only independently current facts are used for calculations and market clocks."
   }
 }

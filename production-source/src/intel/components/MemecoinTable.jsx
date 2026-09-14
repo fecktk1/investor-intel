@@ -1,5 +1,5 @@
 import React from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Flame, Sparkles, ArrowUpRight, Megaphone, TrendingUp, ShieldAlert } from 'lucide-react'
 import MarketSignalBadge from './MarketSignalBadge'
@@ -7,11 +7,12 @@ import TokenAvatar from './TokenAvatar'
 import { fmtPrice, fmtPct, fmtVol, pctClass, timeAgo } from '../lib/market-format'
 
 function riskBand(score) {
+  if (score == null || score === '') return 'unknown'
   const r = Number(score)
-  if (!Number.isFinite(r)) return 'medium'
+  if (!Number.isFinite(r)) return 'unknown'
   return r >= 60 ? 'high' : r >= 30 ? 'medium' : 'low'
 }
-const RISK_CLS = { low: 'text-[var(--ok)]', medium: 'text-amber-400', high: 'text-red-400' }
+const RISK_CLS = { low: 'text-[var(--ok)]', medium: 'text-[var(--signal-yellow)]', high: 'text-[var(--signal-red)]', unknown: 'text-[var(--fg-4)]' }
 
 function Flags({ r, t }) {
   const flags = []
@@ -24,8 +25,8 @@ function Flags({ r, t }) {
   if (!flags.length) return null
   return (
     <span className="flex flex-wrap items-center gap-1">
-      {flags.slice(0, 3).map((f) => (
-        <span key={f.k} className={`inline-flex items-center gap-0.5 text-[9px] px-1 rounded bg-[var(--bg-3)] ${f.cls}`} title={f.label}><f.icon className="h-2.5 w-2.5" />{f.label}</span>
+      {flags.map((f) => (
+        <span key={f.k} className="inline-flex items-center gap-0.5 text-[10px] text-[var(--fg-4)]" title={f.label}>{f.label}</span>
       ))}
     </span>
   )
@@ -35,54 +36,18 @@ function Flags({ r, t }) {
 // server-side (intel-degen); this is presentation only. Logos via TokenAvatar.
 export default function MemecoinTable({ rows = [], pageOffset = 0 }) {
   const { t } = useTranslation('intel', { useSuspense: false })
+  const location = useLocation()
   if (!rows.length) return <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('degen.noData', { defaultValue: 'No memecoins match these filters yet. Discovery runs continuously.' })}</div>
-  return (
-    <div className="space-y-1.5">
-      <div className="hidden md:flex items-center gap-3 px-2.5 text-[10px] uppercase text-[var(--fg-5)]">
-        <span className="w-8 text-right">#</span>
-        <span className="flex-1">{t('markets.asset', { defaultValue: 'Asset' })}</span>
-        <span className="w-20 text-right">{t('markets.priceLabel', { defaultValue: 'Price' })}</span>
-        <span className="hidden lg:block w-14 text-right">1h</span>
-        <span className="w-14 text-right">24h</span>
-        <span className="w-20 text-right">{t('markets.volLabel', { defaultValue: 'Volume' })}</span>
-        <span className="w-20 text-right">{t('degen.liquidity', { defaultValue: 'Liquidity' })}</span>
-        <span className="hidden xl:block w-16 text-right">{t('degen.age', { defaultValue: 'Age' })}</span>
-        <span className="w-28 text-right">{t('degen.risk', { defaultValue: 'Risk' })}</span>
-      </div>
-      {rows.map((r, i) => {
-        const band = riskBand(r.riskScore)
-        const inner = (
-          <div className="card--flat p-2.5 w-full flex items-center gap-3 hover:bg-[var(--bg-2)] transition-colors">
-            <span className="w-8 text-right text-[11px] text-[var(--fg-5)]">{pageOffset + i + 1}</span>
-            <div className="flex-1 min-w-0 flex items-center gap-2">
-              <TokenAvatar src={r.imageUrl} symbol={r.symbol} name={r.name} size="md" />
-              <div className="min-w-0">
-                <div className="text-[13px] font-medium text-[var(--fg-1)] truncate flex items-center gap-1.5">
-                  {r.symbol || '—'}
-                  {r.name ? <span className="text-[11px] text-[var(--fg-4)] truncate hidden sm:inline">{r.name}</span> : null}
-                  <span className="text-[9px] text-[var(--fg-5)] px-1 rounded bg-[var(--bg-3)]">{r.chain}</span>
-                </div>
-                <div className="mt-0.5 flex items-center gap-1.5"><Flags r={r} t={t} />{r.listingState === 'pre_liquidity' && <span className="text-[9px] text-amber-400">{t('degen.preLiquidity', { defaultValue: 'pre-liquidity' })}</span>}{(() => { const b = Number(r.buys24h) || 0, sl = Number(r.sells24h) || 0, tot = b + sl; if (!tot) return null; const bp = Math.round((b / tot) * 100); return <span className={`text-[9px] ${bp >= 55 ? 'text-emerald-400' : bp <= 45 ? 'text-red-400' : 'text-[var(--fg-5)]'}`} title={`${b} buys / ${sl} sells${r.txns24h ? ` · ${r.txns24h} txns` : ''} (24h)`}>{bp}% {t('degen.buy', { defaultValue: 'buy' })}</span> })()}</div>
-              </div>
-            </div>
-            <span className="hidden md:block w-20 text-right text-[12px] text-[var(--fg-2)]">{fmtPrice(r.price)}</span>
-            <span className={`hidden lg:block w-14 text-right text-[12px] ${pctClass(r.change1hPct)}`}>{fmtPct(r.change1hPct)}</span>
-            <span className={`hidden md:block w-14 text-right text-[12px] ${pctClass(r.change24hPct)}`}>{fmtPct(r.change24hPct)}</span>
-            <span className="hidden md:block w-20 text-right text-[12px] text-[var(--fg-2)]">{fmtVol(r.volume24hUsd)}</span>
-            <span className="hidden md:block w-20 text-right text-[12px] text-[var(--fg-2)]">{r.liquidityUsd != null ? fmtVol(r.liquidityUsd) : <span className="text-[var(--fg-5)]">—</span>}</span>
-            <span className="hidden xl:block w-16 text-right text-[11px] text-[var(--fg-4)]">{r.pairCreatedAt ? timeAgo(r.pairCreatedAt) : '—'}</span>
-            <span className="w-28 flex items-center justify-end gap-1.5">
-              {r.signalDirection && <MarketSignalBadge direction={r.signalDirection} size="sm" />}
-              <span className={`text-[10px] font-semibold flex items-center gap-0.5 ${RISK_CLS[band]}`} title={(r.riskFlags || []).map((f) => f.detail || f.flag).join(' · ')}>
-                {band === 'high' && <ShieldAlert className="h-3 w-3" />}{t(`degen.risk_${band}`, { defaultValue: band })}
-              </span>
-            </span>
-          </div>
-        )
-        return (
-          <Link key={`${r.chain}:${r.tokenAddress}`} to={r.detailHref || `/intel/asset/${encodeURIComponent(`${r.chain}:${r.tokenAddress}`)}`} className="block">{inner}</Link>
-        )
-      })}
-    </div>
-  )
+  return <div className="intel-table-scroll intel-market-table intel-degen-table" tabIndex={0} role="region" aria-label={t('degen.scroll_table', { defaultValue: 'Degen results, scroll for more columns' })}><table>
+    <caption className="sr-only">{t('degen.title', { defaultValue: 'Degen Memecoins' })}</caption>
+    <thead><tr><th scope="col">#</th><th scope="col" className="intel-identity-cell">{t('markets.asset', { defaultValue: 'Asset' })}</th>{[['price','Price'],['1h','1h'],['24h','24h'],['volume','Volume'],['liquidity','Liquidity'],['age','Age'],['risk','Risk & signals']].map(([key,label]) => <th scope="col" className="intel-number" key={key}>{t('degen.column_'+key, { defaultValue: label })}</th>)}</tr></thead>
+    <tbody>{rows.map((r,i) => {
+      const band=riskBand(r.riskScore), buys=r.buys24h, sells=r.sells24h
+      const buyPct=buys!=null && sells!=null && Number.isFinite(Number(buys)) && Number.isFinite(Number(sells)) && Number(buys)+Number(sells)>0 ? Math.round(Number(buys)/(Number(buys)+Number(sells))*100) : null
+      return <tr key={r.chain+':'+r.tokenAddress}>
+        <td className="intel-number">{pageOffset+i+1}</td><td className="intel-identity-cell"><Link state={{from:location.pathname+location.search}} to={r.detailHref || '/intel/asset/'+encodeURIComponent(r.chain+':'+r.tokenAddress)} className="flex items-center gap-3"><TokenAvatar src={r.imageUrl} symbol={r.symbol} name={r.name} size="md"/><span><strong>{r.symbol || '—'}</strong><span className="block text-xs text-[var(--fg-4)]">{r.name} · {r.chain}</span><Flags r={r} t={t}/>{r.listingState === 'pre_liquidity' && <small>{t('degen.preLiquidity', {defaultValue:'pre-liquidity'})}</small>}{buyPct!=null && <small className="block" title={buys+' buys / '+sells+' sells (24h)'}>{buyPct}% {t('degen.buy', {defaultValue:'buy'})}{r.txns24h!=null ? ' · '+r.txns24h+' txns' : ''}</small>}</span></Link></td>
+        <td className="intel-number">{fmtPrice(r.price)}</td><td className={'intel-number '+pctClass(r.change1hPct)}>{fmtPct(r.change1hPct)}</td><td className={'intel-number '+pctClass(r.change24hPct)}>{fmtPct(r.change24hPct)}</td><td className="intel-number">{fmtVol(r.volume24hUsd)}</td><td className="intel-number">{fmtVol(r.liquidityUsd)}</td><td className="intel-number">{r.pairCreatedAt ? <time dateTime={r.pairCreatedAt} title={new Date(r.pairCreatedAt).toLocaleString()}>{timeAgo(r.pairCreatedAt)}</time> : '—'}</td>
+        <td className="intel-number">{r.signalDirection && <MarketSignalBadge direction={r.signalDirection} size="sm"/>}<span className={RISK_CLS[band]} title={(r.riskFlags||[]).map(f=>f.detail||f.flag).join(' · ')}>{t('degen.risk_'+band,{defaultValue:band})}</span></td>
+      </tr>
+    })}</tbody></table></div>
 }
