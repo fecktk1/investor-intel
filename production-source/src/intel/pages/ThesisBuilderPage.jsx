@@ -21,7 +21,7 @@ const THESIS_TYPES = ['asset', 'chain', 'protocol', 'narrative', 'portfolio_hold
 const STANCES = ['bullish', 'bearish', 'neutral', 'market_neutral']
 const HORIZONS = ['intraday', 'swing', 'weeks', 'months', 'cycle', 'long_term']
 const CADENCES = ['daily', 'weekly', 'biweekly', 'monthly', 'on_event']
-const STEPS = ['Basics', 'Evidence', 'Draft', 'Scenarios', 'Rules', 'Review & save']
+const STEPS = [['basics', 'Basics'], ['evidence', 'Evidence'], ['draft', 'Draft'], ['scenarios', 'Scenarios'], ['rules', 'Rules'], ['review', 'Review & save']]
 
 const cadenceDays = { daily: 1, weekly: 7, biweekly: 14, monthly: 30, on_event: 7 }
 const defaultBenchmark = (sym) => String(sym || '').toUpperCase() === 'BTC' ? 'ETH' : 'BTC'
@@ -202,10 +202,10 @@ export default function ThesisBuilderPage() {
           <h1 className="page-title">{t('journal.new_thesis', { defaultValue: 'New thesis' })}</h1>
         </div>
         <div className="flex items-center gap-1.5 flex-wrap">
-          {STEPS.map((s, i) => (
-            <button key={s} onClick={() => entity || i === 0 ? setStep(i) : null}
+          {STEPS.map(([id, label], i) => (
+            <button key={id} onClick={() => entity || i === 0 ? setStep(i) : null}
               className={`chip text-[11px] ${i === step ? 'bg-[var(--accent)] text-black' : i < step ? 'chip--ok' : 'text-[var(--fg-4)]'}`}>
-              {i < step ? <Check className="h-3 w-3" /> : `${i + 1}.`} {t(`journal.step.${s}`, { defaultValue: s })}
+              {i < step ? <Check className="h-3 w-3" /> : `${i + 1}.`} {t(`journal.step.${id}`, { defaultValue: label })}
             </button>
           ))}
         </div>
