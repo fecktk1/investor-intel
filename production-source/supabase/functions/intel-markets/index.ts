@@ -239,7 +239,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     admin.from('exchange_latest_cross_market_spreads').select('*').eq('normalized_symbol', sym).maybeSingle(),
     admin.from('exchange_market_rollups').select('*').eq('normalized_symbol', sym),
     admin.from('exchange_latest_tickers').select('*').eq('normalized_symbol', sym),
-    admin.from('exchange_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).eq('scope', 'provider').order('as_of', { ascending: false }).limit(24),
+    admin.from('exchange_latest_provider_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(24),
     admin.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8),
     admin.from('exchange_market_memory').select('summary, why_it_matters, memory_type, as_of').eq('normalized_symbol', sym).eq('is_active', true).order('as_of', { ascending: false }).limit(1),
     Promise.resolve(resolved),
