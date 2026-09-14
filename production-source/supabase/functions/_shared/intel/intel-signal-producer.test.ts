@@ -3,8 +3,8 @@ import { produceSignalState } from './intel-signal-producer.ts'
 
 // Awaitable Supabase mock with upsert/insert capture.
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function makeAdmin(tables: Record<string, any>) {
-  const sink = { upserts: [] as any[], inserts: [] as any[] }
+function makeAdmin(tables: Record<string, any>, rpcs: Record<string, (params: any) => any> = {}) {
+  const sink = { upserts: [] as any[], inserts: [] as any[], rpcs: [] as any[] }
   const make = (table: string) => {
     const result = tables[table] ?? { data: [], error: null }
     const b: any = {}
@@ -14,7 +14,11 @@ function makeAdmin(tables: Record<string, any>) {
     b.then = (res: any) => res(result)
     return b
   }
-  return { admin: { from: (t: string) => make(t), rpc: () => Promise.resolve({ data: null, error: null }) }, sink }
+  const rpc = (name: string, params: any) => {
+    sink.rpcs.push({ name, params })
+    return Promise.resolve(rpcs[name] ? rpcs[name](params) : { data: null, error: null })
+  }
+  return { admin: { from: (t: string) => make(t), rpc }, sink }
 }
 
 const now = 1_700_000_000_000
@@ -89,6 +93,21 @@ Deno.test('score_delta carries prev_direction + d_global_score from prior row', 
   // changed (cache_key differs from prior 'old') → a snapshot was written
   const snaps = sink.inserts.filter((i) => i.table === 'intel_signal_snapshots').flatMap((i) => i.rows)
   assert(snaps.some((s: any) => s.signal_key === 'asset:cg:solana'), 'snapshot emitted on change')
+})
+
+Deno.test('trends read window anchors from the history RPC', async () => {
+  const hour = 3_600_000
+  const points = [[now - 8 * 24 * hour, 0.05, 'bearish'], [now - 25 * hour, 0.1, 'bearish'], [now - 2 * hour, 0.2, 'bearish']]
+  const { admin, sink } = makeAdmin(fixtures(), { intel_signal_trend_history: () => ({ data: { 'asset:cg:solana': points }, error: null }) })
+  await produceSignalState(admin as any, { now })
+  const call = sink.rpcs.find((c) => c.name === 'intel_signal_trend_history')
+  assert(call?.params.p_keys.includes('asset:cg:solana'), 'history requested for the signal key')
+  assertEquals(call.params.p_now, isoNow)
+  const sol = sink.upserts.flatMap((u) => u.rows).find((r: any) => r.signal_key === 'asset:cg:solana')
+  const delta = (anchor: number) => Number((Number(sol.severity) - anchor).toFixed(4))
+  assertEquals(sol.score_delta.d_1h, delta(0.2))
+  assertEquals(sol.score_delta.d_24h, delta(0.1))
+  assertEquals(sol.score_delta.d_7d, delta(0.05))
 })
 
 Deno.test('corroboration: agreeing layers counted, divergence flagged', async () => {
