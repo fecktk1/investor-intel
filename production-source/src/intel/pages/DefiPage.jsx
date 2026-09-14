@@ -445,7 +445,7 @@ export default function DefiPage() {
                       <span className="font-mono truncate">{shortenAddress(r.address, 4)}</span>
                       <CopyBtn text={r.address} />
                       {r.protocol && r.protocol !== 'Kamino' && <span className="truncate">· {r.protocol}</span>}
-                      {isStale(r.staleAfter) && <span className="text-amber-400/90" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>· {t('defi.stale', { defaultValue: 'stale' })}</span>}
+                      {isStale(r.staleAfter) && <span className="text-amber-400/90" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>· {t('defi.stale_inline', { defaultValue: 'stale' })}</span>}
                     </div>
                   </div>
                   <div className="text-right text-[13px] text-[var(--fg-2)]">{fmtUsd(r.tvl_usd)}</div>
@@ -472,7 +472,7 @@ export default function DefiPage() {
                 return (
                   <button data-defi-row key={r.key} onClick={() => onRowDeepDive(r)} className="w-full grid grid-cols-[2fr_1fr_1fr_1fr_1fr] gap-2 px-3 py-2.5 items-center text-left hover:bg-[var(--bg-2)] transition-colors">
                     <div className="min-w-0">
-                      <div className="flex items-center gap-1.5"><span className="text-[13px] text-[var(--fg-1)] truncate">{r.symbol}</span>{r.primary && <span className="text-[var(--accent)] text-[9px]">Main</span>}{isStale(r.staleAfter) && <span className="text-amber-400/90 text-[10px]" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>{t('defi.stale', { defaultValue: 'stale' })}</span>}</div>
+                      <div className="flex items-center gap-1.5"><span className="text-[13px] text-[var(--fg-1)] truncate">{r.symbol}</span>{r.primary && <span className="text-[var(--accent)] text-[9px]">Main</span>}{isStale(r.staleAfter) && <span className="text-amber-400/90 text-[10px]" title={t('defi.stale_hint', { defaultValue: 'Snapshot is past its freshness window' })}>{t('defi.stale_inline', { defaultValue: 'stale' })}</span>}</div>
                       <div className="text-[10px] text-[var(--fg-5)] truncate">{r.market}{r.ltv != null ? ` · LTV ${fmtPct(r.ltv)}` : ''}</div>
                     </div>
                     <div className="text-right text-[13px] font-medium text-emerald-400">{fmtPct(r.supplyApy)}</div>

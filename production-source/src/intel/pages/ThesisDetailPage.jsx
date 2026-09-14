@@ -150,8 +150,8 @@ export default function ThesisDetailPage() {
   const isOwner=th.user_id===user?.id
   const facts=[
     [t('journal.f.stance',{defaultValue:'Stance'}),th.stance||'—'],
-    [t('journal.f.conviction',{defaultValue:'Conviction'}),th.conviction!=null?`${Math.round(th.conviction*5)}/5`:'—'],
-    [t('journal.f.horizon',{defaultValue:'Horizon'}),th.time_horizon||'—'],
+    [t('journal.f.conviction_short',{defaultValue:'Conviction'}),th.conviction!=null?`${Math.round(th.conviction*5)}/5`:'—'],
+    [t('journal.f.horizon_short',{defaultValue:'Horizon'}),th.time_horizon||'—'],
     [t('journal.created',{defaultValue:'Created'}),fmtDate(th.created_at)],
     [t('journal.last_reviewed',{defaultValue:'Last reviewed'}),fmtDate(th.last_reviewed_at||th.reviews?.[0]?.created_at)],
     [t('journal.next_review',{defaultValue:'Next review'}),fmtDate(th.next_review_at)],

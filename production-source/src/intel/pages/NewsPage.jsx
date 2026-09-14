@@ -182,12 +182,12 @@ export default function NewsPage() {
           </form>
           <div className="intel-news-filters flex flex-wrap items-center gap-2">
             <select aria-label={t('news.f_signal', { defaultValue: 'Signal' })} className="select text-[12px]" value={fSig} onChange={(e) => setFSig(e.target.value)}>
-              <option value="">{t('news.f_signal', { defaultValue: 'Any signal' })}</option>
+              <option value="">{t('news.f_signal_any', { defaultValue: 'Any signal' })}</option>
               {SIGNAL_OPTS.map((s) => <option key={s} value={s}>{t(`market.signal.${s}`, { defaultValue: s[0].toUpperCase() + s.slice(1) })}</option>)}
             </select>
             {feed !== 'sources' && (
               <select aria-label={t('news.f_category', { defaultValue: 'Category' })} className="select text-[12px]" value={fCat} onChange={(e) => setFCat(e.target.value)}>
-                <option value="">{t('news.f_category', { defaultValue: 'Any category' })}</option>
+                <option value="">{t('news.f_category_any', { defaultValue: 'Any category' })}</option>
                 {[...new Set([fCat, ...filterOpts.categories].filter(Boolean))].map((c) => <option key={c} value={c}>{c.replace(/_/g, ' ')}</option>)}
               </select>
             )}
@@ -237,7 +237,7 @@ export default function NewsPage() {
             {page === 0 && curatedShown.length > 0
               ? <div className="eyebrow flex items-center gap-1.5"><Rss className="h-3.5 w-3.5" /> {t('news.all_headlines', { defaultValue: 'More headlines' })}</div>
               : <span />}
-            {globalCount > 0 && <span className="text-[11px] text-[var(--fg-5)]">{globalCount.toLocaleString()} {t('news.in_history', { defaultValue: 'in history' })}{pageCount > 1 ? ` · ${t('news.page', { defaultValue: 'page' })} ${page + 1}/${pageCount}` : ''}</span>}
+            {globalCount > 0 && <span className="text-[11px] text-[var(--fg-5)]">{globalCount.toLocaleString()} {t('news.in_history', { defaultValue: 'in history' })}{pageCount > 1 ? ` · ${t('news.page_inline', { defaultValue: 'page' })} ${page + 1}/${pageCount}` : ''}</span>}
           </div>
           {newsShown.map((n) => (
             <div key={n.id} className="card p-3">

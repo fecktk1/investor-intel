@@ -310,10 +310,10 @@ export default function ThesisBuilderPage() {
             <div className="card p-4 space-y-3">
               <div className="text-[13px] font-medium text-[var(--fg-1)]">{t('journal.review_step', { defaultValue: 'Review & save' })}</div>
               <div className="grid gap-2 sm:grid-cols-2 text-[12px] text-[var(--fg-3)]">
-                <div>{t('journal.f.asset', { defaultValue: 'Asset' })}: <b>{symbol || '—'}</b></div>
+                <div>{t('journal.f.asset_short', { defaultValue: 'Asset' })}: <b>{symbol || '—'}</b></div>
                 <div>{t('journal.f.stance', { defaultValue: 'Stance' })}: <b>{basics.stance}</b></div>
-                <div>{t('journal.selected', { defaultValue: 'Evidence' })}: <b>{selectedCards.length}</b></div>
-                <div>{t('journal.rules_step', { defaultValue: 'Rules' })}: <b>{rules.length}</b></div>
+                <div>{t('journal.selected_evidence', { defaultValue: 'Evidence' })}: <b>{selectedCards.length}</b></div>
+                <div>{t('journal.rules_step_short', { defaultValue: 'Rules' })}: <b>{rules.length}</b></div>
               </div>
               <p className="text-[11px] text-[var(--fg-5)]">{t('journal.baseline_note', { defaultValue: 'Saving snapshots an immutable baseline (price, benchmark, fundamentals, selected evidence) so the Journal can show what changed since this call — forever.' })}</p>
               <div className="flex items-center gap-2">

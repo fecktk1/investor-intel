@@ -30,15 +30,15 @@ function SpreadObservation({ spread }) {
       <div className="flex items-center justify-between gap-2 flex-wrap">
         <span className="text-[13px] font-medium text-[var(--fg-1)]">{spread.normalized_symbol}</span>
         <div className="flex items-center gap-2">
-          <span className="text-[10px] text-[var(--fg-5)]">{t('market.spread.gross', { defaultValue: 'Gross' })} {gross != null ? `${Number(gross).toFixed(2)}%` : '—'}</span>
-          <span className="chip text-[10px] chip--info">{t('market.spread.net_est', { defaultValue: 'Est. net' })} {net != null ? `${Number(net).toFixed(2)}%` : '—'}</span>
+          <span className="text-[10px] text-[var(--fg-5)]">{t('market.spread_detail.gross', { defaultValue: 'Gross' })} {gross != null ? `${Number(gross).toFixed(2)}%` : '—'}</span>
+          <span className="chip text-[10px] chip--info">{t('market.spread_detail.net_est', { defaultValue: 'Est. net' })} {net != null ? `${Number(net).toFixed(2)}%` : '—'}</span>
           {spread.confidence_score != null && <ConfidenceChip value={bucketConfidence(spread.confidence_score)} />}
         </div>
       </div>
       <div className="flex items-center gap-2 text-[11px] text-[var(--fg-3)] flex-wrap">
-        <span>{t('market.spread.lower_on', { defaultValue: 'Lower on' })} <strong>{LABELS[spread.buy_provider] || spread.buy_provider}</strong> {spread.buy_provider_symbol} · {fmtPrice(spread.lowest_ask_price)}</span>
+        <span>{t('market.spread_detail.lower_on', { defaultValue: 'Lower on' })} <strong>{LABELS[spread.buy_provider] || spread.buy_provider}</strong> {spread.buy_provider_symbol} · {fmtPrice(spread.lowest_ask_price)}</span>
         <ArrowRight className="h-3 w-3 text-[var(--fg-5)]" />
-        <span>{t('market.spread.higher_on', { defaultValue: 'Higher on' })} <strong>{LABELS[spread.sell_provider] || spread.sell_provider}</strong> {spread.sell_provider_symbol} · {fmtPrice(spread.highest_bid_price)}</span>
+        <span>{t('market.spread_detail.higher_on', { defaultValue: 'Higher on' })} <strong>{LABELS[spread.sell_provider] || spread.sell_provider}</strong> {spread.sell_provider_symbol} · {fmtPrice(spread.highest_bid_price)}</span>
       </div>
       {flags.length > 0 && (
         <div className="flex items-center gap-1 flex-wrap">
