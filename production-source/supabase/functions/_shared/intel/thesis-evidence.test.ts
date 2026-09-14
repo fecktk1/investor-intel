@@ -21,6 +21,17 @@ const packWith = (over: Record<string, unknown> = {}) => ({
   ...over,
 })
 
+Deno.test('protocol TVL cards preserve chain scope and do not promote unrelated TVL into token usage',()=>{
+ const pack=packWith({asset:{symbol:'TOKEN',chain:'base'},protocol_state:{scope:'chain_context',asset_specific:false,context_chain:'base',protocol_tvl:[{protocol_name:'Different protocol',protocol_slug:'different',chain:'base',tvl_usd:0,ts:'2026-09-12T00:00:00Z',provider:'defillama'}]}})
+ const card=cardsFromAssetPack(pack)[0]
+ assert(card.title.includes('chain context'));assert(card.summary?.includes('not a verified fundamental of TOKEN'))
+ assert(card.summary?.includes('included in base chain context'));assert(card.summary?.includes('chain-specific allocation'))
+ assert(card.title.includes('$0'));assertEquals(card.date,'2026-09-12T00:00:00Z');assertEquals(card.suggested_thesis_impact,'no_effect')
+ assert(!card.watch_metric?.includes('revenue'))
+ const legacy=cardsFromAssetPack(packWith({protocol_state:{protocol_tvl:[{protocol_name:'Legacy protocol',tvl_usd:5}]}}))[0]
+ assert(legacy.summary?.includes('not a verified fundamental'),'legacy context cannot gain an invented token relationship')
+})
+
 // ── classifyEventType ───────────────────────────────────────
 Deno.test('classifyEventType routes keywords to the taxonomy', () => {
   assertEquals(classifyEventType('Project X announces partnership with Y'), 'partnership')

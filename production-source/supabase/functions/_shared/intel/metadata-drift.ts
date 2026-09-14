@@ -26,7 +26,7 @@ function normPlatforms(p: Record<string, string> | null | undefined): Record<str
   const out: Record<string, string> = {}
   if (p && typeof p === 'object') {
     for (const [k, v] of Object.entries(p)) {
-      if (k && typeof v === 'string' && v.trim()) out[k.toLowerCase()] = v.trim().toLowerCase()
+      if (k && typeof v === 'string' && v.trim()) out[k.toLowerCase()] = /^0x[0-9a-f]{40}$/i.test(v.trim()) ? v.trim().toLowerCase() : v.trim()
     }
   }
   return out
@@ -58,10 +58,15 @@ export function metaFromCoinDoc(doc: any): MetaBaseline {
   }
 }
 
-export function detectMetadataDrift(baseline: MetaBaseline, next: MetaBaseline): DriftEvent[] {
+export function detectMetadataDrift(baseline: MetaBaseline, next: MetaBaseline, options: {legacyCaseLoss?: boolean} = {}): DriftEvent[] {
   const out: DriftEvent[] = []
   const pc = platformsChanged(baseline.platforms, next.platforms)
-  if (pc.changed) out.push({ drift_type: 'contract_migration', severity: 90, old_value: baseline.platforms ?? {}, new_value: next.platforms ?? {} })
+  // Legacy writers lowercased case-sensitive addresses. A case-only mismatch
+  // against that lossy baseline is not evidence of a contract migration.
+  if(options.legacyCaseLoss)for(const [chain,change] of Object.entries(pc.detail)){
+    if(change.old&&change.new&&!/^0x[0-9a-f]{40}$/i.test(change.new)&&change.old.toLowerCase()===change.new.toLowerCase())delete pc.detail[chain]
+  }
+  if (Object.keys(pc.detail).length) out.push({ drift_type: 'contract_migration', severity: 90, old_value: baseline.platforms ?? {}, new_value: next.platforms ?? {} })
   if (baseline.symbol && next.symbol && baseline.symbol !== next.symbol) {
     out.push({ drift_type: 'symbol_change', severity: 60, old_value: baseline.symbol, new_value: next.symbol })
   }

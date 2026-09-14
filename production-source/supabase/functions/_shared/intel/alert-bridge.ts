@@ -78,6 +78,7 @@ export async function cooledDown(db: DB, ruleId: string, cooldownMinutes: number
 
 // ── Idempotent emit ──────────────────────────────────────────────────────────
 export interface EmitArgs {
+  revision: number
   ruleId: string
   orgId: string
   triggerType: string
@@ -90,44 +91,13 @@ export interface EmitArgs {
   payload?: Record<string, unknown>
 }
 
-export type EmitResult = 'fired' | 'duplicate' | 'cooldown' | 'error'
+export type EmitResult = 'fired' | 'duplicate' | 'cooldown' | 'changed' | 'access_unavailable'
 
 export async function emitBridgedAlert(db: DB, a: EmitArgs): Promise<EmitResult> {
-  try {
-    if (await cooledDown(db, a.ruleId, a.cooldownMinutes)) return 'cooldown'
-    const dedupKey = dedupKeyFor(a.ruleId, a.metric, a.value)
-
-    // Map gate: FULL unique (rule_id, source_table, source_ref). ignoreDuplicates
-    // => empty result on conflict (already processed this source row for this rule).
-    const { data: mapRows, error: mapErr } = await db.from('alert_event_unification_map')
-      .upsert({
-        rule_id: a.ruleId, org_id: a.orgId, source_system: a.sourceSystem,
-        source_table: a.sourceTable, source_ref: a.sourceRef, dedup_key: dedupKey,
-      }, { onConflict: 'rule_id,source_table,source_ref', ignoreDuplicates: true })
-      .select('id')
-    if (mapErr) return 'error'
-    if (!mapRows || mapRows.length === 0) return 'duplicate'
-    const mapId = mapRows[0].id
-
-    const { data: ev, error: evErr } = await db.from('intel_alert_events').insert({
-      org_id: a.orgId, rule_id: a.ruleId, dedup_key: dedupKey,
-      payload: {
-        trigger_type: a.triggerType, metric: a.metric, value: a.value,
-        source_system: a.sourceSystem, source_table: a.sourceTable, source_ref: a.sourceRef,
-        ...(a.payload || {}),
-      },
-    }).select('id').maybeSingle()
-
-    if (evErr || !ev?.id) {
-      // roll back the map claim so a later run can retry this source row
-      await db.from('alert_event_unification_map').delete().eq('id', mapId)
-      return 'error'
-    }
-    await db.from('alert_event_unification_map').update({ intel_alert_event_id: ev.id }).eq('id', mapId)
-    return 'fired'
-  } catch {
-    return 'error'
-  }
+  const {data,error}=await db.rpc('intel_emit_bridged_alert',{p_rule:a.ruleId,p_org:a.orgId,p_revision:a.revision,p_source_system:a.sourceSystem,p_source_table:a.sourceTable,p_source_ref:a.sourceRef,p_metric:a.metric,p_value:a.value,p_payload:a.payload||{}})
+  if(error)throw Error('alert_commit_failed')
+  if(!['fired','duplicate','cooldown','changed','access_unavailable'].includes(data))throw Error('alert_commit_response_invalid')
+  return data
 }
 
 // Resolve a Birdeye-style chain slug from an entity's CAIP namespace/id.

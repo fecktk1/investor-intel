@@ -3,8 +3,20 @@ import {
   type IntelligenceContextBlock,
   type SurfaceIntelligencePolicy,
 } from '../intelligence-core.ts'
+import { evidenceFreshness as freshnessFor, groupFreshness, combineFreshness, selectedFieldEvidence } from './evidence-freshness.ts'
+import {selectMarketField} from './market-field-selection.ts'
 import { materialityVerdict } from '../core-intel/materiality.ts'
 import { h32 } from '../core-intel/hashing.ts'
+import { researchIdentity, type AssetEvidenceSubject } from './research-identity.ts'
+export type { AssetEvidenceSubject } from './research-identity.ts'
+import { readCachedAssetQuote } from './cached-asset-quote.ts'
+import { readAssetSpecialistEvidence } from './asset-specialist-evidence.ts'
+import {readConnectedAssetIdentity} from './connected-asset-identity.ts'
+import { budgetEvidencePrompt } from './evidence-prompt-budget.ts'
+import { representationPromptState } from './representation-review.ts'
+import { hasVerifiedCexIdentity, marketIdentityChoices } from './market-read-quality.ts'
+import { positionDepthQuotes } from './position-depth.ts'
+import { canonicalAssetKey } from '../investor-portfolio/canonical.ts'
 import {
   assembleEcosystemNarrativeState,
   assembleCatalystNewsState,
@@ -16,17 +28,6 @@ import {
 type DB = any
 type FreshnessStatus = 'fresh' | 'stale' | 'unknown' | 'missing'
 type PackMateriality = 'new' | 'material' | 'minor' | 'none'
-
-export interface AssetEvidenceSubject {
-  symbol?: string | null
-  canonicalKey?: string | null
-  chain?: string | null
-  providerId?: string | null
-  sourceProvider?: string | null
-  tokenAddress?: string | null
-  orgId?: string | null
-  userId?: string | null
-}
 
 export interface AssetEvidencePackResult {
   subject: {
@@ -85,6 +86,7 @@ export type CriticalEvidenceSlice = 'market' | 'price' | 'liquidity'
 
 const CHECKED_SOURCES = [
   'market_assets',
+  'intel_market_observations',
   'exchange_latest_asset_profiles',
   'exchange_latest_tickers',
   'exchange_latest_market_signals',
@@ -163,6 +165,8 @@ function canonicalAssetKeys(chain: string | null, tokenAddress: string | null, c
   if (chain && tokenAddress) {
     const addr = normalizeAddress(tokenAddress)
     if (addr) {
+      const canonical = canonicalAssetKey(chain, addr)
+      if (canonical) keys.add(canonical)
       keys.add(`${chain}:erc20:${addr}`)
       keys.add(`${chain}:spl:${addr}`)
       keys.add(`${chain}:token:${addr}`)
@@ -182,8 +186,8 @@ function bestPlatformAddress(platforms: unknown, preferredChain: string | null):
   const entries = platformEntries(platforms)
   if (!entries.length) return { chain: null, address: null }
   const preferred = preferredChain ? entries.find((entry) => entry.chain === preferredChain) : null
-  const selected = preferred || entries[0]
-  return { chain: selected.chain, address: selected.address }
+  const selected = preferred || (!preferredChain && entries.length === 1 ? entries[0] : null)
+  return { chain: selected?.chain || null, address: selected?.address || null }
 }
 
 // deno-lint-ignore no-explicit-any
@@ -198,37 +202,15 @@ async function maybeSingle(run: () => any): Promise<any | null> {
 }
 
 // deno-lint-ignore no-explicit-any
-async function rows(run: () => any): Promise<any[]> {
+async function rows(run: () => any, onFailure?: () => void): Promise<any[]> {
   try {
     const res = await run()
-    if (res?.error) return []
-    return Array.isArray(res?.data) ? res.data : []
+    if (res?.error || !Array.isArray(res?.data)) { onFailure?.(); return [] }
+    return res.data
   } catch {
+    onFailure?.()
     return []
   }
-}
-
-function freshnessFor(row: unknown, nowMs: number, fallbackHours = 24): {
-  status: FreshnessStatus
-  as_of: string | null
-  stale_after: string | null
-  age_hours: number | null
-} {
-  if (!row || typeof row !== 'object') return { status: 'missing', as_of: null, stale_after: null, age_hours: null }
-  const r = row as Record<string, unknown>
-  const asOf = String(r.as_of || r.fetched_at || r.generated_at || r.published_at || r.snapshot_at || r.ts || r.created_at || '')
-  const staleAfter = String(r.stale_after || '')
-  const asOfMs = asOf ? new Date(asOf).getTime() : NaN
-  const staleMs = staleAfter ? new Date(staleAfter).getTime() : NaN
-  const ageHours = Number.isFinite(asOfMs) ? Math.max(0, (nowMs - asOfMs) / 3_600_000) : null
-  if (Number.isFinite(staleMs)) return { status: staleMs > nowMs ? 'fresh' : 'stale', as_of: asOf || null, stale_after: staleAfter, age_hours: ageHours }
-  if (ageHours == null) return { status: 'unknown', as_of: null, stale_after: null, age_hours: null }
-  return { status: ageHours <= fallbackHours ? 'fresh' : 'stale', as_of: asOf, stale_after: null, age_hours: ageHours }
-}
-
-function newestFreshness(rowsIn: unknown[], nowMs: number, fallbackHours = 24) {
-  if (!rowsIn.length) return freshnessFor(null, nowMs, fallbackHours)
-  return freshnessFor(rowsIn[0], nowMs, fallbackHours)
 }
 
 function compactRow(row: unknown, keep: string[]): Record<string, unknown> | null {
@@ -245,15 +227,14 @@ function compactRows(rowsIn: unknown[], keep: string[], limit = 5): Record<strin
   return rowsIn.slice(0, limit).map((row) => compactRow(row, keep)).filter(Boolean) as Record<string, unknown>[]
 }
 
-function provenanceFor(table: string, rowsIn: unknown[], nowMs: number, providerFallback: string | null = null) {
-  const first = rowsIn[0]
+function provenanceFor(table: string, rowsIn: unknown[], nowMs: number, providerFallback: string | null = null, fallbackHours = 24) {
   const providers = new Set<string>()
   for (const row of rowsIn) {
     const provider = row && typeof row === 'object' ? (row as Record<string, unknown>).provider : null
     if (provider) providers.add(String(provider))
   }
   if (!providers.size && providerFallback) providers.add(providerFallback)
-  const fresh = freshnessFor(first, nowMs)
+  const fresh = groupFreshness(rowsIn, nowMs, fallbackHours)
   return {
     table,
     providers: [...providers],
@@ -261,6 +242,8 @@ function provenanceFor(table: string, rowsIn: unknown[], nowMs: number, provider
     as_of: fresh.as_of,
     stale_after: fresh.stale_after,
     freshness: fresh.status,
+    observations: fresh.observations,
+    mixed_observation_times: fresh.mixed_observation_times,
   }
 }
 
@@ -350,7 +333,7 @@ async function assembleHistoricalContext(
   assetKeys: string[],
   nowMs: number,
 ) {
-  const sym = resolved.symbol
+  const sym = resolved.contextSymbol
   const chain = resolved.chain
   const refs = [...new Set([
     resolved.canonicalKey,
@@ -360,12 +343,12 @@ async function assembleHistoricalContext(
     ...assetKeys,
   ].map((v) => String(v || '').trim()).filter(Boolean))].slice(0, 10)
 
-  const rollupsNested = await Promise.all(refs.map((ref) => rows(() => db.from('intel_rollups')
+  const rollupRows = await rows(() => db.from('intel_rollups')
     .select('*')
-    .eq('subject_id', ref)
+    .in('subject_id', refs)
     .order('period_start', { ascending: false })
-    .limit(6))))
-  const rollups = uniqRows(rollupsNested.flat(), 'id')
+    .limit(30))
+  const rollups = uniqRows(rollupRows, 'id')
 
   const eventRows = await rows(() => db.from('intel_event_memory')
     .select('*')
@@ -378,11 +361,11 @@ async function assembleHistoricalContext(
   )
 
   const analogNested = await Promise.all([
-    ...refs.map((ref) => rows(() => db.from('historical_analog_links')
+    rows(() => db.from('historical_analog_links')
       .select('*')
-      .eq('current_subject_ref', ref)
+      .in('current_subject_ref', refs)
       .order('observed_at', { ascending: false })
-      .limit(4))),
+      .limit(20)),
     rows(() => db.from('historical_analog_links')
       .select('*')
       .eq('analog_kind', 'market_regime_similarity')
@@ -391,12 +374,12 @@ async function assembleHistoricalContext(
   ])
   const analogs = uniqRows(analogNested.flat(), 'id')
 
-  const timelineNested = await Promise.all(refs.map((ref) => rows(() => db.from('intelligence_entity_timeline')
+  const timelineRows = await rows(() => db.from('intelligence_entity_timeline')
     .select('*')
-    .eq('entity_ref', ref)
+    .in('entity_ref', refs)
     .order('occurred_at', { ascending: false })
-    .limit(4))))
-  const timeline = uniqRows(timelineNested.flat(), 'id')
+    .limit(20))
+  const timeline = uniqRows(timelineRows, 'id')
 
   const used = {
     intel_rollups: rollups.length > 0,
@@ -470,42 +453,46 @@ async function assembleHistoricalContext(
 }
 
 async function resolveAsset(db: DB, subject: AssetEvidenceSubject) {
+  subject = researchIdentity(subject)
   const symbol = normalizeSymbol(subject.symbol)
   const providerId = String(subject.providerId || '').trim() || null
   const sourceProvider = String(subject.sourceProvider || '').trim() || null
   let marketAsset = null
-  if (providerId && sourceProvider) {
+  let connected:any=null,identityReadFailed=false
+  if(subject.chain&&subject.tokenAddress){
+    try{connected=await readConnectedAssetIdentity(db,subject.canonicalKey||canonicalAssetKey(subject.chain,subject.tokenAddress)!)}catch{identityReadFailed=true}
+  }
+  if(connected?.cmcId){
+    try{
+      const response=await db.from('market_assets').select('*').eq('source_provider','coinmarketcap').eq('provider_id',connected.cmcId).maybeSingle()
+      if(response.error)throw response.error
+      marketAsset=response.data
+    }catch{identityReadFailed=true}
+  }
+  if (!marketAsset && providerId && sourceProvider) {
     marketAsset = await maybeSingle(() => db.from('market_assets')
       .select('*')
       .eq('source_provider', sourceProvider)
       .eq('provider_id', providerId)
       .maybeSingle())
   }
-  // Symbol-only fallback is for assets WITHOUT an explicit provider id (e.g. a
-  // CEX-only ticker). When a providerId was supplied we never fall back to symbol:
-  // normalized_symbol is not unique, so a market-cap-ordered pick could resolve a
-  // DIFFERENT token that happens to share the symbol (the ZEC-on-ETH class of bug).
-  // For the symbol path, prefer the CoinGecko row deterministically before any
-  // other provider, then market cap as a tiebreak.
-  if (!marketAsset && symbol && !providerId) {
-    marketAsset = await maybeSingle(() => db.from('market_assets')
-        .select('*')
-        .eq('normalized_symbol', symbol)
-        .eq('source_provider', 'coingecko')
-        .order('market_cap', { ascending: false })
-        .limit(1)
-        .maybeSingle())
-      || await maybeSingle(() => db.from('market_assets')
-        .select('*')
-        .eq('normalized_symbol', symbol)
-        .order('market_cap', { ascending: false })
-        .limit(1)
-        .maybeSingle())
+  // A canonical contract never borrows the largest market with the same ticker.
+  const explicitIdentity = !!(subject.canonicalKey || subject.tokenAddress || providerId)
+  if (!marketAsset && symbol && !explicitIdentity) {
+    const candidates = await rows(() => db.from('market_assets').select('*')
+      .eq('normalized_symbol', symbol).eq('source_provider', 'coingecko').limit(2))
+    if (candidates.length === 1) marketAsset = candidates[0]
   }
-
-  const cexProfile = symbol
-    ? await maybeSingle(() => db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', symbol).maybeSingle())
-    : null
+  if (marketAsset && subject.tokenAddress && subject.chain) {
+    const key = canonicalAssetKey(subject.chain, subject.tokenAddress)
+    if (!marketIdentityChoices(marketAsset).some(choice => choice.canonicalAssetKey === key)) marketAsset = null
+  }
+  const resolvedSymbol = normalizeSymbol(marketAsset?.normalized_symbol || marketAsset?.symbol) || symbol
+  const mapping = resolvedSymbol && marketAsset
+    ? await maybeSingle(() => db.from('exchange_asset_mappings').select('*').eq('normalized_symbol', resolvedSymbol).eq('is_active', true).maybeSingle()) : null
+  const cexSymbol = hasVerifiedCexIdentity(marketAsset, mapping) ? resolvedSymbol : null
+  const cexProfile = cexSymbol
+    ? await maybeSingle(() => db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', cexSymbol).maybeSingle()) : null
   const preferredChain = normalizeChain(subject.chain) || normalizeChain(marketAsset?.primary_chain) || normalizeChain(cexProfile?.chain)
   const platform = bestPlatformAddress(marketAsset?.platforms, preferredChain)
   const tokenAddress = normalizeAddress(subject.tokenAddress) || platform.address
@@ -516,14 +503,18 @@ async function resolveAsset(db: DB, subject: AssetEvidenceSubject) {
     || (symbol ? `symbol:${symbol}` : 'asset:unknown')
 
   return {
-    symbol,
+    symbol: resolvedSymbol,
+    contextSymbol: marketAsset ? resolvedSymbol : null,
+    cexSymbol,
     chain,
     tokenAddress,
     canonicalKey,
-    providerId: providerId || marketAsset?.provider_id || null,
-    sourceProvider: sourceProvider || marketAsset?.source_provider || null,
+    providerId: marketAsset?.provider_id || (subject.tokenAddress?null:providerId) || null,
+    sourceProvider: marketAsset?.source_provider || (subject.tokenAddress?null:sourceProvider) || null,
     marketAsset,
     cexProfile,
+    connected,
+    identityReadFailed,
   }
 }
 
@@ -534,12 +525,19 @@ export async function assembleAssetEvidencePack(
 ): Promise<AssetEvidencePackResult> {
   const now = options.now ?? new Date()
   const nowMs = now.getTime()
-  const staleAfter = new Date(nowMs + Math.max(5, options.staleMinutes ?? 30) * 60_000).toISOString()
-  const resolved = await resolveAsset(db, subject)
+  let staleAfter = new Date(nowMs + Math.max(5, options.staleMinutes ?? 30) * 60_000).toISOString()
+  const resolved=await resolveAsset(db,subject)
+  const cachedQuote=await readCachedAssetQuote(db,resolved.connected?.marketSubject?{canonicalKey:resolved.connected.marketSubject}:subject,nowMs)
+  if(cachedQuote.observations.length)staleAfter=new Date(Math.min(Date.parse(staleAfter),...cachedQuote.observations.map((o:any)=>Date.parse(o.expiresAt)))).toISOString()
   const sym = resolved.symbol
   const chain = resolved.chain
   const tokenAddress = resolved.tokenAddress
+  const cexSym = resolved.cexSymbol
+  const contextSym = resolved.contextSymbol
   const assetKeys = canonicalAssetKeys(chain, tokenAddress, resolved.canonicalKey)
+  const depthReadFailures = new Set<string>()
+  const protocolReadFailures = new Set<string>()
+  const marketReadFailures = new Set<string>()
 
   const [
     tickerRows,
@@ -563,25 +561,25 @@ export async function assembleAssetEvidencePack(
     newsRows,
     coverageRows,
   ] = await Promise.all([
-    sym ? rows(() => db.from('exchange_latest_tickers').select('*').eq('normalized_symbol', sym).order('volume_quote_24h', { ascending: false }).limit(8)) : Promise.resolve([]),
-    sym ? maybeSingle(() => db.from('exchange_latest_market_signals').select('*').eq('normalized_symbol', sym).maybeSingle()) : Promise.resolve(null),
-    sym ? maybeSingle(() => db.from('exchange_latest_market_caps').select('*').eq('normalized_symbol', sym).maybeSingle()) : Promise.resolve(null),
-    sym ? maybeSingle(() => db.from('exchange_latest_cross_market_spreads').select('*').eq('normalized_symbol', sym).maybeSingle()) : Promise.resolve(null),
-    sym ? rows(() => db.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8)) : Promise.resolve([]),
+    cexSym ? rows(() => db.from('exchange_latest_tickers').select('*').eq('normalized_symbol', cexSym).order('volume_quote_24h', { ascending: false }).limit(8), () => depthReadFailures.add('exchange_latest_tickers')) : Promise.resolve([]),
+    cexSym ? maybeSingle(() => db.from('exchange_latest_market_signals').select('*').eq('normalized_symbol', cexSym).maybeSingle()) : Promise.resolve(null),
+    cexSym ? maybeSingle(() => db.from('exchange_latest_market_caps').select('*').eq('normalized_symbol', cexSym).maybeSingle()) : Promise.resolve(null),
+    cexSym ? maybeSingle(() => db.from('exchange_latest_cross_market_spreads').select('*').eq('normalized_symbol', cexSym).maybeSingle()) : Promise.resolve(null),
+    cexSym ? rows(() => db.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', cexSym).order('as_of', { ascending: false }).limit(8), () => depthReadFailures.add('exchange_latest_orderbook')) : Promise.resolve([]),
     chain && tokenAddress ? rows(() => db.from('dex_pair_snapshots').select('*').eq('chain', chain).eq('token_address', tokenAddress).order('fetched_at', { ascending: false }).limit(5)) : Promise.resolve([]),
     chain && tokenAddress ? rows(() => db.from('pool_ohlcv_snapshots').select('*').eq('chain', chain).eq('token_address', tokenAddress).order('fetched_at', { ascending: false }).limit(3)) : Promise.resolve([]),
     assetKeys.length ? rows(() => db.from('token_metadata_snapshots').select('*').in('canonical_asset_key', assetKeys).order('fetched_at', { ascending: false }).limit(3)) : Promise.resolve([]),
     assetKeys.length ? rows(() => db.from('token_price_snapshots').select('*').in('canonical_asset_key', assetKeys).order('ts', { ascending: false }).limit(3)) : Promise.resolve([]),
     chain ? rows(() => db.from('chain_tvl_snapshots').select('*').eq('chain', chain).order('ts', { ascending: false }).limit(3)) : Promise.resolve([]),
-    chain ? rows(() => db.from('protocol_tvl_snapshots').select('*').eq('chain', chain).order('ts', { ascending: false }).limit(5)) : Promise.resolve([]),
-    chain ? rows(() => db.from('defi_pool_snapshots').select('*').eq('chain', chain).order('snapshot_at', { ascending: false }).limit(5)) : Promise.resolve([]),
-    chain === 'solana' ? rows(() => db.from('kamino_vault_snapshots').select('*').is('org_id', null).order('snapshot_at', { ascending: false }).limit(5)) : Promise.resolve([]),
-    chain === 'solana' ? rows(() => db.from('kamino_market_snapshots').select('*').is('org_id', null).order('snapshot_at', { ascending: false }).limit(5)) : Promise.resolve([]),
-    rows(() => db.from('market_macro_snapshots').select('*').order('as_of', { ascending: false }).limit(2)),
-    sym ? rows(() => db.from('market_ranking_snapshots').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(3)) : Promise.resolve([]),
+    chain ? rows(() => db.from('protocol_tvl_snapshots').select('*').eq('chain', chain).order('ts', { ascending: false }).limit(5),()=>protocolReadFailures.add('protocol_tvl_snapshots')) : Promise.resolve([]),
+    chain ? rows(() => db.from('defi_pool_snapshots').select('*').eq('chain', chain).order('snapshot_at', { ascending: false }).limit(5),()=>protocolReadFailures.add('defi_pool_snapshots')) : Promise.resolve([]),
+    chain === 'solana' ? rows(() => db.from('kamino_vault_snapshots').select('*').is('org_id', null).order('snapshot_at', { ascending: false }).limit(5),()=>protocolReadFailures.add('kamino_vault_snapshots')) : Promise.resolve([]),
+    chain === 'solana' ? rows(() => db.from('kamino_market_snapshots').select('*').is('org_id', null).order('snapshot_at', { ascending: false }).limit(5),()=>protocolReadFailures.add('kamino_market_snapshots')) : Promise.resolve([]),
+    rows(() => db.from('market_macro_available').select('*').order('as_of', { ascending: false }).limit(2),()=>marketReadFailures.add('market_macro_snapshots')),
+    resolved.sourceProvider && resolved.providerId ? rows(() => db.from('market_rankings_available').select('*').eq('provider', resolved.sourceProvider).eq('provider_id', resolved.providerId).order('snapshot_bucket', { ascending: false }).limit(3),()=>marketReadFailures.add('market_ranking_snapshots')) : Promise.resolve([]),
     rows(() => db.from('narrative_category_snapshots').select('*').order('as_of', { ascending: false }).limit(8)),
-    sym ? maybeSingle(() => db.from('intel_signal_state').select('*').eq('subject_type', 'asset').eq('display_symbol', sym).order('generated_at', { ascending: false }).limit(1).maybeSingle()) : Promise.resolve(null),
-    sym ? rows(() => db.from('intel_global_news').select('title, url, summary, source_name, sentiment, relevance, published_at, created_at, tags, chains, entity_symbol').eq('entity_symbol', sym).order('published_at', { ascending: false }).limit(6)) : Promise.resolve([]),
+    contextSym ? maybeSingle(() => db.from('intel_signal_state').select('*').eq('subject_type', 'asset').eq('display_symbol', contextSym).order('generated_at', { ascending: false }).limit(1).maybeSingle()) : Promise.resolve(null),
+    contextSym ? rows(() => db.from('intel_global_news').select('title, url, summary, source_name, sentiment, relevance, published_at, created_at, tags, chains, entity_symbol').eq('entity_symbol', contextSym).order('published_at', { ascending: false }).limit(6)) : Promise.resolve([]),
     chain ? rows(() => db.from('chain_capabilities').select('*').eq('chain', chain).limit(40)) : Promise.resolve([]),
   ])
 
@@ -604,24 +602,7 @@ export async function assembleAssetEvidencePack(
         .order('observed_at', { ascending: false })
         .limit(8))
     }
-    if (!transferRows.length && sym) {
-      transferRows = await rows(() => db.from('asset_transfer_activity')
-        .select('chain, canonical_asset_key, symbol, amount, usd_value, direction, label, provider, block_time, fetched_at, stale_after')
-        .eq('org_id', subject.orgId)
-        .eq('user_id', subject.userId)
-        .eq('symbol', sym)
-        .order('block_time', { ascending: false })
-        .limit(8))
-    }
-    if (!largeTransferRows.length && sym) {
-      largeTransferRows = await rows(() => db.from('large_transfer_events')
-        .select('chain, canonical_asset_key, symbol, amount, usd_value, threshold_usd, direction, label, provider, observed_at, fetched_at')
-        .eq('org_id', subject.orgId)
-        .eq('user_id', subject.userId)
-        .eq('symbol', sym)
-        .order('observed_at', { ascending: false })
-        .limit(8))
-    }
+
   }
 
   // Enrichment layers (chain-aware narratives, curated news + historic catalysts,
@@ -629,10 +610,10 @@ export async function assembleAssetEvidencePack(
   // On-chain uses the central Birdeye client (cache-first, budget/kill-switch
   // enforced); live calls are allowed per product decision but bounded by the
   // 'request' budget and the pack's own 30-min reuse cache.
-  const [historicalContext, ecosystemNarrativeState, catalystState, onchainState, unlockState] = await Promise.all([
+  const [historicalContext, ecosystemNarrativeState, catalystState, onchainState, unlockState, specialist] = await Promise.all([
     assembleHistoricalContext(db, resolved, assetKeys, nowMs),
-    assembleEcosystemNarrativeState(db, { chain, symbol: sym }),
-    assembleCatalystNewsState(db, { symbol: sym, chain }),
+    assembleEcosystemNarrativeState(db, { chain, symbol: contextSym }),
+    assembleCatalystNewsState(db, { symbol: contextSym, chain }, nowMs),
     assemblePublicOnchainState({
       chain,
       tokenAddress,
@@ -640,20 +621,49 @@ export async function assembleAssetEvidencePack(
       nowIso: now.toISOString(),
       birdeyeCtx: { supabase: db, jobName: 'asset-evidence-pack', caller: 'market-enrichment', kind: 'request', orgId: subject.orgId || null, userId: subject.userId || null },
     }),
-    assembleTokenUnlockState(db, { symbol: sym, nowMs }),
+    assembleTokenUnlockState(db, { symbol: contextSym, nowMs, allowLive:options.allowLiveEnrichment !== false }),
+    readAssetSpecialistEvidence(db, { ...subject, canonicalKey: resolved.canonicalKey, sourceProvider: resolved.sourceProvider, providerId: resolved.providerId, chain, tokenAddress }, nowMs, resolved.connected?{linked:resolved.connected,identityError:resolved.identityReadFailed}:undefined),
   ])
-  const cexFreshness = newestFreshness([resolved.cexProfile, ...tickerRows, signal, cap, spread, ...orderbooks].filter(Boolean), nowMs, 3)
-  const dexFreshness = newestFreshness(dexRows, nowMs, 3)
-  const flowFreshness = newestFreshness([...largeTransferRows, ...transferRows], nowMs, 3)
-  const protocolFreshness = newestFreshness([...protocolRows, ...defiPools, ...kaminoVaults, ...kaminoMarkets], nowMs, 12)
-  const chainFreshness = newestFreshness([...chainTvlRows, ...macroRows], nowMs, 12)
-  const newsFreshness = newestFreshness(newsRows, nowMs, 36)
+  const cexFreshness = groupFreshness([resolved.cexProfile, ...tickerRows, signal, cap, spread, ...orderbooks].filter(Boolean), nowMs, 3)
+  const dexFreshness = groupFreshness(dexRows, nowMs, 3)
+  const flowFreshness = groupFreshness([...largeTransferRows, ...transferRows], nowMs, 3)
+  const protocolFreshness = groupFreshness([...protocolRows, ...defiPools, ...kaminoVaults, ...kaminoMarkets], nowMs, 12)
+  const hasProtocolContext=Boolean(protocolRows.length||defiPools.length||kaminoVaults.length||kaminoMarkets.length)
+  const protocolStatus=protocolReadFailures.size?(hasProtocolContext?'partial':'error'):(hasProtocolContext?'available':'missing')
+  // These queries match only the chain, not a token or its issuer. Carry that
+  // distinction on extracted rows as well as the enclosing research section.
+  const protocolContextRows=(input:unknown[],keep:string[])=>compactRows(input,keep,5).map(row=>({...row,scope:'chain_context',asset_specific:false,context_chain:chain}))
+  const chainFreshness = groupFreshness([...chainTvlRows, ...macroRows], nowMs, 12)
+  const newsFreshness = groupFreshness(newsRows, nowMs, 36)
 
   const bestTicker = tickerRows[0] || null
   const bestDex = dexRows[0] || null
   const bestOrderbook = orderbooks[0] || null
-  const orderbookBidDepth = orderbooks.reduce((sum, row) => sum + (Number((row as Record<string, unknown>).bid_depth_usd) || 0), 0)
-  const orderbookAskDepth = orderbooks.reduce((sum, row) => sum + (Number((row as Record<string, unknown>).ask_depth_usd) || 0), 0)
+  const validSpread=(value:unknown):number|null=>{
+    if(typeof value!=='number'&&!(typeof value==='string'&&value.trim()!==''))return null
+    const n=Number(value);return Number.isFinite(n)&&n>=0?n:null
+  }
+  const spreadCandidates=orderbooks.flatMap(row=>{const value=validSpread(row.spread_pct);return value==null?[]:[{value,row,table:'exchange_latest_orderbook'}]}).sort((a,b)=>a.value-b.value)
+  const fallbackSpread=validSpread(bestTicker?.spread_pct)
+  const selectedSpread=spreadCandidates[0]??(fallbackSpread==null?null:{value:fallbackSpread,row:bestTicker,table:'exchange_latest_tickers'})
+  // Zero is a measured depth. No usable observations remain missing per side.
+  const sumDepth = (field: 'bid_depth_usd' | 'ask_depth_usd'): number | null => {
+    const values = orderbooks.map((row) => row[field]).filter((value) =>
+      typeof value === 'number' || (typeof value === 'string' && value.trim() !== '')
+    ).map(Number).filter((value) => Number.isFinite(value) && value >= 0)
+    if (!values.length) return null
+    const total = values.reduce((sum, value) => sum + value, 0)
+    return Number.isFinite(total) ? total : null
+  }
+  const orderbookBidDepth = sumDepth('bid_depth_usd')
+  const orderbookAskDepth = sumDepth('ask_depth_usd')
+  const depthEvidence = (key: 'bid_depth_usd' | 'ask_depth_usd', value: number | null) => ({
+    value, unit: 'USD', source_table: 'exchange_latest_orderbook',
+    ...groupFreshness(orderbooks.filter(row => {
+      const v = row[key]
+      return (typeof v === 'number' || typeof v === 'string' && v.trim() !== '') && Number.isFinite(Number(v)) && Number(v) >= 0
+    }), nowMs, 3),
+  })
 
   const providerCoverage: Record<string, unknown> = {
     chain,
@@ -672,6 +682,8 @@ export async function assembleAssetEvidencePack(
   const unavailableSources = new Set<string>()
   const mark = (source: string, hasData: boolean) => hasData ? usedSources.add(source) : unavailableSources.add(source)
   mark('market_assets', !!resolved.marketAsset)
+  mark('intel_market_observations', cachedQuote.observations.length > 0 || specialist.derivatives.observations.length > 0 || specialist.contractEvidence.observations.length > 0)
+  mark('holder_concentration_scores', specialist.holders.records.length > 0)
   mark('exchange_latest_asset_profiles', !!resolved.cexProfile)
   mark('exchange_latest_tickers', tickerRows.length > 0)
   mark('exchange_latest_market_signals', !!signal)
@@ -709,24 +721,30 @@ export async function assembleAssetEvidencePack(
 
   const materialGaps: string[] = []
   const optionalGaps: string[] = []
-  const hasAnyMarket = !!resolved.marketAsset || !!resolved.cexProfile || !!bestTicker || !!cap || !!bestDex
-  const hasAnyPrice = !!bestTicker?.price || !!bestDex?.price_usd || priceRows.length > 0 || !!resolved.marketAsset?.current_price
+  if(marketReadFailures.size) materialGaps.push(`Market history could not be read from ${[...marketReadFailures].join(', ')}; coverage is unknown.`)
+  const hasAnyMarket = cachedQuote.observations.length > 0 || !!resolved.marketAsset || !!resolved.cexProfile || !!bestTicker || !!cap || !!bestDex
+  const hasAnyPrice = cachedQuote.fields.price != null || bestTicker?.price != null || bestDex?.price_usd != null || priceRows.length > 0 || resolved.marketAsset?.current_price != null
   const hasAnyLiquidity = orderbooks.length > 0 || !!spread || !!bestDex?.liquidity_usd || !!resolved.cexProfile?.liquidity_score
   if (!hasAnyMarket) materialGaps.push(`No cached market/profile snapshot matched ${sym || resolved.canonicalKey}.`)
   if (!hasAnyPrice) materialGaps.push(`No cached price snapshot matched ${sym || resolved.canonicalKey}.`)
   if (!hasAnyLiquidity) materialGaps.push(`No cached liquidity/depth snapshot matched ${sym || resolved.canonicalKey}.`)
-  if (hasAnyMarket && cexFreshness.status === 'stale' && dexFreshness.status !== 'fresh') {
+  if (cachedQuote.error) optionalGaps.push(cachedQuote.error)
+  if (hasAnyMarket && !cachedQuote.freshness && cexFreshness.status === 'stale' && dexFreshness.status !== 'fresh') {
     materialGaps.push(`Cached market data for ${sym || resolved.canonicalKey} is stale and no fresh DEX fallback was available.`)
   }
   if (!dexRows.length) optionalGaps.push(`No cached DEX pair snapshot matched ${sym || resolved.canonicalKey}; DEX liquidity is absent from this pack.`)
   if (!ohlcvRows.length) optionalGaps.push(`No cached GeckoTerminal OHLCV snapshot matched ${sym || resolved.canonicalKey}.`)
-  if (!protocolRows.length && !defiPools.length && !kaminoVaults.length && !kaminoMarkets.length) {
-    optionalGaps.push(`No cached protocol/DeFi snapshot matched ${chain || sym || resolved.canonicalKey}.`)
+  if (protocolReadFailures.size) {
+    optionalGaps.push(`Protocol/DeFi chain context could not be read from ${[...protocolReadFailures].join(', ')}; coverage is unknown.`)
+  } else if (!hasProtocolContext) {
+    optionalGaps.push(`No cached protocol/DeFi chain context was available for ${chain || sym || resolved.canonicalKey}; token relationships are unverified.`)
   }
   if (!subject.orgId || !subject.userId) optionalGaps.push('Wallet/whale flow data was not scoped for this explain request.')
   else if (!transferRows.length && !largeTransferRows.length) optionalGaps.push(`No cached wallet or large-transfer flow rows matched ${sym || resolved.canonicalKey}.`)
   else if (flowFreshness.status === 'stale') optionalGaps.push('Cached flow data is stale or partial; webhooks remain dormant and polling cadence may lag.')
-  if (!newsRows.length && !catalystState.curated_news.length && !catalystState.catalysts.length) {
+  if (catalystState.failed_sources?.length) {
+    materialGaps.push(`Catalyst evidence could not be loaded from ${catalystState.failed_sources.join(', ')}; event coverage is unknown.`)
+  } else if (!newsRows.length && !catalystState.curated_news.length && !catalystState.catalysts.length) {
     optionalGaps.push(`No curated news or historic catalysts matched ${sym || resolved.canonicalKey}.`)
   }
   if (chain && ecosystemNarrativeState.status === 'missing') {
@@ -735,13 +753,13 @@ export async function assembleAssetEvidencePack(
   if (onchainState.status === 'missing') {
     optionalGaps.push(`No public on-chain activity snapshot resolved for ${sym || resolved.canonicalKey}.`)
   }
-  // Derivatives (funding / open interest / liquidations) are not ingested
-  // platform-wide. This is a KNOWN, NON-ESSENTIAL absence — keep it an optional gap
-  // so a market read is never dominated by "no derivatives data".
-  optionalGaps.push('Derivatives positioning (funding, open interest, liquidations) is not collected platform-wide — treat as an optional limitation, not a material gap.')
+  // Describe this pack's coverage; other workspaces retain derivatives evidence.
+  if (specialist.derivatives.status !== 'available') optionalGaps.push(specialist.derivatives.reason || 'Derivatives coverage is unavailable.')
+  if (specialist.derivatives.has_more) optionalGaps.push('Derivatives evidence is bounded to 200 retained observations; the specialist investigation supports further pagination.')
   if (historicalContext.status === 'thin' && historicalContext.coverage_note) optionalGaps.push(String(historicalContext.coverage_note))
   if (!bestDex?.socials && !bestDex?.links) optionalGaps.push(`No cached social/link metadata was present for ${sym || resolved.canonicalKey}.`)
-  optionalGaps.push('Holder distribution was not materialized in the deployed cache tables; holder_state is derived only from available flow metadata.')
+  if (specialist.contractEvidence.status === 'error' || specialist.contractEvidence.status === 'partial') materialGaps.push(specialist.contractEvidence.reason || 'Retained contract evidence could not be read.')
+  if (specialist.holders.status !== 'available') optionalGaps.push(specialist.holders.reason || 'Holder coverage is unavailable.')
 
   const dataCoverage: DataCoverage = {
     used_sources: [...usedSources].sort(),
@@ -755,17 +773,23 @@ export async function assembleAssetEvidencePack(
   const confidence = materialGaps.length ? 0.35 : optionalGaps.length > 6 ? 0.62 : 0.82
 
   const sourceProvenance = {
+    benchmarks: {source:'intel_market_observations',status:specialist.benchmark.status,observations:specialist.benchmark.observations.map(o=>({id:o.id,subject:o.subject,source_ref:o.sourceRef,observed_at:o.observedAt,recorded_at:o.recordedAt}))},
+    undated_cmc_sources: {source:'intel_market_source_versions',observed_at:null,versions:[...(specialist.rwa?.versions||[]),...(specialist.security?.versions||[])].map(v=>({id:v.id,subject:v.subject,family:v.family,source_ref:v.sourceReference,recorded_at:v.recordedAt,fetched_at:v.fetchedAt,expires_at:v.expiresAt})),time_meaning:'Source effective dates are unreported. These are retained response versions, not dated market events.'},
+    participation_attention: {source:'intel_market_observations',method:specialist.contractEvidence.attention_comparison?.method,status:specialist.contractEvidence.attention_comparison?.status,observations:specialist.contractEvidence.attention_comparison?.observations.map(o=>({id:o.id,source_ref:o.sourceRef,observed_at:o.observedAt,recorded_at:o.recordedAt}))||[]},
+    cmc_contract: { source: 'intel_market_observations', subject: specialist.contractEvidence.subject, status: specialist.contractEvidence.status, observations: specialist.contractEvidence.observations.map(o => ({ id: o.id, source_ref: o.sourceRef, observed_at: o.observedAt, recorded_at: o.recordedAt, expires_at: o.expiresAt })) },
+    derivatives: { source: 'intel_market_observations', subject: specialist.derivatives.subject, status: specialist.derivatives.status, observations: specialist.derivatives.observations.map(o => ({ id: o.id, provider: o.provider, source_ref: o.sourceRef, observed_at: o.observedAt, recorded_at: o.recordedAt, expires_at: o.expiresAt })) },
+    holders: { source: 'holder_concentration_scores', status: specialist.holders.status, records: specialist.holders.records.map(r => ({ source_ref: r.sourceRef, provider: r.provider, computed_at: r.computed_at, observed_at: r.observedAt, clock_meaning: r.clockMeaning })) },
     market_assets: provenanceFor('market_assets', resolved.marketAsset ? [resolved.marketAsset] : [], nowMs, resolved.sourceProvider),
-    cex: provenanceFor('exchange_latest_*', [resolved.cexProfile, ...tickerRows, signal, cap, spread, ...orderbooks].filter(Boolean), nowMs, null),
-    dex: provenanceFor('dex_pair_snapshots', dexRows, nowMs, 'dexscreener'),
+    cex: provenanceFor('exchange_latest_*', [resolved.cexProfile, ...tickerRows, signal, cap, spread, ...orderbooks].filter(Boolean), nowMs, null, 3),
+    dex: provenanceFor('dex_pair_snapshots', dexRows, nowMs, 'dexscreener', 3),
     ohlcv: provenanceFor('pool_ohlcv_snapshots', ohlcvRows, nowMs, 'geckoterminal'),
     token_snapshots: provenanceFor('token_*_snapshots', [...metadataRows, ...priceRows], nowMs, 'alchemy'),
-    flow: provenanceFor('asset_transfer_activity/large_transfer_events', [...largeTransferRows, ...transferRows], nowMs, 'alchemy'),
-    protocol: provenanceFor('protocol/defi/kamino snapshots', [...protocolRows, ...defiPools, ...kaminoVaults, ...kaminoMarkets], nowMs, null),
-    chain: provenanceFor('chain_tvl_snapshots/market_macro_snapshots', [...chainTvlRows, ...macroRows], nowMs, null),
+    flow: provenanceFor('asset_transfer_activity/large_transfer_events', [...largeTransferRows, ...transferRows], nowMs, 'alchemy', 3),
+    protocol: {...provenanceFor('protocol/defi/kamino snapshots', [...protocolRows, ...defiPools, ...kaminoVaults, ...kaminoMarkets], nowMs, null, 12),scope:'chain_context',asset_specific:false,failed_sources:[...protocolReadFailures],read_status:protocolStatus},
+    chain: provenanceFor('chain_tvl_snapshots/market_macro_snapshots', [...chainTvlRows, ...macroRows], nowMs, null, 12),
     narrative: provenanceFor('intel_signal_state/narrative_category_snapshots', [signalState, ...categoryRows].filter(Boolean), nowMs, null),
     ecosystem_narrative: { source: 'narrative_taxonomy/narrative_state/narrative_signals', freshness: ecosystemNarrativeState.freshness, status: ecosystemNarrativeState.status },
-    news: provenanceFor('intel_global_news', newsRows, nowMs, null),
+    news: provenanceFor('intel_global_news', newsRows, nowMs, null, 36),
     catalysts: { source: 'intel_curated_news/intel_event_memory', freshness: catalystState.freshness, status: catalystState.status },
     unlocks: { source: 'token_unlocks', freshness: unlockState.freshness, status: unlockState.status },
     onchain: { source: onchainState.source || 'birdeye_token_overview', as_of: onchainState.as_of, status: onchainState.status },
@@ -807,7 +831,28 @@ export async function assembleAssetEvidencePack(
     stale_after: staleAfter,
   }
 
+  const field = (unit: string, candidates: Array<[unknown, unknown, string]>) => {
+    return selectMarketField(candidates, nowMs, unit)
+  }
+  const quote = (key: string): [unknown, unknown, string] => [cachedQuote.fields[key]?.value, cachedQuote.fields[key], 'intel_market_observations']
+  const marketFields = {
+    current_price: field('USD', [quote('price'), [bestTicker?.price, bestTicker, 'exchange_latest_tickers'], [bestDex?.price_usd, bestDex, 'dex_pair_snapshots'], [priceRows[0]?.price_usd, priceRows[0], 'token_price_snapshots'], [resolved.marketAsset?.current_price, resolved.marketAsset, 'market_assets']]),
+    change_24h_pct: field('%', [quote('change_86400'), [bestTicker?.price_change_pct_24h, bestTicker, 'exchange_latest_tickers'], [resolved.marketAsset?.change_24h_pct, resolved.marketAsset, 'market_assets']]),
+    change_7d_pct: field('%', [quote('change_604800'), [bestTicker?.price_change_pct_7d, bestTicker, 'exchange_latest_tickers'], [resolved.marketAsset?.change_7d_pct, resolved.marketAsset, 'market_assets']]),
+    volume_24h: field('USD', [quote('volume_24h'), [bestTicker?.volume_quote_24h, bestTicker, 'exchange_latest_tickers'], [bestDex?.volume_24h, bestDex, 'dex_pair_snapshots'], [resolved.marketAsset?.volume_24h, resolved.marketAsset, 'market_assets']]),
+    market_cap: field('USD', [quote('market_cap'), [cap?.market_cap, cap, 'exchange_latest_market_caps'], [bestDex?.market_cap, bestDex, 'dex_pair_snapshots'], [resolved.marketAsset?.market_cap, resolved.marketAsset, 'market_assets']]),
+    fdv: field('USD', [[cap?.fdv, cap, 'exchange_latest_market_caps'], [bestDex?.fdv, bestDex, 'dex_pair_snapshots'], [resolved.marketAsset?.fdv, resolved.marketAsset, 'market_assets']]),
+  }
+
   const pack = {
+    identity_version: 3,
+    market_lookup_version: 2,
+    market_selection_version: 1,
+    coverage_version: 1,
+    retained_quote_version: 1,
+    evidence_projection_version: 3,
+    liquidity_projection_version: 1,
+    protocol_context_version: 1,
     asset: {
       canonical_key: resolved.canonicalKey,
       symbol: sym,
@@ -820,13 +865,10 @@ export async function assembleAssetEvidencePack(
       categories: resolved.marketAsset?.categories || [],
     },
     market_summary: {
-      current_price: bestTicker?.price ?? bestDex?.price_usd ?? priceRows[0]?.price_usd ?? resolved.marketAsset?.current_price ?? null,
-      change_24h_pct: bestTicker?.price_change_pct_24h ?? resolved.marketAsset?.change_24h_pct ?? null,
-      change_7d_pct: bestTicker?.price_change_pct_7d ?? resolved.marketAsset?.change_7d_pct ?? null,
-      volume_24h: bestTicker?.volume_quote_24h ?? bestDex?.volume_24h ?? resolved.marketAsset?.volume_24h ?? null,
-      market_cap: cap?.market_cap ?? bestDex?.market_cap ?? resolved.marketAsset?.market_cap ?? null,
-      fdv: cap?.fdv ?? bestDex?.fdv ?? resolved.marketAsset?.fdv ?? null,
-      freshness: cexFreshness,
+      ...Object.fromEntries(Object.entries(marketFields).map(([key, evidence]) => [key, evidence.value])),
+      freshness: combineFreshness(Object.values(marketFields)),
+      field_evidence: marketFields,
+      retained_observations: cachedQuote.observations,
     },
     dex_state: {
       status: dexRows.length ? 'available' : 'missing',
@@ -845,12 +887,24 @@ export async function assembleAssetEvidencePack(
       freshness: cexFreshness,
     },
     liquidity_state: {
-      cex_bid_depth_usd: orderbookBidDepth || null,
-      cex_ask_depth_usd: orderbookAskDepth || null,
-      cex_min_spread_pct: orderbooks.map((row) => Number(row.spread_pct)).filter(Number.isFinite).sort((a, b) => a - b)[0] ?? bestTicker?.spread_pct ?? null,
+      venue_depth: {
+        quotes: depthReadFailures.size ? [] : positionDepthQuotes(resolved.marketAsset, !!cexSym, orderbooks, tickerRows, nowMs),
+        status: depthReadFailures.size ? 'error' : 'recorded',
+        reason: depthReadFailures.size ? 'The retained exchange depth read failed. Coverage is unknown.' : 'Only fresh, verified USD best-level quantities among the bounded covered venues are included. Deeper levels and fees are not inferred.',
+        evaluated_at: now.toISOString(),
+      },
+      cex_bid_depth_usd: orderbookBidDepth,
+      cex_ask_depth_usd: orderbookAskDepth,
+      cex_min_spread_pct: selectedSpread?.value ?? null,
       dex_liquidity_usd: bestDex?.liquidity_usd ?? null,
       spread_watch: compactRow(spread, ['gross_spread_pct', 'estimated_net_spread_pct', 'caution_flags', 'as_of']),
-      freshness: orderbooks.length ? newestFreshness(orderbooks, nowMs, 3) : dexFreshness,
+      freshness: groupFreshness([...orderbooks, bestDex, spread, bestTicker].filter(Boolean), nowMs, 3),
+      field_evidence: {
+        cex_bid_depth_usd: depthEvidence('bid_depth_usd', orderbookBidDepth),
+        cex_ask_depth_usd: depthEvidence('ask_depth_usd', orderbookAskDepth),
+        dex_liquidity_usd: selectedFieldEvidence(bestDex?.liquidity_usd, bestDex, 'dex_pair_snapshots', nowMs, 'USD'),
+        cex_min_spread_pct: selectedFieldEvidence(selectedSpread?.value,selectedSpread?.row,selectedSpread?.table||'',nowMs,'%'),
+      },
     },
     flow_state: {
       status: subject.orgId && subject.userId ? (transferRows.length || largeTransferRows.length ? 'available' : 'missing') : 'not_scoped',
@@ -859,17 +913,26 @@ export async function assembleAssetEvidencePack(
       poll_cadence_note: 'Flow/whale data is polling-cadence only until provider webhooks are registered.',
       freshness: flowFreshness,
     },
+    cmc_contract_state: specialist.contractEvidence,
+    rwa_state: specialist.rwa,
+    security_state: specialist.security,
+    benchmark_state: specialist.benchmark,
+    representation_state: specialist.representation,
+    connected_identity: resolved.connected||specialist.identity,
+    derivatives_state: specialist.derivatives,
     holder_state: {
-      status: 'derived_only',
-      note: 'No standalone holder-distribution snapshot table is materialized; use available transfer and metadata rows only.',
+      ...specialist.holders,
       token_metadata: compactRows(metadataRows, ['chain', 'token_address', 'canonical_asset_key', 'symbol', 'name', 'decimals', 'provider', 'fetched_at', 'stale_after', 'confidence'], 2),
     },
     protocol_state: {
-      status: protocolRows.length || defiPools.length || kaminoVaults.length || kaminoMarkets.length ? 'available' : 'missing',
-      protocol_tvl: compactRows(protocolRows, ['protocol_slug', 'protocol_name', 'chain', 'ts', 'tvl_usd', 'provider', 'source_ref', 'fetched_at', 'stale_after', 'confidence'], 5),
-      defi_pools: compactRows(defiPools, ['provider', 'chain', 'pool_id', 'name', 'project', 'symbol', 'tvl_usd', 'apy', 'apy_base', 'apy_reward', 'product_type', 'snapshot_at', 'fetched_at', 'stale_after', 'confidence'], 5),
-      kamino_vaults: compactRows(kaminoVaults, ['vault_address', 'name', 'tvl_usd', 'apy', 'apy_base', 'apy_reward', 'token_a_mint', 'token_b_mint', 'snapshot_at', 'fetched_at', 'stale_after', 'confidence'], 5),
-      kamino_markets: compactRows(kaminoMarkets, ['market_address', 'reserve_address', 'mint', 'market_name', 'supply_apy', 'borrow_apy', 'total_borrow_usd', 'utilization', 'snapshot_at', 'fetched_at', 'stale_after', 'confidence'], 5),
+      status: protocolStatus,
+      scope:'chain_context',asset_specific:false,context_chain:chain,
+      qualification:'Chain-wide protocol and pool context. A relationship to this token, its issuer or holders has not been verified; these values are not token fundamentals.',
+      failed_sources:[...protocolReadFailures],
+      protocol_tvl: protocolContextRows(protocolRows, ['protocol_slug', 'protocol_name', 'chain', 'ts', 'tvl_usd', 'provider', 'source_ref', 'fetched_at', 'stale_after', 'confidence']),
+      defi_pools: protocolContextRows(defiPools, ['provider', 'chain', 'pool_id', 'name', 'project', 'symbol', 'tvl_usd', 'apy', 'apy_base', 'apy_reward', 'product_type', 'snapshot_at', 'fetched_at', 'stale_after', 'confidence']),
+      kamino_vaults: protocolContextRows(kaminoVaults, ['vault_address', 'name', 'tvl_usd', 'apy', 'apy_base', 'apy_reward', 'token_a_mint', 'token_b_mint', 'snapshot_at', 'fetched_at', 'stale_after', 'confidence']),
+      kamino_markets: protocolContextRows(kaminoMarkets, ['market_address', 'reserve_address', 'mint', 'market_name', 'supply_apy', 'borrow_apy', 'total_borrow_usd', 'utilization', 'snapshot_at', 'fetched_at', 'stale_after', 'confidence']),
       freshness: protocolFreshness,
     },
     chain_state: {
@@ -1019,7 +1082,7 @@ export async function getOrAssembleAssetEvidencePack(
   const window = options.window || 'current'
   if (!options.force) {
     const latest = await latestScopedPack(db, resolved.canonicalKey, subject, window)
-    if (latest && (!latest.stale_after || new Date(String(latest.stale_after)).getTime() > (options.now ?? new Date()).getTime())) {
+    if (latest && (latest.pack as Record<string, unknown>)?.identity_version === 3 && (latest.pack as Record<string, unknown>)?.market_lookup_version === 2 && (latest.pack as Record<string, unknown>)?.market_selection_version === 1 && (latest.pack as Record<string, unknown>)?.coverage_version === 1 && (latest.pack as Record<string, unknown>)?.retained_quote_version === 1 && (latest.pack as Record<string, unknown>)?.evidence_projection_version === 3 && (latest.pack as Record<string, unknown>)?.liquidity_projection_version === 1 && (latest.pack as Record<string, unknown>)?.protocol_context_version === 1 && (!latest.stale_after || new Date(String(latest.stale_after)).getTime() > (options.now ?? new Date()).getTime())) {
       const ctx = await latestScopedContextPack(db, resolved.canonicalKey, subject)
       return {
         subject: {
@@ -1051,12 +1114,16 @@ export async function getOrAssembleAssetEvidencePack(
       }
     }
   }
-  const assembled = await assembleAssetEvidencePack(db, { ...subject, symbol: resolved.symbol, canonicalKey: resolved.canonicalKey, chain: resolved.chain, tokenAddress: resolved.tokenAddress }, options)
+  // Provider metadata describes representations; it is not an authored network
+  // selector. Preserve only the caller's explicit chain/contract constraints.
+  const assembled = await assembleAssetEvidencePack(db, { ...subject, symbol: resolved.symbol, canonicalKey: resolved.canonicalKey }, options)
   return await persistAssetEvidencePack(db, assembled, subject, options)
 }
 
 export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResult | null | undefined, maxChars = 9000): Record<string, unknown> | null {
   if (!result?.pack) return null
+  // Sanitize before every fast/compact/budget return; the saved pack is immutable.
+  if (result.pack.representation_state != null) result={...result,pack:{...result.pack,representation_state:representationPromptState(result.pack.representation_state as any)}}
   const payload = {
     content_hash: result.contentHash,
     subject: result.subject,
@@ -1077,6 +1144,13 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       dex_state: (result.pack as Record<string, unknown>).dex_state,
       market_summary: (result.pack as Record<string, unknown>).market_summary,
       liquidity_state: (result.pack as Record<string, unknown>).liquidity_state,
+      cmc_contract_state: (result.pack as Record<string, unknown>).cmc_contract_state,
+      rwa_state: (result.pack as Record<string, unknown>).rwa_state,
+      security_state: (result.pack as Record<string, unknown>).security_state,
+      benchmark_state: (result.pack as Record<string, unknown>).benchmark_state,
+      representation_state: (result.pack as Record<string, unknown>).representation_state,
+      derivatives_state: (result.pack as Record<string, unknown>).derivatives_state,
+      holder_state: (result.pack as Record<string, unknown>).holder_state,
       flow_state: (result.pack as Record<string, unknown>).flow_state,
       onchain_state: (result.pack as Record<string, unknown>).onchain_state,
       ecosystem_narrative_state: (result.pack as Record<string, unknown>).ecosystem_narrative_state,
@@ -1105,6 +1179,13 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
       cex_state: (result.pack as Record<string, unknown>).cex_state,
       dex_state: (result.pack as Record<string, unknown>).dex_state,
       liquidity_state: (result.pack as Record<string, unknown>).liquidity_state,
+      cmc_contract_state: (result.pack as Record<string, unknown>).cmc_contract_state,
+      rwa_state: (result.pack as Record<string, unknown>).rwa_state,
+      security_state: (result.pack as Record<string, unknown>).security_state,
+      benchmark_state: (result.pack as Record<string, unknown>).benchmark_state,
+      representation_state: (result.pack as Record<string, unknown>).representation_state,
+      derivatives_state: (result.pack as Record<string, unknown>).derivatives_state,
+      holder_state: (result.pack as Record<string, unknown>).holder_state,
       onchain_state: (result.pack as Record<string, unknown>).onchain_state,
       ecosystem_narrative_state: (result.pack as Record<string, unknown>).ecosystem_narrative_state,
       catalyst_state: (result.pack as Record<string, unknown>).catalyst_state,
@@ -1119,10 +1200,7 @@ export function compactAssetEvidencePackForPrompt(result: AssetEvidencePackResul
   }
   s = JSON.stringify(minimal)
   if (s.length <= maxChars) return minimal
-  return {
-    ...minimal,
-    ai_context_pack: { blocks: [] },
-  }
+  return budgetEvidencePrompt(result.contentHash, result.subject, result.pack, maxChars)
 }
 
 export function criticalSlicesForAssetEvidencePack(result: AssetEvidencePackResult | null | undefined): CriticalEvidenceSlice[] {
@@ -1143,9 +1221,10 @@ export function criticalSlicesForAssetEvidencePack(result: AssetEvidencePackResu
   const market = (pack.market_summary || {}) as Record<string, unknown>
   const cexFresh = (cex.freshness || {}) as Record<string, unknown>
   const dexFresh = (dex.freshness || {}) as Record<string, unknown>
-  if (!market.current_price && !market.market_cap && !market.volume_24h) out.add('market')
-  if (!market.current_price) out.add('price')
-  if (!liq.cex_bid_depth_usd && !liq.cex_ask_depth_usd && !liq.dex_liquidity_usd && !liq.cex_min_spread_pct) out.add('liquidity')
+  const known=(v:unknown)=>typeof v==='number'&&Number.isFinite(v)
+  if (![market.current_price,market.market_cap,market.volume_24h].some(known)) out.add('market')
+  if (!known(market.current_price)) out.add('price')
+  if (![liq.cex_bid_depth_usd,liq.cex_ask_depth_usd,liq.dex_liquidity_usd,liq.cex_min_spread_pct].some(known)) out.add('liquidity')
   if (cexFresh.status === 'stale' && dexFresh.status !== 'fresh') out.add('market')
   return [...out]
 }

@@ -1,6 +1,10 @@
 import { h32 } from '../core-intel/hashing.ts'
 import { assembleAssetMiniPack, type AssetMiniPack } from './asset-mini-pack.ts'
 import type { DataCoverage } from './asset-evidence-pack.ts'
+import { loadPrivateBriefContext } from './private-brief-context.ts'
+import { briefSubject } from './brief-identity.ts'
+import { readBriefNews } from './brief-news.ts'
+import { loadCmcAiAllowed, containsCmcOrigin, prepareAiContext } from './ai-source-policy.ts'
 
 // deno-lint-ignore no-explicit-any
 type DB = any
@@ -9,16 +13,19 @@ type Any = any
 
 export interface BriefEvidencePackOptions {
   orgId: string
+  userId: string
+  portfolioId?: string | null
   watchlistSymbols?: string[]
-  holdings?: Array<{ symbol?: string | null; value?: number | null; dayPnl?: number | null; dayPnlPct?: number | null }>
+  holdings?: Array<{ canonicalKey?: string | null; chain?: string | null; tokenAddress?: string | null; symbol?: string | null; quantity?: number; costBasisStatus?: string; priceStatus?: string; value?: number | null; dayPnl?: number | null; dayPnlPct?: number | null }>
   maxAssets?: number
   now?: Date
+  forAi?: boolean
 }
 
 export interface BriefEvidencePack {
   content_hash: string
   assembled_at: string
-  org_scope: { org_id: string; watchlist_count: number; holding_count: number }
+  org_scope: { org_id: string; user_id: string; watchlist_count: number; holding_count: number }
   market_regime: Any | null
   macro_rotation: {
     macro: Any[]
@@ -26,6 +33,9 @@ export interface BriefEvidencePack {
     categories: Any[]
   }
   watchlist_assets: AssetMiniPack[]
+  portfolio_holdings: BriefEvidencePackOptions['holdings']
+  portfolio_scope: {id:string;name?:string} | null
+  context_coverage: Record<string,boolean>
   narrative_heat: Any[]
   news_that_matters: Any[]
   flow_highlights: Any[]
@@ -65,106 +75,105 @@ function uniq(values: unknown[]): string[] {
   return out
 }
 
-async function rows(run: () => Any): Promise<Any[]> {
+async function rows(name: string, failed: Set<string>, run: () => Any): Promise<Any[]> {
   try {
     const res = await run()
-    if (res?.error) return []
-    return Array.isArray(res?.data) ? res.data : []
+    if (res?.error || !Array.isArray(res?.data)) throw new Error('source_read_failed')
+    return res.data
   } catch {
+    failed.add(name)
     return []
   }
 }
 
-async function maybeRpc(db: DB, name: string): Promise<Any | null> {
+async function maybeRpc(db: DB, name: string, failed: Set<string>): Promise<Any | null> {
   try {
-    if (typeof db.rpc !== 'function') return null
+    if (typeof db.rpc !== 'function') throw new Error('source_read_failed')
     const res = await db.rpc(name)
-    if (res?.error) return null
+    if (res?.error || !res || (res.data != null && typeof res.data !== 'object')) throw new Error('source_read_failed')
     return Array.isArray(res?.data) ? (res.data[0] || null) : (res?.data || null)
   } catch {
+    failed.add(name)
     return null
   }
 }
 
-async function orgWatchlistSymbols(db: DB, orgId: string): Promise<string[]> {
-  const direct = await rows(() => db.from('watchlist_items').select('symbol, normalized_symbol, entity:entities(display_symbol)').eq('org_id', orgId).limit(100))
-  return uniq(direct.map((row) => row.normalized_symbol || row.symbol || row.entity?.display_symbol))
-}
-
-async function orgHoldings(db: DB, orgId: string): Promise<BriefEvidencePackOptions['holdings']> {
-  return await rows(() => db.from('investor_portfolio_holdings')
-    .select('normalized_symbol, asset_symbol, current_value, day_pnl, day_pnl_pct')
-    .eq('org_id', orgId)
-    .limit(100))
-    .then((items) => items.map((h) => ({
-      symbol: h.normalized_symbol || h.asset_symbol,
-      value: h.current_value,
-      dayPnl: h.day_pnl,
-      dayPnlPct: h.day_pnl_pct,
-    })))
-}
-
-function coverageFor(parts: Record<string, boolean>, assetPacks: AssetMiniPack[]): DataCoverage {
+function coverageFor(parts: Record<string, boolean>, assetPacks: AssetMiniPack[], failed: Set<string>): DataCoverage {
   const used = Object.entries(parts).filter(([, present]) => present).map(([key]) => key)
   if (assetPacks.length) used.push('watchlist asset mini-packs')
   const optional: string[] = []
-  if (!parts.market_macro_snapshots) optional.push('No cached market macro snapshot was available for the brief.')
-  if (!parts.market_ranking_snapshots) optional.push('No cached market ranking rotation was available for the brief.')
-  if (!parts.narrative_category_snapshots) optional.push('No cached narrative category rotation was available for the brief.')
-  if (!assetPacks.length) optional.push('No watchlist or portfolio asset mini-packs were available.')
-  if (!parts.large_transfer_events) optional.push('No scoped large-transfer highlights were available at poll cadence.')
-  if (!parts.protocol_tvl_snapshots) optional.push('No cached protocol TVL highlights were available.')
-  if (!parts.chain_tvl_snapshots) optional.push('No cached chain TVL highlights were available.')
+  if (!parts.market_macro_snapshots && !failed.has('market_macro_snapshots')) optional.push('No cached market macro snapshot was available for the brief.')
+  if (!parts.market_ranking_snapshots && !failed.has('market_ranking_snapshots')) optional.push('No cached market ranking rotation was available for the brief.')
+  if (!parts.narrative_category_snapshots && !failed.has('narrative_category_snapshots')) optional.push('No cached narrative category rotation was available for the brief.')
+  if (!assetPacks.length && !failed.has('watchlist asset mini-packs')) optional.push('No watchlist or portfolio asset mini-packs were available.')
+  if (!parts.large_transfer_events && !failed.has('large_transfer_events')) optional.push('No scoped large-transfer highlights were available at poll cadence.')
+  if (!parts.protocol_tvl_snapshots && !failed.has('protocol_tvl_snapshots')) optional.push('No cached protocol TVL highlights were available.')
+  if (!parts.chain_tvl_snapshots && !failed.has('chain_tvl_snapshots')) optional.push('No cached chain TVL highlights were available.')
+  if (!parts.intel_curated_news && !failed.has('intel_curated_news')) optional.push('No unexpired, dated news from the past 48 hours was available for this brief.')
   const material = !parts.intel_current_regime && !parts.market_macro_snapshots
-    ? ['No cached market regime or macro context was available for the daily brief.']
+    ? [failed.has('intel_current_regime') || failed.has('market_macro_snapshots') ? 'Market regime or macro context could not be read for the daily brief.' : 'No cached market regime or macro context was available for the daily brief.']
     : []
   return {
     used_sources: uniq(used),
     checked_sources: CHECKED,
-    unavailable_sources: [],
+    unavailable_sources: [...failed].sort(),
     material_gaps: material,
     optional_gaps: optional,
-    confidence_impact: material.length ? 'high' : optional.length ? 'low' : 'none',
-    should_show_warning: material.length > 0,
+    confidence_impact: material.length || failed.size ? 'high' : optional.length ? 'low' : 'none',
+    should_show_warning: material.length > 0 || failed.size > 0,
   }
 }
 
 export async function assembleBriefEvidencePack(db: DB, options: BriefEvidencePackOptions): Promise<BriefEvidencePack> {
+  if (!options.orgId || !options.userId) throw new Error('Brief evidence requires an organization and user')
   const now = options.now ?? new Date()
-  const holdings = options.holdings ?? await orgHoldings(db, options.orgId)
-  const watchlistSymbols = uniq(options.watchlistSymbols?.length ? options.watchlistSymbols : await orgWatchlistSymbols(db, options.orgId))
-  const holdingSymbols = uniq((holdings || []).map((h) => h?.symbol))
-  const assetSymbols = uniq([...watchlistSymbols, ...holdingSymbols]).slice(0, Math.max(1, options.maxAssets ?? 8))
+  const failed = new Set<string>()
+  // These public cached reads do not depend on private portfolio selection.
+  // Each catches its own failure, including when the private read later fails.
+  const shared = Promise.all([
+    maybeRpc(db, 'intel_current_regime', failed),
+    rows('market_macro_snapshots', failed, () => db.from('market_macro_available').select('*').order('as_of', { ascending: false }).limit(2)),
+    rows('market_ranking_snapshots', failed, () => db.from('market_rankings_available').select('*').order('as_of', { ascending: false }).limit(12)),
+    rows('narrative_category_snapshots', failed, () => db.from('narrative_category_snapshots').select('*').order('as_of', { ascending: false }).limit(10)),
+    rows('narrative_state', failed, () => db.from('narrative_state').select('*').order('global_priority_score', { ascending: false }).limit(10)),
+    rows('intel_curated_news', failed, () => readBriefNews(db,now,8).then(data=>({data}))),
+    rows('protocol_tvl_snapshots', failed, () => db.from('protocol_tvl_snapshots').select('protocol_slug, protocol_name, chain, tvl_usd, ts, provider, fetched_at, stale_after, confidence').order('ts', { ascending: false }).limit(8)),
+    rows('chain_tvl_snapshots', failed, () => db.from('chain_tvl_snapshots').select('chain, tvl_usd, ts, provider, fetched_at, stale_after, confidence').order('ts', { ascending: false }).limit(8)),
+  ])
+  const personal = await loadPrivateBriefContext(db, options.orgId, options.userId, options.portfolioId)
+  const holdings = options.holdings ?? personal.holdings
+  const watchlistSymbols = uniq(options.watchlistSymbols?.length ? options.watchlistSymbols : personal.watchlistSymbols)
+  const holdingSymbols = uniq((holdings || []).map((h: { symbol?: string }) => h?.symbol))
+  const subjects = [
+    ...(options.watchlistSymbols?.length ? watchlistSymbols.map(symbol => ({ symbol })) : personal.watchlistAssets.map(briefSubject).filter(Boolean)),
+    ...holdings.map(briefSubject).filter(Boolean),
+  ]
+  const assetSubjects = [...new Map(subjects.map(subject => [subject.canonicalKey || `symbol:${subject.symbol}`, subject])).values()].slice(0, Math.min(20, Math.max(1, options.maxAssets ?? 8)))
 
   const [
     regime,
-    macro,
-    rankings,
-    categories,
+    macroRaw,
+    rankingsRaw,
+    categoriesRaw,
     narratives,
     news,
-    flow,
     protocolTvl,
     chainTvl,
-  ] = await Promise.all([
-    maybeRpc(db, 'intel_current_regime'),
-    rows(() => db.from('market_macro_snapshots').select('*').order('as_of', { ascending: false }).limit(2)),
-    rows(() => db.from('market_ranking_snapshots').select('*').order('as_of', { ascending: false }).limit(12)),
-    rows(() => db.from('narrative_category_snapshots').select('*').order('as_of', { ascending: false }).limit(10)),
-    rows(() => db.from('narrative_state').select('*').order('global_priority_score', { ascending: false }).limit(10)),
-    rows(() => db.from('intel_curated_news').select('*').eq('should_surface', true).order('final_score', { ascending: false }).limit(8)),
-    rows(() => db.from('large_transfer_events').select('chain, canonical_asset_key, symbol, amount, usd_value, threshold_usd, direction, label, provider, observed_at, fetched_at').eq('org_id', options.orgId).order('observed_at', { ascending: false }).limit(8)),
-    rows(() => db.from('protocol_tvl_snapshots').select('protocol_slug, protocol_name, chain, tvl_usd, ts, provider, fetched_at, stale_after, confidence').order('ts', { ascending: false }).limit(8)),
-    rows(() => db.from('chain_tvl_snapshots').select('chain, tvl_usd, ts, provider, fetched_at, stale_after, confidence').order('ts', { ascending: false }).limit(8)),
-  ])
+  ] = await shared
+  const flow = personal.flowHighlights
+  const allowCmcAi=options.forAi?await loadCmcAiAllowed(db):false
+  const macro = options.forAi ? prepareAiContext(macroRaw,allowCmcAi) : macroRaw
+  const rankings = options.forAi ? prepareAiContext(rankingsRaw,allowCmcAi) : rankingsRaw
+  const categories = options.forAi ? prepareAiContext(categoriesRaw,allowCmcAi) : categoriesRaw
 
   const assetPacks: AssetMiniPack[] = []
-  for (const symbol of assetSymbols) {
-    try {
-      assetPacks.push(await assembleAssetMiniPack(db, { symbol }, { now, staleMinutes: 60, maxPromptChars: 3200 }))
-    } catch {
-      // Mini-pack failures should not block a brief; coverage below records thinness.
-    }
+  // At most three cache-only assemblies at once; retain subject ordering.
+  for (let offset=0;offset<assetSubjects.length;offset+=3) {
+    const batch = await Promise.allSettled(assetSubjects.slice(offset,offset+3).map(subject => assembleAssetMiniPack(db, subject, { now, staleMinutes: 60, maxPromptChars: 3200, allowLiveEnrichment: false })))
+    for (const result of batch) if (result.status === 'fulfilled') {
+      const mini = result.value
+      if (!options.forAi || allowCmcAi || !containsCmcOrigin(mini)) assetPacks.push(mini)
+    } else failed.add('watchlist asset mini-packs')
   }
 
   const presence = {
@@ -180,18 +189,22 @@ export async function assembleBriefEvidencePack(db: DB, options: BriefEvidencePa
   }
   const packWithoutHash = {
     assembled_at: now.toISOString(),
-    org_scope: { org_id: options.orgId, watchlist_count: watchlistSymbols.length, holding_count: holdingSymbols.length },
+    org_scope: { org_id: options.orgId, user_id: options.userId, watchlist_count: watchlistSymbols.length, holding_count: holdingSymbols.length },
     market_regime: regime,
     macro_rotation: { macro, rankings, categories },
     watchlist_assets: assetPacks,
+    portfolio_holdings: holdings,
+    portfolio_scope: personal.portfolio,
+    context_coverage: personal.coverage,
     narrative_heat: narratives,
     news_that_matters: news,
     flow_highlights: flow,
     protocol_chain_context: { protocol_tvl: protocolTvl, chain_tvl: chainTvl },
-    data_coverage: coverageFor(presence, assetPacks),
+    data_coverage: coverageFor(presence, assetPacks, failed),
   }
   return {
-    content_hash: h32(JSON.stringify(packWithoutHash)),
+    // Wall-clock assembly metadata must not invalidate otherwise identical evidence.
+    content_hash: h32(JSON.stringify({ ...packWithoutHash, assembled_at: undefined, watchlist_assets:assetPacks.map(({cached: _cached, ...pack}) => pack) })),
     ...packWithoutHash,
   }
 }

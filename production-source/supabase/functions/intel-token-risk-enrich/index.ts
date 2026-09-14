@@ -1,3 +1,6 @@
+import {birdeyeHolderListSupported} from '../_shared/intel/holder-coverage.ts'
+import {reserveBirdeyeHydration} from '../_shared/intel/hydration-persistence.ts'
+import {reportedHolderCount} from '../_shared/intel/participation-read.ts'
 // Lazy per-token risk enrichment (v3.1). The on-demand worker behind the risk
 // badge: given {chain, address}, returns a fresh token_risk_scores row if one is
 // <stale_after, otherwise runs the Batch-5/6 pipeline for THIS ONE token
@@ -59,21 +62,9 @@ async function logCall(db: DB, endpoint: string, chain: string, addr: string, cu
     })
   } catch { /* best-effort */ }
 }
-async function budgetOk(db: DB, cu: number): Promise<boolean> {
-  try {
-    const now = new Date()
-    const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1)).toISOString()
-    const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() + 1, 1)).toISOString()
-    const { data, error } = await db.rpc('provider_budget_bump', {
-      p_provider: 'birdeye', p_data_type: 'calls', p_period_start: start, p_period_end: end,
-      p_calls: 1, p_credits: cu, p_soft_cap: 36000, p_hard_cap: 45000,
-    })
-    if (error) return true
-    return data?.allowed !== false
-  } catch { return true }
-}
+const budgetOk=reserveBirdeyeHydration
 async function quiet(p: unknown): Promise<void> { try { await p } catch { /* best-effort DB write */ } }
-// deno-lint-ignore no-explicit-any
+
 function pick(o: any, keys: string[]): any { if (!o) return null; for (const k of keys) if (o[k] != null) return o[k]; return null }
 function asStr(v: unknown): string | null { return v == null ? null : String(v) }
 function asPct(v: unknown): number | null { const n = Number(v); if (!Number.isFinite(n)) return null; return n <= 1 && n >= 0 ? n * 100 : n }
@@ -144,17 +135,17 @@ Deno.serve(async (req) => {
           stale_after: new Date(Date.now() + 86400_000).toISOString(), updated_at: new Date().toISOString(),
         }, { onConflict: 'chain,token_address,provider' })
       }
-      if (await budgetOk(admin, CU.holders)) {
+      if (birdeyeHolderListSupported(chain) && await budgetOk(admin, CU.holders)) {
         const h = await beGet(`/defi/v3/token/holder?address=${encodeURIComponent(address)}&offset=0&limit=100`, chain)
         await logCall(admin, '/defi/v3/token/holder', chain, address, CU.holders, h)
         const hd = h.ok ? h.data?.data : null
         holderItems = (hd?.items ?? hd?.holders ?? (Array.isArray(hd) ? hd : [])) as Record<string, unknown>[]
-        holderTotal = hd?.total ?? (holderItems.length || null)
+        holderTotal = reportedHolderCount(hd?.total)
         if (holderItems.length) {
           const top = holderItems.slice(0, 20).map((x) => ({ address: pick(x, ['owner', 'address', 'wallet']), ui_amount: pick(x, ['ui_amount', 'uiAmount', 'amount']) }))
           await admin.from('token_holder_snapshots').upsert({
             chain, token_address: address, canonical_ref_key: ref, provider: 'birdeye', holder_count: holderTotal,
-            top_holders: top, raw_response: { total: holderTotal, sample: holderItems.slice(0, 10) },
+            top_holders: top, raw_response: { total: holderTotal, holder_count_basis: 'provider_reported_v2', sample: holderItems.slice(0, 10) },
             snapshot_at: new Date().toISOString(), stale_after: new Date(Date.now() + 6 * 3600_000).toISOString(),
             dedup_key: `${chain}:${address}:birdeye:${new Date().toISOString().slice(0, 13)}`,
           }, { onConflict: 'dedup_key', ignoreDuplicates: true })

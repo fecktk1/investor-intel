@@ -21,6 +21,7 @@ Deno.serve(async (req) => {
       .limit(1000)
 
     const seen = new Set<string>()
+    let skippedIdentity = 0
     const kaminoRows: any[] = []
     const llamaRows: any[] = []
 
@@ -28,7 +29,8 @@ Deno.serve(async (req) => {
       const entity = Array.isArray(w.entity) ? w.entity[0] : w.entity
       const addr = entity?.contract_address || entity?.asset_id
       if (!addr) continue
-      const chain = chainIdFor(entity?.chain_namespace, entity?.chain_id) || 'solana'
+      const chain = chainIdFor(entity?.chain_namespace, entity?.chain_id)
+      if (!chain) { skippedIdentity++; continue }
       const key = `${w.org_id}:${chain}:${addr}`
       if (seen.has(key)) continue
       seen.add(key)
@@ -75,7 +77,7 @@ Deno.serve(async (req) => {
       inserted += d?.length || 0
     }
 
-    return json({ ok: true, vaults: seen.size, kamino: kaminoRows.length, defillama: llamaRows.length, inserted })
+    return json({ ok: true, vaults: seen.size, kamino: kaminoRows.length, defillama: llamaRows.length, inserted, skipped_identity: skippedIdentity })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'defi_snapshot_failed' }, 500)
   }

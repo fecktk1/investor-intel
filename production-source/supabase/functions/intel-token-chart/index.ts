@@ -6,19 +6,34 @@
 //     memecoin data / DexScreener. NEVER auto-calls Birdeye.
 //   • Tokens with a contract (resolved entity) → Birdeye (liquidity-grade) when
 //     enabled, else GeckoTerminal fallback for supported chains.
-//   • Native coins / no contract → CoinGecko. ref='native:<chainId>' needs NO entity row.
+//   • Native assets and verified catalogue contracts → shared CMC OHLCV first.
+//     Specialized providers remain fallbacks with their own coverage and timestamps.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { birdeyeChainFor, birdeyeOverview } from '../_shared/intel-providers.ts'
-import { birdeyeGet, type BirdeyeContext } from '../_shared/birdeye-client.ts'
+import type { BirdeyeContext } from '../_shared/birdeye-client.ts'
 import { CHAINS, CHAIN_COINGECKO, CHAIN_PROVIDERS, chainIdFor, getChain } from '../_shared/chains.ts'
 import { getOhlcv, getTokenPools } from '../_shared/memecoin/geckoterminal.ts'
 import { getTokenPairs } from '../_shared/memecoin/dexscreener.ts'
 import { fetchCoingeckoOhlc, fetchCoingeckoSimplePrice } from '../_shared/market-assets/coingecko-provider.ts'
 import type { MarketAssetsContext } from '../_shared/market-assets/types.ts'
+import { requireIntelAccess } from '../_shared/intel/research-service.ts'
+import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import {loadCmcChart,nativeCmcId,cmcFallbackCoverage,CHART_WINDOWS} from '../_shared/intel/cmc-chart.ts'
+import {resolveCmcAsset} from '../_shared/intel/cmc-asset-identity.ts'
+import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
+import {sharedBirdeyeChart} from '../_shared/intel/birdeye-chart-cache.ts'
+import {legacyChartRange,loadCmcContractChart} from '../_shared/intel/cmc-contract-chart.ts'
+import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
-function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
+async function json(b: any, s = 200) {
+ if(Array.isArray(b?.candles)){
+  const series=chartSeriesResponse(b);b={...b,candles:series.candles,chartSource:series.source,coverage:[b.coverage,series.coverage].filter(Boolean).join(' ')||null}
+  if(series.candles.length&&b.entity?.ref){try{b.captureProof=await makeChartCaptureProof(b.entity.ref,series.candles,series.source,Deno.env.get('INTEL_CHART_PROOF_SECRET')||Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'')}catch{b.captureReason='Verified chart capture is unavailable for this source identity.'}}
+ }
+ return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json','Cache-Control':'private, no-store' } })
+}
 const num = (v: unknown) => v == null || Number.isNaN(Number(v)) ? null : Number(v)
 
 const TF: Record<string, { type: string; days: number; cgDays: number }> = {
@@ -148,19 +163,34 @@ Deno.serve(async (req) => {
   try {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return json({ error: 'No authorization header' }, 401)
-    const { orgId, entityId = null, ref = null, timeframe = '1D' } = await req.json() || {}
+    const { orgId, entityId = null, ref = null, timeframe = '1D', range = null } = await req.json() || {}
     if (!orgId || (!entityId && !ref)) return json({ error: 'orgId and entityId|ref required' }, 400)
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
-    const marketCtx: MarketAssetsContext = { supabase: admin, jobName: 'intel-token-chart', caller: 'token-chart', kind: 'request' }
+    const actor=await requireIntelAccess(req, createClient, admin, orgId)
+    if(range!=null&&(typeof range!=='string'||!CHART_WINDOWS[range]))return json({error:'invalid_chart_range'},400)
+    if (typeof timeframe !== 'string' || !TF[timeframe] || (ref != null && (typeof ref !== 'string' || ref.length > 250))) return json({ error: 'invalid_chart_parameters' }, 400)
+    const chartRange=legacyChartRange(range,timeframe)
+    const marketCtx: MarketAssetsContext = { supabase: admin,orgId,userId:actor.userId, jobName: 'intel-token-chart', caller: 'token-chart', kind: 'request' }
 
-    // Native chain coin (ref='native:<chainId>') — chart via CoinGecko, no entity row.
+    // Native chain coin — prefer shared CMC OHLCV even on legacy requests without a range.
     if (typeof ref === 'string' && ref.startsWith('native:')) {
       const cid = ref.slice('native:'.length)
       const ch = CHAINS.find((c) => c.id === cid)
       const cg = CHAIN_COINGECKO[cid]
       if (ch && cg) {
+        const cmcId=nativeCmcId(cid)
+        let cmcAttempt:Awaited<ReturnType<typeof loadCmcChart>>|null=null
+        if(cmcId){
+          const result=await loadCmcChart(admin,cmcId,chartRange,timeframe,Date.now(),undefined,marketCtx)
+          cmcAttempt=result
+          if(result.candles.length){
+            const resolved=await resolveCmcAsset(admin,cmcId,undefined,marketCtx),d=resolved.data
+            const overview=d?{price:d.current_price,market_cap:d.market_cap,volume_24h_usd:d.volume_24h,price_change_24h_pct:d.change_24h_pct,image_url:d.image_url,source:'coinmarketcap',as_of:d.as_of}:null
+            return json({...result,overview,timeframe,entity:{symbol:ch.nativeSymbol,name:ch.label,ref,chain:cid,native:true}})
+          }
+        }
         const { overview, candles } = await coingeckoChart(cg, timeframe, marketCtx)
-        return json({ entity: { symbol: ch.nativeSymbol, name: ch.label, ref, chain: cid, native: true }, overview, candles, timeframe, source: 'coingecko' })
+        return json({ entity: { symbol: ch.nativeSymbol, name: ch.label, ref, chain: cid, native: true }, overview, candles, timeframe, source: 'coingecko', primarySourceState:cmcAttempt?.sourceState,primarySourceReason:cmcAttempt?.sourceReason,coverage:cmcFallbackCoverage(cmcAttempt,timeframe) })
       }
       return json({ entity: { ref, chain: cid }, overview: null, candles: [], timeframe, unsupported: true })
     }
@@ -171,7 +201,11 @@ Deno.serve(async (req) => {
       const idx = ref.indexOf(':')
       const chainPart = ref.slice(0, idx)
       const address = ref.slice(idx + 1)
+      const chain = getChain(chainPart)
+      if (chain && !(chain.evmChainId != null ? /^0x[0-9a-f]{40}$/i.test(address) : /^[A-Za-z0-9_.:-]{1,200}$/.test(address))) return json({ error: 'invalid_asset_address' }, 400)
       if (address && getChain(chainPart) && CHAIN_PROVIDERS[chainPart]?.geckoterminal) {
+        const cmcChart=await loadCmcContractChart(admin,chainPart,address,ref,chartRange,timeframe,marketCtx)
+        if(cmcChart)return json(cmcChart)
         return await degenChart(chainPart, address, timeframe)
       }
     }
@@ -183,23 +217,23 @@ Deno.serve(async (req) => {
     if (!ent) return json({ error: 'entity_not_found' }, 404)
 
     const appId = chainIdFor(ent.chain_namespace, ent.chain_id)
+    if(ent.contract_address&&appId){
+      const cmcChart=await loadCmcContractChart(admin,appId,ent.contract_address,ent.canonical_ref_key,chartRange,timeframe,marketCtx)
+      if(cmcChart)return json(cmcChart)
+    }
     const beKey = Deno.env.get('BIRDEYE_API_KEY')
     const beChain = birdeyeChainFor(ent.chain_namespace, ent.chain_id)
 
     // Resolved contract entity → Birdeye OHLCV (liquidity-grade) when enabled.
     if (beKey && beChain && ent.contract_address) {
-      const tf = TF[timeframe] || TF['1D']
-      const now = Math.floor(Date.now() / 1000)
-      const from = now - tf.days * 86_400
-      const beCtx: BirdeyeContext = { supabase, jobName: 'intel-token-chart', caller: 'token-chart', kind: 'request', orgId }
-      const [overview, ohlcv] = await Promise.all([
-        birdeyeOverview(beChain, ent.contract_address, beKey, beCtx),
-        birdeyeGet(`/defi/ohlcv?address=${ent.contract_address}&type=${tf.type}&time_from=${from}&time_to=${now}`, { chain: beChain, ctx: beCtx, tokenAddress: ent.contract_address }),
+      const beCtx: BirdeyeContext = { supabase:admin, jobName:'intel-token-chart',caller:'token-chart',kind:'request',orgId,userId:actor.userId,strictBudget:true }
+      const [overview,ohlcv]=await Promise.all([
+        birdeyeOverview(beChain,ent.contract_address,beKey,beCtx),
+        sharedBirdeyeChart(admin,appId!,ent.contract_address,timeframe,beCtx),
       ])
-      // deno-lint-ignore no-explicit-any
-      let candles: any[] = []
-      if (ohlcv?.ok) { const items = ohlcv.data?.data?.items || []; candles = items.map((i: any) => ({ t: (i.unixTime || i.time) * 1000, o: i.o, h: i.h, l: i.l, c: i.c, v: i.v })).filter((c: any) => c.c != null) }
-      if (candles.length) return json({ entity: { symbol: ent.display_symbol || overview?.symbol, ref: ent.canonical_ref_key, chain: ent.chain_namespace, privacy_limited: ent.privacy_limited }, overview, candles, timeframe, source: 'birdeye' })
+      const candles=ohlcv.candles
+      if(candles.length)return json({entity:{symbol:ent.display_symbol||overview?.symbol,ref:ent.canonical_ref_key,chain:appId,privacy_limited:ent.privacy_limited},overview,candles,timeframe,source:'birdeye',sourceState:ohlcv.state,sourceReason:ohlcv.reason,last_refreshed_at:ohlcv.fetchedAt,
+        coverage:ohlcv.state==='stale'?'Showing the last available Birdeye candles while refresh is unavailable.':'Birdeye OHLCV; shared refresh every two minutes. Provider candle timestamps are preserved.'})
       // Birdeye returned nothing → fall through to the free GeckoTerminal path below.
     }
 
@@ -211,11 +245,22 @@ Deno.serve(async (req) => {
     // No contract (native in watchlist) → CoinGecko if we know the id.
     const cg = ent.provider_ids?.coingecko || (ent.asset_type === 'native' ? CHAIN_COINGECKO[ent.chain_id] : null)
     if (cg) {
+      const cmcId=ent.asset_type==='native'&&appId?nativeCmcId(appId):null
+      let cmcAttempt:Awaited<ReturnType<typeof loadCmcChart>>|null=null
+      if(cmcId){
+        const result=await loadCmcChart(admin,cmcId,chartRange,timeframe,Date.now(),undefined,marketCtx)
+        cmcAttempt=result
+        if(result.candles.length){
+          const resolved=await resolveCmcAsset(admin,cmcId,undefined,marketCtx),d=resolved.data
+          return json({...result,overview:d?{price:d.current_price,market_cap:d.market_cap,volume_24h_usd:d.volume_24h,price_change_24h_pct:d.change_24h_pct,image_url:d.image_url,source:'coinmarketcap',as_of:d.as_of}:null,timeframe,entity:{symbol:ent.display_symbol,ref:ent.canonical_ref_key,chain:appId,native:true}})
+        }
+      }
       const { overview, candles } = await coingeckoChart(cg, timeframe, marketCtx)
-      return json({ entity: { symbol: ent.display_symbol, ref: ent.canonical_ref_key, chain: ent.chain_namespace }, overview, candles, timeframe, source: 'coingecko' })
+      return json({ entity: { symbol: ent.display_symbol, ref: ent.canonical_ref_key, chain: ent.chain_namespace }, overview, candles, timeframe, source: 'coingecko',primarySourceState:cmcAttempt?.sourceState,primarySourceReason:cmcAttempt?.sourceReason,coverage:cmcFallbackCoverage(cmcAttempt,timeframe) })
     }
     return json({ entity: { symbol: ent.display_symbol, ref: ent.canonical_ref_key, chain: ent.chain_namespace }, overview: null, candles: [], timeframe, unsupported: true })
   } catch (e) {
+    const denied = orgAuthzErrorResponse(e, corsHeaders); if (denied) return denied
     return json({ error: (e as Error)?.message || 'chart_failed' }, 400)
   }
 })

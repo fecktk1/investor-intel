@@ -29,18 +29,23 @@ export interface CanonicalAsset {
   change7dPct: number | null
   categories: string[] | null
   platforms: Record<string, string> | null   // { chain: contract_address }
+  metadataFetchedAt?: string | null
   imageUrl: string | null
   imageSource: string | null
   asOf: number                       // epoch ms
 }
 
 export interface MarketAssetsContext {
+  orgId?: string | null
+  userId?: string | null
   // deno-lint-ignore no-explicit-any
   supabase?: any                     // service-role client for DB cache + usage logs
   jobName?: string
   caller?: string
   requestId?: string | null
   kind?: 'job' | 'request' | 'render'
+  waitForFresh?: boolean             // research saves need the completed shared refresh
+  selectedDemand?: boolean           // authorized visible cache reader; never permits provider calls
   maxCalls?: number                  // explicit per-run budget override
   _calls?: number                    // internal counter
 }

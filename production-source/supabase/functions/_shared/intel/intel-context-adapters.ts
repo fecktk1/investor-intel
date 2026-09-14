@@ -42,7 +42,7 @@ export async function routeExplainContext(supabase: DB, { orgId, question, entit
   const [wl, theses, alerts, saved, narr, sigs] = await Promise.all([
     safe(supabase.from('watchlist_items').select('item_type, label, entity:entities(display_symbol, canonical_ref_key, entity_kind)').eq('org_id', orgId).limit(100)),
     safe(supabase.from('intel_theses').select('title, bull_thesis, bear_thesis, what_would_confirm, what_would_invalidate, entity:entities(display_symbol)').eq('org_id', orgId).order('created_at', { ascending: false }).limit(20)),
-    safe(supabase.from('intel_alert_events').select('payload, fired_at').eq('org_id', orgId).order('fired_at', { ascending: false }).limit(20)),
+    safe(supabase.from('intel_alert_events').select('payload, fired_at').eq('org_id', orgId).is('private_owner_id', null).order('fired_at', { ascending: false }).limit(20)),
     safe(supabase.from('saved_research').select('title, tags, created_at').eq('org_id', orgId).order('created_at', { ascending: false }).limit(20)),
     safe(supabase.from('narrative_state').select('signal_class, lifecycle_stage, global_priority_score, narrative_taxonomy!inner(slug, name)').order('global_priority_score', { ascending: false }).limit(60)),
     safe(supabase.from('intel_signal_state').select('subject_type, subject_id, display_symbol, direction, confidence, why_it_matters, what_to_watch_next, score_delta').order('global_score', { ascending: false }).limit(120)),

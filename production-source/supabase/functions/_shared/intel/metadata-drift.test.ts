@@ -15,17 +15,17 @@ Deno.test('platformsChanged: contract migration when a chain address changes', (
 Deno.test('platformsChanged: added/removed chain is drift; identical is not', () => {
   assert(platformsChanged({ solana: 'A' }, { solana: 'A', base: 'B' }).changed, 'new chain listing is drift')
   assert(platformsChanged({ solana: 'A', base: 'B' }, { solana: 'A' }).changed, 'removed chain is drift')
-  assert(!platformsChanged({ solana: 'A' }, { solana: 'a' }).changed, 'case-insensitive => no false drift')
+  assert(platformsChanged({ solana: 'A' }, { solana: 'a' }).changed, 'case-sensitive Solana identity changes')
   assert(!platformsChanged({}, {}).changed, 'empty == empty')
 })
 
-Deno.test('metaFromCoinDoc extracts symbol/name/image/platforms (lowercased)', () => {
+Deno.test('metaFromCoinDoc preserves case-sensitive contract identity', () => {
   const doc = { symbol: 'WSOL', name: 'Wrapped SOL', image: { large: 'http://x/large.png' }, platforms: { Solana: 'So111' } }
   const m = metaFromCoinDoc(doc)
   eq(m.symbol, 'wsol', 'symbol lowercased')
   eq(m.name, 'Wrapped SOL', 'name preserved')
   eq(m.image, 'http://x/large.png', 'large image chosen')
-  eq(m.platforms?.solana, 'so111', 'platform chain+addr lowercased')
+  eq(m.platforms?.solana, 'So111', 'platform chain normalized, address case preserved')
 })
 
 Deno.test('detectMetadataDrift: contract migration is highest severity', () => {
@@ -58,4 +58,17 @@ Deno.test('driftDedupKey stable per (ref, type, new value)', () => {
   const d = { drift_type: 'contract_migration' as const, severity: 90, old_value: {}, new_value: { solana: 'new' } }
   eq(driftDedupKey('solana:mint', d), driftDedupKey('solana:mint', d), 'deterministic')
   assert(driftDedupKey('solana:mint', d) !== driftDedupKey('solana:other', d), 'ref-scoped')
+})
+
+Deno.test('legacy case-loss migration establishes a baseline without claiming a historical contract change',()=>{
+ const prior={platforms:{solana:'so111'}},next={platforms:{solana:'So111'}}
+ eq(detectMetadataDrift(prior,next,{legacyCaseLoss:true}).length,0,'legacy correction not a migration')
+ eq(detectMetadataDrift(prior,next).length,1,'verified case-sensitive change is material')
+ eq(detectMetadataDrift(prior,{platforms:{solana:'Different'}},{legacyCaseLoss:true}).length,1,'other address changes remain visible')
+})
+Deno.test('EVM checksum casing stays equivalent while base58 casing is exact',()=>{
+ const address='0xAb11111111111111111111111111111111111111'
+ assert(!platformsChanged({ethereum:address},{ethereum:address.toLowerCase()}).changed,'EVM checksum normalization')
+ const meta=metaFromCoinDoc({platforms:{Ethereum:address,Solana:'So111'}})
+ eq(meta.platforms?.ethereum,address.toLowerCase(),'EVM normalized');eq(meta.platforms?.solana,'So111','Solana preserved')
 })
