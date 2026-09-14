@@ -60,6 +60,64 @@ REVIEWS.push(
  ]},
 )
 
+/** Scheduled re-reviews. A cycle re-reads every source and restates the current
+ * facts under one review date: unchanged wording carries forward, a changed fact
+ * replaces its key, and a fact that could not be re-verified is omitted, so its
+ * earlier review expires on its own date. An omission persists until a later
+ * cycle supplies the fact again. Append cycles; never edit a deployed one.
+ * Timeline and procedure: docs/investor-intel/issuer-review-schedule.md */
+export const ISSUER_REVIEW_WINDOW_MS=7*86400000
+export type ReviewCycle={version:string;reviewedAt:string;expiresAt:string;changes?:Record<string,Fact[]>;omitted?:string[];lapse?:string}
+export function reviewCycleRestatements(seed:readonly Review[],cycles:readonly ReviewCycle[],problems:string[]=[]):Review[] {
+ const dated=(r:Review)=>Date.parse(r.reviewedAt||ISSUER_REVIEWED_AT),out:Review[]=[]
+ const current=new Map<string,{review:Review;facts:Map<string,{fact:Fact;expiresAt:number}>}>()
+ let latest=-Infinity
+ for(const review of [...seed].sort((a,b)=>dated(a)-dated(b))) {
+  const facts=current.get(review.cryptoId)?.facts??new Map<string,{fact:Fact;expiresAt:number}>(),expiresAt=Date.parse(review.expiresAt||ISSUER_REVIEW_EXPIRES)
+  for(const fact of review.facts)facts.set(fact.key,{fact,expiresAt})
+  current.set(review.cryptoId,{review,facts});latest=Math.max(latest,dated(review))
+ }
+ for(const cycle of cycles) {
+  const reviewed=Date.parse(cycle.reviewedAt),expires=Date.parse(cycle.expiresAt)
+  if(!(reviewed>latest))problems.push(`${cycle.version}: review date must follow every earlier review`)
+  if(expires-reviewed!==ISSUER_REVIEW_WINDOW_MS)problems.push(`${cycle.version}: window must be seven days`)
+  for(const ref of cycle.omitted??[]) {
+   const split=ref.indexOf(':')
+   if(split<1||!current.get(ref.slice(0,split))?.facts.delete(ref.slice(split+1)))problems.push(`${cycle.version}: omits unknown fact ${ref}`)
+  }
+  // A carried or replaced fact must still be current when its sources are re-read.
+  if(!cycle.lapse)for(const [cryptoId,{facts}] of current)for(const [key,entry] of facts)
+   if(entry.expiresAt<=reviewed)problems.push(`${cycle.version}: ${cryptoId}:${key} expired before this review`)
+  for(const [cryptoId,facts] of Object.entries(cycle.changes??{})) {
+   const token=current.get(cryptoId)
+   if(!token){problems.push(`${cycle.version}: changes unknown token ${cryptoId}`);continue}
+   for(const fact of facts)token.facts.set(fact.key,{fact,expiresAt:expires})
+  }
+  for(const {review,facts} of current.values()) {
+   if(!facts.size)continue
+   for(const entry of facts.values())entry.expiresAt=expires
+   out.push({rwaId:review.rwaId,cryptoId:review.cryptoId,issuerId:review.issuerId,name:review.name,issuer:review.issuer,market:review.market,
+    reviewedAt:cycle.reviewedAt,expiresAt:cycle.expiresAt,version:cycle.version,facts:[...facts.values()].map(entry=>entry.fact)})
+  }
+  latest=reviewed
+ }
+ return out
+}
+export const ISSUER_REVIEW_SEED:readonly Review[]=[...REVIEWS]
+export const ISSUER_REVIEW_CYCLES:readonly ReviewCycle[]=[
+ // Every source re-read on 2026-09-14: docs/investor-intel/evidence/issuer-review-3-20260914.md
+ {version:'issuer-review-3',reviewedAt:'2026-09-14T16:35:00.000Z',expiresAt:'2026-09-21T16:35:00.000Z',changes:{
+  '4705':[{key:'redemption',label:'Allocated-gold redemption',summary:'Physical-bar redemption requires at least 430 PAXG plus the Paxos user-guide fee per London Good Delivery bar, and can involve additional due diligence. The holder arranges delivery. Paxos says an account balance can take several business days to reflect a redemption; no delivery completion time is stated.',sourceUrl:paxos}],
+  '38093':[
+   {key:'issuer_hours',label:'Conventional platform sessions',summary:'Published New York sessions: 04:01–09:29, 09:31–15:59, 16:01–19:59 and 20:05–03:55 overnight. Session pauses, holidays, maintenance and asset halts apply. Off-Hours trading is a separate service, described in its own fact.',sourceUrl:ondo+'market-hours-and-trading-availability',schedule:'ondo_conventional_1'},
+   {key:'off_hours',label:'Off-Hours trading',summary:'Ondo lists NVDAon for its Off-Hours service, which runs while conventional sessions are closed, mainly weekends and market holidays, on the Ethereum, BNB Chain and Solana networks. Each asset has a dynamic limit; spreads can be wider, and quotes can be declined or trading restricted at the limit. Availability on a given network or at a given time is not verified here.',sourceUrl:ondo+'off-hours-trading'},
+  ],
+  '5176':[{key:'eligibility',label:'Issuer access',summary:'Direct purchase and redemption are for verified issuer customers under the applicable terms; the schedule lists a non-refundable 150 USDt verification fee. A token balance alone does not establish eligibility or present redemption availability.',sourceUrl:'https://gold.tether.to/legal/feeschedule'}],
+  '20245':[{key:'redemption',label:'Token-contract redemption terms',summary:'Section 8 of the issuer terms describes conversion to physical gold in one-kilogram minimums and increments, released less fees, with collection at the vault or delivery at the holder’s cost. Section 9 separately lets partner jewellers or bullion providers exchange units from one gram; partner availability is not established here.',sourceUrl:'https://comtechgold.com/assets/pdf/Terms_and_Conditions.pdf'}],
+ }},
+]
+REVIEWS.push(...reviewCycleRestatements(ISSUER_REVIEW_SEED,ISSUER_REVIEW_CYCLES))
+
 /** Exact CMC relationship, never ticker/name similarity. Conflicting duplicate
  * relationships are withheld, rather than selecting whichever row came first. */
 export function reviewedRelationships(records:any[]) {
