@@ -4,6 +4,7 @@
 
 import type { MarketAssetsProvider, MarketAssetsProviderId } from './types.ts'
 import { coingeckoProvider } from './coingecko-provider.ts'
+import {cmcPlan,loadCmcOperatingSettings} from './cmc-transport.ts'
 import { coinmarketcapProvider } from './coinmarketcap-provider.ts'
 
 // deno-lint-ignore no-explicit-any
@@ -33,4 +34,12 @@ export function getMarketAssetsProvider(): MarketAssetsProvider {
 
 export function getEnabledProviders(): MarketAssetsProvider[] {
   return ORDER.map((id) => REGISTRY[id]).filter((p) => p.enabled())
+}
+
+/** Existing explicit configuration wins; a verified Startup profile defaults to CMC. */
+export async function getMarketAssetsProviderForContext(db:any):Promise<MarketAssetsProvider>{
+ if(env('MARKET_ASSETS_PROVIDER'))return getMarketAssetsProvider()
+ const settings=await loadCmcOperatingSettings(db)
+ if(['startup','growth','professional','enterprise'].includes(cmcPlan(Date.now(),settings))&&coinmarketcapProvider.enabled())return coinmarketcapProvider
+ return getMarketAssetsProvider()
 }

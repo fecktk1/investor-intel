@@ -11,41 +11,55 @@ import { buildNotable, buildSignalRadar, clusterTitles } from '../_shared/intel-
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
 import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { assembleBriefEvidencePack } from '../_shared/intel/brief-evidence-pack.ts'
+import {requireIntelAccess} from '../_shared/intel/research-service.ts'
+import {orgAuthzErrorResponse} from '../_shared/org-authz.ts'
+import {nativeChainPerformance} from '../_shared/intel/chain-performance.ts'
+import {requestCmc} from '../_shared/market-assets/cmc-transport.ts'
+import {cmcRows} from '../_shared/market-assets/cmc-capabilities.ts'
+import {nativeCmcId} from '../_shared/intel/cmc-chart.ts'
+import {dashboardSourceReads} from '../_shared/intel/dashboard-reads.ts'
+import {readDashboardPicture} from '../_shared/intel/dashboard-picture.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
-function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
+function json(b: unknown, s = 200, timing = '') { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control':'private, no-store', ...(timing?{'Server-Timing':timing}:{}) } }) }
 
 Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: {...corsHeaders, 'Access-Control-Max-Age': '600'} })
   try {
     const authHeader = req.headers.get('Authorization')
     if (!authHeader) return json({ error: 'No authorization header' }, 401)
-    const { orgId, scope = 'all', chain = null } = await req.json() || {}
+    const { orgId, scope = 'all', chain = null, section = 'full' } = await req.json() || {}
     if (!orgId) return json({ error: 'orgId required' }, 400)
+    if (!['all', 'chain', 'following'].includes(scope) || !['core', 'picture', 'grounding', 'full'].includes(section)
+      || (chain != null && !CHAINS.some(c => c.id === chain))) return json({ error: 'Invalid dashboard scope' }, 400)
 
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } })
-    const beKey = Deno.env.get('BIRDEYE_API_KEY')
+    const accessAdmin=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const actor=await requireIntelAccess(req,createClient,accessAdmin,orgId)
+    if(!actor.userId)return json({error:'Unauthorized'},401)
+    const auth={user:{id:actor.userId}}
 
-    const [wlRes, profRes, customRes, globalRes, narrRes, alertRes, briefRes, researchRes] = await Promise.all([
-      supabase.from('watchlist_items').select('item_type, label, entity:entities(id, display_symbol, canonical_ref_key, chain_namespace, chain_id, contract_address)').eq('org_id', orgId),
-      supabase.from('intel_user_profiles').select('chains_of_interest').eq('org_id', orgId).maybeSingle(),
-      supabase.from('news_items').select('id, title, url, source_name, sentiment, published_at, created_at, entity:entities(display_symbol, canonical_ref_key, chain_namespace, chain_id)').eq('org_id', orgId).order('created_at', { ascending: false }).limit(20),
-      (async () => {
-        // Enriched select needs migration 176 (source_quality/authority_level).
-        // Fall back to the base columns if it isn't applied yet, so the dashboard
-        // never hard-breaks on deploy order — it just loses authority ranking.
-        const base = 'id, title, url, source_name, sentiment, published_at, created_at, chains, entity_symbol'
-        let r: any = await supabase.from('intel_global_news').select(`${base}, source_quality, authority_level, news_category`).order('created_at', { ascending: false }).limit(60)
-        if (r.error) r = await supabase.from('intel_global_news').select(base).order('created_at', { ascending: false }).limit(60)
-        return r
-      })(),
-      supabase.from('tracked_narratives').select('id, title, status, last_signal_at').eq('org_id', orgId).order('updated_at', { ascending: false }).limit(10),
-      supabase.from('intel_alert_events').select('id, fired_at, payload, read_at').eq('org_id', orgId).order('fired_at', { ascending: false }).limit(8),
-      supabase.from('intel_briefs').select('period_date, brief_type, artifact:research_artifacts(structured)').eq('org_id', orgId).order('period_date', { ascending: false }).limit(1).maybeSingle(),
-      supabase.from('research_artifacts').select('id, artifact_type, title, confidence, created_at').eq('org_id', orgId).order('created_at', { ascending: false }).limit(6),
+    if(section==='picture'){
+      const result=await readDashboardPicture(supabase,orgId,auth.user.id)
+      return json({intelligence_grounding:result.picture,generated_at:result.picture.assembled_at},200,result.timing)
+    }
+
+    // Independent cached evidence lane: callers can paint the desk while this
+    // stored-data assembly completes. Verify identity/org before privileged reads.
+    if (section === 'grounding') {
+      const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+      const intelligence_grounding = await assembleBriefEvidencePack(admin, { orgId, userId: auth.user.id, maxAssets: 6 })
+      return json({ intelligence_grounding, generated_at: new Date().toISOString() })
+    }
+    const beKey = Deno.env.get('BIRDEYE_API_KEY')
+    const batch=dashboardSourceReads(supabase,orgId,auth.user.id,scope,chain)
+    const {sources}=batch
+    const changesPromise=sources.changes
+    const [wlRes,profRes,customRes,globalRes,narrRes,alertRes,briefRes,researchRes]=await Promise.all([
+      sources.watchlist,sources.profile,sources.custom_news,sources.global_news,sources.narratives,sources.alerts,sources.brief,sources.research,
     ])
 
-    const wl = (wlRes.data || []).map((i: any) => ({ ...i, chainId: i.entity ? chainIdFor(i.entity.chain_namespace, i.entity.chain_id) : null }))
+    const wl = (wlRes.data || []).slice(0,200).map((i: any) => ({ ...i, chainId: i.entity ? chainIdFor(i.entity.chain_namespace, i.entity.chain_id) : null }))
     const counts: Record<string, number> = {}
     for (const i of wl) counts[i.item_type] = (counts[i.item_type] || 0) + 1
 
@@ -60,12 +74,13 @@ Deno.serve(async (req) => {
     let chain_perf: any[] = []
     if (followed_chains.length) {
       try {
-        const { data: perf } = await supabase.from('intel_chain_perf').select('chain_id, symbol, price, change_24h, market_cap').in('chain_id', followed_chains.map((c: any) => c.id))
-        const byId = new Map((perf || []).map((p: any) => [p.chain_id, p]))
-        chain_perf = followed_chains
-          .map((c: any) => { const p = byId.get(c.id); return p && p.price != null ? { chain_id: c.id, ref: `native:${c.id}`, label: c.label, symbol: p.symbol || getChain(c.id)?.nativeSymbol || null, price: p.price, change_24h: p.change_24h, market_cap: p.market_cap } : null })
-          .filter(Boolean)
-          .sort((a: any, b: any) => (b.change_24h ?? -999) - (a.change_24h ?? -999))
+        const ids=[...new Set(followed_chains.map((c:any)=>nativeCmcId(c.id)).filter(Boolean))]
+        const [cached,cmc]=await Promise.all([
+          supabase.from('intel_chain_perf').select('chain_id, coingecko_id, symbol, price, change_24h, market_cap,updated_at').limit(100),
+          ids.length?requestCmc('quotes',{id:ids.join(',')},{supabase:accessAdmin,kind:'render',maxCalls:0,caller:'dashboard-render'}):Promise.resolve(null)
+        ])
+        const quotes=cmc?.payload?cmcRows('quotes',cmc.payload).rows.map(row=>({provider:'coinmarketcap',provider_id:String(row.id),symbol:row.symbol,price:row.quote.price,change_24h:row.quote.percent_change_24h,market_cap:row.quote.market_cap,updated_at:row.quote.last_updated||row.last_updated})):[]
+        chain_perf = nativeChainPerformance(followed_chains,[...quotes,...(cached.data||[])])
       } catch { /* best-effort */ }
     }
 
@@ -107,10 +122,7 @@ Deno.serve(async (req) => {
     const exBySym = new Map<string, any>()            // best (max-volume) exchange ticker per symbol
     let marketSignalBySymbol = new Map<string, any>()
     try {
-      const [exT, exS] = await Promise.all([
-        supabase.from('exchange_latest_tickers').select('normalized_symbol, provider, provider_symbol, price_change_pct_24h, volume_quote_24h, spread_pct').limit(1000),
-        supabase.from('exchange_latest_market_signals').select('normalized_symbol, direction, strength, confidence, title, summary, why_it_matters, provider_count, confirming_providers').limit(1000),
-      ])
+      const [exT,exS]=await Promise.all([sources.exchange_tickers,sources.exchange_signals])
       for (const tkr of (exT.data || [])) { const k = String(tkr.normalized_symbol).toUpperCase(); const cur = exBySym.get(k); if (!cur || (tkr.volume_quote_24h || 0) > (cur.volume_quote_24h || 0)) exBySym.set(k, tkr) }
       for (const [k, tkr] of exBySym) if (!moverBySymbol.has(k) && typeof tkr.price_change_pct_24h === 'number') moverBySymbol.set(k, { symbol: k, change24h: tkr.price_change_pct_24h, volume24h: tkr.volume_quote_24h, source: 'exchange' })
       marketSignalBySymbol = new Map((exS.data || []).map((s: any) => [String(s.normalized_symbol).toUpperCase(), s]))
@@ -168,12 +180,10 @@ Deno.serve(async (req) => {
       tokens: c.tokens, sectors: c.sectors, narratives: c.narratives, reason_to_suppress: c.reason_to_suppress,
     })
     try {
-      const { data: curated } = await supabase.from('intel_curated_news')
-        .select('cluster_hash, cleaned_title, title, summary, what_happened, why_it_matters, crypto_impact, watch_next, bull_case, bear_case, chains, tokens, sectors, narratives, signal, signal_bias, news_category, confidence, final_score, source_quality_score, needs_confirmation, source_count, source_type, primary_url, published_at, should_surface, reason_to_suppress')
-        .gt('stale_after', new Date().toISOString()).order('final_score', { ascending: false }).limit(40)
+      const {data:curated}=await sources.curated_news
       const surfaced = (curated || []).filter((c: any) => c.should_surface).map(mapCurated)
       if (surfaced.length) {
-        let cur = surfaced
+        let cur: any[] = surfaced
         if (scope === 'chain' && chain) cur = cur.filter((c) => (c.chains || []).includes(chain))
         cur.sort((a, b) => (b.final_score + (wlMatch(b) ? 20 : 0)) - (a.final_score + (wlMatch(a) ? 20 : 0)))
         notableOut = scope === 'following'
@@ -198,7 +208,7 @@ Deno.serve(async (req) => {
     // Projects for a chain selector: followed tokens on the chain + notable symbols.
     let projects: any[] | null = null
     if (scope === 'chain' && chain) {
-      const followedTokens = tokenItems.map((i: any) => ({ symbol: i.entity.display_symbol || i.label, ref: i.entity.canonical_ref_key, followed: true, mover: movers.find((m) => m.ref === i.entity.canonical_ref_key) || null }))
+      const followedTokens: any[] = tokenItems.map((i: any) => ({ symbol: i.entity.display_symbol || i.label, ref: i.entity.canonical_ref_key, followed: true, mover: movers.find((m) => m.ref === i.entity.canonical_ref_key) || null }))
       const followedSymbols = new Set(followedTokens.map((p) => String(p.symbol || '').toLowerCase()))
       const seen = new Map<string, any>()
       for (const c of notable) { const s = c.symbol; if (s && !followedSymbols.has(String(s).toLowerCase())) seen.set(String(s).toLowerCase(), { symbol: s, followed: false }) }
@@ -233,7 +243,7 @@ Deno.serve(async (req) => {
     let what_changed: any[] = []
     let signals_source = 'fallback_radar'
     try {
-      const { data: feed } = await supabase.rpc('signal_feed_v2', { p_org_id: orgId, p_subject_type: null, p_chains: (scope === 'chain' && chain) ? [chain] : null, p_limit: 48 })
+      const {data:feed}=await sources.signal_feed
       if (Array.isArray(feed) && feed.length) {
         // Read-time guard: collapse residual near-duplicate NEWS cards (same event,
         // different wording) so one story can't flood the feed before the curation/
@@ -257,10 +267,11 @@ Deno.serve(async (req) => {
         signals_source = 'signal_store'
       }
     } catch { /* store not deployed yet → keep deterministic fallback radar */ }
+    let what_changed_context: any = { items: [], coverage: 'unavailable' }
     try {
-      const { data: wc } = await supabase.rpc('what_changed', { p_surface: 'market_pulse', p_since: null })
-      if (Array.isArray(wc)) what_changed = wc
-    } catch { /* what_changed not deployed → empty */ }
+      const { data: wc, error } = await changesPromise
+      if (!error && wc) { what_changed_context = wc; what_changed = wc.items || [] }
+    } catch { /* Display unavailable, never invent a last-visit baseline. */ }
 
     // Bucketed cost-ledger event (no write-amplification): this render made ZERO
     // provider calls (cacheOnly + maxCalls:0). Record the avoidance, collapsed per
@@ -275,10 +286,11 @@ Deno.serve(async (req) => {
     } catch { /* ledger best-effort */ }
 
     let intelligence_grounding: any = null
-    try {
+    if (section === 'full') try {
       const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
       intelligence_grounding = await assembleBriefEvidencePack(admin, {
         orgId,
+        userId: auth.user.id,
         watchlistSymbols: [...wlSymbols].slice(0, 12),
         maxAssets: 6,
       })
@@ -286,6 +298,7 @@ Deno.serve(async (req) => {
 
     return json({
       scope, chain,
+      read_states: batch.states,
       counts, total_following: wl.length,
       followed_chains,
       chain_perf,
@@ -303,15 +316,18 @@ Deno.serve(async (req) => {
       followed_signals,
       outside_bubble,
       what_changed,
+      what_changed_context,
       intelligence_grounding,
       narratives: scope === 'following' ? [] : (narrRes.data || []),
       alerts: alertRes.data || [],
-      unread_alerts: (alertRes.data || []).filter((a: any) => !a.read_at).length,
+      unread_alerts: alertRes.error?null:(alertRes.data || []).filter((a: any) => !a.read_at).length,
       latest_brief: briefRes.data || null,
       recent_research: researchRes.data || [],
+      personal_coverage:{watchlist_truncated:(wlRes.data?.length||0)>200,watchlist_error:!!wlRes.error,profile_error:!!profRes.error,alerts_error:!!alertRes.error,research_error:!!researchRes.error},
       generated_at: new Date().toISOString(),
-    })
+    },200,batch.timing())
   } catch (e) {
+    const denied=orgAuthzErrorResponse(e,corsHeaders);if(denied)return denied
     return json({ error: (e as Error)?.message || 'dashboard_failed' }, 400)
   }
 })

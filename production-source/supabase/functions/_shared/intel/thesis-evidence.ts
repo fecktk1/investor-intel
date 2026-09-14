@@ -313,7 +313,8 @@ export function cardsFromAssetPack(pack: Any, stance: string | null = null): The
     })
   }
 
-  // 6) Protocol fundamentals (TVL) → usage/fundamentals
+  // 6) Retained protocol context. Chain membership does not establish a token
+  // fundamental, ownership relation, fee share or holder value accrual.
   const protoTvl: Any[] = Array.isArray(pack?.protocol_state?.protocol_tvl) ? pack.protocol_state.protocol_tvl : []
   for (const p of protoTvl.slice(0, 3)) {
     const tvl = numOrNull(p.tvl_usd); if (tvl == null) continue
@@ -322,14 +323,14 @@ export function cardsFromAssetPack(pack: Any, stance: string | null = null): The
       source_table: 'protocol_tvl_snapshots',
       source_ref: stableRef('tvl', { id: p.protocol_slug, title: p.protocol_name, date: p.ts }),
       event_type: 'fundamental',
-      title: `${str(p.protocol_name) || str(p.protocol_slug) || 'Protocol'} TVL: $${Math.round(tvl).toLocaleString()}`,
-      summary: 'On-chain fundamental — protocol total value locked.',
+      title: `${str(p.protocol_name) || str(p.protocol_slug) || 'Protocol'} TVL: $${Math.round(tvl).toLocaleString()} · chain context`,
+      summary: `Reported protocol total value locked${str(p.chain||pack?.protocol_state?.context_chain)?`, included in ${str(p.chain||pack?.protocol_state?.context_chain)} chain context`:''}; not a verified fundamental of ${str(pack?.asset?.symbol)||'the selected asset'}. A chain-specific allocation and token, issuer or holder relationships are unverified.`,
       source: str(p.provider) || 'DeFiLlama',
       date: str(p.ts),
       materiality: 'medium',
       sentiment: null,
       suggested_thesis_impact: 'no_effect',
-      watch_metric: 'TVL trend, fees, revenue',
+      watch_metric: 'Protocol TVL trend (chain context)',
       url: null, source_quality: 'high', coverage: 'partial', event_status: 'live',
     })
   }

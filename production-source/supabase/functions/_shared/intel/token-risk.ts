@@ -7,6 +7,7 @@
 // Hard-fail flags cap the score; cross-provider agreement raises confidence.
 
 export const RISK_SCORE_VERSION = 1
+export const CONCENTRATION_SCORE_VERSION = 2
 
 export interface SecurityInput {
   freezeAuthority?: string | null
@@ -105,8 +106,8 @@ export function computeTokenRisk(s: SecurityInput): RiskResult {
 export interface ConcentrationResult {
   score: number
   top10_pct: number | null
-  top1_pct: number | null
-  gini: number | null
+  top1_pct: number | null // Share of supplied top-holder sample, NOT total token supply.
+  gini: number | null // Gini within supplied positive sample balances.
   band: 'low' | 'medium' | 'high' | 'extreme'
   score_version: number
 }
@@ -129,7 +130,7 @@ export function computeConcentration(top10Pct: number | null, topHolders?: Array
   }
   const score = t10 != null ? clamp(Math.round(t10)) : 0
   const band: ConcentrationResult['band'] = score >= 70 ? 'extreme' : score >= 45 ? 'high' : score >= 25 ? 'medium' : 'low'
-  return { score, top10_pct: t10, top1_pct, gini, band, score_version: RISK_SCORE_VERSION }
+  return { score, top10_pct: t10, top1_pct, gini, band, score_version: CONCENTRATION_SCORE_VERSION }
 }
 
 // Keys Birdeye returns when it actually has security data for a token. If none

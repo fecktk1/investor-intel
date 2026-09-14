@@ -1,6 +1,7 @@
 import type { CanonicalAsset, MarketAssetsContext, MarketAssetsProviderId } from './types.ts'
 import { coingeckoProvider, fetchCoingeckoCategories, fetchCoingeckoGlobal } from './coingecko-provider.ts'
 import { coinmarketcapProvider, fetchCoinmarketcapGlobalMetrics } from './coinmarketcap-provider.ts'
+import {cmcPolicyEnvironment,loadCmcOperatingSettings} from './cmc-operating-settings.ts'
 
 export type MarketMacroProvider = MarketAssetsProviderId
 
@@ -17,6 +18,7 @@ export interface MarketMacroRefreshOptions {
   categoryTopN?: number
   providers?: MarketMacroProvider[]
   clients?: Partial<Record<MarketMacroProvider, MarketMacroProviderClient>>
+  env?: (key:string)=>string|undefined
 }
 
 export interface MarketMacroRefreshResult {
@@ -26,6 +28,8 @@ export interface MarketMacroRefreshResult {
   providersAttempted: string[]
   providersSkipped: string[]
   writeErrors: string[]
+  providerErrors: string[]
+  skipReasons: Record<string,string>
 }
 
 const DEFAULT_RANKING_TOP_N = 100
@@ -103,7 +107,8 @@ export function macroRowFromCoinmarketcap(raw: any, now: Date): Record<string, u
   const data = raw?.data
   if (!data || typeof data !== 'object') return null
   const quote = data.quote?.USD || {}
-  const asOf = isoOrFallback(data.last_updated, now.toISOString())
+  const asOf = isoOrFallback(data.last_updated, '')
+  if(!asOf)return null
   return {
     provider: 'coinmarketcap',
     snapshot_kind: 'global',
@@ -149,7 +154,7 @@ export function rankingRowsFromAssets(provider: MarketMacroProvider, assets: Can
       change_24h_pct: a.change24hPct,
       change_7d_pct: a.change7dPct,
       categories: a.categories || [],
-      source_ref: provider === 'coinmarketcap' ? '/v1/cryptocurrency/listings/latest' : '/coins/markets',
+      source_ref: provider === 'coinmarketcap' ? '/v3/cryptocurrency/listings/latest' : '/coins/markets',
       as_of: new Date(a.asOf || now.getTime()).toISOString(),
       fetched_at: fetchedAt,
       snapshot_bucket: bucket,
@@ -208,12 +213,19 @@ export async function refreshMarketMacroSnapshots(admin: any, options: MarketMac
   const providersAttempted: string[] = []
   const providersSkipped: string[] = []
   const writeErrors = new Set<string>()
+  const providerErrors = new Set<string>()
+  const skipReasons:Record<string,string>={}
+  const policy=cmcPolicyEnvironment(await loadCmcOperatingSettings(admin,now.getTime()),options.env??(key=>Deno.env.get(key)),now.getTime())
 
   for (const provider of providers) {
     const client = clients[provider]
     if (!client?.enabled()) {
       providersSkipped.push(provider)
+      skipReasons[provider]='provider_disabled_or_credentials_missing'
       continue
+    }
+    if(provider==='coinmarketcap'&&policy('CMC_ALLOW_HISTORICAL_RETENTION')!=='true'){
+      providersSkipped.push(provider);skipReasons[provider]='retention_policy_unavailable';continue
     }
     providersAttempted.push(provider)
     const ctx: MarketAssetsContext = { supabase: admin, jobName: `market-macro-refresh:${provider}`, caller: 'market-macro-refresh', kind: 'job', maxCalls: provider === 'coingecko' ? 8 : 4 }
@@ -222,15 +234,17 @@ export async function refreshMarketMacroSnapshots(admin: any, options: MarketMac
       const rawGlobal = await client.fetchGlobal(ctx)
       const row = provider === 'coingecko' ? macroRowFromCoingecko(rawGlobal, now) : macroRowFromCoinmarketcap(rawGlobal, now)
       if (row) macroRows.push(row)
+      else providerErrors.add(`${provider}:global_unavailable`)
     } catch {
-      // Provider failures degrade to last good snapshots.
+      providerErrors.add(`${provider}:global_unavailable`)
     }
 
     try {
       const assets = await client.fetchRankings(rankingTopN, ctx)
       if (assets?.length) rankingRows.push(...rankingRowsFromAssets(provider, assets.slice(0, rankingTopN), now))
+      else if(assets==null)providerErrors.add(`${provider}:rankings_unavailable`)
     } catch {
-      // Ranking snapshots are best-effort.
+      providerErrors.add(`${provider}:rankings_unavailable`)
     }
 
     if (provider === 'coingecko' && client.fetchCategories) {
@@ -238,7 +252,7 @@ export async function refreshMarketMacroSnapshots(admin: any, options: MarketMac
         const rawCategories = await client.fetchCategories(ctx)
         if (Array.isArray(rawCategories)) categoryRows.push(...categoryRowsFromCoingecko(rawCategories, now, categoryTopN))
       } catch {
-        // Category snapshots are best-effort.
+        providerErrors.add(`${provider}:categories_unavailable`)
       }
     }
   }
@@ -254,5 +268,7 @@ export async function refreshMarketMacroSnapshots(admin: any, options: MarketMac
     providersAttempted,
     providersSkipped,
     writeErrors: [...writeErrors],
+    providerErrors:[...providerErrors],
+    skipReasons,
   }
 }

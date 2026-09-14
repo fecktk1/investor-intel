@@ -82,40 +82,34 @@ export function reconcileCoverage(
   if (!structured || typeof structured !== 'object') return structured
   const modelCoverage = normalizeDataCoverage(structured.data_coverage)
   const pack = normalizeDataCoverage(packCoverage)
-  const used = uniq([
-    ...strings(structured.sources),
-    ...sourcesUsed,
-    ...(modelCoverage.used_sources || []),
-    ...(pack.used_sources || []),
-  ])
+  // Only server-supplied sources establish usage. A model naming an exchange
+  // does not prove a current price, depth, or any other observation exists.
+  const used = uniq([...sourcesUsed, ...(pack.used_sources || [])])
   const checked = uniq([
-    ...(modelCoverage.checked_sources || []),
     ...(pack.checked_sources || []),
     ...used,
   ])
   const unavailable = uniq([
-    ...(modelCoverage.unavailable_sources || []),
     ...(pack.unavailable_sources || []),
-  ]).filter((gap) => !gapCoveredBySources(gap, used))
+    ...(modelCoverage.unavailable_sources || []).filter(gap => !gapCoveredBySources(gap, used)),
+  ])
 
   const packOptional = pack.optional_gaps || []
-  const optional = uniq([
-    ...(modelCoverage.optional_gaps || []),
-    ...packOptional,
-  ]).filter((gap) => !gapCoveredBySources(gap, used))
-
-  const materialBase = uniq([
+  const modelOptional = (modelCoverage.optional_gaps || []).filter(gap => !gapCoveredBySources(gap, used))
+  const optionalKeys = new Set([...packOptional, ...modelOptional].map(norm))
+  // Authoritative pack gaps survive heuristic model reconciliation. Partial
+  // exchange coverage cannot erase a measured missing-depth or stale-price gap.
+  const material = uniq([
+    ...(pack.material_gaps || []),
+    ...uniq([
     ...(modelCoverage.material_gaps || []),
     ...strings(structured.missing_context),
-    ...(pack.material_gaps || []),
+    ]).filter(gap => !optionalKeys.has(norm(gap)) && !gapCoveredBySources(gap, used)),
   ])
-  const optionalKeys = new Set(optional.map(norm))
-  const material = materialBase
-    .filter((gap) => !optionalKeys.has(norm(gap)))
-    .filter((gap) => !gapCoveredBySources(gap, used))
+  const materialKeys = new Set(material.map(norm))
+  const optional = uniq([...packOptional, ...modelOptional]).filter(gap => !materialKeys.has(norm(gap)))
 
-  const confidence = String(structured.confidence || '').toLowerCase()
-  const shouldShowWarning = material.length > 0 && confidence !== 'high'
+  const shouldShowWarning = material.length > 0
   const confidenceImpact: DataCoverage['confidence_impact'] = material.length
     ? 'high'
     : optional.length > 4
@@ -124,13 +118,16 @@ export function reconcileCoverage(
         ? 'low'
         : 'none'
 
+  const rank = {none: 0, low: 1, medium: 2, high: 3}
+  const strongestImpact = [confidenceImpact, pack.confidence_impact || 'none', modelCoverage.confidence_impact || 'none']
+    .sort((a,b) => rank[b] - rank[a])[0]
   structured.data_coverage = {
     used_sources: used,
     checked_sources: checked,
     unavailable_sources: unavailable,
     material_gaps: material,
     optional_gaps: optional,
-    confidence_impact: modelCoverage.confidence_impact || pack.confidence_impact || confidenceImpact,
+    confidence_impact: strongestImpact,
     should_show_warning: shouldShowWarning,
   }
   structured.missing_context = material

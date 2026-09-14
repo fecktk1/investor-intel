@@ -1,0 +1,12 @@
+import React,{useEffect,useState} from 'react'
+export default function ChartReplayControls({stops,at,onTime,knownOnly,onKnownOnly,onExit,gaps}) {
+ const [playing,setPlaying]=useState(false)
+ const index=stops.findLastIndex(t=>t<=at),last=stops.at(-1)
+ useEffect(()=>{setPlaying(false)},[knownOnly])
+ useEffect(()=>{if(!playing)return;const hide=()=>{if(document.hidden)setPlaying(false)};document.addEventListener('visibilitychange',hide);const timer=setInterval(()=>{if(document.hidden||index>=stops.length-1){setPlaying(false);return}onTime(stops[index+1])},1000);return()=>{clearInterval(timer);document.removeEventListener('visibilitychange',hide)}},[playing,index,stops,onTime])
+ return <div className="intel-chart-replay" role="group" aria-label="Historical chart replay">
+  <div className="intel-chart-navigation"><button type="button" disabled={index<=0} onClick={()=>{setPlaying(false);onTime(stops[index-1])}}>Previous bar</button><button type="button" disabled={!stops.length||at>=last} onClick={()=>setPlaying(v=>!v)}>{playing?'Pause replay':'Play replay'}</button><button type="button" disabled={index>=stops.length-1} onClick={()=>{setPlaying(false);onTime(stops[index+1])}}>Next bar</button><button type="button" onClick={onExit}>Exit replay</button><label className="intel-workstation-check"><input type="checkbox" checked={knownOnly} onChange={e=>{setPlaying(false);onKnownOnly(e.target.checked)}}/>Only data recorded by then</label></div>
+  <label className="intel-replay-clock">Replay through <time>{new Date(at).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'long'})}</time><input type="range" aria-label="Replay bar" min={0} max={Math.max(0,stops.length-1)} value={Math.max(0,index)} disabled={!stops.length} onChange={e=>{setPlaying(false);onTime(stops[Number(e.target.value)])}}/></label>
+  <p className="intel-analysis-caption">{knownOnly?'Recorded evidence replay. Later-recorded bars and notes are hidden.':'Historical bar replay. Later source corrections may be present; this does not prove what was known then.'} {gaps.unknownClose>0&&`${gaps.unknownClose} bars omitted because their close time is unverified. `}{knownOnly&&gaps.unknownRecording>0&&`${gaps.unknownRecording} bars lack a recording timestamp. `}{gaps.omittedEvents>0&&`${gaps.omittedEvents} past events have no eligible recording history. `}Saved drawings and undated levels are hidden during replay.</p>
+ </div>
+}
