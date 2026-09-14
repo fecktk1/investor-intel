@@ -1,5 +1,5 @@
 // Investor Intel — alert evaluation (pg_cron, service-role).
-// Walks active intel_alert_rules, checks live Birdeye data for the rule's token
+// Walks active intel_alert_rules, checks stored Birdeye data for the rule's token
 // against its threshold, and fires intel_alert_events. Smarter-not-noisier:
 // DB-level duplicate suppression (dedup_key), per-rule cooldowns with noisy
 // escalation, deterministic quality scoring + suggested tuning, stored-signal
@@ -8,8 +8,8 @@
 // matters" is still generated on demand from the Alerts page.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { getTokenOverview } from '../_shared/birdeye-client.ts'
-import { h32 } from '../_shared/core-intel/hashing.ts'
+import { evaluateMarketAlerts } from '../_shared/intel/market-alert-evaluator.ts'
+import { scoreRuleQuality } from '../_shared/intel/alert-quality.ts'
 import { materialityVerdict, MATERIAL_DELTA } from '../_shared/core-intel/materiality.ts'
 import { recordCostEvent } from '../_shared/core-intel/cost-ledger.ts'
 import { makeCostWriter } from '../_shared/intel/intel-cost-writer.ts'
@@ -19,38 +19,20 @@ import {
   recordDecisionMemory,
   type IntelligenceContextBlock,
 } from '../_shared/intelligence-core.ts'
+import { thesisEvidencePass, alertRunState } from '../_shared/intel/alert-run-state.ts'
 import { evalThesisEvidenceBatch } from '../_shared/intel/thesis-monitor.ts'
 
 const DEFAULT_COOLDOWN_MIN = 720          // 12h (the historical hardcode, now per-rule)
-const NOISY_FIRES_48H = 4                 // ≥4 fires in 48h → cooldown ×2
 const NOISY_THRESHOLD = 40                // quality below this → noisy
-
-// Same rule + metric + 5% value band + day → one event (DB-enforced).
-function dedupKeyFor(ruleId: string, metric: string | null, value: number | null): string {
-  const band = value == null || !isFinite(value) ? 'na' : String(Math.round(value / 5) * 5)
-  return h32(`${ruleId}|${metric || 'na'}|${band}|${new Date().toISOString().slice(0, 10)}`)
-}
-
-// Per-rule cooldown with deterministic noisy escalation (×2 when ≥4 fires/48h).
-// deno-lint-ignore no-explicit-any
-async function cooledDown(admin: any, ruleId: string, cooldownMinutes: number | null): Promise<boolean> {
-  const base = Number(cooldownMinutes) > 0 ? Number(cooldownMinutes) : DEFAULT_COOLDOWN_MIN
-  const { data: recent48 } = await admin.from('intel_alert_events').select('id, fired_at')
-    .eq('rule_id', ruleId).gte('fired_at', new Date(Date.now() - 48 * 3600_000).toISOString())
-    .order('fired_at', { ascending: false }).limit(NOISY_FIRES_48H + 1)
-  const eff = (recent48?.length || 0) >= NOISY_FIRES_48H ? base * 2 : base
-  const last = recent48?.[0]?.fired_at ? new Date(recent48[0].fired_at).getTime() : 0
-  return last > Date.now() - eff * 60_000
-}
 
 // Stored Intel Signal for a symbol (cached read, no providers; absent table → null).
 // deno-lint-ignore no-explicit-any
-async function signalForSymbol(admin: any, symbol: string | null | undefined): Promise<any> {
-  if (!symbol) return null
+async function signalForEntity(admin: any, entity: any): Promise<any> {
+  if (!entity?.canonical_ref_key) return null
   try {
     const { data } = await admin.from('intel_signal_state')
       .select('signal_key, direction, confidence, global_score, source_count, why_it_matters, what_to_watch_next, score_delta')
-      .eq('subject_type', 'asset').eq('display_symbol', String(symbol).toUpperCase().replace(/^\$/, ''))
+      .eq('subject_type', 'asset').eq('subject_id', entity.canonical_ref_key)
       .order('generated_at', { ascending: false }).limit(1).maybeSingle()
     return data || null
   } catch { return null }
@@ -121,8 +103,9 @@ async function recordTokenAlertIntelligence(admin: any, args: {
   value: number | null
   threshold: number
   alertEventId: string
+  observation: any
 }) {
-  const { rule, entity, overview, signal, beChain, metric, value, threshold, alertEventId } = args
+  const { rule, entity, overview, signal, beChain, metric, value, threshold, alertEventId, observation } = args
   const symbol = overview?.symbol || entity?.display_symbol || entity?.symbol || entity?.contract_address
   const entityRefs = uniqueRefs([
     entity?.canonical_ref_key,
@@ -134,7 +117,7 @@ async function recordTokenAlertIntelligence(admin: any, args: {
   ])
   const sourceRefs = [
     {
-      source: 'birdeye_token_overview',
+      source: observation.provider, source_ref: observation.sourceRef, observed_at: observation.observedAt, recorded_at: observation.recordedAt,
       chain: beChain,
       contract_address: entity?.contract_address,
       symbol,
@@ -163,12 +146,11 @@ async function recordTokenAlertIntelligence(admin: any, args: {
       limit: 6,
     })
 
-    const hourBucket = new Date().toISOString().slice(0, 13)
     await persistApiIntelligence(admin, {
       visibility: 'org_private',
       orgId: rule.org_id,
-      rawTable: 'birdeye_token_overview',
-      rawRecordId: `${beChain}:${entity?.contract_address || symbol}:${hourBucket}`,
+      rawTable: observation.provider === 'coinmarketcap' ? 'intel_market_observations' : 'birdeye_token_overview_cache',
+      rawRecordId: observation.id,
       rawHash: stableHash({
         chain: beChain,
         contract_address: entity?.contract_address,
@@ -208,9 +190,9 @@ async function recordTokenAlertIntelligence(admin: any, args: {
       subjectType: 'alert_rule',
       subjectRef: rule.id,
       recommendation: compactText(`Alert fired for ${symbol || 'tracked token'}: ${metric || rule.trigger_type}`, 240),
-      conclusion: compactText(signal?.why_it_matters || `${metric || rule.trigger_type} crossed configured threshold ${threshold}.`, 900),
+      conclusion: compactText(signal?.why_it_matters || `${metric || rule.trigger_type} matched configured threshold ${threshold}.`, 900),
       reasoningSummary: compactText(
-        `Investor Intel fired ${rule.trigger_type} because ${metric || 'configured metric'}=${value ?? 'n/a'} crossed threshold ${threshold}.`,
+        `Investor Intel fired ${rule.trigger_type} because ${metric || 'configured metric'}=${value ?? 'n/a'} matched threshold ${threshold}.`,
         900,
       ),
       evidenceRefs: sourceRefs,
@@ -314,88 +296,42 @@ async function recordNarrativeHeatDecision(admin: any, rule: any, state: any, re
 
 Deno.serve(async (req) => {
   try {
-    if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return json({ error: 'forbidden' }, 401)
+    if (!Deno.env.get('CRON_SECRET') || req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return json({ error: 'forbidden' }, 401)
+    const body=await req.json().catch(()=>({}))
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    // Versioned chart rules use the same cadence and shared normalized prices.
+    // The RPC locks each rule, records its baseline/crossing atomically and never
+    // sends a notification or calls an upstream price provider.
+    const retentionResult = await admin.rpc('intel_prune_chart_prices', { p_limit: 100 })
+    if (retentionResult.error) console.error('[intel-alerts-eval] expired chart prices could not be pruned:', retentionResult.error.code)
+    let historyPruned=0,historyPruneFailed=false
+    for (let batch=0;batch<3;batch++) {
+      const historyRetention = await admin.rpc('intel_prune_investigation_history', { p_limit: 5000 })
+      if (historyRetention.error) console.error('[intel-alerts-eval] expired market history could not be pruned:', historyRetention.error.code)
+      if(historyRetention.error)historyPruneFailed=true;else historyPruned+=Number(historyRetention.data)||0
+      if (historyRetention.error||Number(historyRetention.data)<5000) break
+    }
+    const chartResult = await admin.rpc('intel_evaluate_chart_alerts', { p_limit: 100 })
+    if (chartResult.error) console.error('[intel-alerts-eval] chart conditions unavailable:', chartResult.error.code)
 
     // narrative_heat alerts read narrative_state (no provider calls) → run first so
     // they fire even when Birdeye is unconfigured/disabled.
     const narrativeFired = await evalNarrativeHeat(admin)
 
-    const beKey = Deno.env.get('BIRDEYE_API_KEY')
-    if (!beKey) return json({ ok: true, checked: 0, fired: 0, narrative_fired: narrativeFired })
 
-    const { data: rules } = await admin
-      .from('intel_alert_rules')
-      .select('*, entity:entities(*), org:orgs!inner(product_mode)')
-      .eq('is_active', true)
-      .limit(1000)
-
-    const active = (rules || []).filter((r: any) => r.org?.product_mode === 'intel' && r.entity?.contract_address)
-    let fired = 0, checked = 0
     const firedThisRun: { id: string; org_id: string; direction: string | null }[] = []
-
-    for (const r of active.slice(0, 400)) {
-      const ent = r.entity
-      const beChain = birdeyeChainFor(ent.chain_namespace, ent.chain_id)
-      if (!beChain) continue
-      checked++
-
-      // Overview via the centralized client: cached/deduped/capped/logged and
-      // kill-switch aware. Also warms the shared overview cache.
-      const ov = await getTokenOverview(
-        beChain,
-        ent.contract_address,
-        { supabase: admin, jobName: 'intel-alerts-eval', caller: 'alerts-cron', orgId: r.org_id },
-        { cacheOnly: true },
-      )
-      if (!ov) continue
-
-      const cfg = r.config || {}
-      const thr = Number(cfg.threshold_pct)
-      const pc = Number(ov.price_change_24h_pct)
-      const vc = Number(ov.volume_change_24h_pct)
-      let triggered = false; let metric = null; let value = null
-      if (!Number.isNaN(thr)) {
-        if (r.trigger_type === 'price_move' && !Number.isNaN(pc) && Math.abs(pc) >= thr) { triggered = true; metric = 'price_change_24h_pct'; value = pc }
-        else if (r.trigger_type === 'volume_spike' && !Number.isNaN(vc) && vc >= thr) { triggered = true; metric = 'volume_change_24h_pct'; value = vc }
-        else if (r.trigger_type === 'liquidity_drop' && Number(ov.liquidity) > 0 && cfg.min_liquidity_usd && Number(ov.liquidity) < Number(cfg.min_liquidity_usd)) { triggered = true; metric = 'liquidity_usd'; value = Number(ov.liquidity) }
+    const market = await evaluateMarketAlerts(admin, async (r, evidence, eventId) => {
+      const ent=r.entity, sig=await signalForEntity(admin,ent)
+      firedThisRun.push({id:eventId,org_id:r.org_id,direction:sig?.direction||null})
+      // Keep optional existing signal linkage; the immutable condition receipt
+      // was already committed. An enrichment failure never recreates an event.
+      if(sig?.signal_key){
+        const linked=await admin.from('intel_alert_events').update({signal_ref:sig.signal_key}).eq('id',eventId).eq('rule_id',r.id)
+        if(linked.error)throw Error('signal_link_failed')
       }
-      if (!triggered) continue
-
-      // Per-rule cooldown (NULL → 720 min) with noisy ×2 escalation.
-      if (await cooledDown(admin, r.id, r.cooldown_minutes)) continue
-
-      // Link the stored Intel Signal — its why_it_matters / what_to_watch_next
-      // power the deterministic "why this fired now" with zero AI.
-      const sig = await signalForSymbol(admin, ov.symbol || ent.display_symbol)
-      const ins = await admin.from('intel_alert_events').upsert({
-        org_id: r.org_id, rule_id: r.id,
-        dedup_key: dedupKeyFor(r.id, metric, typeof value === 'number' ? value : null),
-        signal_ref: sig?.signal_key || null,
-        payload: {
-          trigger_type: r.trigger_type, metric, value, threshold_pct: thr,
-          symbol: ov.symbol || ent.display_symbol, price: ov.price, ref: ent.canonical_ref_key,
-          signal_direction: sig?.direction || null,
-          why_now: sig?.why_it_matters || null, confirm_or_weaken: sig?.what_to_watch_next || null,
-        },
-      }, { onConflict: 'rule_id,dedup_key', ignoreDuplicates: true }).select('id')
-      if (!ins.error && (ins.data?.length || 0) > 0) {
-        const alertEventId = ins.data[0].id
-        fired++
-        firedThisRun.push({ id: alertEventId, org_id: r.org_id, direction: sig?.direction || null })
-        await recordTokenAlertIntelligence(admin, {
-          rule: r,
-          entity: ent,
-          overview: ov,
-          signal: sig,
-          beChain,
-          metric,
-          value: typeof value === 'number' ? value : null,
-          threshold: thr,
-          alertEventId,
-        })
-      }
-    }
+      await recordTokenAlertIntelligence(admin,{rule:r,entity:ent,overview:evidence.overview,signal:sig,beChain:birdeyeChainFor(ent.chain_namespace,ent.chain_id)||ent.canonical_ref_key,metric:evidence.metric,value:evidence.observation.value,threshold:Number(r.config?.min_liquidity_usd??r.config?.threshold_pct),alertEventId:eventId,observation:evidence.observation})
+    })
+    const {checked,fired,rules:active}=market
 
     // Grouped digest: ≥2 related events in one run for the same org share a group_id.
     try {
@@ -409,7 +345,7 @@ Deno.serve(async (req) => {
     } catch { /* grouping best-effort */ }
 
     // Deterministic quality scoring + suggested tuning (refreshed at most daily per rule).
-    const tuned = await scoreRuleQuality(admin, active)
+    const quality = await scoreRuleQuality(admin, active), tuned=quality.tuned
 
     // Thesis drift pass — every ~6h window, same cron, no extra polling.
     let thesisReviewed = 0
@@ -417,10 +353,16 @@ Deno.serve(async (req) => {
     const h = new Date().getUTCHours(), m = new Date().getUTCMinutes()
     if (h % 6 === 0 && m < 15) {
       thesisReviewed = await evalThesisDrift(admin)   // legacy drift (old columns) — additive, harmless
+    }
+    // A cron-authenticated operator may run a bounded evidence pass now. This
+    // uses the same access checks and persistence path as the scheduled pass.
+    const evidencePass=thesisEvidencePass(body,new Date())
+    if (evidencePass.run) {
       // Thesis Journal evidence + status + quality pass (cache-first, error-isolated,
       // cursor by last_evaluated_at). THESIS_JOURNAL_CRON_MODE=dry_run logs without writing.
       const dryRun = (Deno.env.get('THESIS_JOURNAL_CRON_MODE') || 'write') === 'dry_run'
-      thesisEvidence = await evalThesisEvidenceBatch(admin, { dryRun, limit: 50 })
+      const limit=evidencePass.limit
+      thesisEvidence = await evalThesisEvidenceBatch(admin, { dryRun, limit })
     }
 
     // Precise job ledger row: this run made provider calls only via the capped
@@ -428,72 +370,37 @@ Deno.serve(async (req) => {
     try {
       await recordCostEvent(makeCostWriter(admin), {
         feature: 'alerts_eval', orgId: null, cacheStatus: 'no_ai', allowReason: 'n/a_no_ai',
-        providerCallsMade: checked, providerCallsAvoided: Math.max(0, active.length - checked),
-        usage: { fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed, thesis_evidence: thesisEvidence.evaluated, thesis_eval_failed: thesisEvidence.failed },
+        providerCallsMade: 0, providerCallsAvoided: checked,
+        usage: { fired, narrative_fired: narrativeFired.fired, tuned, thesis_reviewed: thesisReviewed, thesis_evidence: thesisEvidence.evaluated, thesis_eval_failed: thesisEvidence.failed },
       }, { precision: 'exact', nowMs: Date.now() })
     } catch { /* ledger best-effort */ }
 
-    return json({ ok: true, checked, fired, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed, thesis_evidence: thesisEvidence })
+    const runState=alertRunState(!!chartResult.error,thesisEvidence.failed,!!retentionResult.error||historyPruneFailed,market.failed+narrativeFired.failed+quality.failed+quality.incomplete)
+    return json({ ok: runState.ok, partial: runState.partial, checked, fired, market_alerts:{failed:market.failed,unavailable:market.unavailable}, quality, narrative_alerts:narrativeFired, maintenance:{chartPricesPruned:retentionResult.error?null:retentionResult.data,marketObservationsPruned:historyPruned,chartPruneFailed:!!retentionResult.error,historyPruneFailed},chart_alerts: chartResult.error ? { error: 'chart_alert_evaluation_unavailable' } : chartResult.data, narrative_fired: narrativeFired, tuned, thesis_reviewed: thesisReviewed, thesis_evidence: thesisEvidence }, runState.status)
   } catch (e) {
     return json({ error: (e as Error)?.message || 'eval_failed' }, 500)
   }
 })
 
-// Fire narrative_heat events for followed narratives whose state materially changed
-// (stage transition / momentum spike / elevated risk). Reads narrative_state only —
-// no provider calls. Best-effort: returns the count, never throws.
-// deno-lint-ignore no-explicit-any
-async function evalNarrativeHeat(admin: any): Promise<number> {
-  try {
-    const { data: rules } = await admin.from('intel_alert_rules')
-      .select('id, org_id, config, org:orgs!inner(product_mode)')
-      .eq('is_active', true).eq('trigger_type', 'narrative_heat').limit(1000)
-    // deno-lint-ignore no-explicit-any
-    const active = (rules || []).filter((r: any) => r.org?.product_mode === 'intel' && r.config?.slug)
-    if (!active.length) return 0
-
-    // deno-lint-ignore no-explicit-any
-    const slugs = [...new Set(active.map((r: any) => r.config.slug))]
-    const { data: tax } = await admin.from('narrative_taxonomy').select('id, slug, name').in('slug', slugs)
-    // deno-lint-ignore no-explicit-any
-    const byId = new Map<string, any>((tax || []).map((t: any) => [t.id, t]))
-    const ids = (tax || []).map((t: { id: string }) => t.id)
-    const { data: states } = ids.length ? await admin.from('narrative_state').select('*').in('narrative_id', ids) : { data: [] }
-    // deno-lint-ignore no-explicit-any
-    const bySlug = new Map<string, any>()
-    for (const s of (states || [])) { const ti = byId.get(s.narrative_id); if (ti) bySlug.set(ti.slug, { ...s, name: ti.name }) }
-
-    let fired = 0
-    for (const r of active) {
-      const st = bySlug.get(r.config.slug); if (!st) continue
-      const prefs = r.config || {}
-      const delta = st.score_delta || {}
-      const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? v : 0)
-      const stageChange = prefs.stage_change !== false && st.prev_stage && st.prev_stage !== st.lifecycle_stage
-        && st.stage_changed_at && (Date.now() - new Date(st.stage_changed_at).getTime()) < 6 * 3600_000
-      const momoSpike = num(delta.momentum) >= Number(prefs.momentum_delta || 10)
-      const riskSpike = prefs.risk_spike !== false && num(st.risk_score) >= Number(prefs.risk_score || 65)
-      let reason: string | null = null
-      if (stageChange) reason = `stage ${st.prev_stage} → ${st.lifecycle_stage}`
-      else if (momoSpike) reason = `momentum +${Math.round(num(delta.momentum))}`
-      else if (riskSpike) reason = `risk elevated (${Math.round(num(st.risk_score))})`
-      if (!reason) continue
-
-      const { data: recent } = await admin.from('intel_alert_events').select('id')
-        .eq('rule_id', r.id).gte('fired_at', new Date(Date.now() - 12 * 3600_000).toISOString()).limit(1)
-      if (recent && recent.length) continue
-
-      const ins = await admin.from('intel_alert_events').insert({
-        org_id: r.org_id, rule_id: r.id,
-        payload: { trigger_type: 'narrative_heat', slug: r.config.slug, name: st.name, reason,
-          lifecycle_stage: st.lifecycle_stage, prev_stage: st.prev_stage, signal_class: st.signal_class,
-          momentum: st.momentum_score, risk: st.risk_score },
-      }).select('id')
-      await recordNarrativeHeatDecision(admin, r, st, reason, ins.error ? null : ins.data?.[0]?.id || null)
-      fired++
-    }
-    return fired
-  } catch (_e) { return 0 }
+// The RPC reads and commits one locked narrative calculation; no provider calls.
+async function evalNarrativeHeat(admin:any):Promise<{fired:number;failed:number;unavailable:number}>{
+ const result=await admin.from('intel_alert_rules').select('id,org_id,user_id,chart_revision,config,org:orgs!inner(product_mode)')
+  .eq('is_active',true).eq('org.product_mode','intel').eq('trigger_type','narrative_heat')
+  .order('last_evaluation_attempt_at',{ascending:true,nullsFirst:true}).order('id').limit(400)
+ if(result.error||!Array.isArray(result.data))return {fired:0,failed:1,unavailable:0}
+ let fired=0,failed=0,unavailable=0
+ for(const rule of result.data){
+  const r=await admin.rpc('intel_record_narrative_alert',{p_rule:rule.id,p_org:rule.org_id,p_revision:rule.chart_revision})
+  if(r.error||!r.data?.state){
+   failed++
+   const state=await admin.rpc('intel_record_alert_evaluation',{p_rule:rule.id,p_org:rule.org_id,p_revision:rule.chart_revision,p_state:{status:'evaluation_failed',reason:'Narrative source or event write failed. This is not an empty result.'}})
+   if(state.error)failed++
+  }else if(r.data.state==='fired'){
+   fired++
+   await recordNarrativeHeatDecision(admin,rule,r.data.snapshot,r.data.reason,r.data.eventId)
+  }else if(r.data.state==='evidence_unavailable')unavailable++
+ }
+ return {fired,failed,unavailable}
 }
 
 // ── Deterministic rule quality: 100 − noise penalty ──────────────────────────
@@ -502,54 +409,6 @@ async function evalNarrativeHeat(admin: any): Promise<number> {
 // (75th percentile of recent trigger values) — applied only on user accept.
 // Refreshed at most once/day per rule. One grouped query — no provider calls.
 // deno-lint-ignore no-explicit-any
-async function scoreRuleQuality(admin: any, rules: any[]): Promise<number> {
-  try {
-    const staleBefore = new Date(Date.now() - 24 * 3600_000).toISOString()
-    const due = rules.filter((r) => !r.last_quality_at || r.last_quality_at < staleBefore).slice(0, 100)
-    if (!due.length) return 0
-    const since = new Date(Date.now() - 14 * 86_400_000).toISOString()
-    const { data: events } = await admin.from('intel_alert_events')
-      .select('rule_id, fired_at, read_at, payload').in('rule_id', due.map((r) => r.id)).gte('fired_at', since)
-      .order('fired_at', { ascending: true }).limit(2000)
-    // deno-lint-ignore no-explicit-any
-    const byRule = new Map<string, any[]>()
-    for (const e of (events || [])) { const a = byRule.get(e.rule_id) || []; a.push(e); byRule.set(e.rule_id, a) }
-    let tuned = 0
-    for (const r of due) {
-      const evs = byRule.get(r.id) || []
-      const fires = evs.length
-      const opened = evs.filter((e) => e.read_at).length
-      const openRate = fires ? opened / fires : 1
-      // near-identical consecutive values (within 10% of each other)
-      let nearDup = 0
-      for (let i = 1; i < evs.length; i++) {
-        const a = Number(evs[i - 1].payload?.value), b = Number(evs[i].payload?.value)
-        if (isFinite(a) && isFinite(b) && Math.abs(a - b) <= Math.abs(a) * 0.1) nearDup++
-      }
-      const freqPenalty = Math.min(50, fires * 3.5)            // 14d fire volume
-      const dupPenalty = Math.min(25, nearDup * 5)             // near-identical repeats
-      const unreadPenalty = Math.round((1 - openRate) * 20)    // fires nobody opens
-      const score = Math.max(0, Math.min(100, 100 - freqPenalty - dupPenalty - unreadPenalty))
-      const noisy = score < NOISY_THRESHOLD
-      // Suggested tuning: raise threshold_pct to the 75th percentile of recent
-      // trigger values (price_move / volume_spike only).
-      // deno-lint-ignore no-explicit-any
-      let suggested: any = {}
-      if (noisy && ['price_move', 'volume_spike'].includes(r.trigger_type) && fires >= 3) {
-        const vals = evs.map((e) => Math.abs(Number(e.payload?.value))).filter((v) => isFinite(v)).sort((a, b) => a - b)
-        if (vals.length >= 3) {
-          const p75 = vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.75))]
-          suggested = { threshold_pct: Math.ceil(p75), reason: 'fires often near your current threshold — raising it would cut the noise' }
-        }
-      }
-      await admin.from('intel_alert_rules').update({
-        quality_score: score, noisy, suggested_config: suggested, last_quality_at: new Date().toISOString(),
-      }).eq('id', r.id)
-      tuned++
-    }
-    return tuned
-  } catch { return 0 }
-}
 
 // ── Thesis drift: deterministic supports / weakens / no_effect ────────────────
 // Compares the thesis side + baseline signal snapshot against the CURRENT stored
@@ -560,13 +419,13 @@ async function scoreRuleQuality(admin: any, rules: any[]): Promise<number> {
 async function evalThesisDrift(admin: any): Promise<number> {
   try {
     const { data: theses } = await admin.from('intel_theses')
-      .select('id, org_id, bull_thesis, bear_thesis, neutral_thesis, what_would_confirm, what_would_invalidate, baseline_metrics, drift_detail, entity:entities(display_symbol), org:orgs!inner(product_mode)')
+      .select('id, org_id, bull_thesis, bear_thesis, neutral_thesis, what_would_confirm, what_would_invalidate, baseline_metrics, drift_detail, entity:entities(display_symbol,canonical_ref_key), org:orgs!inner(product_mode)')
       .not('entity_id', 'is', null).limit(300)
     // deno-lint-ignore no-explicit-any
     const active = (theses || []).filter((t: any) => t.org?.product_mode === 'intel' && t.entity?.display_symbol)
     let reviewed = 0
     for (const t of active) {
-      const sig = await signalForSymbol(admin, t.entity.display_symbol)
+      const sig = await signalForEntity(admin, t.entity)
       if (!sig) continue
       // Thesis side: directional only when exactly one of bull/bear is filled.
       const hasBull = !!String(t.bull_thesis || '').trim(), hasBear = !!String(t.bear_thesis || '').trim()

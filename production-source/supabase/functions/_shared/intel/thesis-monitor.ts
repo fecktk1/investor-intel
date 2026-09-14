@@ -6,13 +6,15 @@
 // engine fields. Reuses the unit-tested pure engine in ./thesis-evidence.ts.
 
 import { getOrAssembleAssetEvidencePack, type AssetEvidenceSubject } from './asset-evidence-pack.ts'
+import { readThesisContextRows } from './thesis-monitor-context.ts'
+import {evaluateThesisConditions} from './thesis-conditions.ts'
 import { cardsFromAssetPack, classifyEventForThesis, computeThesisStatus, scoreThesisQuality } from './thesis-evidence.ts'
 
 // deno-lint-ignore no-explicit-any
 type DB = any
 // deno-lint-ignore no-explicit-any
 type Any = any
-const num = (v: unknown): number | null => { const n = Number(v); return Number.isFinite(n) ? n : null }
+const num = (v: unknown): number | null => { if(v==null||v==='')return null;const n = Number(v); return Number.isFinite(n) ? n : null }
 
 export interface EvaluateResult {
   ok: boolean
@@ -20,30 +22,51 @@ export interface EvaluateResult {
   engine_suggested_status: string | null
   quality: number | null
   error?: string
+  evidence_version?: string
 }
 
 // Evaluate ONE thesis row. Uses the admin/service client (global pack cache +
 // per-user evidence rows it sets explicitly). dryRun computes without writing.
-export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: boolean } = {}): Promise<EvaluateResult> {
+export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: boolean; readPack?: typeof getOrAssembleAssetEvidencePack } = {}): Promise<EvaluateResult> {
   const dryRun = !!opts.dryRun
   const now = new Date().toISOString()
   if (!thesis?.subject_canonical_key) return { ok: false, new_evidence: 0, engine_suggested_status: null, quality: null, error: 'no_subject' }
+  const [access,member]=await Promise.all([
+    admin.rpc('can_access_intel',{p_user:thesis.user_id,p_org:thesis.org_id}),
+    admin.from('org_members').select('org_id').eq('org_id',thesis.org_id).eq('user_id',thesis.user_id).maybeSingle(),
+  ])
+  if(access.error||member.error)throw new Error('thesis_access_unavailable')
+  if(access.data!==true||!member.data)return {ok:false,new_evidence:0,engine_suggested_status:null,quality:null,error:'access_unavailable'}
 
   const subject: AssetEvidenceSubject = { canonicalKey: thesis.subject_canonical_key, orgId: thesis.org_id, userId: thesis.user_id }
-  const packRes = await getOrAssembleAssetEvidencePack(admin, subject, { staleMinutes: 60 })
-  const pack = packRes?.pack || {}
-  const cards = cardsFromAssetPack(pack, thesis.stance || null)
+  let packRes = await (opts.readPack||getOrAssembleAssetEvidencePack)(admin, subject, { staleMinutes: 60, allowLiveEnrichment: false })
+  let pack = packRes?.pack || {}
 
   // Existing evidence + scenarios + rules + baseline
-  const [evRes, scRes, rlRes, baseRes] = await Promise.all([
-    admin.from('intel_thesis_evidence').select('source_table, source_ref, impact, user_label, impact_source, is_baseline').eq('thesis_id', thesis.id),
-    admin.from('intel_thesis_scenarios').select('kind, probability').eq('thesis_id', thesis.id),
-    admin.from('intel_thesis_rules').select('id, rule_kind, status, metric, comparator, threshold').eq('thesis_id', thesis.id),
-    admin.from('intel_thesis_snapshots').select('price_snapshot, benchmark_snapshot').eq('thesis_id', thesis.id).eq('snapshot_kind', 'baseline').maybeSingle(),
+  const [existing, scenarios, rules, baseRes] = await Promise.all([
+    readThesisContextRows(admin,'intel_thesis_evidence','source_table, source_ref, impact, user_label, impact_source, is_baseline',thesis),
+    readThesisContextRows(admin,'intel_thesis_scenarios','kind, probability',thesis),
+    readThesisContextRows(admin,'intel_thesis_rules','id,thesis_id,rule_kind,status,description,metric,comparator,threshold,threshold_unit,time_window,source_metric,alert_rule_id',thesis),
+    admin.from('intel_thesis_snapshots').select('price_snapshot, benchmark_snapshot').eq('thesis_id', thesis.id).eq('org_id',thesis.org_id).eq('user_id',thesis.user_id).eq('snapshot_kind', 'baseline').maybeSingle(),
   ])
-  const existing: Any[] = evRes.data || []
-  const scenarios: Any[] = scRes.data || []
-  const rules: Any[] = rlRes.data || []
+  if(baseRes.error)throw new Error('thesis_context_unavailable')
+  const activatedRules=rules.filter((r:Any)=>r.status==='active'&&r.alert_rule_id)
+  if(activatedRules.length>50)throw Error('thesis_condition_limit')
+  let conditions=activatedRules.length?evaluateThesisConditions(activatedRules,pack,thesis.subject_canonical_key,Date.now()):[]
+  // A long-lived narrative pack must not hide newer stored quotes. Refresh the
+  // shared assembly once only when an activated condition lacks usable facts.
+  // This is a database assembly with live provider enrichment still disabled.
+  if(packRes.cached&&conditions.some(condition=>condition.met==null)){
+    packRes=await (opts.readPack||getOrAssembleAssetEvidencePack)(admin,subject,{force:true,staleMinutes:1,allowLiveEnrichment:false})
+    pack=packRes.pack||{};conditions=evaluateThesisConditions(activatedRules,pack,thesis.subject_canonical_key,Date.now())
+  }
+  const cards=cardsFromAssetPack(pack,thesis.stance||null)
+  for(const condition of conditions){
+    if(dryRun)continue
+    const result=await admin.rpc('intel_record_thesis_condition',{p_org:thesis.org_id,p_user:thesis.user_id,p_rule:condition.rule.id,p_expected:condition.rule,p_met:condition.met,p_evidence_version:packRes.contentHash,p_observation:condition.observation,p_reason:condition.reason})
+    if(result.error||!result.data?.state)throw Error('thesis_condition_save_unavailable')
+    if(result.data.state==='triggered')condition.rule.status='triggered'
+  }
   const baseline = baseRes.data || null
   const seen = new Set(existing.map((e: Any) => `${e.source_table}|${e.source_ref}`))
 
@@ -55,11 +78,14 @@ export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: bo
     newRows.push({
       org_id: thesis.org_id, user_id: thesis.user_id, thesis_id: thesis.id, visibility: thesis.visibility || 'private',
       source_table: c.source_table, source_ref: c.source_ref, event_type: c.event_type, event_at: c.date,
-      event_snapshot: c, impact: cls.impact, impact_source: 'engine', is_baseline: false,
+      event_snapshot: { ...c, evidence_version: packRes.contentHash }, impact: cls.impact, impact_source: 'engine', is_baseline: false,
     })
   }
+  let added=newRows.length
   if (!dryRun && newRows.length) {
-    try { await admin.from('intel_thesis_evidence').upsert(newRows, { onConflict: 'thesis_id,source_table,source_ref', ignoreDuplicates: true }) } catch { /* race backstop */ }
+    const {data,error}=await admin.from('intel_thesis_evidence').upsert(newRows, { onConflict: 'thesis_id,source_table,source_ref', ignoreDuplicates: true }).select('id')
+    if(error||!Array.isArray(data))throw new Error('thesis_evidence_save_unavailable')
+    added=data.length
   }
 
   // Evidence counts (non-baseline) for the status engine
@@ -95,9 +121,10 @@ export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: bo
       quality_score: q.score, quality_breakdown: q.breakdown, quality_missing: q.missing, quality_last_checked_at: now,
       last_evaluated_at: now, last_evaluation_error: null, evaluation_error_count: 0, last_evaluation_failed_at: null,
     }
-    await admin.from('intel_theses').update(patch).eq('id', thesis.id)
+    const {data,error}=await admin.from('intel_theses').update(patch).eq('id', thesis.id).eq('org_id',thesis.org_id).eq('user_id',thesis.user_id).select('id').maybeSingle()
+    if(error||!data)throw new Error('thesis_evaluation_save_unavailable')
   }
-  return { ok: true, new_evidence: newRows.length, engine_suggested_status: status.engine_suggested_status, quality: q.score }
+  return { ok: true, new_evidence: added, engine_suggested_status: status.engine_suggested_status, quality: q.score, evidence_version: packRes.contentHash }
 }
 
 // Batch pass for the cron: oldest-evaluated first, error-isolated, dry-run aware.
@@ -105,16 +132,11 @@ export async function evalThesisEvidenceBatch(admin: DB, opts: { dryRun?: boolea
   const dryRun = !!opts.dryRun
   let evaluated = 0, failed = 0
   try {
-    const { data: theses } = await admin.from('intel_theses')
-      .select('id, org_id, user_id, stance, visibility, subject_canonical_key, last_reviewed_at, next_review_at, evaluation_error_count, org:orgs!inner(product_mode)')
-      .not('subject_canonical_key', 'is', null)
-      .in('status', ['active', 'strengthening', 'weakening', 'needs_review', 'partially_confirmed'])
-      .lt('evaluation_error_count', 5)
-      .order('last_evaluated_at', { ascending: true, nullsFirst: true })
-      .limit(Math.max(1, Math.min(opts.limit ?? 50, 200)))
-    const active = (theses || []).filter((t: Any) => t.org?.product_mode === 'intel')
+    const { data: theses,error } = await admin.rpc('intel_thesis_monitor_candidates',{p_limit:Math.max(1, Math.min(opts.limit ?? 50, 200))})
+    if(error||!Array.isArray(theses))throw new Error('thesis_candidates_unavailable')
+    const active = theses || []
     for (const t of active) {
-      try { await evaluateThesis(admin, t, { dryRun }); evaluated++ }
+      try { const result=await evaluateThesis(admin, t, { dryRun });if(result.ok)evaluated++;else if(result.error!=='access_unavailable')failed++ }
       catch (e) {
         failed++
         if (!dryRun) {
@@ -128,6 +150,6 @@ export async function evalThesisEvidenceBatch(admin: DB, opts: { dryRun?: boolea
         }
       }
     }
-  } catch { /* batch best-effort */ }
+  } catch { failed++ }
   return { evaluated, failed, dry_run: dryRun }
 }

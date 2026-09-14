@@ -8,9 +8,11 @@
 //   debug   + slug    — narrative_debug(slug) (super-admin only).
 //
 // All RPCs run under the CALLER's JWT (SECURITY DEFINER funcs check get_my_org_id /
-// auth.uid). Reads never call a live provider. Degrades to an empty list on error.
+// auth.uid). Reads never call a live provider. Failures remain explicit.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { readNarrativeBrief } from '../_shared/intel/narrative-brief-read.ts'
+import { readNarrativeHistory } from '../_shared/intel/narrative-history-read.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -35,22 +37,12 @@ Deno.serve(async (req) => {
       if (error) return json({ error: error.message }, 400)
       if (!detail) return json({ error: 'not_found' }, 404)
       // shared AI brief (global, reused) — may be absent until the brief cron runs.
-      let brief = null
-      try {
-        const { data: art } = await u.from('intel_shared_artifacts')
-          .select('structured, consensus, confidence, net_signal, created_at')
-          .eq('artifact_type', 'narrative_brief').eq('entity_ref', `narrative:${slug}`)
-          .order('created_at', { ascending: false }).limit(1).maybeSingle()
-        brief = art || null
-      } catch { /* brief optional */ }
-      return json({ ...detail, brief })
+      return json({ ...detail, ...await readNarrativeBrief(u, slug) })
     }
 
     if (mode === 'history' && slug) {
       const days = Math.max(1, Math.min(365, Number(body.days) || 30))
-      const { data, error } = await u.rpc('narrative_score_history', { p_slug: slug, p_days: days })
-      if (error) return json({ error: error.message }, 400)
-      return json({ history: data || [] })
+      return json(await readNarrativeHistory(u, slug, days, body.before))
     }
 
     if (mode === 'debug' && slug) {

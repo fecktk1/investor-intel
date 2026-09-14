@@ -7,6 +7,7 @@
 // Self-contained deploy (token-risk + provider-fact-rag + runtime-flags).
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
+import { reportedSnapshotHolderCount } from '../_shared/intel/participation-read.ts'
 import { computeConcentration, computeTokenRisk, riskSummary, securityInputFromRaw } from '../_shared/intel/token-risk.ts'
 import { promoteProviderFact } from '../_shared/intel/provider-fact-rag.ts'
 import { isFeatureEnabled } from '../_shared/intel/runtime-flags.ts'
@@ -54,7 +55,7 @@ Deno.serve(async (req) => {
       const { data: gt } = await admin.from('token_security_snapshots')
         .select('gt_score, is_honeypot, raw_response').eq('provider', 'coingecko').eq('chain', s.chain).eq('token_address', s.token_address).maybeSingle()
       const { data: holder } = await admin.from('token_holder_snapshots')
-        .select('top_holders, holder_count, top10_pct').eq('chain', s.chain).eq('token_address', s.token_address)
+        .select('top_holders, raw_response, top10_pct').eq('provider','birdeye').eq('chain', s.chain).eq('token_address', s.token_address)
         .order('snapshot_at', { ascending: false }).limit(1).maybeSingle()
 
       // Fetch the CoinGecko cross-check inline if missing (keeps it ongoing).
@@ -115,7 +116,7 @@ Deno.serve(async (req) => {
       await admin.from('holder_concentration_scores').upsert({
         entity_id: s.entity_id, chain: s.chain, token_address: s.token_address, canonical_ref_key: ref,
         score: conc.score, top1_pct: conc.top1_pct, top10_pct: conc.top10_pct, gini: conc.gini, band: conc.band,
-        holder_count: holder?.holder_count ?? null, delta_top10_pct_24h: deltaTop10,
+        holder_count: reportedSnapshotHolderCount(holder?.raw_response), delta_top10_pct_24h: deltaTop10,
         source_providers: ['birdeye'], score_version: conc.score_version, computed_at: new Date().toISOString(),
         dedup_key: `${s.chain}:${s.token_address}:${day}`,
       }, { onConflict: 'dedup_key', ignoreDuplicates: false })

@@ -1,3 +1,6 @@
+import {representationPromptState} from './representation-review.ts'
+import {contractEvidencePreview} from './cmc-contract-projection.ts'
+import type {Observation} from './investigation-evidence.ts'
 import {
   compactAssetEvidencePackForPrompt,
   getOrAssembleAssetEvidencePack,
@@ -84,7 +87,7 @@ export async function assembleAssetMiniPack(
     content_hash: evidence.contentHash,
     stale_after: evidence.staleAfter,
     headlines: {
-      market: pick(market, ['current_price', 'change_24h_pct', 'change_7d_pct', 'volume_24h', 'market_cap', 'fdv', 'freshness']),
+      market: pick(market, ['current_price', 'change_24h_pct', 'change_7d_pct', 'volume_24h', 'market_cap', 'fdv', 'freshness', 'field_evidence']),
       dex: {
         status: dex.status || 'missing',
         best_pair: pick(rec(dex.best_pair), ['dex_id', 'price_usd', 'liquidity_usd', 'volume_24h', 'price_change', 'fetched_at']),
@@ -95,13 +98,19 @@ export async function assembleAssetMiniPack(
         signal: pick(rec(cex.signal), ['direction', 'strength', 'confidence', 'summary', 'why_it_matters']),
         top_ticker: pick(firstRow(cex.tickers), ['provider', 'price', 'price_change_pct_24h', 'volume_quote_24h', 'spread_pct', 'as_of']),
       },
-      liquidity: pick(liquidity, ['cex_bid_depth_usd', 'cex_ask_depth_usd', 'cex_min_spread_pct', 'dex_liquidity_usd', 'freshness']),
+      liquidity: pick(liquidity, ['cex_bid_depth_usd', 'cex_ask_depth_usd', 'cex_min_spread_pct', 'dex_liquidity_usd', 'freshness', 'field_evidence']),
       flow: {
         status: flow.status || 'missing',
         latest_large_transfer: pick(firstRow(flow.large_transfers), ['chain', 'symbol', 'amount', 'usd_value', 'direction', 'observed_at']),
         poll_cadence_note: flow.poll_cadence_note || null,
       },
-      holders: pick(holders, ['status', 'note']),
+      holders: pick(holders, ['status', 'note', 'reason', 'records']),
+      rwa: pack.rwa_state??null,
+      security: pack.security_state??null,
+      benchmark: pack.benchmark_state??null,
+      representation: representationPromptState(pack.representation_state as any),
+      cmc_contract: { ...pick(pack.cmc_contract_state, ['subject', 'status', 'reason', 'coverage', 'has_more', 'attention_comparison']), observations: Array.isArray(rec(pack.cmc_contract_state).observations) ? contractEvidencePreview(rec(pack.cmc_contract_state).observations as Observation[]) : [], projection_note: 'Original references and clocks preserved; the named full version retains the complete bounded source read.' },
+      derivatives: { ...pick(pack.derivatives_state, ['status', 'reason', 'coverage', 'has_more']), observations: Array.isArray(rec(pack.derivatives_state).observations) ? (rec(pack.derivatives_state).observations as unknown[]).slice(0, 4) : [], projection_note: 'Up to four original observations; the named full evidence version retains the bounded source read.' },
       narrative: {
         status: narrative.status || 'missing',
         signal: pick(rec(narrative.intel_signal), ['direction', 'confidence', 'source_count', 'why_it_matters', 'what_to_watch_next']),

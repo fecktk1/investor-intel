@@ -7,6 +7,8 @@ import { chainIdFor } from '../_shared/chains.ts'
 import { loadDefiMetricSnapshot } from '../_shared/defi-c2-cache.ts'
 import { kaminoForAddress } from '../_shared/kamino-client.ts'
 import { findDefiLlamaPool, fetchDefiLlamaPoolHistory } from '../_shared/defillama-client.ts'
+import { requireIntelAccess } from '../_shared/intel/research-service.ts'
+import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -23,6 +25,7 @@ Deno.serve(async (req) => {
     const supabase = createClient(supabaseUrl, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } })
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SERVICE_ROLE_KEY')
     const service = serviceKey ? createClient(supabaseUrl, serviceKey) : supabase
+    await requireIntelAccess(req, createClient, service, orgId)
 
     let q = supabase.from('entities').select('*').eq('org_id', orgId)
     q = entityId ? q.eq('id', entityId) : q.eq('canonical_ref_key', ref)
@@ -30,7 +33,8 @@ Deno.serve(async (req) => {
     if (!ent) return json({ error: 'entity_not_found' }, 404)
 
     const addr = ent.contract_address || ent.asset_id
-    const chain = chainIdFor(ent.chain_namespace, ent.chain_id) || 'solana'
+    const chain = chainIdFor(ent.chain_namespace, ent.chain_id)
+    if (!chain) return json({ error: 'chain_identity_unavailable', state: 'unsupported', coverage: 'The asset has no recognized chain reference. No other network was queried.' }, 422)
     const isSolana = chain === 'solana'
 
     let current: any = null
@@ -89,6 +93,8 @@ Deno.serve(async (req) => {
       history,
     })
   } catch (e) {
+    const accessError = orgAuthzErrorResponse(e, corsHeaders)
+    if (accessError) return accessError
     return json({ error: (e as Error)?.message || 'defi_metrics_failed' }, 400)
   }
 })

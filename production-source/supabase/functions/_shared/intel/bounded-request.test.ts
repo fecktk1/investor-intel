@@ -1,0 +1,8 @@
+import {assertEquals,assertRejects} from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import {readBoundedJson,RequestBodyError} from './bounded-request.ts'
+const request=(body:BodyInit,headers={})=>new Request('https://example.test',{method:'POST',body,headers})
+Deno.test('bounded body accepts split UTF-8 at the exact byte limit',async()=>{const bytes=new TextEncoder().encode('{"note":"日"}');let index=0;const stream=new ReadableStream({pull(c){if(index===bytes.length)c.close();else c.enqueue(bytes.slice(index,index+++1))}});assertEquals(await readBoundedJson(request(stream),bytes.length),{note:'日'})})
+Deno.test('chunked request stops and cancels as soon as byte limit is exceeded',async()=>{let cancelled=false;const stream=new ReadableStream({pull(c){c.enqueue(new Uint8Array(32))},cancel(){cancelled=true}});const error=await assertRejects(()=>readBoundedJson(request(stream),40),RequestBodyError,'request_too_large');assertEquals(error.status,413);assertEquals(cancelled,true)})
+Deno.test('declared oversized body is rejected before the stream is read',async()=>{const error=await assertRejects(()=>readBoundedJson(request('{}',{'content-length':'500'}),10),RequestBodyError);assertEquals(error.status,413)})
+Deno.test('lying content length cannot bypass byte limits',async()=>{await assertRejects(()=>readBoundedJson(request('{"note":"日"}',{'content-length':'1'}),12),RequestBodyError,'request_too_large')})
+Deno.test('invalid JSON, UTF-8 and non-object shapes fail explicitly',async()=>{for(const input of ['no','null','[]','1',new Uint8Array([0xff])])await assertRejects(()=>readBoundedJson(request(input),100),RequestBodyError)})

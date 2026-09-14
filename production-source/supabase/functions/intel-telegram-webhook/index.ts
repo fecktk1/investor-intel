@@ -364,6 +364,7 @@ async function handleAlerts(ctx: BotContext) {
     .from('intel_alert_events')
     .select('id, fired_at, payload, quality_score, artifact:research_artifacts(title, body_md)')
     .eq('org_id', ctx.orgId)
+    .is('private_owner_id', null)
     .order('fired_at', { ascending: false })
     .limit(5)
   if (error) throw error
@@ -414,7 +415,7 @@ async function handleAsk(ctx: BotContext, question: string) {
   const terms = question.toLowerCase().split(/[^a-z0-9$]+/).filter((x) => x.length > 2).slice(0, 6)
   const [briefs, alerts, signals] = await Promise.all([
     ctx.supabase.from('intel_briefs').select('period_date, assembled').eq('org_id', ctx.orgId).eq('status', 'ready').order('period_date', { ascending: false }).limit(1),
-    ctx.supabase.from('intel_alert_events').select('fired_at, payload').eq('org_id', ctx.orgId).order('fired_at', { ascending: false }).limit(5),
+    ctx.supabase.from('intel_alert_events').select('fired_at, payload').eq('org_id', ctx.orgId).is('private_owner_id', null).order('fired_at', { ascending: false }).limit(5),
     ctx.supabase.from('intel_signal_state').select('signal_key, title, summary, score, observed_at').eq('org_id', ctx.orgId).order('observed_at', { ascending: false }).limit(10),
   ])
   const answer = buildAskAnswer(question, terms, briefs.data?.[0], alerts.data || [], signals.data || [])

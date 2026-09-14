@@ -2,9 +2,11 @@
 // Provider-layer portfolio for a wallet entity: total value + top holdings.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { chainIdFor } from '../_shared/chains.ts'
+import { appChainForEntity } from '../_shared/investor-portfolio/wallet-entity-chain.ts'
 import { loadWalletPortfolioViaProviders } from '../_shared/alchemy-c1-hydration.ts'
 import { persistApiIntelligence } from '../_shared/intelligence-core.ts'
+import { requireIntelAccess } from '../_shared/intel/research-service.ts'
+import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -23,13 +25,7 @@ function stableHash(value: unknown): string {
   return (hash >>> 0).toString(16)
 }
 
-function appChainForEntity(ent: any): string | null {
-  const caip = chainIdFor(ent?.chain_namespace ?? null, ent?.chain_id ?? null)
-  if (caip) return caip
-  const raw = String(ent?.chain_id || ent?.chain_namespace || '').trim().toLowerCase()
-  if (raw === 'evm') return 'evm'
-  return raw || null
-}
+
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -45,6 +41,7 @@ Deno.serve(async (req) => {
     if (!user) return json({ error: 'unauthorized' }, 401)
     const serviceKey = Deno.env.get('SUPABASE_SERVICE_ROLE_KEY') || Deno.env.get('SERVICE_ROLE_KEY')
     const intelligenceClient = serviceKey ? createClient(supabaseUrl, serviceKey) : supabase
+    await requireIntelAccess(req, createClient, intelligenceClient, orgId)
     let q = supabase.from('entities').select('*').eq('org_id', orgId)
     q = entityId ? q.eq('id', entityId) : q.eq('canonical_ref_key', ref)
     const { data: ent } = await q.maybeSingle()
@@ -122,6 +119,8 @@ Deno.serve(async (req) => {
       unsupported: false,
     })
   } catch (e) {
+    const accessError = orgAuthzErrorResponse(e, corsHeaders)
+    if (accessError) return accessError
     return json({ error: (e as Error)?.message || 'wallet_failed' }, 400)
   }
 })

@@ -199,7 +199,8 @@ export async function assembleEcosystemNarrativeState(
 // token OR chain, plus major historic events (intel_event_memory) — the real
 // "what happened / why it matters" the raw entity_symbol news read kept missing.
 export interface CatalystNewsState {
-  status: 'available' | 'missing'
+  status: 'available' | 'missing' | 'partial' | 'error'
+  failed_sources: string[]
   curated_news: Array<Record<string, unknown>>
   catalysts: Array<Record<string, unknown>>
   freshness: string | null
@@ -213,7 +214,16 @@ function arrayContainsOr(field: string, values: string[]): string {
 export async function assembleCatalystNewsState(
   db: DB,
   { symbol, chain }: { symbol: string | null; chain: string | null },
+  now = Date.now(),
 ): Promise<CatalystNewsState> {
+  const failed_sources: string[] = []
+  const readSource = async (table: string, run: () => Any): Promise<Any[]> => {
+    try {
+      const result = await run()
+      if (result?.error || !Array.isArray(result?.data)) throw new Error('catalyst_read_failed')
+      return result.data
+    } catch { failed_sources.push(table); return [] }
+  }
   const sym = upperSym(symbol)
   const tokenTerms: string[] = []
   if (sym) tokenTerms.push(`tokens.cs.{${sym}}`)
@@ -224,15 +234,18 @@ export async function assembleCatalystNewsState(
 
   const [curated, events] = await Promise.all([
     tokenTerms.length
-      ? rows(() => db.from('intel_curated_news')
+      ? readSource('intel_curated_news', () => db.from('intel_curated_news')
           .select('title, cleaned_title, summary, why_it_matters, crypto_impact, watch_next, signal, confidence, final_score, source_count, primary_url, published_at, chains, tokens, narratives, sectors')
           .eq('should_surface', true)
           .or(tokenTerms.join(','))
+          .gte('published_at', new Date(now - 7 * 86400000).toISOString())
+          .lte('published_at', new Date(now).toISOString())
+          .order('published_at', { ascending: false })
           .order('final_score', { ascending: false })
           .limit(6))
       : Promise.resolve([]),
     eventTerms.length
-      ? rows(() => db.from('intel_event_memory')
+      ? readSource('intel_event_memory', () => db.from('intel_event_memory')
           .select('event_type, title, summary, occurred_at, importance_score, assets, chains, narratives')
           .or(eventTerms.join(','))
           .order('occurred_at', { ascending: false })
@@ -242,7 +255,7 @@ export async function assembleCatalystNewsState(
 
   const curated_news = curated.map((c: Any) => ({
     title: c.cleaned_title || c.title || null,
-    summary: typeof c.summary === 'string' ? c.summary.slice(0, 320) : null,
+    summary: typeof c.summary === 'string' ? c.summary : null,
     why_it_matters: c.why_it_matters ?? null,
     crypto_impact: c.crypto_impact ?? null,
     watch_next: c.watch_next ?? null,
@@ -259,7 +272,7 @@ export async function assembleCatalystNewsState(
   const catalysts = events.map((e: Any) => ({
     event_type: e.event_type ?? null,
     title: e.title ?? null,
-    summary: typeof e.summary === 'string' ? e.summary.slice(0, 280) : null,
+    summary: typeof e.summary === 'string' ? e.summary : null,
     occurred_at: e.occurred_at ?? null,
     importance_score: num(e.importance_score),
     assets: Array.isArray(e.assets) ? e.assets.slice(0, 8) : [],
@@ -267,10 +280,11 @@ export async function assembleCatalystNewsState(
   }))
 
   return {
-    status: curated_news.length || catalysts.length ? 'available' : 'missing',
+    status: failed_sources.length ? (curated_news.length || catalysts.length ? 'partial' : 'error') : curated_news.length || catalysts.length ? 'available' : 'missing',
+    failed_sources: failed_sources.sort(),
     curated_news,
     catalysts,
-    freshness: newestTs([...curated, ...events], ['published_at', 'occurred_at']),
+    freshness: newestTs(curated, ['published_at']),
   }
 }
 
@@ -291,7 +305,7 @@ export interface TokenUnlockState {
 
 export async function assembleTokenUnlockState(
   db: DB,
-  { symbol, nowMs }: { symbol: string | null; nowMs: number },
+  { symbol, nowMs, allowLive = true }: { symbol: string | null; nowMs: number; allowLive?: boolean },
 ): Promise<TokenUnlockState> {
   const sym = String(symbol || '').toLowerCase().replace(/^\$/, '').trim()
   const miss: TokenUnlockState = { status: 'missing', next_unlock: null, upcoming: [], material: false, freshness: null }
@@ -312,13 +326,14 @@ export async function assembleTokenUnlockState(
   const UNLOCK_TTL_MS = 30 * 24 * 3600 * 1000
   let data = await readCache()
   const freshestMs = data.length ? Math.max(...data.map((r: Any) => new Date(r.fetched_at || 0).getTime())) : 0
-  if (!data.length || (nowMs - freshestMs) > UNLOCK_TTL_MS) {
+  if (allowLive && (!data.length || (nowMs - freshestMs) > UNLOCK_TTL_MS)) {
     const fetched = await fetchMobulaTokenUnlocks(symbol || sym, nowMs)
     if (fetched.length) {
       const fetchedAtIso = new Date(nowMs).toISOString()
       const staleAfterIso = new Date(nowMs + UNLOCK_TTL_MS).toISOString()
       const upsertRows = fetched.slice(0, 24).map((u) => ({
         token: sym, token_symbol: sym, unlock_date: u.unlock_date, amount: u.amount,
+        canonical_asset_keys: u.canonical_asset_keys || [], scheduled_at: new Date(u.ts).toISOString(),
         pct_supply: null, provider: 'mobula', source_ref: `mobula:unlocks:${sym}:${u.unlock_date}`,
         fetched_at: fetchedAtIso, stale_after: staleAfterIso, confidence: 0.7,
       }))

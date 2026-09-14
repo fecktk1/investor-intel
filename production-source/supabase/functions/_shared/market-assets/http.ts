@@ -139,6 +139,9 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms))
 
 /** Cached GET returning parsed JSON, or null on suppression/failure. */
 export async function marketAssetsGet<T = unknown>(opts: MarketAssetsGetOpts): Promise<T | null> {
+  // CMC may only use cmc-transport.ts; this generic retrying client cannot
+  // atomically reserve account credits and must never provide a bypass.
+  if (opts.provider === 'coinmarketcap' || /coinmarketcap\.com/i.test(opts.url)) return null
   const { provider, url, endpoint, ctx } = opts
   const cacheKey = opts.cacheKey || endpoint
   const ttl = opts.ttlMs ?? RESP_TTL_MS()

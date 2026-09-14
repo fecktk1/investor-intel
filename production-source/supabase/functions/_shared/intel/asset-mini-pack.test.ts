@@ -87,7 +87,7 @@ Deno.test('F1 asset mini pack compacts a cached evidence pack without provider f
         subject_canonical_key: 'market:coingecko:bitcoin',
         window: 'current',
         content_hash: 'pack-hash',
-        pack: {
+        pack: { identity_version: 3, market_lookup_version: 2, market_selection_version: 1, coverage_version: 1, retained_quote_version: 1, evidence_projection_version: 3, liquidity_projection_version: 1, protocol_context_version: 1,
           market_summary: { current_price: 66000, volume_24h: 20_000_000_000, market_cap: 1_300_000_000_000 },
           dex_state: { status: 'missing' },
           cex_state: {

@@ -22,7 +22,7 @@ const clampN = (v: unknown, def: number, lo: number, hi: number) => {
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
   try {
-    if (req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return json({ error: 'forbidden' }, 401)
+    if (!Deno.env.get('CRON_SECRET') || req.headers.get('x-cron-secret') !== Deno.env.get('CRON_SECRET')) return json({ error: 'forbidden' }, 401)
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const body = await req.json().catch(() => ({}))
     const batch = clampN(body?.batch, 120, 1, 400)   // assets per run
@@ -46,12 +46,13 @@ Deno.serve(async (req) => {
       const map = await fetchMobulaMultiUnlocks(reqList, nowMs)
       for (const a of slice) {
         const nkey = String(a.normalized_symbol || a.symbol || '').toLowerCase().replace(/^\$/, '').trim()
-        if (!nkey) continue
-        const events = map.get(nkey) || []
+        if (!nkey || !map.has(nkey)) continue
+        const events = map.get(nkey)!
         syncRows.push({ symbol: nkey, checked_at: nowIso, unlock_count: events.length })
         for (const u of events.slice(0, 24)) {
           unlockUpserts.push({
             token: nkey, token_symbol: nkey, unlock_date: u.unlock_date, amount: u.amount,
+            canonical_asset_keys: u.canonical_asset_keys || [], scheduled_at: new Date(u.ts).toISOString(),
             pct_supply: null, provider: 'mobula', source_ref: `mobula:unlocks:${nkey}:${u.unlock_date}`,
             fetched_at: nowIso, stale_after: staleIso, confidence: 0.7,
           })
@@ -62,13 +63,15 @@ Deno.serve(async (req) => {
     let unlockRows = 0
     for (let i = 0; i < unlockUpserts.length; i += 200) {
       const { error: e } = await supabase.from('token_unlocks').upsert(unlockUpserts.slice(i, i + 200), { onConflict: 'token,unlock_date,provider' })
-      if (!e) unlockRows += Math.min(200, unlockUpserts.length - i)
+      if (e) throw e
+      unlockRows += Math.min(200, unlockUpserts.length - i)
     }
     for (let i = 0; i < syncRows.length; i += 200) {
-      await supabase.from('token_unlock_sync').upsert(syncRows.slice(i, i + 200), { onConflict: 'symbol' })
+      const { error: syncError } = await supabase.from('token_unlock_sync').upsert(syncRows.slice(i, i + 200), { onConflict: 'symbol' })
+      if (syncError) throw syncError
     }
 
-    return json({ ok: true, due: assets.length, withUnlocks: syncRows.filter((r) => r.unlock_count > 0).length, unlockRows })
+    return json({ ok: true, due: assets.length, checked: syncRows.length, unresolved: assets.length - syncRows.length, withUnlocks: syncRows.filter((r) => r.unlock_count > 0).length, unlockRows })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'prewarm_failed' }, 500)
   }

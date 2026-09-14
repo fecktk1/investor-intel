@@ -12,13 +12,28 @@
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { getProvider } from '../_shared/exchange-market/provider-registry.ts'
-import { buildSymbolCounts, matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
-import { computeRowFlags, categoryLeaders } from '../_shared/intel/market-derived.ts'
-import { CHAIN_PROVIDERS } from '../_shared/chains.ts'
+import { matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
+import { requireIntelAccess } from '../_shared/intel/research-service.ts'
+import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import { marketChain, marketCanonicalIdentity, marketIdentityChoices, verifiedNativeMarketSymbol, hasVerifiedCexIdentity, usableSpread } from '../_shared/intel/market-read-quality.ts'
+import {readNativeChainPerformance} from '../_shared/intel/chain-performance-read.ts'
+import { marketScreenResponse } from '../_shared/intel/markets-screen.ts'
+import {resolveMarketAsset} from '../_shared/intel/market-asset-resolver.ts'
+import { resolveCmcAsset } from '../_shared/intel/cmc-asset-identity.ts'
+import {assetMarketRead,marketCmcIdentity,chooseMarketCandles} from '../_shared/intel/market-asset-source.ts'
+import type {MarketAssetsContext} from '../_shared/market-assets/types.ts'
+import { fetchCoingeckoOhlc } from '../_shared/market-assets/coingecko-provider.ts'
+import { getChain } from '../_shared/chains.ts'
+import {positionDepthQuotes} from '../_shared/intel/position-depth.ts'
+import {loadCmcChart,CHART_WINDOWS} from '../_shared/intel/cmc-chart.ts'
+import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
+import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
-function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
+async function json(b: any, s = 200) {
+ if(Array.isArray(b?.candles)){const series=chartSeriesResponse({...b,source:b.source||b.bestProvider});b={...b,candles:series.candles,chartSource:series.source};const asset=b.chartAsset||(b.sourceProvider&&b.providerId?`market:${b.sourceProvider}:${b.providerId}`:null);if(asset&&series.candles.length)try{b.captureProof=await makeChartCaptureProof(asset,series.candles,series.source,Deno.env.get('INTEL_CHART_PROOF_SECRET')||Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'')}catch{b.captureReason='Verified chart capture is unavailable.'}}
+ return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json','Cache-Control':'private, no-store' } }) }
 
 const FRESH_MS = 5 * 60_000, STALE_MS = 60 * 60_000
 function freshness(asOf: string | null, providerDegraded: boolean): 'fresh' | 'stale' | 'degraded' | 'unavailable' {
@@ -31,14 +46,8 @@ function freshness(asOf: string | null, providerDegraded: boolean): 'fresh' | 's
 }
 const n = (v: unknown) => (typeof v === 'number' ? v : -Infinity)
 
-const CG_PLATFORM_TO_CHAIN = new Map<string, string>(
-  Object.entries(CHAIN_PROVIDERS)
-    .flatMap(([chain, providers]) => providers.coingeckoPlatform ? [[providers.coingeckoPlatform, chain] as const] : []),
-)
-
 function appChainFromPlatform(platform: string): string {
-  const key = String(platform || '').trim()
-  return CHAIN_PROVIDERS[key] ? key : CG_PLATFORM_TO_CHAIN.get(key) || key
+  return marketChain(platform)
 }
 
 function dexEnrichment(row: Record<string, unknown>, chain: string): Record<string, unknown> {
@@ -55,271 +64,67 @@ function dexEnrichment(row: Record<string, unknown>, chain: string): Record<stri
   }
 }
 
-Deno.serve(async (req) => {
-  if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
+let marketRuntimeRequests=0
+export async function handleMarkets(req:Request,clientFactory:any=createClient,readChains=readNativeChainPerformance) {
+  // Cache the browser's CORS permission, never the authenticated data response.
+  if (req.method === 'OPTIONS') return new Response('ok', { headers: {...corsHeaders,'Access-Control-Max-Age':'600'} })
+  const started=performance.now(),trace=crypto.randomUUID(),runtime=++marketRuntimeRequests===1?'first':'reused'
+  const configuredRegion=Deno.env.get('SB_REGION')||''
+  const region=/^[a-z]{2}(?:-[a-z]+)+-\d$/.test(configuredRegion)&&configuredRegion.length<=32?configuredRegion:'unknown'
+  let mode='screen'
+  const timings:string[]=[]
+  const measured=async<T>(name:string,read:()=>PromiseLike<T>):Promise<T>=>{const start=performance.now();try{return await read()}finally{timings.push(`${name};dur=${(performance.now()-start).toFixed(1)}`)}}
+  // A generated diagnostic ID is independent of user/org/request contents.
+  // Total ends when the response is ready; it excludes gateway and wire time.
+  const finish=async(pending:Response|Promise<Response>)=>{
+    const response=await pending
+    timings.push(`total;dur=${(performance.now()-started).toFixed(1)}`)
+    response.headers.set('Server-Timing',[...timings,`trace;desc="${trace}"`,`region;desc="${region}"`,`runtime;desc="${runtime}"`].join(', '))
+    response.headers.set('Timing-Allow-Origin','*')
+    console.info('intel_markets_request',{trace,region,runtime,mode,status:response.status,timings:Object.fromEntries(timings.map(t=>{const[k,v]=t.split(';dur=');return[k,Number(v)]}))})
+    return response
+  }
   try {
     const authHeader = req.headers.get('Authorization')
-    if (!authHeader) return json({ error: 'unauthorized' }, 401)
-    const u = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } })
-    const { data: { user } } = await u.auth.getUser()
-    if (!user) return json({ error: 'unauthorized' }, 401)
-    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    if (!authHeader) return finish(json({ error: 'unauthorized' }, 401))
+    const admin = clientFactory(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
 
-    const body = await req.json().catch(() => ({})) as Record<string, unknown>
+    const body = await measured('body',()=>req.json().catch(() => ({}))) as Record<string, unknown>
+    const orgId = typeof body.orgId === 'string' ? body.orgId : null
+    // This guard already verifies the user with Auth before membership/access.
+    const actor = await measured('access',()=>requireIntelAccess(req,clientFactory,admin,orgId))
+    const verifiedUserId=actor.userId
+    if (!verifiedUserId) return finish(json({ error: 'unauthorized' }, 401))
 
-    if (typeof body.symbol === 'string' && body.symbol.trim()) {
-      return await marketDetail(admin, body.symbol.toUpperCase().replace(/^\$/, ''), {
+    if ((typeof body.symbol === 'string' && body.symbol.trim()) || (typeof body.sourceProvider === 'string' && body.providerId != null)) {
+      mode='detail'
+      return await finish(measured('detail',()=>marketDetail(admin, String(body.symbol || '').toUpperCase().replace(/^\$/, ''), {
+        sourceProvider:typeof body.sourceProvider==='string'?body.sourceProvider:undefined,
+        providerId:body.providerId != null ? String(body.providerId) : undefined,
         timeframe: typeof body.timeframe === 'string' ? body.timeframe : '7D',
         candlesOnly: body.candlesOnly === true,
-      })
+        quotesOnly: body.quotesOnly === true,
+        interval: typeof body.interval==='string'?body.interval:'auto',
+        orgId,userId:verifiedUserId,
+      })))
     }
 
-    const orgId = typeof body.orgId === 'string' ? body.orgId : null
-    const page = Math.max(0, Number(body.page) || 0)
-    const limit = Math.min(100, Math.max(1, Number(body.limit) || 50))
-    const sort = String(body.sort || 'market_cap')
-    const search = String(body.search || '').trim().toLowerCase()
-    const chain = body.chain ? String(body.chain).toLowerCase() : null
-    const category = body.category ? String(body.category) : null
-    const signalDirection = body.signalDirection ? String(body.signalDirection) : null
-    const marketCapAvailability = body.marketCapAvailability ? String(body.marketCapAvailability) : null
-    const exchangeAvailability = body.exchangeAvailability ? String(body.exchangeAvailability) : null // 'available' | 'none'
-    const watchlistOnly = !!body.watchlistOnly
-    const view = body.view ? String(body.view) : null // unusual_volume|vol_up_price_flat|price_up_liq_weak|multi_exchange|thin_liquidity
-
-    // ── Read canonical base + all enrichment sources (cache-only) ──
-    const [assetsR, profilesR, tickersR, sigsR, spreadsR, mapsR, chainsR, provR] = await Promise.all([
-      admin.from('market_assets').select('*').order('market_cap_rank', { ascending: true, nullsFirst: false }).limit(2000),
-      admin.from('exchange_latest_asset_profiles').select('*').limit(2000),
-      admin.from('exchange_latest_tickers').select('provider, normalized_symbol, price, price_change_pct_24h, volume_quote_24h, bid_price, ask_price, spread_pct').limit(8000),
-      admin.from('exchange_latest_market_signals').select('*').limit(2000),
-      admin.from('exchange_latest_cross_market_spreads').select('*').order('estimated_net_spread_pct', { ascending: false }).limit(200),
-      admin.from('exchange_asset_mappings').select('normalized_symbol, canonical_asset_id, contract_address, mapping_source, is_active').eq('is_active', true).limit(2000),
-      admin.from('exchange_latest_chain_rollups').select('*').limit(100),
-      admin.from('exchange_market_providers').select('provider, last_ok_at, last_error_at, banned_until, rate_limited_until, consecutive_failures'),
-    ])
-
-    const assets = assetsR.data || []
-    const profileBySym = new Map<string, Record<string, unknown>>((profilesR.data || []).map((p) => [p.normalized_symbol, p]))
-    const sigBySym = new Map<string, Record<string, unknown>>((sigsR.data || []).map((s) => [s.normalized_symbol, s]))
-    const spreadBySym = new Map<string, Record<string, unknown>>((spreadsR.data || []).map((s) => [s.normalized_symbol, s]))
-    const mappingBySym = new Map<string, Record<string, unknown>>((mapsR.data || []).map((m) => [String(m.normalized_symbol).toUpperCase(), m]))
-    // group per-provider tickers by normalized symbol
-    const tickersBySym = new Map<string, Record<string, unknown>[]>()
-    for (const t of (tickersR.data || [])) { const k = t.normalized_symbol; (tickersBySym.get(k) || tickersBySym.set(k, []).get(k)!).push(t) }
-
-    // optional DEX enrichment (memecoin_latest_tokens by chain:contract) — table may not exist yet
-    const dexByContract = new Map<string, Record<string, unknown>>()
-    try {
-      const { data: dex } = await admin.from('memecoin_latest_tokens').select('chain, token_address, liquidity_usd, volume_24h_usd, image_url').limit(5000)
-      for (const d of (dex || [])) dexByContract.set(`${d.chain}:${String(d.token_address).toLowerCase()}`, d)
-    } catch { /* pre-migration */ }
-    try {
-      const { data: dex } = await admin.from('dex_pair_snapshots')
-        .select('chain, token_address, pair_address, price_usd, liquidity_usd, volume_24h, market_cap, fdv, source_ref, fetched_at')
-        .order('fetched_at', { ascending: false })
-        .limit(5000)
-      for (const d of (dex || [])) {
-        const key = `${d.chain}:${String(d.token_address).toLowerCase()}`
-        if (!dexByContract.has(key)) dexByContract.set(key, d)
-      }
-    } catch { /* pre-C3 migration */ }
-
-    // provider status / degraded
-    const providerStatus = (provR.data || []).map((p) => {
-      const banned = p.banned_until && new Date(p.banned_until).getTime() > Date.now()
-      const limited = p.rate_limited_until && new Date(p.rate_limited_until).getTime() > Date.now()
-      const degraded = banned || limited || (p.consecutive_failures || 0) >= 3
-      return { provider: p.provider, degraded: !!degraded, last_ok_at: p.last_ok_at }
-    })
-    const anyProviderDegraded = providerStatus.some((p) => p.degraded)
-
-    // watchlist symbols — loaded whenever an org is known (powers the
-    // watchlistMovers panel; the watchlistOnly toggle still gates filtering).
-    let watchSet: Set<string> | null = null
-    if (orgId) {
-      const { data: wl } = await admin.from('watchlist_items').select('entity:entities(display_symbol)').eq('org_id', orgId)
-      watchSet = new Set((wl || []).map((w) => String((w.entity as { display_symbol?: string })?.display_symbol || '').toUpperCase().replace(/^\$/, '')).filter(Boolean))
+    // One bounded, authenticated cached-data screen. PostgreSQL applies filters,
+    // derived views, ordering and global summaries before any rows cross the wire.
+    const [{ data: screen, error: screenError },nativeChains] = await Promise.all([measured<any>('screen',()=>admin.rpc('intel_markets_screen_for_user', { p_org_id: orgId, p_user_id: actor.userId, p_query: body })),measured('native',()=>readChains(admin).catch(()=>({rows:[],unavailable:true})))])
+    if (screenError) {
+      console.warn('[intel-markets-screen]', { code: screenError.code, message: screenError.message })
+      const status = screenError.code === '42501' ? 403 : ['22023', '22P02'].includes(screenError.code) ? 400 : 503
+      return finish(json({ error: status === 503 ? 'market_snapshot_unavailable' : screenError.message }, status))
     }
-
-    const symbolCounts = buildSymbolCounts(assets.map((a) => ({ normalizedSymbol: a.normalized_symbol })))
-
-    // ── build canonical rows + enrichment ──
-    const rows = assets.map((a) => {
-      const platforms = (a.platforms && typeof a.platforms === 'object') ? a.platforms as Record<string, string> : null
-      const match = matchCexEnrichment({ normalizedSymbol: a.normalized_symbol, providerId: a.provider_id, platforms }, { profileBySym, mappingBySym, symbolCounts })
-      const conf = match.confidence
-      const profile = match.profile
-      const sym = a.normalized_symbol as string | null
-
-      // CEX per-provider rollup (only when matched with >= medium confidence)
-      let cex: Record<string, unknown> | null = null
-      if (profile && (conf === 'high' || conf === 'medium')) {
-        const tks = (sym && tickersBySym.get(sym)) || []
-        const prices = tks.map((t) => Number(t.price)).filter((x) => Number.isFinite(x) && x > 0)
-        const providers = [...new Set(tks.map((t) => String(t.provider)))]
-        const sig = sym ? sigBySym.get(sym) : null
-        const spread = (conf === 'high' && sym) ? spreadBySym.get(sym) : null
-        cex = {
-          availableCount: providers.length || (Array.isArray(profile.providers) ? (profile.providers as unknown[]).length : 0),
-          providers: providers.length ? providers : (Array.isArray(profile.providers) ? profile.providers : []),
-          bestPrice: prices.length ? Math.min(...prices) : (profile.latest_price ?? null),
-          avgPrice: prices.length ? prices.reduce((s, x) => s + x, 0) / prices.length : (profile.latest_price ?? null),
-          volume24h: tks.reduce((s, t) => s + (Number(t.volume_quote_24h) || 0), 0) || profile.latest_volume_quote_24h || null,
-          spreadPct: spread ? spread.estimated_net_spread_pct ?? null : null,
-          arbPct: spread ? spread.estimated_net_spread_pct ?? null : null,
-          arbBuy: spread ? spread.buy_provider ?? null : null,
-          arbSell: spread ? spread.sell_provider ?? null : null,
-          signalDirection: profile.signal_direction ?? null,
-          signalStrength: profile.signal_strength ?? null,
-          signalConfidence: profile.signal_confidence ?? null,
-          marketContext: sig ? { direction: sig.direction, strength: sig.strength, confidence: sig.confidence, title: sig.title, summary: sig.summary, whyItMatters: sig.why_it_matters, providerCount: sig.provider_count, confirmingProviders: sig.confirming_providers, factors: sig.factors, source: 'exchange-market' } : null,
-        }
-      }
-
-      // DEX enrichment (by canonical contract)
-      let dex: Record<string, unknown> | null = null
-      if (platforms) {
-        for (const [pchain, addr] of Object.entries(platforms)) {
-          const appChain = appChainFromPlatform(pchain)
-          const d = dexByContract.get(`${appChain}:${String(addr).toLowerCase()}`)
-          if (d) { dex = dexEnrichment(d, appChain); break }
-        }
-      }
-
-      const availableCount = cex ? Number(cex.availableCount) || 0 : 0
-      const detailHref = availableCount > 0
-        ? `/intel/markets/${encodeURIComponent(a.symbol)}`
-        : (a.primary_chain && platforms && platforms[a.primary_chain])
-          ? `/intel/asset/${encodeURIComponent(`${a.primary_chain}:${platforms[a.primary_chain]}`)}`
-          : `/intel/markets/${encodeURIComponent(a.symbol)}`
-
-      return {
-        // identity
-        sourceProvider: a.source_provider, providerId: a.provider_id, symbol: a.symbol, displayName: a.name,
-        normalizedSymbol: a.normalized_symbol, chain: a.primary_chain, contract: a.primary_chain && platforms ? platforms[a.primary_chain] || null : null,
-        rank: a.market_cap_rank, imageUrl: a.image_url, imageFallbackType: a.image_fallback_type,
-        // market (canonical authoritative)
-        price: a.current_price, change1hPct: a.change_1h_pct, change24hPct: a.change_24h_pct, change7dPct: a.change_7d_pct,
-        volumeQuote24h: a.volume_24h, marketCap: a.market_cap, marketCapIsEstimated: false, fdv: a.fdv,
-        circulatingSupply: a.circulating_supply, totalSupply: a.total_supply, maxSupply: a.max_supply,
-        categories: a.categories || [], platforms: platforms || {},
-        // enrichment
-        cex, dex, enrichmentConfidence: conf,
-        // backward-compatible fields for MarketsTable / movers
-        signalDirection: cex ? ((cex.signalDirection as string | null) ?? null) : null,
-        providers: cex ? cex.providers : [],
-        confirmingProviders: cex && cex.marketContext ? (cex.marketContext as Record<string, unknown>).confirmingProviders || [] : [],
-        marketContext: cex ? cex.marketContext : null,
-        // attribution
-        sourceLabel: a.source_label, sourceUrl: a.source_url, attributionLabel: a.attribution_label, lastRefreshedAt: a.last_refreshed_at,
-        detailHref, asOf: a.as_of, freshness: freshness(a.as_of, anyProviderDegraded),
-        // derived views — precomputed baseline math (mig 220) + cheap per-row flags
-        derived: (a as Record<string, unknown>).derived || {},
-        flags: null as unknown as ReturnType<typeof computeRowFlags>,
-      }
-    })
-    for (const r of rows) r.flags = computeRowFlags(r)
-
-    // ── filters ──
-    let filtered = rows
-    if (search) filtered = filtered.filter((r) =>
-      r.symbol.toLowerCase().includes(search) ||
-      (r.displayName || '').toLowerCase().includes(search) ||
-      (r.contract && String(r.contract).toLowerCase() === search) ||
-      Object.values(r.platforms || {}).some((addr) => String(addr).toLowerCase() === search))
-    if (chain) filtered = filtered.filter((r) => (r.chain || '').toLowerCase() === chain || Object.keys(r.platforms || {}).some((c) => c.toLowerCase() === chain))
-    if (category) filtered = filtered.filter((r) => Array.isArray(r.categories) && r.categories.includes(category))
-    if (signalDirection) filtered = filtered.filter((r) => r.signalDirection === signalDirection)
-    if (watchlistOnly && watchSet) filtered = filtered.filter((r) => watchSet!.has(String(r.normalizedSymbol || '').toUpperCase()))
-    // Derived views — deterministic, fewer-better-clearer: each view narrows to
-    // rows where the flag actually fired (caution flags always travel with rows).
-    if (view === 'unusual_volume') filtered = filtered.filter((r) => r.flags.unusualVolume)
-    else if (view === 'vol_up_price_flat') filtered = filtered.filter((r) => r.flags.volUpPriceFlat)
-    else if (view === 'price_up_liq_weak') filtered = filtered.filter((r) => r.flags.priceUpLiquidityWeak)
-    else if (view === 'multi_exchange') filtered = filtered.filter((r) => r.flags.multiExchangeStrength)
-    else if (view === 'thin_liquidity') filtered = filtered.filter((r) => r.flags.thinLiquidity)
-    if (marketCapAvailability === 'available') filtered = filtered.filter((r) => r.marketCap != null)
-    else if (marketCapAvailability === 'unavailable') filtered = filtered.filter((r) => r.marketCap == null)
-    if (exchangeAvailability === 'available') filtered = filtered.filter((r) => r.cex && Number((r.cex as Record<string, unknown>).availableCount) > 0)
-    else if (exchangeAvailability === 'none') filtered = filtered.filter((r) => !r.cex || !Number((r.cex as Record<string, unknown>).availableCount))
-
-    // ── sorts ──
-    const arb = (r: typeof rows[number]) => (r.enrichmentConfidence === 'high' && r.cex && (r.cex as Record<string, unknown>).arbPct != null) ? Number((r.cex as Record<string, unknown>).arbPct) : -Infinity
-    const avail = (r: typeof rows[number]) => r.cex ? Number((r.cex as Record<string, unknown>).availableCount) || 0 : 0
-    const sorters: Record<string, (a: typeof rows[number], b: typeof rows[number]) => number> = {
-      market_cap: (a, b) => n(b.marketCap) - n(a.marketCap),
-      volume: (a, b) => n(b.volumeQuote24h) - n(a.volumeQuote24h),
-      gainers: (a, b) => n(b.change24hPct) - n(a.change24hPct),
-      losers: (a, b) => n(a.change24hPct) - n(b.change24hPct),
-      change_1h: (a, b) => n(b.change1hPct) - n(a.change1hPct),
-      change_24h: (a, b) => n(b.change24hPct) - n(a.change24hPct),
-      change_7d: (a, b) => n(b.change7dPct) - n(a.change7dPct),
-      exchange_availability: (a, b) => avail(b) - avail(a) || n(b.marketCap) - n(a.marketCap),
-      arbitrage: (a, b) => arb(b) - arb(a) || n(b.marketCap) - n(a.marketCap),
-      recently_updated: (a, b) => String(b.lastRefreshedAt || '').localeCompare(String(a.lastRefreshedAt || '')),
-      unusual_volume: (a, b) => n(b.flags?.volumeRatio) - n(a.flags?.volumeRatio) || n(b.volumeQuote24h) - n(a.volumeQuote24h),
-      multi_exchange_strength: (a, b) => avail(b) - avail(a) || n(b.change24hPct) - n(a.change24hPct),
-    }
-    filtered = filtered.slice().sort(sorters[sort] || sorters.market_cap)
-
-    const total = filtered.length
-    const pageRows = filtered.slice(page * limit, page * limit + limit)
-
-    // ── snapshot (over ALL canonical) ──
-    const withCap = rows.filter((r) => r.marketCap != null)
-    const withCex = rows.filter((r) => r.cex && Number((r.cex as Record<string, unknown>).availableCount) > 0)
-    const sigCounts = { bullish: 0, bearish: 0, caution: 0, neutral: 0 } as Record<string, number>
-    for (const r of rows) if (r.signalDirection) sigCounts[r.signalDirection] = (sigCounts[r.signalDirection] || 0) + 1
-    const strongestChain = (chainsR.data || []).slice().sort((a, b) => (b.avg_change_24h_pct ?? -999) - (a.avg_change_24h_pct ?? -999))[0]?.chain || null
-    const lastUpdated = rows.reduce((m, r) => r.asOf && r.asOf > m ? r.asOf : m, '')
-    const snapshot = {
-      trackedAssets: rows.length,
-      up24h: rows.filter((r) => (r.change24hPct ?? 0) > 0).length,
-      down24h: rows.filter((r) => (r.change24hPct ?? 0) < 0).length,
-      trackedVolumeQuote24h: rows.reduce((s, r) => s + (r.volumeQuote24h || 0), 0),
-      trackedMarketCap: withCap.reduce((s, r) => s + (r.marketCap || 0), 0),
-      marketCapCoveragePct: rows.length ? Math.round((withCap.length / rows.length) * 100) : 0,
-      cexCoveragePct: rows.length ? Math.round((withCex.length / rows.length) * 100) : 0,
-      strongestChain, signalCounts: sigCounts,
-      lastUpdated: lastUpdated || null, freshness: freshness(lastUpdated || null, anyProviderDegraded),
-    }
-
-    // movers: blend 24h magnitude with market cap (so thin pumps rank lower)
-    const moverScore = (r: typeof rows[number]) => Math.min(Math.abs(r.change24hPct ?? 0) / 25, 1) * 0.6 + Math.min((Math.log10(Math.max(1, r.marketCap ?? 1))) / 12, 1) * 0.4
-    const movers = rows.filter((r) => (r.change24hPct ?? 0) !== 0)
-    const topGainers = movers.filter((r) => (r.change24hPct ?? 0) > 0).sort((a, b) => moverScore(b) - moverScore(a)).slice(0, 10)
-    const topLosers = movers.filter((r) => (r.change24hPct ?? 0) < 0).sort((a, b) => moverScore(b) - moverScore(a)).slice(0, 10)
-
-    const capRows = rows.filter((r) => r.marketCap != null).sort((a, b) => n(b.marketCap) - n(a.marketCap))
-    const marketCapPanel = { topByMarketCap: capRows.slice(0, 20), unavailableCount: rows.filter((r) => r.marketCap == null).length, estimatedCount: 0, coveragePct: snapshot.marketCapCoveragePct }
-
-    const availableCategories = [...new Set(rows.flatMap((r) => Array.isArray(r.categories) ? r.categories as string[] : []))].sort()
-
-    // Derived sections (computed over ALL canonical rows; capped, quality-gated).
-    const watchlistMovers = watchSet && watchSet.size
-      ? rows.filter((r) => watchSet!.has(String(r.normalizedSymbol || '').toUpperCase()) && typeof r.change24hPct === 'number')
-        .sort((a, b) => Math.abs(b.change24hPct!) - Math.abs(a.change24hPct!)).slice(0, 10)
-      : []
-    const derivedCounts = {
-      unusual_volume: rows.filter((r) => r.flags.unusualVolume).length,
-      vol_up_price_flat: rows.filter((r) => r.flags.volUpPriceFlat).length,
-      price_up_liq_weak: rows.filter((r) => r.flags.priceUpLiquidityWeak).length,
-      multi_exchange: rows.filter((r) => r.flags.multiExchangeStrength).length,
-      thin_liquidity: rows.filter((r) => r.flags.thinLiquidity).length,
-    }
-
-    return json({
-      snapshot, rows: pageRows, total, page, limit,
-      marketCapPanel, topGainers, topLosers, availableCategories,
-      categoryLeaders: categoryLeaders(rows), watchlistMovers, derivedCounts,
-      chainHeatmap: chainsR.data || [], crossExchangeSpreads: spreadsR.data || [],
-      providerStatus, lastUpdated: snapshot.lastUpdated,
-    })
+    if (!screen) return finish(json({ error: 'market_snapshot_unavailable' }, 503))
+    return await finish(measured('assemble',()=>json({...marketScreenResponse(screen),nativeChains:nativeChains.rows,nativeChainsUnavailable:nativeChains.unavailable})))
   } catch (e) {
-    return json({ error: (e as Error)?.message || 'intel_markets_failed' }, 500)
+    const denied=orgAuthzErrorResponse(e,corsHeaders);if(denied)return finish(denied)
+    return finish(json({ error: (e as Error)?.message || 'intel_markets_failed' }, 500))
   }
-})
+}
+if(import.meta.main)Deno.serve(req=>handleMarkets(req))
 
 // ─── DETAIL mode (CEX breakdown + on-demand candles) — unchanged behavior ─────
 // Range → (kline interval, count). Intervals are provider-portable (1m/5m/15m/
@@ -340,16 +145,35 @@ const CANDLE_TF: Record<string, { interval: string; limit: number }> = {
 async function fetchCandles(admin: any, sym: string, timeframe = '7D'): Promise<{ candles: { t: number; c: number }[]; bestPair: string | null; bestProvider: string | null }> {
   try {
     const tf = CANDLE_TF[timeframe] || CANDLE_TF['7D']
-    const { data: tk } = await admin.from('exchange_latest_tickers').select('provider, provider_symbol, volume_quote_24h').eq('normalized_symbol', sym).order('volume_quote_24h', { ascending: false }).limit(1).maybeSingle()
+    const { data: tk } = await admin.from('exchange_latest_tickers').select('provider, provider_symbol, quote_asset, volume_quote_24h').eq('normalized_symbol', sym).order('volume_quote_24h', { ascending: false }).limit(1).maybeSingle()
     if (!tk) return { candles: [], bestPair: null, bestProvider: null }
     const prov = getProvider(tk.provider)
     if (!prov) return { candles: [], bestPair: tk.provider_symbol, bestProvider: tk.provider }
     const ctx = { supabase: admin, jobName: 'intel-markets-detail', kind: 'request' as const }
     let k = await prov.getKlines(tk.provider_symbol, tf.interval, tf.limit, ctx)
     if (!k || !k.length) k = await prov.getKlines(tk.provider_symbol, '1d', Math.min(tf.limit, 365), ctx)  // provider-safe fallback
-    const candles = (k || []).map((x) => ({ t: x.openTime, c: x.close }))
-    return { candles, bestPair: tk.provider_symbol, bestProvider: tk.provider }
+    const candles = (k || []).map(x=>({t:x.openTime,o:x.open,h:x.high,l:x.low,c:x.close,v:x.volumeBase,closedAt:x.closeTime}))
+    return { candles, bestPair: tk.provider_symbol, bestProvider: tk.provider, timestampMeaning:'open',currency:tk.quote_asset,volumeUnit:'base asset' } as any
   } catch { return { candles: [], bestPair: null, bestProvider: null } }
+}
+
+// Exact provider identity also supports assets without a verified exchange pair.
+// Never use a same-symbol market as a substitute price history.
+async function assetCandles(admin: any, canonical: any, verified: boolean, timeframe: string, interval='auto',context:MarketAssetsContext={}) {
+ return chooseMarketCandles(canonical,id=>loadCmcChart(admin,id,timeframe,interval,Date.now(),undefined,context),async()=>{
+  if (verified) {
+    const result = await fetchCandles(admin, canonical.normalized_symbol, timeframe)
+    if (result.candles.length) return result
+  }
+  if (canonical.source_provider === 'coingecko' && canonical.provider_id) {
+    const days = ({ '1H':1,'12H':1,'24H':1,'3D':7,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365 } as Record<string,number>)[timeframe] || 7
+    const rows = await fetchCoingeckoOhlc(String(canonical.provider_id), days, { supabase: admin, jobName: 'intel-markets-detail', caller: 'canonical-chart', kind: 'request' }).catch(() => null)
+    const end = Date.now(), start = end - (({'1H':1/24,'12H':.5,'24H':1,'3D':3,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365} as Record<string,number>)[timeframe] || 7) * 86400000
+    const candles = Array.isArray(rows) ? rows.filter((row:any) => Number(row[0]) >= start && Number(row[0]) <= end).map((row:any) => ({t:Number(row[0]),o:Number(row[1]),h:Number(row[2]),l:Number(row[3]),c:Number(row[4]),v:null})) : []
+    return { candles, bestPair: null, bestProvider: candles.length ? 'coingecko' : null }
+  }
+  return { candles: [], bestPair: null, bestProvider: null }
+ })
 }
 
 // deno-lint-ignore no-explicit-any
@@ -359,7 +183,7 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
     const addr = String(address || '').trim()
     if (!addr) continue
     const appChain = appChainFromPlatform(platform)
-    const candidates = [...new Set([addr, addr.toLowerCase()])]
+    const candidates = getChain(appChain)?.evmChainId != null ? [...new Set([addr, addr.toLowerCase()])] : [addr]
     for (const tokenAddress of candidates) {
       try {
         const { data } = await admin.from('dex_pair_snapshots')
@@ -378,28 +202,35 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
   return null
 }
 
-// Resolve the canonical market_assets row for a bare symbol. normalized_symbol is
-// not unique, so prefer the CoinGecko row deterministically (market cap as tiebreak)
-// before any other provider — avoids resolving a different token that shares the
-// symbol. Returns the PostgREST-shaped { data } so callers can use `.data`.
+// Bare symbols must be unique. A requested CMC ID may resolve from the governed
+// quote/metadata snapshots when the current canonical universe uses CoinGecko.
+// The resulting row is a response projection, never a synthetic database insert.
 // deno-lint-ignore no-explicit-any
-async function resolveCanonicalAsset(admin: any, sym: string) {
-  const cg = await admin.from('market_assets').select('*')
-    .eq('normalized_symbol', sym).eq('source_provider', 'coingecko')
-    .order('market_cap', { ascending: false }).limit(1).maybeSingle()
-  if (cg?.data) return cg
-  return await admin.from('market_assets').select('*')
-    .eq('normalized_symbol', sym)
-    .order('market_cap', { ascending: false }).limit(1).maybeSingle()
-}
-
 // deno-lint-ignore no-explicit-any
-async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; candlesOnly?: boolean } = {}): Promise<Response> {
+async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; interval?:string; candlesOnly?: boolean; quotesOnly?:boolean; sourceProvider?:string; providerId?:string;orgId?:string|null;userId?:string } = {}): Promise<Response> {
   const timeframe = opts.timeframe || '7D'
+  if(!CHART_WINDOWS[timeframe]||!['auto','1H','4H','1D','1W'].includes(opts.interval||'auto'))return json({error:'invalid_chart_range'},400)
+  const resolved=await resolveMarketAsset(admin,sym,opts.sourceProvider,opts.providerId)
+  if(resolved.ambiguous)return json({error:'ambiguous_asset',symbol:sym},409)
+  if(resolved.error)return json({error:'identity_unavailable'},503)
+  if(!resolved.data)return json({error:'asset_not_found',symbol:sym},404)
+  const context={supabase:admin,orgId:opts.orgId,userId:opts.userId,kind:'request' as const,waitForFresh:opts.quotesOnly===true}
+  const cmcId=marketCmcIdentity(resolved.data)
+  const cmc=cmcId&&!opts.candlesOnly?await resolveCmcAsset(admin,cmcId,undefined,context):null
+  const quote=assetMarketRead(resolved.data,cmc?.data)
+  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason:cmc?.error||null})
+  sym=String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
+  const [identityProfile,identityMapping,claimants]=await Promise.all([
+    admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol',sym).maybeSingle(),
+    admin.from('exchange_asset_mappings').select('*').eq('normalized_symbol',sym).eq('is_active',true).maybeSingle(),
+    admin.from('market_assets').select('provider_id',{count:'exact',head:true}).eq('normalized_symbol',sym),
+  ])
+  const identityMatch=matchCexEnrichment({normalizedSymbol:sym,providerId:resolved.data.provider_id,platforms:resolved.data.platforms},{profileBySym:new Map(identityProfile.data?[[sym,identityProfile.data]]:[]),mappingBySym:new Map(identityMapping.data?[[sym,identityMapping.data]]:[]),symbolCounts:new Map([[sym,claimants.count??2]])})
+  const cexVerified=hasVerifiedCexIdentity(resolved.data,identityMapping.data) && (identityMatch.confidence==='high'||!!verifiedNativeMarketSymbol(resolved.data))
   // Lightweight path for chart timeframe cycling — candles only, no full assembly.
   if (opts.candlesOnly) {
-    const c = await fetchCandles(admin, sym, timeframe)
-    return json({ candles: c.candles, timeframe, bestPair: c.bestPair, bestProvider: c.bestProvider })
+    const c = await assetCandles(admin, resolved.data, cexVerified, timeframe,opts.interval,context)
+    return json({ ...c, timeframe,chartAsset:marketCanonicalIdentity(resolved.data).canonicalAssetKey||`market:${resolved.data.source_provider}:${resolved.data.provider_id}` })
   }
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR, maR] = await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
@@ -411,8 +242,9 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     admin.from('exchange_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).eq('scope', 'provider').order('as_of', { ascending: false }).limit(24),
     admin.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8),
     admin.from('exchange_market_memory').select('summary, why_it_matters, memory_type, as_of').eq('normalized_symbol', sym).eq('is_active', true).order('as_of', { ascending: false }).limit(1),
-    resolveCanonicalAsset(admin, sym),
+    Promise.resolve(resolved),
   ])
+  if(!cexVerified){for(const result of [profR,sigR,capR,sprR])result.data=null;for(const result of [rollR,tickR,provSigR,bookR,memR])result.data=[]}
   const canonical = maR.data
   if (!profR.data && !sigR.data && !(tickR.data || []).length && !canonical) return json({ error: 'asset_not_found', symbol: sym }, 404)
 
@@ -443,7 +275,8 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // deno-lint-ignore no-explicit-any
   const rollups: Record<string, any> = {}
   for (const r of (rollR.data || [])) rollups[r.timeframe] = r
-  const { candles, bestPair, bestProvider } = await fetchCandles(admin, sym, timeframe)
+  const chart = await assetCandles(admin, canonical, cexVerified, timeframe,opts.interval,context)
+  const { candles, bestPair, bestProvider } = chart
   const prof = profR.data, sig = sigR.data
   const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null
   const dexSnapshot = await latestDexSnapshotForPlatforms(admin, canonicalPlatforms)
@@ -453,7 +286,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // catalysts, public on-chain activity). The SAME helpers feed the AI evidence
   // pack, so the cards and the "Explain why" read draw on identical data. Each
   // degrades to a 'missing' status; on-chain may make a budgeted live Birdeye call.
-  const ecoChain = String(canonical?.primary_chain || prof?.chain || '').toLowerCase() || null
+  const ecoChain = quote.chain
   const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
   const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : null
   const [ecosystemNarratives, catalysts, onchain, unlocks] = await Promise.all([
@@ -470,20 +303,22 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   ])
 
   return json({
-    detail: true, symbol: sym, displayName: prof?.display_name ?? canonical?.name ?? null, chain: prof?.chain ?? canonical?.primary_chain ?? null,
-    imageUrl: canonical?.image_url ?? null,
+    detail: true, symbol: sym, ...quote,
     // Canonical identity → lets the detail page load the rich CoinGecko profile.
     providerId: canonical?.provider_id ?? null, sourceProvider: canonical?.source_provider ?? null, primaryChain: canonical?.primary_chain ?? null,
-    price: prof?.latest_price ?? canonical?.current_price ?? dexSnapshot?.price_usd ?? providers[0]?.price ?? null,
-    change24h: prof?.latest_change_24h_pct ?? canonical?.change_24h_pct ?? providers[0]?.change24h ?? null,
-    change7d: prof?.latest_change_7d_pct ?? canonical?.change_7d_pct ?? rollups['7d']?.price_change_pct ?? null,
-    volume24h: prof?.latest_volume_quote_24h ?? canonical?.volume_24h ?? dexSnapshot?.volume_24h ?? providers[0]?.volume24h ?? null,
     signal: sig ? { direction: sig.direction, strength: sig.strength, confidence: sig.confidence, signalType: sig.signal_type, title: sig.title, summary: sig.summary, whyItMatters: sig.why_it_matters, factors: sig.factors || [], confirmingProviders: sig.confirming_providers || [], conflictingProviders: sig.conflicting_providers || [], providerCount: sig.provider_count } : null,
     profile: prof ? { liquidityScore: prof.liquidity_score, retailRelevanceScore: prof.retail_relevance_score, marketQualityScore: prof.market_quality_score, trendScore: prof.trend_score, bestGlobalPair: prof.best_global_pair, bestUsRetailPair: prof.best_us_retail_pair } : null,
-    marketCap: capR.data || (canonical ? { market_cap: canonical.market_cap, fdv: canonical.fdv, circulating_supply: canonical.circulating_supply, market_cap_source: canonical.source_provider } : dexSnapshot ? { market_cap: dexSnapshot.market_cap, fdv: dexSnapshot.fdv, circulating_supply: null, market_cap_source: 'dexscreener' } : null),
-    spread: sprR.data || null, orderbook, rollups, providers, dex,
+    ...marketCanonicalIdentity(canonical),
+    identityChoices: marketIdentityChoices(canonical),
+    sourceFreshness:quote.sourceFreshness||freshness(quote.asOf,false),quoteReason:cmc?.error||null,
+    cexCoverage:cexVerified&&providers.length?'available':'unverified',
+    depthQuotes:positionDepthQuotes(canonical,cexVerified,bookR.data||[],tickR.data||[]),
+    spread: cexVerified && usableSpread(sprR.data) ? sprR.data : null, orderbook, rollups, providers, dex,
     memorySummary: memR.data?.[0]?.summary || null,
     ecosystemNarratives, catalysts, onchain, unlocks,
-    candles, bestPair, bestProvider, asOf: prof?.as_of || sig?.as_of || canonical?.as_of || dexSnapshot?.fetched_at || null,
+    ...chart,chartAsset:marketCanonicalIdentity(canonical).canonicalAssetKey||`market:${canonical.source_provider}:${canonical.provider_id}`, candles, bestPair, bestProvider, chartCoverage: 'coverage' in chart ? chart.coverage : null,
+    chartState: 'sourceState' in chart ? chart.sourceState : null,
+    chartReason: 'sourceReason' in chart ? chart.sourceReason : null,
+    chartProvenance: 'provenance' in chart ? chart.provenance : null,
   })
 }

@@ -8,6 +8,7 @@
 // period. Research context only; never advice.
 
 import { h32 } from '../core-intel/hashing.ts'
+import { briefNativeSymbol, briefSignalMatches } from './brief-identity.ts'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Any = any
@@ -24,7 +25,9 @@ export interface BriefInputs {
   chainTvl?: Any[]                    // chain_tvl_snapshots rows
   flowHighlights?: Any[]              // large_transfer_events rows
   watchlistSymbols?: string[]         // org watchlist display symbols (UPPER)
-  holdings?: Array<{ symbol: string; value?: number | null; dayPnl?: number | null; dayPnlPct?: number | null }>
+  watchlistAssets?: Any[]
+  portfolio?: {id: string; name?: string} | null
+  holdings?: Array<{ canonicalKey?: string | null; chain?: string | null; tokenAddress?: string | null; quantity?: number; symbol: string; value?: number | null; dayPnl?: number | null; dayPnlPct?: number | null }>
   prevFingerprint?: string | null
 }
 
@@ -48,7 +51,7 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
   const protocolTvl = inp.protocolTvl || []
   const chainTvl = inp.chainTvl || []
   const flowHighlights = inp.flowHighlights || []
-  const wl = new Set((inp.watchlistSymbols || []).map(upper))
+  const wl = new Set(inp.watchlistAssets ? inp.watchlistAssets.map(briefNativeSymbol).filter(Boolean) : (inp.watchlistSymbols || []).map(upper))
   const holdings = (inp.holdings || []).filter((h) => h.symbol)
   const heldSet = new Set(holdings.map((h) => upper(h.symbol)))
 
@@ -70,12 +73,12 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
 
   // Watchlist impact: signals + news touching watched symbols.
   const sigSym = (s: Any) => upper(s.display_symbol)
-  const watchlistSignals = signals.filter((s) => wl.size && (wl.has(sigSym(s)) || (Array.isArray(s.related_assets) && s.related_assets.some((k: string) => wl.has(upper(String(k).split(':').pop()))))))
+  const watchlistSignals = signals.filter((s) => inp.watchlistAssets ? inp.watchlistAssets.some(row => briefSignalMatches(row, s)) : wl.has(sigSym(s)))
   const watchlistNews = news.filter((c) => Array.isArray(c.tokens) && c.tokens.some((t: string) => wl.has(upper(t))))
 
   // Portfolio impact (deterministic; descriptive only).
   const movers = holdings.filter((h) => typeof h.dayPnl === 'number').sort((a, b) => Math.abs(b.dayPnl!) - Math.abs(a.dayPnl!))
-  const portfolioSignals = signals.filter((s) => heldSet.size && heldSet.has(sigSym(s)))
+  const portfolioSignals = signals.filter((s) => holdings.some(row => briefSignalMatches(row, s)))
 
   // Narrative heat: top narratives + their clarity labels.
   const heat = narratives.slice(0, 6).map((n) => ({
@@ -158,6 +161,8 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
   // Fingerprint over the MATERIAL inputs (regime + stages + signal directions +
   // top news + holdings movers). Same fingerprint as yesterday → no change.
   const change_fingerprint = h32([
+    `portfolio:${inp.portfolio?.id || 'none'}`,
+    ...holdings.map(h => `holding:${h.canonicalKey || 'unresolved'}:${h.quantity ?? ''}:${h.value ?? ''}`).sort(),
     regime ? `${regime.regime}|${regime.flavor || ''}` : 'no-regime',
     ...narratives.slice(0, 10).map((n) => `${n.slug}:${n.lifecycle_stage}`),
     ...signals.slice(0, 12).map((s) => `${s.signal_key || s.subject_id}:${s.direction}`),
@@ -174,6 +179,7 @@ export function assembleBrief(inp: BriefInputs): AssembledBrief {
   const no_meaningful_change = !material
 
   const sections: Record<string, Any> = {
+    portfolio_scope: inp.portfolio || null,
     market_regime: regime ? { regime: regime.regime, flavor: regime.flavor, confidence: regime.confidence, rationale: regime.rationale, what_confirms: regime.what_confirms, what_invalidates: regime.what_invalidates } : null,
     what_changed_overnight: overnight.slice(0, 8),
     watchlist_impact: { signals: watchlistSignals.slice(0, 5).map((s) => ({ subject: sigSym(s), direction: s.direction, why: s.why_it_matters })), news: watchlistNews.slice(0, 4).map((c) => ({ title: c.cleaned_title || c.title, signal: c.signal })) },

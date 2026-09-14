@@ -1,3 +1,4 @@
+import {birdeyeHolderListSupported} from '../_shared/intel/holder-coverage.ts'
 // Investor Intel — provider coverage report.
 // Probes provider support per launch chain and writes chain_capabilities so the
 // UI can flip capabilities from 'unverified' to live/limited/unavailable.
@@ -65,7 +66,7 @@ export async function loadC1CoverageState(admin: any): Promise<C1CoverageState> 
     })(),
     (async () => {
       try {
-        const { data } = await admin.from('market_macro_snapshots').select('provider').limit(1)
+        const { data } = await admin.from('market_macro_available').select('provider').limit(1)
         return (data || []).length > 0
       } catch {
         return false
@@ -168,7 +169,7 @@ export function coverageFor(chain: string, cap: string, c1: C1CoverageState): { 
   }
 
   if (cap === 'holders' || cap === 'risk') {
-    if (providers?.birdeye) return { status: 'live', provider: 'birdeye', caveat: null }
+    if (providers?.birdeye) return { status: 'unverified', provider: 'birdeye', caveat: cap==='holders'&&!birdeyeHolderListSupported(chain)?'Ranked holder lists are available on Solana only; any total from token security needs asset-level verification.':'Provider configured; verify current coverage for the selected asset.' }
     if (providers?.dexscreener || providers?.geckoterminal) return { status: 'limited', provider: providers.dexscreener ? 'dexscreener' : 'geckoterminal', caveat: 'DEX provider only; holder/security depth unavailable' }
     return { status: 'unavailable', provider: null, caveat: 'no risk/holder provider mapped' }
   }

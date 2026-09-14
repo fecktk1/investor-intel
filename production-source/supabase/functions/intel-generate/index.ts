@@ -34,7 +34,22 @@ import {
 } from '../_shared/intel/asset-evidence-pack.ts'
 import { reconcileCoverage } from '../_shared/intel/coverage.ts'
 import { assembleBriefEvidencePack } from '../_shared/intel/brief-evidence-pack.ts'
+import { attachBriefPositionSnapshot } from '../_shared/intel/brief-position-snapshot.ts'
+import { compactBriefPromptContext } from '../_shared/intel/brief-prompt-context.ts'
+import { comparisonPromptContext, comparisonEvidenceInput, COMPARISON_EVIDENCE_VERSION } from '../_shared/intel/comparison-prompt-context.ts'
+import { prepareComparisonQuoteEvidence } from '../_shared/intel/comparison-quote-evidence.ts'
+import { loadCmcAiAllowed, containsCmcOrigin, prepareAiContext, prepareClientAiContext } from '../_shared/intel/ai-source-policy.ts'
 import { assembleNarrativeEvidencePack } from '../_shared/intel/narrative-evidence-pack.ts'
+import { prepareNarrativeResearch } from '../_shared/intel/narrative-research-context.ts'
+import { annotateNarrativeClaims, narrativeClaimQuality } from '../_shared/intel/narrative-claim-quality.ts'
+import {recordNarrativeInput,attachNarrativeInput,narrativeInputFailureCode,type NarrativeInputReceipt} from '../_shared/intel/narrative-input-replay.ts'
+import { requireIntelAccess } from '../_shared/intel/research-service.ts'
+import { comparisonAssetSubjects } from '../_shared/intel/comparison-subjects.ts'
+import { generationDecision } from '../_shared/intel/generation-governance.ts'
+import { assetEvidenceFingerprint, comparisonHasStrongEvidence, evidencePackNeedsRefresh } from '../_shared/intel/comparison-evidence-quality.ts'
+import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import { isInternalServiceCall } from '../_shared/internal-auth.ts'
+import {loadAlertExplanationReceipt,attachAlertExplanationReceipt,ALERT_EXPLANATION_RULES} from '../_shared/intel/alert-explanation-receipt.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -230,6 +245,8 @@ function assetSubjectsForArtifact(args: {
   userId: string | null
 }): AssetEvidenceSubject[] {
   if (args.artifactType === 'token_comparison') {
+    const explicit=comparisonAssetSubjects(args.context?.assets)
+    if(explicit)return explicit
     return comparisonSymbols(args.extra, args.context, args.ent)
       .map((symbol) => deriveAssetEvidenceSubject({ ...args, symbolOverride: symbol, publicOnly: true }))
       .filter(Boolean) as AssetEvidenceSubject[]
@@ -261,6 +278,9 @@ async function maybeRefreshCriticalEvidencePack(
   orgId: string,
   userId: string | null,
 ) {
+  // Missing coverage cannot improve by rereading the same tables immediately.
+  // Only an older cached pack may need its critical slices reassembled.
+  if (!evidencePackNeedsRefresh(currentPack)) return currentPack
   const staleSlices = criticalSlicesForAssetEvidencePack(currentPack)
   if (!staleSlices.length) return currentPack
   const subjectRef = subject.canonicalKey || subject.symbol || subject.providerId || 'unknown'
@@ -328,6 +348,7 @@ function textOfArtifact(structured: any): string {
 async function callOpenAI(model: string, system: string, user: string, apiKey: string, effort: string = intelEffort()) {
   const res = await fetch('https://api.openai.com/v1/chat/completions', {
     method: 'POST',
+    signal: AbortSignal.timeout(90_000),
     headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
     body: JSON.stringify({
       model,
@@ -347,6 +368,7 @@ function orgArtifactRow(p: any) {
   const s = p.structured || {}
   return {
     org_id: p.orgId, user_id: p.userId, artifact_type: p.artifactType,
+    ...(['daily_brief','alert_explanation'].includes(p.artifactType) ? { private_owner_id: p.userId } : {}),
     entity_id: p.ent?.id || null, subject_kind: p.ent?.entity_kind || p.extra?.subjectKind || 'general',
     title: p.extra?.title || (typeof s.summary === 'string' ? s.summary.slice(0, 120) : null) || p.artifactType,
     body_md: typeof s.summary === 'string' ? s.summary : null,
@@ -388,12 +410,17 @@ async function insertArtifact(supabase: any, row: any) {
 }
 
 async function recordArtifactDecisionMemory(supabase: any, p: any): Promise<void> {
+  // A historical alert is already a durable private receipt. Do not duplicate its
+  // private words into an organization retrieval corpus.
+  if(p.artifactType==='alert_explanation')return
+  // The database enforces the private artifact's owner boundary for memory too.
   const artifact = p.artifact || {}
   const structured = artifact.structured || p.structured || {}
   const summary = typeof structured.summary === 'string' ? structured.summary : artifact.body_md || null
   const confidence = ['high', 'medium', 'low'].includes(structured.confidence) ? structured.confidence : artifact.confidence || null
   const confidenceScore = confidence === 'high' ? 0.9 : confidence === 'medium' ? 0.6 : confidence === 'low' ? 0.35 : null
   await recordDecisionMemory(supabase, {
+    ...(p.artifactType === 'daily_brief' ? {decisionHash: hashStr(JSON.stringify({user:p.userId,org:p.orgId,artifact:artifact.id,kind:p.decisionKind}))} : {}),
     visibility: p.visibility || 'org_private',
     orgId: p.orgId,
     userId: p.userId,
@@ -421,6 +448,7 @@ async function recordArtifactDecisionMemory(supabase: any, p: any): Promise<void
       cache: p.cache || null,
       validator_outcome: artifact.validator_outcome || null,
       ...p.metadata,
+      ...(p.artifactType === 'daily_brief' ? {private_user_scope: true} : {}),
     },
   })
 }
@@ -432,51 +460,81 @@ Deno.serve(async (req) => {
     if (!authHeader) return json({ error: 'No authorization header' }, 401)
 
     const body = await req.json()
-    const { orgId, artifactType, entity, entityId, context, extra, staleMinutes = 30, force = false } = body || {}
+    const { orgId, artifactType, entity, entityId, context: rawContext, extra:rawExtra, staleMinutes = 30, force = false } = body || {}
+    let extra=rawExtra
+    let context = prepareClientAiContext(rawContext)
     // narrative_brief is a GLOBAL, market-wide artifact (no entity, no org) generated
     // by the narrative-refresh cron and reused by everyone via intel_shared_artifacts.
     // It bypasses the org-scoped flow entirely (no research_artifacts copy).
     if (artifactType === 'narrative_brief') return await handleNarrativeBrief(req, body)
     if (!orgId || !artifactType) return json({ error: 'orgId and artifactType required' }, 400)
 
-    const apiKey = Deno.env.get('OPENAI_API_KEY')
-    if (!apiKey) return json({ error: 'OPENAI_API_KEY not configured' }, 500)
-
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const allowCmcAi=await loadCmcAiAllowed(admin)
+    const actor = await requireIntelAccess(req, createClient, admin, orgId)
+    if (!actor.userId) return json({ error: 'A signed-in investor is required for personal research.' }, 401)
+    const userId = actor.userId
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
       Deno.env.get('SUPABASE_ANON_KEY')!,
       { global: { headers: { Authorization: authHeader } } },
     )
-    const { data: auth } = await supabase.auth.getUser()
-    const userId = auth?.user?.id || null
+    const apiKey = Deno.env.get('OPENAI_API_KEY')
+    if (!apiKey) return json({ error: 'OPENAI_API_KEY not configured' }, 503)
+
+    const alertReceipt=artifactType==='alert_explanation'?await loadAlertExplanationReceipt(supabase,{eventId:body.alertEventId,orgId,userId,allowCmcAi}):null
+    if(alertReceipt){
+      // Neither browser prose nor current mutable rule text can replace the event.
+      extra={title:'Alert explanation',alert:{event_id:alertReceipt.event_id,evidence_version:alertReceipt.evidence_version}}
+      context={alert_receipt:alertReceipt}
+    }
 
     // Resolve the entity row if only an id was passed.
-    let ent = entity
-    if (!ent && entityId) {
-      const { data } = await supabase.from('entities').select('*').eq('id', entityId).maybeSingle()
+    let ent = null
+    if (!alertReceipt && (entityId || entity?.id)) {
+      const { data, error: entityError } = await supabase.from('entities').select('*').eq('id', entityId || entity.id).eq('org_id', orgId).maybeSingle()
+      if (entityError || !data) return json({ error: 'Asset identity is unavailable in this workspace' }, 403)
       ent = data
     }
-    const { data: profile } = await supabase.from('intel_user_profiles').select('*').eq('org_id', orgId).maybeSingle()
+    if(artifactType==='token_comparison')try{comparisonAssetSubjects(context?.assets)}catch(e){return json({error:e instanceof Error?e.message:'invalid_comparison_assets'},400)}
+    if (!allowCmcAi && containsCmcOrigin({ entity: ent, extra, identity: context?.asset_identity, assets:context?.assets })) return json({ error: 'cmc_ai_processing_not_enabled', message: 'CoinMarketCap data is available for viewing. AI processing requires its separate source permission.' }, 403)
+    const { data: profile } = alertReceipt?{data:null}:await supabase.from('intel_user_profiles').select('*').eq('org_id', orgId).maybeSingle()
 
     // Service-role client (shared artifacts, force log, cost ledger) + the precise
     // ledger emitter — every cost-relevant DECISION below records exactly one event.
-    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const costWriter = makeCostWriter(admin)
     // deno-lint-ignore no-explicit-any
     const logCost = (ev: any) => recordCostEvent(costWriter, { feature: artifactType, orgId, artifactType, subjectRef: ent?.canonical_ref_key || null, ...ev }, { precision: 'exact', nowMs: Date.now() })
 
-    const inputHash = hashStr(JSON.stringify({ artifactType, ref: ent?.canonical_ref_key || null, context: context || null, extra: extra || null }))
-    const cacheKey = `${artifactType}:${inputHash}:v1`
+    // Read bounded cached evidence before brief reuse, so a changed position or
+    // selected portfolio cannot receive an earlier portfolio's cached brief.
+    let preparedBrief: Awaited<ReturnType<typeof assembleBriefEvidencePack>> | null = null
+    if (artifactType === 'daily_brief') {
+      if (body.portfolioId != null && !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(body.portfolioId)) return json({error:'invalid_portfolio'},400)
+      try { preparedBrief = await assembleBriefEvidencePack(admin, {orgId,userId,portfolioId:body.portfolioId,forAi:true,maxAssets:8}) }
+      catch { return json({error:'personal_context_unavailable',message:'Your selected portfolio and research context could not be loaded.'},503) }
+    }
+    let preparedNarrative: Awaited<ReturnType<typeof prepareNarrativeResearch>> | null = null
+    let narrativeInput: NarrativeInputReceipt | null = null
+    if (artifactType === 'narrative_report') {
+      try { preparedNarrative = await prepareNarrativeResearch(admin, narrativeSlugFromContext(extra, context, ent)) }
+      catch { return json({error:'narrative_evidence_unavailable',message:'The narrative identity and its retained evidence could not be verified. Retry the narrative.'},503) }
+      if (!allowCmcAi && containsCmcOrigin(preparedNarrative.pack)) return json({error:'cmc_ai_processing_not_enabled',message:'This narrative includes CoinMarketCap evidence. AI processing requires its separate source permission.'},403)
+      try{narrativeInput=await recordNarrativeInput(admin,preparedNarrative.pack)}
+      catch(error){const reason=narrativeInputFailureCode(error);console.warn('[intel-generate] narrative input unavailable',{reason});return json({error:'narrative_input_storage_unavailable',reason,message:'The original research inputs could not be retained under current source permissions. Research has not been generated; your existing reports remain available.'},503)}
+    }
+    const inputHash = hashStr(JSON.stringify({ artifactType, ref: ent?.canonical_ref_key || null, context: context || null, extra: extra || null, ...(preparedNarrative ? {...preparedNarrative.cacheIdentity,narrativeInputVersion:1,narrativeInputHash:narrativeInput?.content_hash} : {}), ...(artifactType === 'token_comparison' ? {comparisonIdentityVersion:4} : {}), ...(artifactType === 'daily_brief' ? { privateOwner: userId, privateVersion: 4, evidence:preparedBrief?.content_hash, portfolioId:body.portfolioId || null } : {}) }))
+    let cacheKey = `${artifactType}:${inputHash}:v1:cmc-ai-${allowCmcAi ? 'allowed' : 'excluded'}`
 
-    // Cache check.
-    if (!force) {
+    // Comparison reuse must wait for the current exact-asset evidence hash.
+    if (!force && artifactType !== 'token_comparison') {
       const { data: cached } = await supabase
         .from('research_artifacts')
         .select('*')
         .eq('org_id', orgId).eq('cache_key', cacheKey).eq('status', 'ready')
         .order('created_at', { ascending: false }).limit(1).maybeSingle()
-      if (cached && (!cached.stale_after || new Date(cached.stale_after).getTime() > Date.now())) {
-        await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: cached.id, model: cached.model, metadata: { cache: 'hit' } })
+      if (cached && (!cached.stale_after || new Date(cached.stale_after).getTime() > Date.now()) && (!preparedNarrative || narrativeClaimQuality(cached.structured, preparedNarrative.pack).status !== 'needs_review')) {
+        await recordIntelEvent(admin, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: cached.id, model: cached.model, metadata: { cache: 'hit' } })
         await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact: cached, decisionKind: 'artifact_cache_hit', cache: 'hit' })
         void logCost({ cacheStatus: 'hit', reuseKind: cached.reuse_kind || null, model: null, evidenceHash: cached.evidence_hash || null, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
         return json({ artifact: cached, cached: true })
@@ -503,7 +561,7 @@ Deno.serve(async (req) => {
         // same asset (never serve a different token even if keying drifts or a legacy
         // null-key row slips through).
         if (hit && (!explainSubjectKey || hit.artifact.explain_subject_key === explainSubjectKey)) {
-          await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: hit.artifact.id, model: hit.artifact.model, metadata: { cache: 'explain_similar', similarity: hit.similarity, kind: hit.kind } })
+          await recordIntelEvent(admin, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: hit.artifact.id, model: hit.artifact.model, metadata: { cache: 'explain_similar', similarity: hit.similarity, kind: hit.kind } })
           void logCost({ cacheStatus: 'explain_similar', reuseKind: 'explain_similar', model: null, providerCallsAvoided: 1, allowReason: 'n/a_no_ai', usage: { similarity: hit.similarity } })
           return json({ artifact: hit.artifact, cached: true, similar: hit.similarity, reuse_kind: 'explain_similar' })
         }
@@ -515,8 +573,8 @@ Deno.serve(async (req) => {
     // multi-model decision. Built before any spend so a shared-artifact hit can
     // short-circuit before live API calls + AI.
     const EVIDENCE_TYPES = ['token_breakdown', 'risk_panel', 'narrative_report', 'defi_report', 'execution_report', 'thesis_review', 'wallet_summary', 'alert_explanation', 'daily_brief', 'token_comparison']
-    let pkg: any = null
-    if (EVIDENCE_TYPES.includes(artifactType)) {
+    let pkg: any = artifactType==='token_comparison'?{items:[],reusable:true,strong:false,scope:'public',final_count:0,raw_candidate_count:0,evidence_hash:'comparison-v6',source_set_hash:'comparison-v6'}:null
+    if (EVIDENCE_TYPES.includes(artifactType) && artifactType!=='token_comparison' && artifactType!=='alert_explanation') {
       try {
         const cid = ent ? chainIdFor(ent.chain_namespace, ent.chain_id) : null
         const evSymbols = ent?.display_symbol ? [ent.display_symbol] : (Array.isArray(extra?.symbols) ? extra.symbols : [])
@@ -524,6 +582,7 @@ Deno.serve(async (req) => {
         pkg = await buildEvidence(supabase, { orgId, symbols: evSymbols, chains: evChains, holdings: Array.isArray(extra?.holdings) ? extra.holdings : [], limit: artifactType === 'daily_brief' ? 12 : 8 })
       } catch { /* best-effort */ }
     }
+    if(alertReceipt)pkg={items:[{kind:'private_alert_receipt',event_id:alertReceipt.event_id}],scope:'private',reusable:false,strong:false,final_count:1,raw_candidate_count:1,evidence_hash:alertReceipt.content_hash,source_set_hash:alertReceipt.content_hash}
 
     // Stage F1/F4: public asset evidence packs for asset-keyed artifacts. This runs
     // before shared-cache lookup so the pack content hash participates in the
@@ -536,16 +595,23 @@ Deno.serve(async (req) => {
     if (F_ASSET_PACK_TYPES.includes(artifactType)) {
       try {
         const subjects = assetSubjectsForArtifact({ artifactType, extra, context, ent, orgId, userId }).slice(0, artifactType === 'token_comparison' ? 4 : 1)
+        if (artifactType === 'token_comparison' && allowCmcAi) {
+          try { await prepareComparisonQuoteEvidence(admin, subjects, {orgId,userId}) }
+          catch { /* Retained evidence and explicit coverage still remain available. */ }
+        }
         const packs = []
-        for (const subject of subjects) {
+        for (let offset = 0; offset < subjects.length; offset += 2) {
+          const prepared = await Promise.all(subjects.slice(offset, offset + 2).map(async subject => {
           let assetPack = await getOrAssembleAssetEvidencePack(admin, subject, { staleMinutes: 30 })
           assetPack = await maybeRefreshCriticalEvidencePack(admin, subject, assetPack, orgId, userId)
-          const compactPack = compactAssetEvidencePackForPrompt(assetPack, artifactType === 'token_comparison' ? 5200 : 9000)
-          if (compactPack) packs.push(compactPack)
+          const compactPack = !allowCmcAi && containsCmcOrigin(assetPack) ? null : artifactType==='token_comparison' ? comparisonEvidenceInput(assetPack) : compactAssetEvidencePackForPrompt(assetPack,9000)
+          return compactPack
+          }))
+          packs.push(...prepared.filter(Boolean))
         }
         if (packs.length) {
           const packHashes = packs.map((pack) => String((pack as Record<string, any>).content_hash || '')).filter(Boolean)
-          assetEvidenceHash = hashStr(JSON.stringify({ artifactType, packHashes }))
+          assetEvidenceHash = await assetEvidenceFingerprint(artifactType,packs)
           const coverage = packCoverageFromContext({ asset_evidence_packs: packs })
           assetEvidenceContext = artifactType === 'token_comparison'
             ? {
@@ -554,6 +620,7 @@ Deno.serve(async (req) => {
             }
             : { asset_evidence_pack: packs[0] }
           if (pkg) {
+            if(artifactType==='token_comparison')pkg.strong=comparisonHasStrongEvidence(packs)
             const items = Array.isArray(pkg.items) ? pkg.items : []
             const coverageMerged = mergeCoverageValues([pkg.coverage, coverage]) || pkg.coverage
             pkg = {
@@ -577,6 +644,20 @@ Deno.serve(async (req) => {
       } catch { /* F1 grounding is additive; original artifact path still works */ }
     }
 
+    if (artifactType === 'token_comparison') {
+      if (!assetEvidenceHash) return json({error:'comparison_evidence_unavailable'},503)
+      cacheKey += `:evidence-v${COMPARISON_EVIDENCE_VERSION}:${assetEvidenceHash}`
+      if (!force) {
+        const {data:cached}=await supabase.from('research_artifacts').select('*').eq('org_id',orgId).eq('cache_key',cacheKey).eq('status','ready').order('created_at',{ascending:false}).limit(1).maybeSingle()
+        if (cached && cached.stale_after && Date.parse(cached.stale_after)>Date.now()) {
+          await recordIntelEvent(admin,{orgId,userId,eventType:artifactType,artifactId:cached.id,metadata:{cache:'hit',reuse_kind:'comparison_evidence_hit'}})
+          await recordArtifactDecisionMemory(supabase,{orgId,userId,artifactType,ent,artifact:cached,decisionKind:'artifact_cache_hit',cache:'hit'})
+          void logCost({cacheStatus:'hit',reuseKind:cached.reuse_kind||null,model:null,evidenceHash:cached.evidence_hash||null,providerCallsAvoided:1,allowReason:'n/a_no_ai'})
+          return json({artifact:cached,cached:true})
+        }
+      }
+    }
+
     // Stage F2: Daily Brief gets one aggregate pack assembled from cached macro,
     // rankings, narrative category, protocol/chain TVL, flow, and watchlist mini
     // packs. It is org-scoped but still no-live-provider and participates in the
@@ -585,12 +666,7 @@ Deno.serve(async (req) => {
     let briefEvidenceContext: any = null
     if (artifactType === 'daily_brief') {
       try {
-        const briefPack = await assembleBriefEvidencePack(admin, {
-          orgId,
-          watchlistSymbols: Array.isArray(extra?.symbols) ? extra.symbols : undefined,
-          holdings: Array.isArray(extra?.holdings) ? extra.holdings : undefined,
-          maxAssets: 8,
-        })
+        const briefPack = preparedBrief!
         briefEvidenceContext = { brief_evidence_pack: briefPack }
         if (pkg) {
           const items = Array.isArray(pkg.items) ? pkg.items : []
@@ -613,7 +689,7 @@ Deno.serve(async (req) => {
             final_count: Number(pkg.final_count || items.length) + 1,
           }
         }
-      } catch { /* brief evidence is additive; original brief generation still works */ }
+      } catch { return json({ error: 'personal_context_unavailable', message: 'Your cached personal context could not be loaded. Try again shortly.' }, 503) }
     }
 
     // Stage F3: narrative reports get member asset mini-packs plus category/macro
@@ -625,14 +701,14 @@ Deno.serve(async (req) => {
       try {
         const slug = narrativeSlugFromContext(extra, context, ent)
         if (slug) {
-          const narrativePack = await assembleNarrativeEvidencePack(admin, slug, { maxAssets: 8 })
+          const narrativePack = preparedNarrative!.pack
           narrativeEvidenceContext = { narrative_evidence_pack: narrativePack }
           if (pkg) {
             const items = Array.isArray(pkg.items) ? pkg.items : []
             const coverageMerged = mergeCoverageValues([pkg.coverage, narrativePack.data_coverage]) || pkg.coverage
             pkg = {
               ...pkg,
-              evidence_hash: hashStr(`${pkg.evidence_hash || ''}:narrative-pack:${narrativePack.content_hash}`),
+              evidence_hash: hashStr(`${pkg.evidence_hash || ''}:narrative-pack:${narrativePack.content_hash}:${narrativeInput?.content_hash || ''}`),
               source_set_hash: hashStr(`${pkg.source_set_hash || ''}:narrative-pack:${narrativePack.content_hash}`),
               coverage: coverageMerged,
               items: [
@@ -656,13 +732,17 @@ Deno.serve(async (req) => {
     // ONCE and reused across all users. On a fresh hit, copy the shared structured
     // into an org artifact (no AI) so the user keeps history + Save. Exempt from
     // gate/rate because it incurs no new AI cost.
-    const sharedKey = pkg ? { artifact_type: artifactType, entity_ref: ent?.canonical_ref_key || '', evidence_hash: pkg.evidence_hash, contract_version: CONTRACT_VERSION, guardrail_version: GUARDRAIL_VERSION } : null
+    if (pkg) {
+      pkg = prepareAiContext(pkg,allowCmcAi)
+      if (pkg) pkg = { ...pkg, evidence_hash: hashStr(`${pkg.evidence_hash}:cmc-ai-${allowCmcAi ? 'allowed' : 'excluded'}`), ...(artifactType === 'daily_brief' ? { reusable: false } : {}) }
+    }
+    const sharedKey = pkg && artifactType !== 'daily_brief' ? { artifact_type: artifactType, entity_ref: ent?.canonical_ref_key || '', evidence_hash: pkg.evidence_hash, contract_version: CONTRACT_VERSION, guardrail_version: GUARDRAIL_VERSION } : null
     if (!force && pkg?.reusable && sharedKey) {
       const { data: shared } = await admin.from('intel_shared_artifacts').select('*').match(sharedKey).order('created_at', { ascending: false }).limit(1).maybeSingle()
-      if (shared && (!shared.stale_after || new Date(shared.stale_after).getTime() > Date.now())) {
+      if (shared && (!shared.stale_after || new Date(shared.stale_after).getTime() > Date.now()) && (!preparedNarrative || narrativeClaimQuality(shared.structured, preparedNarrative.pack).status !== 'needs_review')) {
         const orgRow = orgArtifactRow({ orgId, userId, artifactType, ent, extra, structured: shared.structured, inputHash, cacheKey, staleAfter: shared.stale_after, model: (shared.models || []).join('+') || 'shared', validationStatus: shared.validation_status || 'passed', sources: shared.sources, validatorOutcome: { reused_shared: shared.id, consensus: shared.consensus }, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, reuseKind: 'shared_copy' })
         const { data: copy } = await insertArtifact(supabase, orgRow)
-        await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: copy?.id, model: (shared.models || []).join('+'), metadata: { cache: 'shared_hit', shared_id: shared.id, consensus: shared.consensus, evidence_items: pkg.final_count } })
+        await recordIntelEvent(admin, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: copy?.id, model: (shared.models || []).join('+'), metadata: { cache: 'shared_hit', shared_id: shared.id, consensus: shared.consensus, evidence_items: pkg.final_count } })
         await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact: copy || { ...orgRow, structured: shared.structured }, sharedArtifactId: shared.id, decisionKind: 'artifact_shared_reuse', cache: 'shared_hit', evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, metadata: { consensus: shared.consensus, evidence_items: pkg.final_count } })
         void logCost({ cacheStatus: 'shared_hit', reuseKind: 'shared_copy', model: null, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
         return json({ artifact: copy || shared, cached: true, shared: true, consensus: shared.consensus })
@@ -673,11 +753,10 @@ Deno.serve(async (req) => {
     // Bypasses STALENESS ONLY — the kill switch, monthly cap, and per-artifact
     // daily rate limits below still apply.
     if (force) {
-      try {
-        const { data: fr } = await supabase.rpc('intel_force_refresh_allowed', { p_artifact_type: artifactType, p_entity_ref: ent?.canonical_ref_key || null })
-        if (fr && fr.allowed === false) return json({ error: 'force_refresh_limited', reason: fr.reason, used: fr.used, limit: fr.limit, cooldown_until: fr.cooldown_until }, 429)
-        if (fr) void admin.from('intel_force_refresh_log').insert({ org_id: orgId, user_id: userId, artifact_type: artifactType, entity_ref: ent?.canonical_ref_key || null })
-      } catch { /* RPC absent pre-migration → allow (normal gates still apply) */ }
+      const fr = await generationDecision(supabase,'intel_force_refresh_allowed',orgId,{p_artifact_type:artifactType,p_entity_ref:ent?.canonical_ref_key||null})
+      if (!fr.allowed) return json({error:'force_refresh_limited',reason:fr.reason,used:fr.used,limit:fr.limit,cooldown_until:fr.cooldown_until},fr.reason==='governance_unavailable'?503:429)
+      const {error:forceLogError}=await admin.from('intel_force_refresh_log').insert({org_id:orgId,user_id:userId,artifact_type:artifactType,entity_ref:ent?.canonical_ref_key||null})
+      if(forceLogError)return json({error:'generation_not_allowed',reason:'governance_unavailable'},503)
     }
 
     // Current stored Intel Signal for the subject (cached read; absent table → null).
@@ -709,7 +788,7 @@ Deno.serve(async (req) => {
           .eq('org_id', orgId).eq('cache_key', cacheKey).eq('status', 'ready').not('evidence_hash', 'is', null)
           .gte('created_at', new Date(Date.now() - 14 * 86_400_000).toISOString())
           .order('created_at', { ascending: false }).limit(1).maybeSingle()
-        if (prior) {
+        if (prior && (!preparedNarrative || narrativeClaimQuality(prior.structured, preparedNarrative.pack).status !== 'needs_review')) {
           // deno-lint-ignore no-explicit-any
           const ss: any = prior.signal_snapshot || {}
           const verdict = materialityVerdict({
@@ -736,7 +815,7 @@ Deno.serve(async (req) => {
             const newStale = new Date(Date.now() + staleMinutes * 60_000).toISOString()
             await supabase.from('research_artifacts').update({ stale_after: newStale, reuse_kind: 'reuse_stale_unchanged' }).eq('id', prior.id)
             const { data: full } = await supabase.from('research_artifacts').select('*').eq('id', prior.id).maybeSingle()
-            await recordIntelEvent(supabase, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: prior.id, metadata: { cache: 'reuse_unchanged' } })
+            await recordIntelEvent(admin, { orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key, artifactId: prior.id, metadata: { cache: 'reuse_unchanged' } })
             await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact: full || prior, decisionKind: 'artifact_reuse_unchanged', cache: 'reuse_unchanged', evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, metadata: { drivers: verdict.drivers } })
             void logCost({ cacheStatus: 'reuse_unchanged', reuseKind: 'reuse_stale_unchanged', model: null, evidenceHash: pkg.evidence_hash, sourceSetHash: pkg.source_set_hash, providerCallsAvoided: 1, allowReason: 'n/a_no_ai' })
             return json({ artifact: full || prior, cached: true, reused: true, reuse_kind: 'reuse_stale_unchanged' })
@@ -777,9 +856,9 @@ Deno.serve(async (req) => {
 
     // Governance gate: global kill switch + monthly cost cap (cache hits above
     // are exempt because they incur no new cost).
-    const { data: gate } = await supabase.rpc('intel_generation_allowed')
-    if (gate && gate.allowed === false) {
-      return json({ error: 'generation_not_allowed', reason: gate.reason, used: gate.used, cap: gate.cap }, 402)
+    const gate = await generationDecision(supabase,'intel_generation_allowed',orgId)
+    if (!gate.allowed) {
+      return json({ error: 'generation_not_allowed', reason: gate.reason, used: gate.used, cap: gate.cap }, gate.reason==='governance_unavailable'?503:402)
     }
 
     // Per-tier daily-rate limit by artifact category.
@@ -790,8 +869,8 @@ Deno.serve(async (req) => {
     }
     const rateKey = RATE_KEY[artifactType]
     if (rateKey) {
-      const { data: rate } = await supabase.rpc('intel_rate_check', { p_limit_key: rateKey })
-      if (rate && rate.allowed === false) return json({ error: 'rate_limited', reason: rateKey, used: rate.used, limit: rate.limit }, 429)
+      const rate = await generationDecision(supabase,'intel_rate_check',orgId,{p_limit_key:rateKey})
+      if (!rate.allowed) return json({ error: 'rate_limited', reason: rate.reason||rateKey, used: rate.used, limit: rate.limit }, rate.reason==='governance_unavailable'?503:429)
     }
 
     // ── DELTA path: cheap single-model UPDATE of the prior artifact ──────────────
@@ -804,14 +883,14 @@ Deno.serve(async (req) => {
         priorSummary: deltaPlan.prior.structured?.summary || '',
         priorNetSignal: deltaPlan.prior.structured?.net_signal || null,
         drivers: deltaPlan.drivers,
-        context: { evidence_package: pkg?.items || [], evidence_coverage: pkg?.coverage || null, current_signal: signalSnap },
+        context: prepareAiContext({ evidence_package: pkg?.items || [], evidence_coverage: pkg?.coverage || null, current_signal: signalSnap, ...(narrativeEvidenceContext || {}) },allowCmcAi),
       })
       const r = await callOpenAI(dp.model, dp.system, dp.user, apiKey)
       // deno-lint-ignore no-explicit-any
       let structuredD: any
       try { structuredD = JSON.parse(r.content) } catch { structuredD = { summary: r.content, confidence: 'low', sources: [] } }
       let usageD = r.usage
-      void recordAIUsage(supabase, { orgId, userId, provider: 'openai', model: dp.model, surface: 'investor_intel', subMode: `${artifactType}:delta`, providerUsage: usageD, status: 'success' })
+      await recordAIUsage(admin, { orgId, userId, provider: 'openai', model: dp.model, surface: 'investor_intel', subMode: `${artifactType}:delta`, providerUsage: usageD, status: 'success' })
 
       let validationD = validateSafeLanguage(textOfArtifact(structuredD))
       let outcomeD: 'pass' | 'rewrite' | 'block' = 'pass'
@@ -824,8 +903,10 @@ Deno.serve(async (req) => {
         outcomeD = validationD.ok ? 'rewrite' : 'block'
       }
       structuredD = reconcileCoverage(structuredD, ['Delta update on prior analysis'], packCoverageFromContext({ evidence_coverage: pkg?.coverage || null, current_signal: signalSnap }))
+      if (narrativeInput) structuredD = attachNarrativeInput(structuredD, narrativeInput)
+      if (preparedNarrative) structuredD = annotateNarrativeClaims(structuredD, preparedNarrative.pack)
       const contractD = validateArtifactContract(structuredD, DELTA_REQUIRED_FIELDS)
-      const blockedD = !validationD.ok
+      const blockedD = !validationD.ok || structuredD?.evidence_quality?.status === 'needs_review'
       const validationStatusD = blockedD ? 'blocked' : (outcomeD === 'rewrite' ? 'rewritten' : 'passed')
       const staleAfterD = new Date(Date.now() + staleMinutes * 60_000).toISOString()
       const rowD = orgArtifactRow({
@@ -837,7 +918,7 @@ Deno.serve(async (req) => {
       })
       const { data: artifactD, error: errD } = await insertArtifact(supabase, rowD)
       if (errD) throw errD
-      await recordIntelEvent(supabase, {
+      await recordIntelEvent(admin, {
         orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key,
         artifactId: artifactD.id, model: dp.model, tokensIn: usageD?.prompt_tokens, tokensOut: usageD?.completion_tokens,
         validatorOutcome: outcomeD, metadata: { cache: 'delta', magnitude: deltaPlan.magnitude, base_artifact_id: deltaPlan.prior.id },
@@ -849,7 +930,7 @@ Deno.serve(async (req) => {
         allowReason: deltaPlan.magnitude === 'material' ? 'evidence_changed_material' : 'evidence_changed_minor',
         usage: { tokens_in: usageD?.prompt_tokens, tokens_out: usageD?.completion_tokens },
       })
-      if (blockedD) return json({ artifact: artifactD, blocked: true, reason: 'safety_validation_failed' }, 200)
+      if (blockedD) return json({ artifact: artifactD, blocked: true, reason: structuredD?.evidence_quality?.status === 'needs_review' ? 'evidence_validation_failed' : 'safety_validation_failed' }, 200)
       return json({ artifact: artifactD, cached: false, delta: true, base_artifact_id: deltaPlan.prior.id, change_drivers: deltaPlan.drivers })
     }
 
@@ -893,7 +974,7 @@ Deno.serve(async (req) => {
     if (pkg && (pkg.items.length || pkg.coverage)) {
       genContext = { ...(genContext || context || {}), evidence_package: pkg.items, evidence_coverage: pkg.coverage, evidence_scope_hint: pkg.scope_hint }
       evidenceCount = pkg.items.length
-      if (pkg.items.length) sourcesUsed.push('Signal Layer / news corpus')
+      if (pkg.items.length) sourcesUsed.push(alertReceipt?'Original private alert receipt':'Signal Layer / news corpus')
     }
     if (assetEvidenceContext) {
       genContext = { ...(genContext || context || {}), ...assetEvidenceContext }
@@ -960,7 +1041,7 @@ Deno.serve(async (req) => {
         if (subject) {
           let assetPack = await getOrAssembleAssetEvidencePack(admin, subject, { staleMinutes: 30 })
           assetPack = await maybeRefreshCriticalEvidencePack(admin, subject, assetPack, orgId, userId)
-          const compactPack = compactAssetEvidencePackForPrompt(assetPack, 12000)
+          const compactPack = !allowCmcAi && containsCmcOrigin(assetPack) ? null : compactAssetEvidencePackForPrompt(assetPack, 12000)
           if (compactPack) {
             genContext = { asset_evidence_pack: compactPack, ...(genContext || context || {}) }
             sourcesUsed.push('Asset evidence pack (cached provider snapshots)')
@@ -972,7 +1053,7 @@ Deno.serve(async (req) => {
     // Platform-wide derived memory. This prefers stored/derived intelligence
     // (signals, events, decision memory) over raw feeds and respects the
     // Investor Intel surface policy. Private KB stays opt-in elsewhere.
-    try {
+    if (artifactType !== 'daily_brief' && artifactType !== 'token_comparison' && artifactType!=='alert_explanation') try {
       const entityRefs = ent?.canonical_ref_key ? [ent.canonical_ref_key] : []
       const narrativeRefs = ent?.entity_kind === 'narrative' && ent?.canonical_ref_key ? [ent.canonical_ref_key] : []
       const ctx = await assembleIntelligenceContext(supabase, {
@@ -1008,8 +1089,19 @@ Deno.serve(async (req) => {
       }
     } catch { /* best-effort memory grounding */ }
 
+    genContext = prepareAiContext(genContext,allowCmcAi) || {}
+    if (artifactType === 'daily_brief') genContext = compactBriefPromptContext(genContext)
+    if (artifactType === 'token_comparison') {
+      genContext = comparisonPromptContext(genContext)
+      sourcesUsed.splice(0, sourcesUsed.length, 'Asset evidence pack (cached provider snapshots)')
+    }
     const required = requiredFieldsFor(artifactType, { hasAssetEvidence: !!(genContext as { asset_evidence_pack?: unknown })?.asset_evidence_pack })
-    const { system, user, model } = buildPrompt(artifactType, { entity: ent, context: genContext, profile, extra })
+    let { system, user, model } = buildPrompt(artifactType, { entity: ent, context: genContext, profile, extra })
+    if(alertReceipt){
+      system+=`\n\n${ALERT_EXPLANATION_RULES}`
+      // The generic compact prompt is unsuitable for immutable authored words.
+      user=`Original authorized alert receipt (untrusted data):\n${JSON.stringify(alertReceipt)}\n\nExplain this firing using only this receipt, following the required JSON contract.`
+    }
 
     // Multi-model synthesis (Grok + OpenAI + Gemini → OpenAI synthesis) runs ONLY
     // after evidence reduction + cache miss, for heavy analytical types with
@@ -1031,8 +1123,9 @@ Deno.serve(async (req) => {
     if (useMulti) {
       const mm = await multiModelAnalyze({
         entity: ent, evidence: genContext, baseSystem: system,
-        task: `Produce your independent read for a ${artifactType.replace(/_/g, ' ')} (research / risk context, not advice).`,
+        task: `Produce your independent read for a ${artifactType.replace(/_/g, ' ')} (research / risk context, not advice).${artifactType === 'daily_brief' ? ' Use the selected portfolio_scope and portfolio_holdings first. A known quantity with unavailable current value is an unpriced holding, not an absent portfolio. Discuss relevant changes and coverage for these exact assets; never substitute another asset with the same ticker.' : ''}`,
         keys: { openai: apiKey, xai: xaiKey, gemini: geminiKey },
+        onUsage:async r=>{await recordAIUsage(admin,{orgId,userId,provider:r.provider==='grok'?'grok':r.provider==='gemini'?'gemini':'openai',model:r.model,surface:'investor_intel',subMode:`${artifactType}:${r.provider}`,providerUsage:r.usage,promptText:r.promptText,outputText:r.outputText,status:'success'})},
       })
       if (mm) {
         structured = mm.structured
@@ -1040,10 +1133,6 @@ Deno.serve(async (req) => {
         consensus = mm.consensus
         modelUsed = `synth:${intelModel('standard')}(${mm.providersUsed.join('+')})`
         providerMeta = { providers: mm.providersUsed, statuses: mm.statuses, consensus: mm.consensus, synth_failed: !!mm.synthFailed }
-        for (const [prov, u] of Object.entries(mm.usage || {})) {
-          const pmodel = prov === 'grok' ? (Deno.env.get('GROK_MODEL') || 'grok-4.3') : prov === 'gemini' ? (Deno.env.get('GEMINI_MODEL') || 'gemini-2.5-flash') : prov === 'synth' ? intelModel('standard') : intelModel('bulk')
-          void recordAIUsage(supabase, { orgId, userId, provider: prov === 'grok' ? 'grok' : prov === 'gemini' ? 'gemini' : 'openai', model: pmodel, surface: 'investor_intel', subMode: `${artifactType}:${prov}`, providerUsage: u, status: 'success' })
-        }
       }
     }
 
@@ -1052,7 +1141,7 @@ Deno.serve(async (req) => {
       const r = await callOpenAI(model, system, user, apiKey)
       usage = r.usage
       try { structured = JSON.parse(r.content) } catch { structured = { summary: r.content, confidence: 'low', sources: [] } }
-      void recordAIUsage(supabase, { orgId, userId, provider: 'openai', model, surface: 'investor_intel', subMode: artifactType, providerUsage: usage, status: 'success' })
+      await recordAIUsage(admin, { orgId, userId, provider: 'openai', model, surface: 'investor_intel', subMode: artifactType, providerUsage: usage, status: 'success' })
     }
 
     // Validate safety + contract; one constrained rewrite on a hard hit.
@@ -1067,13 +1156,21 @@ Deno.serve(async (req) => {
       try { structured = JSON.parse(retry.content) } catch { /* keep prior */ }
       usage = retry.usage
       modelUsed = `${modelUsed}→escalate:${escalateModel}`
-      void recordAIUsage(supabase, { orgId, userId, provider: 'openai', model: escalateModel, surface: 'investor_intel', subMode: `${artifactType}:escalate_rewrite`, providerUsage: retry.usage, status: 'success' })
+      await recordAIUsage(admin, { orgId, userId, provider: 'openai', model: escalateModel, surface: 'investor_intel', subMode: `${artifactType}:escalate_rewrite`, providerUsage: retry.usage, status: 'success' })
       validation = validateSafeLanguage(textOfArtifact(structured))
       validatorOutcome = validation.ok ? 'rewrite' : 'block'
     }
     structured = reconcileCoverage(structured, sourcesUsed, packCoverageFromContext(genContext))
+    if(alertReceipt){
+      const currentReceipt=await loadAlertExplanationReceipt(supabase,{eventId:alertReceipt.event_id,orgId,userId,allowCmcAi:await loadCmcAiAllowed(admin)})
+      if(currentReceipt.content_hash!==alertReceipt.content_hash)return json({error:'alert_evidence_changed'},409)
+      structured=attachAlertExplanationReceipt(structured, alertReceipt)
+    }
+    if (artifactType === 'daily_brief' && preparedBrief) structured = attachBriefPositionSnapshot(structured, preparedBrief)
+    if (narrativeInput) structured = attachNarrativeInput(structured, narrativeInput)
+    if (preparedNarrative) structured = annotateNarrativeClaims(structured, preparedNarrative.pack)
     const contract = validateArtifactContract(structured, required)
-    const blocked = !validation.ok
+    const blocked = !validation.ok || structured?.evidence_quality?.status === 'needs_review'
     const validationStatus = blocked ? 'blocked' : (validatorOutcome === 'rewrite' ? 'rewritten' : 'passed')
 
     const now = Date.now()
@@ -1102,7 +1199,7 @@ Deno.serve(async (req) => {
     // Store the reusable SHARED artifact when the package is PUBLIC and a
     // multi-model synthesis produced it — generated once, reused across users.
     if (pkg?.reusable && consensus && !blocked && sharedKey) {
-      void admin.from('intel_shared_artifacts').upsert({
+      await admin.from('intel_shared_artifacts').upsert({
         ...sharedKey, source_set_hash: pkg.source_set_hash, models: providerMeta?.providers || [], consensus,
         structured, confidence: ['high', 'medium', 'low'].includes(structured?.confidence) ? structured.confidence : 'low',
         net_signal: structured?.net_signal || null, sources: Array.from(new Set([...(structured?.sources || []), ...sourcesUsed])),
@@ -1111,7 +1208,7 @@ Deno.serve(async (req) => {
       }, { onConflict: 'artifact_type,entity_ref,evidence_hash,contract_version,guardrail_version' })
     }
 
-    await recordIntelEvent(supabase, {
+    await recordIntelEvent(admin, {
       orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key,
       artifactId: artifact.id, model: modelUsed, tokensIn: usage?.prompt_tokens, tokensOut: usage?.completion_tokens,
       validatorOutcome, validatorReason: blocked ? validation.hits.map((h) => h.label).join(',') : null,
@@ -1119,9 +1216,11 @@ Deno.serve(async (req) => {
     })
     await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact, decisionKind: 'artifact_fresh_generation', cache: 'fresh', reasoningSummary: structured?.summary || null, evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, metadata: { multi_model: useMulti && !!consensus, consensus, providers: providerMeta?.providers || [], shared_eligible: !!pkg?.reusable, contract_missing: contract.missing, evidence_items: evidenceCount, raw_candidates: pkg?.raw_candidate_count || 0 } })
 
-    if (blocked) return json({ artifact, blocked: true, reason: 'safety_validation_failed' }, 200)
+    if (blocked) return json({ artifact, blocked: true, reason: structured?.evidence_quality?.status === 'needs_review' ? 'evidence_validation_failed' : 'safety_validation_failed' }, 200)
     return json({ artifact, cached: false, consensus, multi_model: !!consensus, matched_surfaces: explainRouted?.matched_surfaces || undefined })
   } catch (e) {
+    const accessError = orgAuthzErrorResponse(e, corsHeaders)
+    if (accessError) return accessError
     return json({ error: (e as Error)?.message || 'generate_failed' }, 400)
   }
 })
@@ -1132,10 +1231,7 @@ Deno.serve(async (req) => {
 // stage, leaders, public drivers) — no user/workspace context ever enters it.
 // deno-lint-ignore no-explicit-any
 async function handleNarrativeBrief(req: Request, body: any) {
-  const cronOk = req.headers.get('x-cron-secret') === Deno.env.get('CRON_SECRET')
-  const authHeader = req.headers.get('Authorization') || ''
-  const svcOk = authHeader === `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`
-  if (!cronOk && !svcOk) return json({ error: 'forbidden' }, 403)
+  if (!isInternalServiceCall(req)) return json({ error: 'forbidden' }, 403)
 
   const slug = String(body?.narrativeSlug || '').trim()
   if (!slug) return json({ error: 'narrativeSlug required' }, 400)
@@ -1143,13 +1239,15 @@ async function handleNarrativeBrief(req: Request, body: any) {
   const apiKey = Deno.env.get('OPENAI_API_KEY')
   if (!apiKey) return json({ error: 'OPENAI_API_KEY not configured' }, 500)
   const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const allowCmcAi=await loadCmcAiAllowed(admin)
   try {
     const narrativePack = await assembleNarrativeEvidencePack(admin, slug, { maxAssets: 8 })
     evidence = { ...(evidence || {}), narrative_evidence_pack: narrativePack }
   } catch { /* additive; the existing narrative evidence still drives the brief */ }
 
+  evidence = prepareAiContext(evidence,allowCmcAi) || {}
   const entityRef = `narrative:${slug}`
-  const evidenceHash = hashStr(JSON.stringify(evidence))
+  const evidenceHash = hashStr(JSON.stringify({ evidence, cmcAi: allowCmcAi }))
   const sharedKey = { artifact_type: 'narrative_brief', entity_ref: entityRef, evidence_hash: evidenceHash, contract_version: CONTRACT_VERSION, guardrail_version: GUARDRAIL_VERSION }
 
   // shared-cache hit → no new AI cost
@@ -1190,7 +1288,7 @@ async function handleNarrativeBrief(req: Request, body: any) {
     } catch { /* keep prior */ }
     validation = validateSafeLanguage(textOfArtifact(structured))
   }
-  structured = reconcileCoverage(structured, structured?.sources || [], evidence?.data_coverage || evidence?.coverage || null)
+  structured = reconcileCoverage(structured, [], evidence?.data_coverage || evidence?.coverage || null)
   const contract = validateArtifactContract(structured, required)
   const blocked = !validation.ok
   const validationStatus = blocked ? 'blocked' : (rewrote ? 'rewritten' : 'passed')

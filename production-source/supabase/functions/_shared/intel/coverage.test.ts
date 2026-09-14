@@ -21,7 +21,7 @@ Deno.test('D3 reconcileCoverage drops gaps covered by used sources', () => {
   assert(structured.data_coverage.should_show_warning === false, 'optional-only gaps do not warn')
 })
 
-Deno.test('D3 reconcileCoverage warns only for unsatisfied material gaps below high confidence', () => {
+Deno.test('reconcileCoverage warns for unsatisfied material gaps even with model high confidence', () => {
   const structured = reconcileCoverage({
     confidence: 'low',
     sources: ['Curated News'],
@@ -38,5 +38,25 @@ Deno.test('D3 reconcileCoverage warns only for unsatisfied material gaps below h
     missing_context: ['No cached liquidity/depth snapshot matched MISS.'],
     sources: [],
   }, [], null)
-  assert(high.data_coverage.should_show_warning === false, 'high confidence suppresses warning per c7 policy')
+  assert(high.data_coverage.should_show_warning === true, 'model confidence cannot suppress a material gap')
+})
+
+Deno.test('server coverage gaps cannot be erased by related sources or downgraded by the model',()=>{
+  const material='No current exchange depth snapshot.',optional='No current exchange spread snapshot.'
+  const result=reconcileCoverage({confidence:'high',sources:['Exchange depth'],data_coverage:{confidence_impact:'none',optional_gaps:[material],used_sources:['Invented paid source'],checked_sources:['Invented probe']}},['Exchange ticker'],{
+    used_sources:['exchange_latest_tickers'],checked_sources:['exchange_latest_orderbook'],unavailable_sources:['exchange_latest_orderbook'],material_gaps:[material],optional_gaps:[optional],confidence_impact:'high',
+  })
+  assert(result.data_coverage.material_gaps.includes(material),'measured missing depth is retained')
+  assert(!result.data_coverage.optional_gaps.includes(material),'material gap cannot be downgraded')
+  assert(result.data_coverage.optional_gaps.includes(optional),'partial source use cannot erase optional spread absence')
+  assert(result.data_coverage.unavailable_sources.includes('exchange_latest_orderbook'),'unavailable snapshot remains explicit')
+  assert(!result.data_coverage.used_sources.includes('Invented paid source'),'model source is not verified usage')
+  assert(!result.data_coverage.checked_sources.includes('Invented probe'),'model probe is not verification')
+  assert(result.data_coverage.confidence_impact==='high'&&result.data_coverage.should_show_warning,'strongest evidence gap wins')
+})
+
+Deno.test('model-only source labels cannot resolve a model-reported data gap',()=>{
+  const result=reconcileCoverage({confidence:'high',sources:['Exchange market data'],missing_context:['Current price unavailable'],data_coverage:{used_sources:['Exchange market data']}},[],null)
+  assert(result.missing_context.includes('Current price unavailable'),'unsupported source label cannot clear a gap')
+  assert(result.data_coverage.used_sources.length===0,'no verified source was supplied')
 })
