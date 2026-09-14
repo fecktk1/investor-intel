@@ -1,7 +1,7 @@
 import {chartAsset,isUuid,validateChartLayout} from './chart-workspace-contract.ts'
 export async function chartWorkspaceService(db:any,actor:{orgId:string;userId:string},body:any) {
  const owned=(details=false)=>db.from('intel_chart_layouts').select(details?'id,asset,title,state,revision,created_at,updated_at':'id,asset,title,revision,created_at,updated_at,purpose:state->>purpose').eq('org_id',actor.orgId).eq('user_id',actor.userId)
- const read=async(query:any)=>{const {data,error}=await query;if(error){if(error.code==='40001')throw new Error('chart_revision_conflict');if(error.message==='chart_layout_deleted')throw new Error('chart_layout_deleted');throw new Error('chart_storage_unavailable')}return data}
+ const read=async(query:any)=>{const {data,error}=await query;if(error){if(error.code==='PT409'||error.code==='40001')throw new Error('chart_revision_conflict');if(error.message==='chart_layout_deleted')throw new Error('chart_layout_deleted');throw new Error('chart_storage_unavailable')}return data}
  if(['navigation_visit','navigation_list','navigation_clear'].includes(body.operation)){
   const operation=body.operation.slice(11),page=body.page??0,tab=body.tab??'recent'
   if(!Number.isInteger(page)||page<0||page>100||!['recent','watchlist'].includes(tab))throw new Error('invalid_chart_navigation')
