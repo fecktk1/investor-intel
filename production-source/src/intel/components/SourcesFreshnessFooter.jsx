@@ -4,7 +4,10 @@ import { Database, Clock, AlertTriangle } from 'lucide-react'
 import ConfidenceChip from './ConfidenceChip'
 
 const SOURCE_NAMES = {intel_current_regime:'Market regime',market_macro_snapshots:'Market summary',narrative_category_snapshots:'Sector observations',narrative_state:'Narrative research',intel_curated_news:'Analyzed news',portfolio_holdings:'Your recorded holdings',brief_evidence_pack:'Brief evidence',ranked_evidence_package:'Selected evidence'}
-const sourceName = value => String(value).split(' / ').map(part=>SOURCE_NAMES[part.toLowerCase()] || part.replace(/_/g,' ')).join(' / ')
+const sourceName = (value, t) => String(value).split(' / ').map(part => {
+  const key = part.toLowerCase()
+  return SOURCE_NAMES[key] ? t(`sources.names.${key}`, { defaultValue: SOURCE_NAMES[key] }) : part.replace(/_/g,' ')
+}).join(' / ')
 const observationTime = value => typeof value === 'string' && /^\d{4}-\d{2}-\d{2}T/.test(value) && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'long'}) : String(value)
 
 // Provenance footer shown on every Intel insight: confidence + sources +
@@ -32,13 +35,13 @@ export default function SourcesFreshnessFooter({ artifact, showCoverageWarning =
         <ConfidenceChip value={artifact.confidence} />
         <span className="flex items-center gap-1.5 text-[var(--fg-4)]">
           <Database className="h-3.5 w-3.5" />
-          {sources.length ? [...new Set(sources.map(sourceName))].join(', ') : t('sources.none', { defaultValue: 'No sources reported' })}
+          {sources.length ? [...new Set(sources.map(source => sourceName(source, t)))].join(', ') : t('sources.none', { defaultValue: 'No sources reported' })}
         </span>
       </div>
       {freshEntries.length > 0 && (
         <details className="text-[var(--fg-4)]">
-          <summary className="cursor-pointer flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />Source observation times</summary>
-          <dl className="mt-2 space-y-2">{freshEntries.map(([key,value])=><div key={key}><dt>{sourceName(key)}</dt><dd title={String(value)} className="text-[var(--fg-2)]">{observationTime(value)}</dd></div>)}</dl>
+          <summary className="cursor-pointer flex items-center gap-1.5"><Clock className="h-3.5 w-3.5" />{t('sources.observation_times', { defaultValue: 'Source observation times' })}</summary>
+          <dl className="mt-2 space-y-2">{freshEntries.map(([key,value])=><div key={key}><dt>{sourceName(key, t)}</dt><dd title={String(value)} className="text-[var(--fg-2)]">{observationTime(value)}</dd></div>)}</dl>
         </details>
       )}
       {showCoverageWarning && showWarning && materialGaps.length > 0 && (
@@ -51,11 +54,11 @@ export default function SourcesFreshnessFooter({ artifact, showCoverageWarning =
         <details className="text-[var(--fg-4)]">
           <summary className="cursor-pointer select-none flex items-center gap-1.5">
             <Database className="h-3.5 w-3.5 flex-shrink-0" />
-            <span>Data {t('markets.coverage', { defaultValue: 'coverage' })}</span>
-            {optionalGaps.length > 0 && <span className="text-[10px]">{optionalGaps.length} optional</span>}
+            <span>{t('sources.data_coverage', { defaultValue: 'Data coverage' })}</span>
+            {optionalGaps.length > 0 && <span className="text-[10px]">{t('sources.optional_count', { n: optionalGaps.length, defaultValue: '{{n}} optional' })}</span>}
           </summary>
           <div className="mt-2 space-y-1 pl-5">
-            {used.length > 0 && <div>Used: {used.map(sourceName).join(', ')}</div>}
+            {used.length > 0 && <div>{t('sources.used', { defaultValue: 'Used' })}: {used.map(source => sourceName(source, t)).join(', ')}</div>}
             {optionalGaps.length > 0 && <div>{optionalGaps.join('; ')}</div>}
             {unavailable.length > 0 && <div>{t('sources.missing', { defaultValue: 'Could not verify' })}: {unavailable.slice(0, 8).join(', ')}{unavailable.length > 8 ? '...' : ''}</div>}
           </div>

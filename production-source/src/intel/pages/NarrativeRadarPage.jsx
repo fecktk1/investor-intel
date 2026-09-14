@@ -109,7 +109,7 @@ function NarrativeWorkspace() {
       <IntelHeroRead
         eyebrow={t('narratives.radar_read', { defaultValue: 'Narrative read' })}
         title={totalCount
-          ? t('narratives.radar_title', { defaultValue: `${filtered.length.toLocaleString()} narratives in view` })
+          ? t('narratives.radar_title', { n: filtered.length.toLocaleString(), defaultValue: '{{n}} narratives in view' })
           : t('narratives.radar_title_empty', { defaultValue: 'Automatic discovery is ready for the next refresh' })}
         body={t('narratives.radar_body', { defaultValue: 'Start with the stage tabs, then narrow by category or chain. Personalized labels remain with each narrative when a narrative touches your watchlist, portfolio, or followed interests.' })}
         meta={[
