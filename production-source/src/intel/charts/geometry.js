@@ -46,6 +46,38 @@ export const fraction = (value, min, max) => {
   return clamp((v - lo) / (hi - lo), 0, 1)
 }
 
+// Width an svg <text> run will take, without a DOM to measure with. Inter and
+// Geist Mono at the chart size average a little under two thirds of the font
+// size per glyph; the estimate rounds up so a label box is never smaller than
+// the glyphs inside it and an overlap test cannot pass by underestimating.
+export const textWidth = (text, fontSize = 11) => String(text ?? '').length * fontSize * 0.66
+
+// One-dimensional label dodge. Every entry keeps its ideal position unless a
+// neighbour is closer than `gap`, in which case the run is spread — forwards
+// first, then pulled back off the far edge — and the caller gets its positions
+// back in the order it passed them. Sizing the plot from the row count is what
+// leaves room for this; the dodge only resolves the ties inside that room.
+export function dodge(values = [], { gap = 12, min = -Infinity, max = Infinity } = {}) {
+  const items = values
+    .map((value, index) => ({ index, value: Number.isFinite(Number(value)) ? Number(value) : 0 }))
+    .sort((a, b) => a.value - b.value || a.index - b.index)
+  const out = new Array(items.length)
+  let previous = -Infinity
+  for (const item of items) {
+    const y = Math.max(item.value, previous + gap, min)
+    out[item.index] = y
+    previous = y
+  }
+  let next = Infinity
+  for (let i = items.length - 1; i >= 0; i -= 1) {
+    const { index } = items[i]
+    const y = Math.min(out[index], next - gap, max)
+    out[index] = y
+    next = y
+  }
+  return out
+}
+
 export const anchorFor = deg => {
   const [x] = polar(0, 0, 100, deg)
   if (x > 12) return 'start'

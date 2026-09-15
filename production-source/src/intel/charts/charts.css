@@ -29,6 +29,12 @@
 
 .intel-chart-legend { display: flex; flex-wrap: wrap; gap: .4rem 1.4rem; padding-top: .8rem; list-style: none; margin: 0; }
 .intel-chart-legend li { display: flex; align-items: center; gap: .45rem; color: var(--fg-3); font-size: .75rem; line-height: 1.5; }
+/* Twenty-five entries do not read as one wrapped row. Even columns keep the
+   swatch, the symbol and the rank lined up down the list. */
+.intel-chart-legend--dense { display: grid; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); gap: .3rem .9rem; }
+.intel-chart-legend--dense li { min-width: 0; }
+.intel-chart-legend--dense .intel-chart-legend-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intel-chart-legend--dense .intel-chart-legend-value { margin-left: auto; }
 .intel-chart-swatch { display: inline-block; width: .7rem; height: .18rem; flex: none; }
 .intel-chart-legend-value { color: var(--fg-1); font-variant-numeric: tabular-nums; }
 

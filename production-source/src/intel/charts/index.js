@@ -7,11 +7,14 @@ export { default as RadialBars } from './RadialBars'
 export { default as Sunburst } from './Sunburst'
 export { default as PolarClock } from './PolarClock'
 export { default as Ribbon } from './Ribbon'
-export { default as Bump } from './Bump'
+export { default as Bump, rankMapLayout, rankMapLabelBoxes, rankMapOverlaps } from './Bump'
 export { default as HeatStrip } from './HeatStrip'
 export { default as StackedShare } from './StackedShare'
 export { default as Histogram, binLabel, binTone } from './Histogram'
 export { default as Sparkline } from './Sparkline'
 export { default as Scatter } from './Scatter'
 export { default as LineArea } from './LineArea'
-export { TONES, PALETTE, toneColor, seriesColor, gridStroke, axisText, tooltipStyle, useReducedMotion, markMotion } from './theme'
+export {
+  TONES, PALETTE, SERIES_HEX, SERIES_TOKENS, SERIES_PALETTE,
+  toneColor, seriesColor, paletteColor, gridStroke, axisText, tooltipStyle, useReducedMotion, markMotion,
+} from './theme'

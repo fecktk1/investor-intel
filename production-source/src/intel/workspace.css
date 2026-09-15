@@ -67,6 +67,16 @@
   --accent: #dfa647; --forge-gold: #dfa647; --ember-accent: #dfa647;
   --ok: #6cc6a2; --signal-green: #6cc6a2; --signal-red: #e89a9d; --signal-yellow: #dfa647; --signal-blue: #82abd2;
   --intel-comparison-fourth: #b4a0dc;
+  /* Categorical series palette (src/intel/charts/theme.js): fourteen hue steps
+     at two lightness levels. Distinguishable from one another and readable on
+     --bg-1; the light block below restates every one of them. */
+  --intel-series-01: #e8a08d; --intel-series-02: #44cf8c; --intel-series-03: #e88de8; --intel-series-04: #cfc644;
+  --intel-series-05: #8db7e8; --intel-series-06: #cf444e; --intel-series-07: #8de8b1; --intel-series-08: #9e44cf;
+  --intel-series-09: #e8dd8d; --intel-series-10: #44aacf; --intel-series-11: #e88d9c; --intel-series-12: #44cf59;
+  --intel-series-13: #ae8de8; --intel-series-14: #cf9c44; --intel-series-15: #8dd2e8; --intel-series-16: #cf447e;
+  --intel-series-17: #8de88d; --intel-series-18: #4459cf; --intel-series-19: #e8bf8d; --intel-series-20: #44cdcf;
+  --intel-series-21: #e88dc5; --intel-series-22: #c2e88d; --intel-series-23: #8d9ce8; --intel-series-24: #cf7544;
+  --intel-series-25: #8de8d2; --intel-series-26: #cf44b8; --intel-series-27: #9ccf44; --intel-series-28: #447acf;
   --border-default: #343b46; --border-subtle: #343b46; --intel-border-soft: #343b46;
   --intel-sidebar-bg: #14171c; --intel-header-bg: #14171c; --intel-bg-elevated: #1d222a;
   --intel-radius-sm: 0px; --intel-radius-md: 0px; --intel-radius-lg: 0px;
@@ -82,6 +92,13 @@
   --intel-sidebar-bg: #f6f5f1; --intel-header-bg: #f6f5f1; --intel-bg-elevated: #eeede8;
   --ok: #16724d; --signal-green: #16724d; --signal-red: #b23439; --signal-yellow: #865b16; --signal-blue: #2c638c;
   --intel-comparison-fourth: #75508e;
+  --intel-series-01: #9b3c22; --intel-series-02: #12683f; --intel-series-03: #9b229b; --intel-series-04: #686212;
+  --intel-series-05: #225a9b; --intel-series-06: #681218; --intel-series-07: #229b52; --intel-series-08: #4a1268;
+  --intel-series-09: #9b8d22; --intel-series-10: #125168; --intel-series-11: #9b2236; --intel-series-12: #12681f;
+  --intel-series-13: #4e229b; --intel-series-14: #684912; --intel-series-15: #227f9b; --intel-series-16: #681236;
+  --intel-series-17: #229b22; --intel-series-18: #121f68; --intel-series-19: #9b6422; --intel-series-20: #126768;
+  --intel-series-21: #9b226c; --intel-series-22: #689b22; --intel-series-23: #22369b; --intel-series-24: #683012;
+  --intel-series-25: #229b7f; --intel-series-26: #68125a; --intel-series-27: #496812; --intel-series-28: #123368;
   color-scheme: light;
 }
 .intel-root .page-title, .intel-brand-title { font-family: 'Intel Display', sans-serif; font-weight: 600; letter-spacing: .015em; }

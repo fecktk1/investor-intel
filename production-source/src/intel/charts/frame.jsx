@@ -91,10 +91,12 @@ export function ChartFrame({ t, title, description, state = 'ready', reason, leg
   )
 }
 
-export function ChartLegend({ t, items = [] }) {
+// `dense` is for a figure with more entries than a wrapping row can carry
+// legibly: the same rows, laid out in even columns so a reader can scan them.
+export function ChartLegend({ t, items = [], dense = false }) {
   if (!items.length) return null
   return (
-    <ul className="intel-chart-legend" aria-label={t('charts.legend', { defaultValue: 'Legend' })}>
+    <ul className={`intel-chart-legend${dense ? ' intel-chart-legend--dense' : ''}`} aria-label={t('charts.legend', { defaultValue: 'Legend' })}>
       {items.map(item => (
         <li key={item.key}>
           <span className="intel-chart-swatch" style={{ background: item.color }} aria-hidden="true" />
