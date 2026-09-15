@@ -1,12 +1,20 @@
 /** Non-secret operating policy lives in the existing service-only provider ledger.
  * Credentials remain in Secrets. A one-minute, project-scoped cache also collapses
  * concurrent readers; an unreadable policy falls back to the baseline profile. */
-export type CmcOperatingSettings=Partial<Record<'CMC_ENABLED'|'CMC_CONNECTED_DEMAND_ENABLED'|'CMC_LIVE_ENABLED'|'CMC_ACCESS_PROFILE'|'CMC_VERIFIED_HACKATHON_PLAN'|'CMC_VERIFIED_BASELINE_PLAN'|'CMC_MONTHLY_CREDIT_CEILING'|'CMC_HACKATHON_EXPIRES_AT'|'CMC_ALLOW_HISTORICAL_RETENTION'|'CMC_HISTORY_RETENTION_DAYS'|'CMC_ALLOW_AI_PROCESSING'|'INTEL_CHART_CMC_PRODUCT_SHARING'|'CMC_SOURCE_POLICY_EXPIRES_AT',string>>
-const keys=['CMC_ENABLED','CMC_CONNECTED_DEMAND_ENABLED','CMC_LIVE_ENABLED','CMC_ACCESS_PROFILE','CMC_VERIFIED_HACKATHON_PLAN','CMC_VERIFIED_BASELINE_PLAN','CMC_MONTHLY_CREDIT_CEILING','CMC_HACKATHON_EXPIRES_AT','CMC_ALLOW_HISTORICAL_RETENTION','CMC_HISTORY_RETENTION_DAYS','CMC_ALLOW_AI_PROCESSING','INTEL_CHART_CMC_PRODUCT_SHARING','CMC_SOURCE_POLICY_EXPIRES_AT'] as const
+export type CmcOperatingSettings=Partial<Record<'CMC_ENABLED'|'CMC_CONNECTED_DEMAND_ENABLED'|'CMC_LIVE_ENABLED'|'CMC_LIVE_ONCHAIN_ENABLED'|'CMC_ACCESS_PROFILE'|'CMC_VERIFIED_HACKATHON_PLAN'|'CMC_VERIFIED_BASELINE_PLAN'|'CMC_MONTHLY_CREDIT_CEILING'|'CMC_HACKATHON_EXPIRES_AT'|'CMC_ALLOW_HISTORICAL_RETENTION'|'CMC_HISTORY_RETENTION_DAYS'|'CMC_ALLOW_AI_PROCESSING'|'INTEL_CHART_CMC_PRODUCT_SHARING'|'CMC_SOURCE_POLICY_EXPIRES_AT',string>>
+const keys=['CMC_ENABLED','CMC_CONNECTED_DEMAND_ENABLED','CMC_LIVE_ENABLED','CMC_LIVE_ONCHAIN_ENABLED','CMC_ACCESS_PROFILE','CMC_VERIFIED_HACKATHON_PLAN','CMC_VERIFIED_BASELINE_PLAN','CMC_MONTHLY_CREDIT_CEILING','CMC_HACKATHON_EXPIRES_AT','CMC_ALLOW_HISTORICAL_RETENTION','CMC_HISTORY_RETENTION_DAYS','CMC_ALLOW_AI_PROCESSING','INTEL_CHART_CMC_PRODUCT_SHARING','CMC_SOURCE_POLICY_EXPIRES_AT'] as const
 /** Explicit operator activation only; retention permission never enables live
  * data. An emergency environment or shared-policy disable wins over activation. */
 export function cmcLiveActivation(settings:CmcOperatingSettings,env:(key:string)=>string|undefined) {
  const flags=[env('CMC_LIVE_ENABLED'),settings.CMC_LIVE_ENABLED]
+ return !flags.some(v=>v!=null&&['false','0','off'].includes(v.toLowerCase()))&&flags.includes('true')
+}
+/** The on-chain tape is a second, separate switch with the same rules: explicit
+ * activation only, from the operating profile row or the environment, and a
+ * disable in either place wins. It lives in the profile row because the Edge
+ * secret store is full and this is operating policy, not a credential. */
+export function cmcLiveOnchainActivation(settings:CmcOperatingSettings,env:(key:string)=>string|undefined) {
+ const flags=[env('CMC_LIVE_ONCHAIN_ENABLED'),settings.CMC_LIVE_ONCHAIN_ENABLED]
  return !flags.some(v=>v!=null&&['false','0','off'].includes(v.toLowerCase()))&&flags.includes('true')
 }
 export function cmcPolicyEnvironment(settings:CmcOperatingSettings,env:(key:string)=>string|undefined,now=Date.now()){

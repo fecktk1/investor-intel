@@ -101,5 +101,10 @@ Deno.test('a contract lease is refused until the on-chain tape flag is set, and 
   await investigationService(market,actor,{subject:'native:bitcoin',operation:'live',enabled:true,viewId:view},now)
   eq(market.calls.find(c=>c[0]==='rpc')?.[2].p_subject,'market:coinmarketcap:1')
   eq(market.calls.some(c=>c[0]==='eq'&&c[2]==='metric'&&c[3]==='price'),true,'the price lane is untouched')
+  Deno.env.delete('CMC_LIVE_ONCHAIN_ENABLED')
+  const fromRow=tapeDatabase([],[],{...config,CMC_LIVE_ONCHAIN_ENABLED:'true'})
+  const rowStarted:any=await investigationService(fromRow,actor,{subject:canonical,operation:'live',enabled:true,viewId:view},now)
+  eq(fromRow.calls.find(c=>c[0]==='rpc')?.[2].p_subject,contract,'the operating profile row turns the tape on without an Edge secret')
+  eq(rowStarted.state,'polling')
  }finally{Deno.env.delete('CMC_LIVE_ONCHAIN_ENABLED');Deno.env.delete('CMC_LIVE_ENABLED')}
 })
