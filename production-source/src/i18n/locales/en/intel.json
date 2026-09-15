@@ -1730,6 +1730,12 @@
       "card_source": "Source",
       "card_unrecorded": "Not recorded",
       "card_note": "A social preview of the link shows this brand card only. Prices, notes and portfolio content stay behind the link and access is checked again when it is opened."
+    },
+    "size": {
+      "taller": "Taller chart",
+      "full": "Full screen",
+      "exit": "Exit full screen",
+      "covering": "Full screen was refused by the browser, so the chart covers this window instead. Press Escape or choose Exit full screen to return."
     }
   },
   "charts": {

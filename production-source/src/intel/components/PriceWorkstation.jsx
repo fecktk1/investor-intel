@@ -18,6 +18,7 @@ import ResponsiveChartTools from './ResponsiveChartTools'
 import ChartIndicatorMenu from './ChartIndicatorMenu'
 import ChartWatermark from './ChartWatermark'
 import ChartShareLaunch from './ChartShareLaunch'
+import {chartSizeHeight,isChartSize,nextChartSize} from '../lib/chart-size'
 import {validateChartLayout} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 const ChartStructurePanel=lazy(()=>import('./ChartStructurePanel'))
 
@@ -35,9 +36,16 @@ const barTime=(t,timeZone)=>new Date(t).toLocaleString(undefined,{dateStyle:'med
 
 
 
-function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,replay=false,knownOnly=false,readOnly=false,height=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
+function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,replay=false,knownOnly=false,readOnly=false,height:baseHeight=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
  const {t}=useTranslation('intel',{useSuspense:false})
- const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null)
+ const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null),root=useRef(null)
+
+ // Size cycles default to tall to full screen. `covering` records that the
+ // browser refused the Fullscreen API and the workstation is covering the
+ // viewport in place instead, which needs its own Escape.
+ const [size,setSize]=useState(isChartSize(initialState.size)?initialState.size:'default'),[covering,setCovering]=useState(false)
+ const [screenHeight,setScreenHeight]=useState(()=>typeof window==='undefined'?900:window.innerHeight)
+ const height=chartSizeHeight(size,baseHeight,screenHeight)
 
  const callbacks=useRef({onCursorChange,onViewportChange,onFailure});callbacks.current={onCursorChange,onViewportChange,onFailure}
 
@@ -70,7 +78,48 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   unproject:point=>{const logical=api.current?.timeScale().coordinateToLogical(point.x),t=continuousChartTime(gridRef.current,logical),price=main.current?.coordinateToPrice(point.y);return t!=null&&Number.isFinite(price)&&price>0?{t:Math.round(t),price}:null}})
 
- useEffect(()=>{onWorkspaceChange?.({mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings:drawings.items,replay:replay?{at:cursorTime,knownOnly}:undefined})},[mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings.items,replay,cursorTime,knownOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{onWorkspaceChange?.({mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings:drawings.items,replay:replay?{at:cursorTime,knownOnly}:undefined})},[mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings.items,replay,cursorTime,knownOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+
+ // The browser owns full screen: leaving it by its own Escape, its own control
+ // or a navigation must bring the workstation back rather than strand it.
+ useEffect(()=>{
+  const sync=()=>{if(!document.fullscreenElement&&!covering)setSize(current=>current==='fullscreen'?'default':current)}
+  document.addEventListener('fullscreenchange',sync)
+  return()=>document.removeEventListener('fullscreenchange',sync)
+ },[covering])
+
+ useEffect(()=>{
+  if(size!=='fullscreen')return
+  const read=()=>setScreenHeight(window.innerHeight)
+  read();window.addEventListener('resize',read)
+  return()=>window.removeEventListener('resize',read)
+ },[size])
+
+ const leaveFullscreen=useCallback(()=>{
+  setCovering(false);setSize('default')
+  if(document.fullscreenElement)document.exitFullscreen?.()?.catch?.(()=>{})
+ },[])
+
+ // Escape leaves the in-place cover. A dialog or the indicator list owns Escape
+ // while it is open, so the cover only answers once they have closed.
+ useEffect(()=>{
+  if(!covering)return
+  const key=event=>{if(event.key==='Escape'&&!root.current?.querySelector('dialog[open], .intel-indicator-panel:not([hidden])'))leaveFullscreen()}
+  document.addEventListener('keydown',key)
+  return()=>document.removeEventListener('keydown',key)
+ },[covering,leaveFullscreen])
+
+ const cycleSize=async()=>{
+  const next=nextChartSize(size)
+  if(next!=='fullscreen'){leaveFullscreen();setSize(next);return}
+  setSize('fullscreen')
+  try{
+   const request=root.current?.requestFullscreen
+   if(!request)throw new Error('fullscreen_unavailable')
+   await request.call(root.current)
+   setCovering(false)
+  }catch{setCovering(true)}
+ }
 
  const studyResult=useChartStudies(bars,studies,chartSource?.intervalMs??null)
 
@@ -287,7 +336,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   '--border-default':theme==='gray'?'#464b55':'#343b46','--border-subtle':'#464b55','--signal-green':'#6cc6a2','--signal-red':'#e89a9d','--accent':'#dfa647','--forge-gold':'#dfa647'}
 
 
- return <div className="intel-price-workstation" style={chartTheme}>
+ return <div className="intel-price-workstation" ref={root} data-size={covering?'covering':size} style={chartTheme}>
 
   <ResponsiveChartTools label="Chart tools">
   <div className="intel-workstation-toolbar" role="group" aria-label="Chart display controls">
@@ -307,6 +356,8 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    <button type="button" aria-pressed={autoScale} onClick={()=>setAutoScale(v=>!v)}>Auto scale</button>
 
+   <button type="button" onClick={cycleSize}>{size==='fullscreen'?t('chart.size.exit',{defaultValue:'Exit full screen'}):size==='tall'?t('chart.size.full',{defaultValue:'Full screen'}):t('chart.size.taller',{defaultValue:'Taller chart'})}</button>
+
    <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true)}}>Reset view</button>
 
    {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<ChartSnapshotSave context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><ChartAssetNavigator context={persistence}/><ChartAlertEditor context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
@@ -314,6 +365,8 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   {!replay&&!readOnly&&drawings.controls}
   </ResponsiveChartTools>
+
+  {covering&&<p role="status" className="intel-analysis-caption">{t('chart.size.covering',{defaultValue:'Full screen was refused by the browser, so the chart covers this window instead. Press Escape or choose Exit full screen to return.'})}</p>}
 
   {chartSource&&<p className="intel-analysis-caption intel-chart-source">{chartSource.provider === 'coinmarketcap' ? 'CoinMarketCap' : chartSource.provider === 'coingecko' ? 'CoinGecko' : chartSource.provider} · {chartSource.currency}{chartSource.intervalMs?` · ${spacing(chartSource.intervalMs)}`:''}<span> · {chartSource.timestampMeaning==='close'?'Times mark candle closes':chartSource.timestampMeaning==='open'?'Times mark candle opens':'Source observation times'}{chartSource.observedAt?` · latest observation ${barTime(chartSource.observedAt,timezone)}`:''}</span></p>}
 

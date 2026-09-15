@@ -915,6 +915,12 @@
       "card_source": "Burimi",
       "card_unrecorded": "E paregjistruar",
       "card_note": "Parapamja sociale e lidhjes shfaq vetëm këtë kartë marke. Çmimet, shënimet dhe përmbajtja e portofolit mbeten pas lidhjes dhe qasja kontrollohet sërish kur hapet."
+    },
+    "size": {
+      "taller": "Grafik më i lartë",
+      "full": "Ekran i plotë",
+      "exit": "Dil nga ekrani i plotë",
+      "covering": "Shfletuesi e refuzoi ekranin e plotë, prandaj grafiku e mbulon këtë dritare. Shtyp Escape ose zgjidh „Dil nga ekrani i plotë“ për t’u kthyer."
     }
   },
   "charts": {

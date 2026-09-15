@@ -915,6 +915,12 @@
       "card_source": "Bron",
       "card_unrecorded": "Niet vastgelegd",
       "card_note": "Een sociale voorvertoning van de link toont alleen deze merkkaart. Prijzen, notities en portefeuille-inhoud blijven achter de link en de toegang wordt bij het openen opnieuw gecontroleerd."
+    },
+    "size": {
+      "taller": "Hogere grafiek",
+      "full": "Volledig scherm",
+      "exit": "Volledig scherm verlaten",
+      "covering": "De browser weigerde volledig scherm, dus de grafiek bedekt dit venster. Druk op Escape of kies „Volledig scherm verlaten” om terug te gaan."
     }
   },
   "charts": {

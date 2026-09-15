@@ -915,6 +915,12 @@
       "card_source": "Fuente",
       "card_unrecorded": "Sin registrar",
       "card_note": "La vista previa social del enlace muestra solo esta tarjeta de marca. Los precios, las notas y el contenido de la cartera quedan detrás del enlace y el acceso se comprueba otra vez al abrirlo."
+    },
+    "size": {
+      "taller": "Gráfico más alto",
+      "full": "Pantalla completa",
+      "exit": "Salir de pantalla completa",
+      "covering": "El navegador rechazó la pantalla completa, así que el gráfico cubre esta ventana. Pulsa Escape o elige «Salir de pantalla completa» para volver."
     }
   },
   "charts": {

@@ -915,6 +915,12 @@
       "card_source": "Source",
       "card_unrecorded": "Non enregistré",
       "card_note": "L’aperçu social du lien n’affiche que cette carte de marque. Les prix, les notes et le contenu du portefeuille restent derrière le lien, et l’accès est vérifié de nouveau à l’ouverture."
+    },
+    "size": {
+      "taller": "Graphique plus haut",
+      "full": "Plein écran",
+      "exit": "Quitter le plein écran",
+      "covering": "Le navigateur a refusé le plein écran : le graphique couvre donc cette fenêtre. Appuyez sur Échap ou choisissez « Quitter le plein écran » pour revenir."
     }
   },
   "charts": {

@@ -331,6 +331,10 @@
 .intel-asset-profile summary { font-size: 13px; color: var(--fg-3); cursor: pointer; padding: 10px 0; }
 .intel-chart-interval { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--fg-3); }
 .intel-chart-interval .select { width: auto; min-width: 110px; }
+/* Chart size: full screen through the browser where it is allowed, and the same
+   reading surface covering the window in place where it is refused. */
+.intel-price-workstation:fullscreen { padding: 16px 20px; overflow: auto; background: var(--bg-1); }
+.intel-price-workstation[data-size="covering"] { position: fixed; inset: 0; z-index: 90; padding: 16px 20px; overflow: auto; background: var(--bg-1); }
 .intel-workstation-toolbar { display: flex; align-items: end; gap: 8px 16px; flex-wrap: wrap; padding: 4px 0 10px; }
 .intel-workstation-toolbar label:not(.intel-workstation-check) { display: grid; gap: 3px; font-size: 11px; color: var(--fg-3); }
 .intel-workstation-toolbar select, .intel-chart-study-dialog input, .intel-chart-study-dialog select { background: var(--bg-1); color: var(--fg-1); border: 1px solid var(--border-default); border-radius: 3px; padding: 6px 9px; font-family: Inter, sans-serif; font-size: 12px; min-height: 32px; }

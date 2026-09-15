@@ -915,6 +915,12 @@
       "card_source": "Fonte",
       "card_unrecorded": "Não registrado",
       "card_note": "A prévia social do link mostra apenas este cartão de marca. Preços, notas e conteúdo de carteira ficam atrás do link e o acesso é conferido de novo na abertura."
+    },
+    "size": {
+      "taller": "Gráfico mais alto",
+      "full": "Tela cheia",
+      "exit": "Sair da tela cheia",
+      "covering": "O navegador recusou a tela cheia, então o gráfico cobre esta janela. Pressione Escape ou escolha «Sair da tela cheia» para voltar."
     }
   },
   "charts": {

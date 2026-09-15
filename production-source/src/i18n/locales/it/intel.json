@@ -915,6 +915,12 @@
       "card_source": "Fonte",
       "card_unrecorded": "Non registrato",
       "card_note": "L’anteprima social del link mostra solo questa scheda di marca. Prezzi, note e contenuti del portafoglio restano dietro il link e l’accesso viene verificato di nuovo all’apertura."
+    },
+    "size": {
+      "taller": "Grafico più alto",
+      "full": "Schermo intero",
+      "exit": "Esci da schermo intero",
+      "covering": "Il browser ha rifiutato lo schermo intero, quindi il grafico copre questa finestra. Premi Esc oppure scegli «Esci da schermo intero» per tornare indietro."
     }
   },
   "charts": {

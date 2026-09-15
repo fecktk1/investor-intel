@@ -915,6 +915,12 @@
       "card_source": "Quelle",
       "card_unrecorded": "Nicht erfasst",
       "card_note": "Eine soziale Vorschau des Links zeigt nur diese Markenkarte. Preise, Notizen und Portfolio-Inhalte bleiben hinter dem Link, und der Zugriff wird beim Öffnen erneut geprüft."
+    },
+    "size": {
+      "taller": "Höherer Chart",
+      "full": "Vollbild",
+      "exit": "Vollbild beenden",
+      "covering": "Der Browser hat das Vollbild abgelehnt, deshalb deckt der Chart dieses Fenster ab. Drücke Escape oder wähle „Vollbild beenden“, um zurückzukehren."
     }
   },
   "charts": {
