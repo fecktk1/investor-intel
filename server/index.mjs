@@ -5,7 +5,10 @@ if(existsSync('.env'))process.loadEnvFile('.env')
 mkdirSync('.local',{recursive:true})
 const port=Number(process.env.DEMO_API_PORT||8788),webPort=Number(process.env.DEMO_WEB_PORT||5187)
 const rawLimit=Number(process.env.CMC_DEMO_CREDIT_LIMIT||20)
-const service=createResearchService({filename:'.local/demo.sqlite',mode:process.env.CMC_MODE,key:process.env.CMC_API_KEY||'',plan:process.env.CMC_VERIFIED_PLAN||'basic',creditLimit:Number.isFinite(rawLimit)?Math.min(100,Math.max(0,rawLimit)):20})
+const mode=process.env.CMC_MODE||'fixture'
+// CMC_MODE=keyless never reads CMC_API_KEY at all; switching back is the single
+// line `CMC_MODE=fixture` in .env, which is also the unconfigured default.
+const service=createResearchService({filename:'.local/demo.sqlite',mode,key:mode==='keyless'?'':process.env.CMC_API_KEY||'',plan:process.env.CMC_VERIFIED_PLAN||'basic',creditLimit:Number.isFinite(rawLimit)?Math.min(100,Math.max(0,rawLimit)):20})
 const server=createServer(async(req,res)=>{
   const send=(body,status=200)=>{res.writeHead(status,{'Content-Type':'application/json','Cache-Control':'no-store','X-Content-Type-Options':'nosniff'});res.end(JSON.stringify(body))}
   if(![`127.0.0.1:${port}`,`localhost:${port}`,`127.0.0.1:${webPort}`,`localhost:${webPort}`].includes(req.headers.host))return send({error:'Invalid host'},403)
