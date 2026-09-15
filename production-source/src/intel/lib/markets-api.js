@@ -345,9 +345,14 @@ const IDENTITY_UNAVAILABLE = (op, reason, extra = {}) => ({
   chains: [],
   totals: null,
   holdings: [],
+  holdingIds: [],
   entities: [],
   unsupported: [],
 })
+
+/** Holdings one `unprice` call may reset (`UNPRICE_MAX` in the function). A
+ *  longer list is a 400, so the caller must cut it and say so, never send it. */
+export const UNPRICE_MAX = 50
 
 // Read (or run) contract identity resolution for the org's open holdings —
 // `intel-portfolio-identity`, three operations:
@@ -360,18 +365,27 @@ const IDENTITY_UNAVAILABLE = (op, reason, extra = {}) => ({
 //             it is given. SPENDS PROVIDER CREDITS, and four runs an hour per
 //             organisation is the ceiling.
 //   entities  fills entities.provider_ids.coinmarketcap. One credit per entity.
+//   unprice   undoes THIS feature's own writes for named holdings (≤50 ids).
+//             Spends nothing and is never rate limited: an undo has to stay
+//             available, or a member who spent their four runs producing a bad
+//             price would be stuck with it for an hour. Only rows still sourced
+//             `coinmarketcap_dex` are reset; the rest come back as `skipped`.
 //
 // Mirrors `readAssetFacts`: never throws. A 429 (`resolution_rate_limited`), a
 // 503, a 400 or an unreachable function all come back as
 // `{ state: 'unavailable', reason }` with the body's own fields intact, so the
 // caller renders what happened rather than an empty panel.
-export async function readPortfolioIdentity(supabase, { orgId, op = 'coverage', portfolioId, limit, signal } = {}) {
-  const operation = ['coverage', 'resolve', 'entities'].includes(op) ? op : 'coverage'
+export async function readPortfolioIdentity(supabase, { orgId, op = 'coverage', portfolioId, limit, holdingIds, signal } = {}) {
+  const operation = ['coverage', 'resolve', 'entities', 'unprice'].includes(op) ? op : 'coverage'
+  const ids = Array.isArray(holdingIds) ? [...new Set(holdingIds.map(id => String(id)))] : null
   const body = {
     op: operation,
     orgId,
     ...(portfolioId ? { portfolioId: String(portfolioId) } : {}),
     ...(limit == null ? {} : { limit }),
+    // The function refuses a longer list outright, so the cut is made here and
+    // the caller is told how many were sent rather than the whole call failing.
+    ...(operation === 'unprice' && ids?.length ? { holdingIds: ids.slice(0, UNPRICE_MAX) } : {}),
   }
   try {
     const { data, error } = await supabase.functions.invoke('intel-portfolio-identity', { body, ...(signal ? { signal } : {}) })
@@ -390,6 +404,9 @@ export async function readPortfolioIdentity(supabase, { orgId, op = 'coverage', 
       // the render that maps over it.
       chains: Array.isArray(data.chains) ? data.chains : [],
       holdings: Array.isArray(data.holdings) ? data.holdings : [],
+      // `unprice` answers with the ids it actually reset, which is what tells a
+      // reset apart from a skip.
+      holdingIds: Array.isArray(data.holdingIds) ? data.holdingIds.map(id => String(id)) : [],
       entities: Array.isArray(data.entities) ? data.entities : [],
       unsupported: Array.isArray(data.unsupported) ? data.unsupported : [],
       totals: data.totals && typeof data.totals === 'object' ? data.totals : null,

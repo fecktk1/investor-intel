@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { RadialBars } from '../charts'
-import { readPortfolioIdentity } from '../lib/markets-api'
+import { readPortfolioIdentity, UNPRICE_MAX } from '../lib/markets-api'
 import { formatPrice, formatUsd } from '../lib/market-format'
 
 // Investor Intel — contract identity coverage for the open book (CMC plan
@@ -97,15 +97,38 @@ export function retryAfterWords(seconds, t) {
 }
 
 // The server's per-holding verdicts, in the order a reader cares about them.
-export const ANSWER_REASONS = ['priced', 'price_unavailable', 'not_found_on_provider', 'unsupported_platform', 'no_contract_address', 'over_run_limit']
+export const ANSWER_REASONS = ['priced', 'price_unavailable', 'price_implausible', 'not_found_on_provider', 'unsupported_platform', 'no_contract_address', 'over_run_limit']
 
 const ANSWER_LABELS = {
   priced: 'Priced',
   price_unavailable: 'Identity only',
+  // The provider answered with a price the plausibility gate would not write.
+  // "Refused" is the honest word: nothing failed, a number was declined.
+  price_implausible: 'Refused: implausible',
   not_found_on_provider: 'Not found',
   unsupported_platform: 'Unsupported chain',
   no_contract_address: 'No contract address',
   over_run_limit: 'Over this run’s limit',
+}
+
+// The plausibility gate's own thresholds (MIN_POOL_LIQUIDITY_USD and
+// MAX_FIRST_PRICE_VALUE_USD in supabase/functions/_shared/intel/holding-identity.ts).
+// Named here only so the sentence can quote the floor it was measured against;
+// the decision was made on the server and is never re-derived.
+const LIQUIDITY_FLOOR_USD = 1_000
+const FIRST_PRICE_CEILING_USD = 1_000_000
+
+// A price is quoted exactly, not compacted: the whole point of the sentence is
+// the number that was refused. A sub-dollar price keeps the shared sub-cent
+// notation rather than rounding to "$0".
+const exactPrice = value => {
+  const n = Number(value)
+  if (!Number.isFinite(n)) return DASH
+  return Math.abs(n) >= 1 ? `$${n.toLocaleString('en-US', { maximumFractionDigits: 2 })}` : formatPrice(n)
+}
+const exactNumber = value => {
+  const n = Number(value)
+  return Number.isFinite(n) ? n.toLocaleString('en-US', { maximumFractionDigits: 6 }) : DASH
 }
 
 // English source text for every reason code the function publishes, kept beside
@@ -121,6 +144,8 @@ const REASON_LABELS = {
   invalid_org: 'This workspace identity was not accepted.',
   invalid_portfolio: 'That portfolio identity was not accepted.',
   invalid_limit: 'That run size is not one this function accepts.',
+  invalid_holding_ids: 'That list of holdings was not one this function accepts.',
+  unprice_failed: 'The holdings could not be written back to unpriced.',
 }
 
 const ENTITY_LABELS = {
@@ -148,6 +173,11 @@ export function answerRows(holdings) {
       price: row?.cmcDexPrice == null ? null : Number(row.cmcDexPrice),
       value: row?.value == null ? null : Number(row.value),
       priceFrom: row?.priceFrom || null,
+      quantity: row?.quantity == null ? null : Number(row.quantity),
+      liquidityUsd: row?.liquidityUsd == null ? null : Number(row.liquidityUsd),
+      marketCapUsd: row?.marketCapUsd == null ? null : Number(row.marketCapUsd),
+      // Exactly what was refused, and why. Only a `price_implausible` row has one.
+      implausible: row?.implausible && typeof row.implausible === 'object' ? row.implausible : null,
       index,
     }))
     .sort((a, b) => {
@@ -159,6 +189,57 @@ export function answerRows(holdings) {
     })
 }
 
+/**
+ * Why a price was refused, in one sentence, with the numbers it was refused on.
+ *
+ * The gate ran on the server and its verdict is reported, never re-derived here:
+ * this only says in words what `implausible.rule` already decided. A rule nobody
+ * publishes yet still produces a sentence naming the numbers rather than a blank
+ * cell or a bare code.
+ */
+export function implausibleSentence(row, t) {
+  const refused = row?.implausible
+  if (!refused) return null
+  const price = exactPrice(refused.price)
+  const quantity = row?.quantity == null ? DASH : exactNumber(row.quantity)
+  const implied = refused.impliedValue == null ? DASH : formatUsd(refused.impliedValue)
+  switch (refused.rule) {
+    case 'value_exceeds_market_cap':
+      return t('holding_identity.refused_value_exceeds_market_cap', {
+        quantity, price, implied, cap: formatUsd(refused.marketCapUsd),
+        defaultValue: '{{quantity}} × {{price}} would be {{implied}}, above the token’s whole market cap of {{cap}}; not written.',
+      })
+    case 'value_exceeds_first_price_ceiling':
+      return t('holding_identity.refused_value_exceeds_first_price_ceiling', {
+        quantity, price, implied, ceiling: formatUsd(FIRST_PRICE_CEILING_USD),
+        defaultValue: '{{quantity}} × {{price}} would be {{implied}}, above the {{ceiling}} ceiling this feature will write the first time it prices a holding; not written.',
+      })
+    case 'liquidity_below_floor':
+      return t('holding_identity.refused_liquidity_below_floor', {
+        price, liquidity: formatUsd(refused.liquidityUsd), floor: formatUsd(LIQUIDITY_FLOOR_USD),
+        defaultValue: 'The pool holds {{liquidity}}, below the {{floor}} a price needs behind it to mean anything; {{price}} not written.',
+      })
+    case 'liquidity_unknown':
+      return t('holding_identity.refused_liquidity_unknown', {
+        price,
+        defaultValue: 'The provider reported no pool liquidity at all, so {{price}} is a quotient with no market behind it; not written.',
+      })
+    default:
+      return t('holding_identity.refused_other', {
+        quantity, price, implied, rule: String(refused.rule || ''),
+        defaultValue: '{{quantity}} × {{price}} would be {{implied}}; refused by {{rule}} and not written.',
+      })
+  }
+}
+
+/** The holdings THIS run actually wrote a price for — the only ones an undo has
+ *  anything to reset. A refused row was never written, and unpricing it would
+ *  simply come back skipped. */
+export const unpriceableIds = holdings =>
+  [...new Set((Array.isArray(holdings) ? holdings : [])
+    .filter(row => row?.reason === 'priced' && row?.holdingId)
+    .map(row => String(row.holdingId)))]
+
 export default function PortfolioIdentityCoverage({ portfolioId = null }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
@@ -169,6 +250,11 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
   const [read, setRead] = useState({ status: 'loading', payload: null })
   const [run, setRun] = useState(null)
   const [revision, setRevision] = useState(0)
+  // Which holdings this session has already put back to unpriced, and the result
+  // of the last undo. The book is still the record — coverage is re-read — but a
+  // row a reader just reset must stop offering to reset it again.
+  const [undone, setUndone] = useState(() => new Set())
+  const [undo, setUndo] = useState(null)
 
   useEffect(() => {
     if (!orgId) return undefined
@@ -183,12 +269,30 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
 
   const start = useCallback(async op => {
     setRun({ op, busy: true, payload: null })
+    setUndo(null)
+    setUndone(new Set())
     const payload = await readPortfolioIdentity(supabase, { orgId, op, portfolioId })
     setRun({ op, busy: false, payload })
     // A resolve run writes prices, so the coverage it was started from is now
     // stale. It is re-read rather than patched locally: the book is the record.
     if (op === 'resolve' && payload.state === 'ready') setRevision(value => value + 1)
   }, [supabase, orgId, portfolioId])
+
+  // Put named holdings back to unpriced. This undoes ONLY what this feature
+  // wrote: a holding the exchange or Birdeye path has since repriced belongs to
+  // that path and comes back as skipped, never silently reverted.
+  const unprice = useCallback(async holdingIds => {
+    const ids = [...new Set((holdingIds || []).map(id => String(id)))]
+    if (!ids.length) return
+    setUndo({ busy: true, requested: ids.length, sent: Math.min(ids.length, UNPRICE_MAX), payload: null })
+    const payload = await readPortfolioIdentity(supabase, { orgId, op: 'unprice', holdingIds: ids })
+    setUndo({ busy: false, requested: ids.length, sent: Math.min(ids.length, UNPRICE_MAX), payload })
+    if (payload.state === 'ready') {
+      // Only the ids the server says it reset are marked reset.
+      setUndone(previous => new Set([...previous, ...payload.holdingIds]))
+      setRevision(value => value + 1)
+    }
+  }, [supabase, orgId])
 
   const payload = read.payload
   const arcs = useMemo(() => chainArcs(payload?.chains, {
@@ -202,6 +306,10 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
   const totals = coverageTotals(payload?.totals)
   const answers = useMemo(() => answerRows(run?.op === 'resolve' ? run?.payload?.holdings : null), [run])
   const entities = Array.isArray(run?.payload?.entities) && run?.op === 'entities' ? run.payload.entities : []
+  // What this run wrote, and what of it is still priced. A row already put back
+  // is not offered again.
+  const written = useMemo(() => unpriceableIds(run?.op === 'resolve' ? run?.payload?.holdings : null), [run])
+  const pending = written.filter(id => !undone.has(id))
 
   if (!orgId) return null
 
@@ -335,6 +443,39 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
         </p>
       ) : null}
 
+      {run?.op === 'resolve' && !run.busy && run.payload?.state === 'ready' && written.length ? (
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-[12px]">
+          <button type="button" className="btn btn--ghost btn--sm" disabled={undo?.busy || !pending.length} onClick={() => unprice(pending)}>
+            {undo?.busy
+              ? t('holding_identity.unpricing', { defaultValue: 'Putting them back…' })
+              : t('holding_identity.unprice_all', { written: written.length, defaultValue: 'Unprice all {{written}} from this run' })}
+          </button>
+          {/* An undo is free and is never rate limited, which is the whole point:
+              a member who spent their four runs producing a bad price must not
+              be stuck with it for an hour. */}
+          <span className="text-[var(--fg-4)]">{t('holding_identity.unprice_hint', { defaultValue: 'Putting a holding back to unpriced costs nothing and is never rate limited. Only prices this feature wrote are reset.' })}</span>
+        </div>
+      ) : null}
+
+      {undo && !undo.busy ? (
+        <p role="status" className="text-[12px] text-[var(--fg-4)]">
+          {undo.payload?.state === 'ready'
+            ? t('holding_identity.unprice_result', {
+              reset: count(undo.payload.reset),
+              requested: count(undo.payload.requested),
+              skipped: count(undo.payload.skipped),
+              defaultValue: 'Put {{reset}} of {{requested}} holdings back to unpriced. {{skipped}} were not this feature’s to reset and were left alone.',
+            })
+            : `${t('holding_identity.unprice_failed', { defaultValue: 'Those holdings could not be put back.' })} ${t(`holding_identity.reason_${undo.payload?.reason}`, { defaultValue: REASON_LABELS[undo.payload?.reason] || String(undo.payload?.reason || '') })}`}
+          {undo.requested > undo.sent
+            ? ` ${t('holding_identity.unprice_capped', {
+              sent: undo.sent, remaining: undo.requested - undo.sent,
+              defaultValue: 'One undo resets at most {{sent}} holdings, so {{remaining}} are still priced; run it again for the rest.',
+            })}`
+            : ''}
+        </p>
+      ) : null}
+
       {run?.op === 'resolve' && !run.busy && run.payload?.state === 'ready' ? (
         <div className="overflow-x-auto">
           <table className="w-full text-[12px] intel-holding-identity-run">
@@ -343,9 +484,10 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
                 requested: count(run.payload.requested),
                 priced: count(run.payload.priced),
                 identityOnly: count(run.payload.identityOnly),
+                implausible: count(run.payload.implausible),
                 notFound: count(run.payload.notFound),
                 credits: count(run.payload.credits),
-                defaultValue: 'Asked about {{requested}} holdings: {{priced}} priced, {{identityOnly}} identity only, {{notFound}} not found. {{credits}} provider calls were made.',
+                defaultValue: 'Asked about {{requested}} holdings: {{priced}} priced, {{identityOnly}} identity only, {{implausible}} refused as implausible, {{notFound}} not found. {{credits}} provider calls were made.',
               })}
               {' '}
               {(run.payload.unsupported || []).length
@@ -370,28 +512,54 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
                   t('holding_identity.col_outcome', { defaultValue: 'Outcome' }),
                   t('holding_identity.col_price', { defaultValue: 'Price' }),
                   t('holding_identity.col_value', { defaultValue: 'Value' }),
+                  t('holding_identity.col_undo', { defaultValue: 'Undo' }),
                 ].map(column => (
                   <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
                 ))}
               </tr>
             </thead>
             <tbody>
-              {answers.length ? answers.map(row => (
-                <tr key={row.key}>
-                  <th scope="row" className="text-left font-normal text-[var(--fg-2)] border-b border-[var(--border-default)] py-2 pr-3">{row.asset || DASH}</th>
-                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{row.chain || DASH}</td>
-                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">
-                    {t(`holding_identity.answer_${row.reason}`, { defaultValue: ANSWER_LABELS[row.reason] || row.reason })}
-                  </td>
-                  {/* No price is an absence, not a zero: a zero would value a
-                      real position at nothing. */}
-                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{row.price == null ? DASH : formatPrice(row.price)}</td>
-                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{row.value == null ? DASH : formatUsd(row.value)}</td>
-                </tr>
-              )) : (
+              {answers.length ? answers.map(row => {
+                const refusal = implausibleSentence(row, t)
+                const reset = undone.has(row.holdingId)
+                return (
+                  <React.Fragment key={row.key}>
+                    <tr>
+                      <th scope="row" className="text-left font-normal text-[var(--fg-2)] border-b border-[var(--border-default)] py-2 pr-3">{row.asset || DASH}</th>
+                      <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{row.chain || DASH}</td>
+                      <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">
+                        {t(`holding_identity.answer_${row.reason}`, { defaultValue: ANSWER_LABELS[row.reason] || row.reason })}
+                      </td>
+                      {/* No price is an absence, not a zero: a zero would value a
+                          real position at nothing. A REFUSED row shows the price
+                          that was refused, because hiding it would leave the
+                          sentence below talking about a number nobody can see. */}
+                      <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">
+                        {row.price != null ? formatPrice(row.price) : row.implausible?.price != null ? formatPrice(row.implausible.price) : DASH}
+                      </td>
+                      <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{row.value == null ? DASH : formatUsd(row.value)}</td>
+                      {/* Only a row this run actually wrote has anything to undo. */}
+                      <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">
+                        {row.reason !== 'priced' || !row.holdingId ? DASH : reset
+                          ? t('holding_identity.unpriced_done', { defaultValue: 'Back to unpriced' })
+                          : (
+                            <button type="button" className="intel-text-link" disabled={undo?.busy} onClick={() => unprice([row.holdingId])}>
+                              {t('holding_identity.unprice', { defaultValue: 'Unprice' })}
+                            </button>
+                          )}
+                      </td>
+                    </tr>
+                    {refusal ? (
+                      <tr className="intel-holding-identity-refusal">
+                        <td className="text-[11px] text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3" colSpan={6}>{refusal}</td>
+                      </tr>
+                    ) : null}
+                  </React.Fragment>
+                )
+              }) : (
                 <tr>
                   <th scope="row" className="text-left font-normal text-[var(--fg-2)] border-b border-[var(--border-default)] py-2 pr-3">{t('holding_identity.run_none', { defaultValue: 'Nothing to ask about' })}</th>
-                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3" colSpan={4}>
+                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3" colSpan={5}>
                     {t('holding_identity.run_none_detail', { defaultValue: 'No open holding is unpriced or stale on a verified DEX chain, so no provider call was made and nothing was spent.' })}
                   </td>
                 </tr>
