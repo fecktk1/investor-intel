@@ -781,6 +781,7 @@
     "journal_exit_result": "Resultado do diário para esta saída",
     "legs_limited": "Exibindo até 64 pernas. Abra a atividade subjacente da carteira para ver o registro completo.",
     "loading": "Carregando histórico de preços…",
+    "range_all": "Tudo",
     "loading_activity": "Carregando sua atividade…",
     "market_history": "Histórico de preços e de atividade pessoal",
     "more_history": "Carregar mais atividade",

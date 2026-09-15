@@ -4,7 +4,12 @@ import {normalizeBars,type Bar} from './chart-analysis.ts'
 import {CHAIN_COINGECKO} from '../chains.ts'
 import type {MarketAssetsContext} from '../market-assets/types.ts'
 
-export const CHART_WINDOWS:Record<string,number>={'1H':3600000,'12H':43200000,'24H':86400000,'3D':259200000,'7D':604800000,'1M':2592000000,'3M':7776000000,'6M':15552000000,'1Y':31536000000}
+/** The RANGE vocabulary. The last three were added with the stored daily archive
+ * (`market_asset_candles`): a provider window alone can never answer them, so a
+ * read that offers them merges the archive with the provider's recent tail.
+ * 'ALL' is twenty years — it predates every asset the catalogue carries, so a
+ * plan built from it can never ask for a period before the asset existed. */
+export const CHART_WINDOWS:Record<string,number>={'1H':3600000,'12H':43200000,'24H':86400000,'3D':259200000,'7D':604800000,'1M':2592000000,'3M':7776000000,'6M':15552000000,'1Y':31536000000,'2Y':63072000000,'5Y':157680000000,'ALL':630720000000}
 /** The APP interval vocabulary. The four sub-hour keys were added for the
  * CoinMarketCap k-line source (`cmc-kline-chart.ts`), which is the only source
  * that can sample below an hour, and they are accepted by `intel-markets` for a
@@ -84,6 +89,6 @@ export async function loadCmcChart(admin:any,id:string,range='1M',interval='auto
  }
  const aggregate=aggregateOhlcv(normalizeBars(all).bars,plan.base,plan.step,now)
  const candles=aggregate.bars.filter(b=>b.t>=plan.from&&b.closedAt!<=plan.to)
- const coverage=[`${plan.selected} completed OHLCV candles; UTC periods.`,plan.base===HOUR?'CMC adjusted volume is a snapshot in USD; grouped candles use the final reading, not a sum of hours.':'CMC adjusted volume is in USD for each completed period.',plan.limited?'Startup intraday coverage is limited to the most recent 30 days.':null,aggregate.incomplete?`${aggregate.incomplete} incomplete candle periods omitted.`:null,reasons.length?`Some history is unavailable (${[...new Set(reasons)].join(', ')}).`:null].filter(Boolean).join(' ')
+ const coverage=[`${plan.selected} completed OHLCV candles; UTC periods.`,plan.base===HOUR?'CMC adjusted volume is a snapshot in USD; grouped candles use the final reading, not a sum of hours.':'CMC adjusted volume is in USD for each completed period.',plan.limited?(plan.base===HOUR?'Startup intraday coverage is limited to the most recent 30 days.':'One OHLCV read reaches back 365 days; older periods come from the stored daily archive, not from this request.'):null,aggregate.incomplete?`${aggregate.incomplete} incomplete candle periods omitted.`:null,reasons.length?`Some history is unavailable (${[...new Set(reasons)].join(', ')}).`:null].filter(Boolean).join(' ')
  return {candles,source:'coinmarketcap',timestampMeaning:'open',barIntervalMs:plan.step,volumeUnit:'USD',coverage,sourceState:states.every(s=>s==='fresh')?'fresh':candles.length?'stale':states[0]||'unavailable',sourceReason:reasons[0]||null,provenance,bestPair:null,bestProvider:candles.length?'coinmarketcap':null}
 }
