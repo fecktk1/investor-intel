@@ -20,7 +20,10 @@ const RWA_CAP = 5100, INDEX_CAP = 2000
 const LIQUIDATION_ID_MAX = 10, LIQUIDATION_CAP = 4000
 const LIQUIDATION_TOTAL_IDS = 3, LIQUIDATION_TOTAL_CAP = 6200
 
-export const CAPTURE_VIEWS = ['regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations'] as const
+const ATTENTION_LISTS = ['trending', 'most_visited', 'gainers', 'losers'] as const
+const ATTENTION_HOURS_MAX = 168, ATTENTION_CAP = 3000, ATTENTION_STAMP_CAP = 2000
+
+export const CAPTURE_VIEWS = ['regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations', 'attention'] as const
 export type CaptureView = typeof CAPTURE_VIEWS[number]
 
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
@@ -286,6 +289,41 @@ export async function readLiquidations(db: any, params: { providerIds?: unknown;
   }
 }
 
+// ─── attention ────────────────────────────────────────────────────────────────
+
+/** One asset's presence on the provider's attention lists over the last
+ * `hours` (default 24, at most 168). `captures` are the hourly capture stamps
+ * in the window, read from the rank-1 rows of every list, so an hour in which
+ * the asset was on no list can be told apart from an hour nobody captured.
+ * Only aggregate list membership is read; nothing about who looked. */
+export async function readAttention(db: any, params: { providerId?: unknown; hours?: unknown } = {}, now: Date | number = Date.now()): Promise<ViewResult> {
+  const providerId = str(params.providerId, 40)
+  const hours = Math.max(1, Math.min(ATTENTION_HOURS_MAX, Math.trunc(Number(params.hours) || 24)))
+  const lists: Record<string, { capturedAt: string | null; rank: number | null; timePeriod: string | null }[]> =
+    Object.fromEntries(ATTENTION_LISTS.map((list) => [list, []]))
+  if (!providerId) return { view: 'attention', providerId: null, hours, lists, captures: [], asOf: null, coverage: emptyCoverage(), reason: 'no_asset_selected' }
+  const floor = new Date(at(now) - hours * 3_600_000).toISOString()
+  const [own, stamps] = await Promise.all([
+    readRows(() => db.from('intel_attention_snapshots').select('list,time_period,captured_at,rank').eq('provider_id', providerId)
+      .gte('captured_at', floor).order('captured_at', { ascending: false }).limit(ATTENTION_CAP)),
+    readRows(() => db.from('intel_attention_snapshots').select('captured_at').eq('rank', 1)
+      .gte('captured_at', floor).order('captured_at', { ascending: false }).limit(ATTENTION_STAMP_CAP)),
+  ])
+  for (const row of own.rows) {
+    const list = str(row?.list, 40)
+    if (!list || !Object.hasOwn(lists, list)) continue
+    lists[list].push({ capturedAt: str(row?.captured_at, 40), rank: num(row?.rank), timePeriod: str(row?.time_period, 20) })
+  }
+  for (const list of Object.keys(lists)) lists[list] = chronological(lists[list])
+  const captures = [...new Set(stamps.rows.map((row: any) => str(row?.captured_at, 40)).filter((v): v is string => !!v))].sort()
+  return {
+    view: 'attention', providerId, hours, lists, captures,
+    asOf: captures.at(-1) ?? null,
+    coverage: { from: captures[0] ?? null, to: captures.at(-1) ?? null, count: own.rows.length, truncated: own.rows.length >= ATTENTION_CAP || stamps.rows.length >= ATTENTION_STAMP_CAP },
+    reason: own.reason || stamps.reason,
+  }
+}
+
 /** Single entry point used by the Edge Function; an unknown view is reported as
  * a reason on an empty result, never as a thrown error. */
 export async function readCaptureView(db: any, view: string, params: Record<string, unknown> = {}, now: Date | number = Date.now()): Promise<ViewResult> {
@@ -296,6 +334,7 @@ export async function readCaptureView(db: any, view: string, params: Record<stri
     case 'rwa_universe': return await readRwaUniverse(db, params as any, now)
     case 'index_constituents': return await readIndexConstituents(db, params as any, now)
     case 'liquidations': return await readLiquidations(db, params as any, now)
+    case 'attention': return await readAttention(db, params as any, now)
     default: return { view: String(view || ''), series: [], asOf: null, coverage: emptyCoverage(), reason: 'unsupported_view' }
   }
 }

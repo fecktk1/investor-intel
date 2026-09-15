@@ -1,6 +1,6 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  readCaptureView, readRegime, readRegimeAt, readRankMap, readRwaUniverse, readIndexConstituents, readLiquidations,
+  readCaptureView, readRegime, readRegimeAt, readRankMap, readRwaUniverse, readIndexConstituents, readLiquidations, readAttention,
   samplePoints, CAPTURE_VIEWS,
 } from './capture-read.ts'
 
@@ -58,7 +58,7 @@ Deno.test('every view returns an empty, bounded shape for empty tables and never
     eq(result.asOf, null)
     eq(result.coverage.count, 0)
     eq(result.coverage.from, null)
-    const series = (result.series ?? result.rows ?? result.top) as unknown[]
+    const series = (result.series ?? result.rows ?? result.top ?? result.captures) as unknown[]
     eq(Array.isArray(series) ? series.length : -1, 0)
   }
   const unknown = await readCaptureView(db, 'nope', {}, NOW)
@@ -240,6 +240,34 @@ Deno.test('liquidations caps the requested asset list and the total series input
   const result = await readLiquidations(fakeDb({ intel_liquidation_snapshots: [] }), { providerIds: ids }, NOW)
   eq((result.providerIds as string[]).length, 10)
   eq((result.totalProviderIds as string[]).length, 3)
+})
+
+Deno.test('attention returns one asset\'s list membership per capture and the capture stamps of the window', async () => {
+  const rows: any[] = []
+  // Six hourly captures; the asset is trending in the newest three and a loser in the oldest, absent otherwise.
+  for (let h = 0; h < 6; h++) {
+    const capturedAt = hoursAgo(h)
+    for (const list of ['trending', 'most_visited', 'gainers', 'losers']) rows.push({ list, time_period: '', captured_at: capturedAt, provider_id: '99', rank: 1 })
+    if (h < 3) rows.push({ list: 'trending', time_period: '', captured_at: capturedAt, provider_id: '1027', rank: 4 + h })
+    if (h === 5) rows.push({ list: 'losers', time_period: '', captured_at: capturedAt, provider_id: '1027', rank: 20 })
+  }
+  rows.push({ list: 'trending', time_period: '', captured_at: hoursAgo(40), provider_id: '1027', rank: 1 }) // outside the 24 h window
+  const result = await readAttention(fakeDb({ intel_attention_snapshots: rows }), { providerId: 1027 }, NOW)
+  eq(result.providerId, '1027'); eq(result.hours, 24)
+  const lists = result.lists as Record<string, any[]>
+  eq(lists.trending.map((p) => p.rank), [6, 5, 4])
+  eq(lists.trending[0].capturedAt < lists.trending.at(-1).capturedAt, true)
+  eq(lists.losers.length, 1); eq(lists.gainers.length, 0); eq(lists.most_visited.length, 0)
+  eq((result.captures as string[]).length, 6)
+  eq(result.asOf, NOW.toISOString())
+  eq(result.coverage.count, 4)
+
+  const none = await readAttention(fakeDb(), {}, NOW)
+  eq(none.reason, 'no_asset_selected'); eq((none.captures as string[]).length, 0); eq(none.asOf, null)
+  const week = await readAttention(fakeDb(), { providerId: '1', hours: 900 }, NOW)
+  eq(week.hours, 168)
+  const broken = await readAttention(fakeDb({}, { intel_attention_snapshots: 'denied' }), { providerId: '1' }, NOW)
+  eq(broken.reason, 'denied')
 })
 
 Deno.test('samplePoints keeps the first and last observation', () => {
