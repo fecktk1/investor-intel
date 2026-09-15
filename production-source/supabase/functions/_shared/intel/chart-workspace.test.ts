@@ -107,6 +107,42 @@ Deno.test('a post drawing accepts only a public status address and stores it in 
  assertThrows(()=>validateDrawing({...drawing(),url:'https://x.com/forge/status/1899'}))
 })
 
+// ── The working state: what the chart looked like when the member last left it ──
+
+Deno.test('a working state carries the chart size and layout preset, and a layout without them is unchanged',()=>{
+ const working=validateChartLayout({...layout(),size:'tall',preset:'Momentum',interval:'30m'})
+ eq(working.size,'tall');eq(working.preset,'Momentum');eq(working.interval,'30m')
+ // Absent stays absent, so a layout saved before either field existed still validates to the object it always did.
+ const plain=validateChartLayout(layout());eq('size' in plain,false);eq('preset' in plain,false)
+ // One minute and one month are different widths and neither is folded into the other.
+ eq(validateChartLayout({...layout(),interval:'1m'}).interval,'1m');eq(validateChartLayout({...layout(),interval:'1mo'}).interval,'1mo')
+ for(const patch of [{size:'enormous'},{size:1},{preset:'Whatever'},{preset:true},{interval:'3s'}])assertThrows(()=>validateChartLayout({...layout(),...patch}))
+})
+
+Deno.test('a working state read is bound to the authenticated member, organization and asset',async()=>{
+ const db=dbMock({asset:'native:bitcoin',state:layout(),revision:4,updated_at:'2026-09-14T00:00:00.000Z'})
+ const result=await chartWorkspaceService(db,{orgId,userId},{operation:'working_get',asset:'native:bitcoin',userId:'spoofed',orgId:'another-org'})
+ for(const [key,value]of [['org_id',orgId],['user_id',userId],['asset','native:bitcoin']])eq(db.calls.some(c=>c[0]==='eq'&&c[1]===key&&c[2]===value),true)
+ eq(db.calls.some(c=>c[0]==='from'&&c[1]==='intel_chart_working_states'),true)
+ eq(result.working?.revision,4);eq(result.working?.updatedAt,'2026-09-14T00:00:00.000Z')
+ // A member who has never left a chart here gets null rather than an error.
+ eq((await chartWorkspaceService(dbMock(null),{orgId,userId},{operation:'working_get',asset:'native:bitcoin'})).working,null)
+ await assertRejects(()=>chartWorkspaceService(dbMock(null),{orgId,userId},{operation:'working_get',asset:'BTC'}),Error,'invalid_chart_asset')
+})
+
+Deno.test('a working state save validates the state, binds ownership and carries the revision it was written against',async()=>{
+ const db=dbMock({revision:5,updatedAt:'2026-09-15T00:00:00.000Z',applied:true})
+ const result=await chartWorkspaceService(db,{orgId,userId},{operation:'working_save',asset:'native:bitcoin',revision:4,userId:'spoofed',state:{...layout(),size:'tall',preset:'Custom',portfolioNotes:'Must not persist'}})
+ const args=db.calls[0][2]
+ eq(db.calls[0][1],'intel_save_chart_working_state');eq(args.p_user,userId);eq(args.p_org,orgId);eq(args.p_asset,'native:bitcoin');eq(args.p_revision,4)
+ eq('portfolioNotes' in args.p_state,false);eq(args.p_state.size,'tall');eq(result.revision,5)
+ // The row is keyed on the asset, so a state naming another chart is refused rather than filed under the wrong one.
+ await assertRejects(()=>chartWorkspaceService(dbMock({}),{orgId,userId},{operation:'working_save',asset:'native:ethereum',revision:0,state:layout()}),Error,'invalid_chart_working_asset')
+ for(const revision of [-1,1.5,'4',null])await assertRejects(()=>chartWorkspaceService(dbMock({}),{orgId,userId},{operation:'working_save',asset:'native:bitcoin',revision,state:layout()}),Error,'invalid_chart_working_revision')
+ await assertRejects(()=>chartWorkspaceService(dbMock({}),{orgId,userId},{operation:'working_save',asset:'native:bitcoin',revision:0,state:{...layout(),drawings:Array.from({length:201},drawing)}}),Error,'chart_layout_limit')
+ await assertRejects(()=>chartWorkspaceService(dbMock(null,{code:'PGRST301'}),{orgId,userId},{operation:'working_save',asset:'native:bitcoin',revision:0,state:layout()}),Error,'chart_storage_unavailable')
+})
+
 // A saved layout on the ALL range is twenty years wide. The old ten-year cap
 // refused it, so the layout could be drawn but never saved.
 Deno.test('a saved layout may span the widest chart range and no wider',()=>{

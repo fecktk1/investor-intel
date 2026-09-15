@@ -1054,6 +1054,10 @@
       "full": "Plein écran",
       "exit": "Quitter le plein écran",
       "covering": "Le navigateur a refusé le plein écran : le graphique couvre donc cette fenêtre. Appuyez sur Échap ou choisissez « Quitter le plein écran » pour revenir."
+    },
+    "working": {
+      "saving": "Enregistrement",
+      "saved": "Enregistré"
     }
   },
   "charts": {
@@ -2937,7 +2941,8 @@
     "read_failed": "La lecture de l’actif n’a pas pu être effectuée.",
     "research_heading": "Contexte de marché",
     "sections": "Sur cette page d’actif",
-    "workspace": "Prix, position et recherche"
+    "workspace": "Prix, position et recherche",
+    "restoring_chart": "Restauration du graphique que vous avez laissé…"
   },
   "coverage": {
     "available_count": "{{available}} sections sur {{total}} disponibles",

@@ -18,6 +18,15 @@ export const DRAWING_ANCHOR_COUNT:Record<string,number>={horizontal:1,text:1,hor
 export const drawingAnchorCount=(tool:string)=>DRAWING_ANCHOR_COUNT[tool]??2
 export const DRAWING_DASHES=['solid','dashed','dotted'] as const
 export type DrawingDash=typeof DRAWING_DASHES[number]
+// The plot heights the size control cycles through, and the indicator presets the
+// layout control offers. Both are carried ONLY by a working state, which is why
+// they are written back only when they are present: a layout saved before these
+// existed validates to exactly the object it validated to before.
+export const CHART_SIZES=['default','tall','fullscreen'] as const
+export const CHART_PRESETS=['Clean','Research','Momentum','Volume','Custom'] as const
+// Candle widths, lower-cased. '1m' is ONE MINUTE and '1mo' is one month: the two
+// are different widths and are never folded together.
+export const CHART_INTERVALS=['auto','1m','5m','15m','30m','1h','4h','1d','1w','1mo'] as const
 // A public post address on X. Query strings and the twitter.com host are accepted
 // and normalized away so the same post caches under one key.
 const TWEET_URL=/^https:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/([0-9]{1,25})(?:[/?#].*)?$/
@@ -29,7 +38,7 @@ export function tweetStatusUrl(value:unknown):string {
 export type ChartAnchor={t:number;price:number}
 export type ChartDrawing={id:string;tool:DrawingTool;anchors:ChartAnchor[];text:string;color:string;width:number;dash?:DrawingDash;url?:string;ratios?:number[];outcome?:SavedOutcomeAssumptions}
 export type ChartComparison={assets:{asset:string;label:string}[];arrangement:'overlay'|'2x2'|'1x4';priceScale:'independent'|'shared'|'returns';period:string}
-export type ChartLayout={purpose?:'study_template';replay?:{at:number;knownOnly:boolean};comparison?:ChartComparison;schemaVersion:1;asset:string;interval:string;range:{from:number;to:number};mode:string;scale:string;autoScale:boolean;volume:boolean;theme:string;timezone:string;studies:Study[];drawings:ChartDrawing[];visibility:Record<string,boolean>}
+export type ChartLayout={purpose?:'study_template';replay?:{at:number;knownOnly:boolean};comparison?:ChartComparison;size?:string;preset?:string;schemaVersion:1;asset:string;interval:string;range:{from:number;to:number};mode:string;scale:string;autoScale:boolean;volume:boolean;theme:string;timezone:string;studies:Study[];drawings:ChartDrawing[];visibility:Record<string,boolean>}
 export const isUuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
 const object=(v:unknown):v is Record<string,any>=>!!v&&typeof v==='object'&&!Array.isArray(v)
 const string=(v:unknown,max:number)=>typeof v==='string'&&v.length<=max&&!/[\u0000-\u0008\u000b\u000c\u000e-\u001f]/.test(v)
@@ -97,7 +106,11 @@ export function validateChartLayout(value:any):ChartLayout {
  let replay:ChartLayout['replay']
  if(value.replay!=null){if(!object(value.replay)||!finite(value.replay.at)||value.replay.at<0||value.replay.at>4102444800000||typeof value.replay.knownOnly!=='boolean'||comparison)throw new Error('invalid_chart_replay');replay={at:value.replay.at,knownOnly:value.replay.knownOnly}}
  if(value.purpose!=null&&(value.purpose!=='study_template'||!studies.length||drawings.length||comparison||replay||Object.keys(visibility).length))throw new Error('invalid_chart_template')
- return {...(replay?{replay}:{}),...(value.purpose?{purpose:'study_template' as const}:{}),...(comparison?{comparison}:{}),schemaVersion:1,asset,range:{from:range.from,to:range.to},interval:choice(value.interval,['auto','5m','15m','1h','4h','1d','1w','1mo'],'auto'),
+ // Absent stays absent: a stored layout that never carried a size or a preset
+ // validates to the same object it always did, so its fingerprint is unchanged.
+ const size=value.size==null?undefined:choice(value.size,[...CHART_SIZES],'default')
+ const preset=value.preset==null?undefined:choice(value.preset,[...CHART_PRESETS],'Clean')
+ return {...(replay?{replay}:{}),...(value.purpose?{purpose:'study_template' as const}:{}),...(comparison?{comparison}:{}),...(size?{size}:{}),...(preset?{preset}:{}),schemaVersion:1,asset,range:{from:range.from,to:range.to},interval:choice(value.interval,[...CHART_INTERVALS],'auto'),
   mode:choice(value.mode,['line','candles','ohlc'],'line'),scale:choice(value.scale,['linear','log','percent','indexed'],'linear'),theme:choice(value.theme,['app','dark','light','gray'],'app'),timezone,
   autoScale:value.autoScale??true,volume:value.volume??false,studies,drawings,visibility}
 }

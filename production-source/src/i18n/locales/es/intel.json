@@ -1054,6 +1054,10 @@
       "full": "Pantalla completa",
       "exit": "Salir de pantalla completa",
       "covering": "El navegador rechazó la pantalla completa, así que el gráfico cubre esta ventana. Pulsa Escape o elige «Salir de pantalla completa» para volver."
+    },
+    "working": {
+      "saving": "Guardando",
+      "saved": "Guardado"
     }
   },
   "charts": {
@@ -2937,7 +2941,8 @@
     "read_failed": "No se pudo completar la lectura del activo.",
     "research_heading": "Contexto de mercado",
     "sections": "En esta página del activo",
-    "workspace": "Precio, posición e investigación"
+    "workspace": "Precio, posición e investigación",
+    "restoring_chart": "Restaurando el gráfico que dejaste…"
   },
   "coverage": {
     "available_count": "{{available}} de {{total}} secciones disponibles",

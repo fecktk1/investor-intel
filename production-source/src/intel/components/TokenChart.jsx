@@ -8,11 +8,18 @@ import ChartWatchlistAdd from './ChartWatchlistAdd'
 import EvidenceMarkerContext from './EvidenceMarkerContext'
 import JournalMarkerReceipt from './JournalMarkerReceipt'
 import {useChartAlertHistory} from '../lib/useChartAlertHistory'
+import {workingDraftStore} from '../lib/chart-working-state'
+import deferredPanel from './deferred-panel'
 import { chartEventChanges } from '../lib/chart-event-changes'
 import {chartReplay,replayStops} from '../lib/chart-replay'
 import { normalizeBars, regularBarGrid } from '../../../supabase/functions/_shared/intel/chart-analysis'
 const PriceWorkstation = lazy(() => import('./PriceWorkstation'))
 const TokenChartFallback = lazy(() => import('./TokenChartFallback'))
+// Reading the working state is first content and happens before this chart is
+// built. Writing it is not: nothing needs saving until the member changes
+// something, so the saver arrives after the chart and picks the draft store up
+// where the chart already left it.
+const ChartWorkingState = deferredPanel(() => import('./ChartWorkingState'), { label: 'The saved chart state' })
 class WorkstationBoundary extends React.Component {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
@@ -127,14 +134,18 @@ export function MarkerDetails({ events, onClose, t, onMouseEnter, onMouseLeave, 
   </section>
 }
 
-function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, assetName = null, assetSymbol = null, requestKey = '', initialLayout = null, readOnly = false, replayCursor = undefined, onReplayChange }) {
+function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, assetName = null, assetSymbol = null, requestKey = '', initialLayout = null, workingRevision = 0, readOnly = false, replayCursor = undefined, onReplayChange }) {
   const { t } = useTranslation('intel')
   const conditions=useChartAlertHistory(readOnly?null:persistence,timeWindow?.from,timeWindow?.to,assetKey)
   const inputMarkers=useMemo(()=>[...providedMarkers,...conditions.markers],[providedMarkers,conditions.markers])
   const historyLoading=suppliedHistoryLoading||conditions.loading,historyError=suppliedHistoryError||conditions.error,historyHasMore=suppliedHistoryHasMore||!!conditions.nextCursor
   const onLoadMoreHistory=()=>{if(suppliedHistoryHasMore)loadSuppliedHistory?.();if(conditions.nextCursor)conditions.loadMore()}
   const chartId = useId().replaceAll(':', '')
-  const [hiddenGroups, setHiddenGroups] = useState(new Set(['news', 'partnerships', 'unlocks']))
+  // Marker layers the member last had hidden come back hidden; a chart with no
+  // working state keeps the quiet default.
+  const [hiddenGroups, setHiddenGroups] = useState(() => Object.keys(initialLayout?.visibility || {}).length
+    ? new Set(Object.entries(initialLayout.visibility).filter(([, visible]) => !visible).map(([group]) => group))
+    : new Set(['news', 'partnerships', 'unlocks']))
   const layers = useMemo(() => [...LAYERS, ...[...new Set(inputMarkers.map(markerGroup))].filter(group => !LAYERS.some(([known]) => known === group)).map(group => [group, textLabel(group)])], [inputMarkers])
   const groups = useMemo(() => showDensityToggles ? new Set(layers.map(([group]) => group).filter(group => !hiddenGroups.has(group))) : null, [layers, hiddenGroups, showDensityToggles])
   const [range, setRange] = useState(defaultRange)
@@ -149,6 +160,9 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   const cacheRef = useRef({})
   const previousRequestKey = useRef(requestKey)
   const workspaceDraft = useRef(initialLayout||{})
+  // The draft the chart reports on every change, held outside React so a pan or
+  // an added drawing costs no render here and the saver can arrive afterwards.
+  const draftStore = useRef(null); if (!draftStore.current) draftStore.current = workingDraftStore()
   const [localReplayAt,setReplayAt]=useState(initialLayout?.replay?.at??null),[knownOnly,setKnownOnly]=useState(initialLayout?.replay?.knownOnly??false)
   const replayAt=replayCursor===undefined?localReplayAt:replayCursor
   const replayBasis=useRef(`${range}:${requestKey}`)
@@ -241,6 +255,7 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
       {loadCandles && <div className="intel-range-controls" aria-label={t('chart.time_range', { defaultValue: 'Chart time range' })}>{RANGES.map(r => <button key={r} type="button" aria-pressed={r === range} onClick={() => { setRange(r); setSelection(null) }}>{r === 'ALL' ? t('chart.range_all', { defaultValue: 'All' }) : r}</button>)}</div>}
       {rangeExtra}
       {persistence && !readOnly && <ChartWatchlistAdd key={`${persistence.userId}:${persistence.orgId}:${persistence.asset}`} context={persistence} plotRef={plotRef}/>}
+      {persistence && !readOnly && <ChartWorkingState store={draftStore.current} context={persistence} revision={workingRevision} initial={initialLayout}/>}
       {!replay&&<button className="intel-text-link" type="button" disabled={stops.length<2} onClick={()=>setReplayTime(stops[Math.min(stops.length-1,Math.max(0,Math.floor(stops.length/3)))])}>Replay chart</button>}
       {showDensityToggles && markers.length > 0 && <ResponsiveChartTools label={t('chart.layers', { defaultValue: 'Layers' })}><fieldset className="intel-layer-controls"><legend className="sr-only">{t('chart.layers_title', { defaultValue: 'Chart layers' })}</legend>{layers.map(([group, label]) => <label key={group}><input type="checkbox" checked={!hiddenGroups.has(group)} onChange={() => setHiddenGroups(s => { const next = new Set(s); next.has(group) ? next.delete(group) : next.add(group); return next })}/>{t(`chart.marker_${group}`, { defaultValue: label })}</label>)}</fieldset></ResponsiveChartTools>}
     </div>
@@ -252,7 +267,7 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
       {coverage.provenance?.fetchedAt && <> · Retrieved <time dateTime={coverage.provenance.fetchedAt}>{date(coverage.provenance.fetchedAt)}</time></>}
     </p></details>}
     <div ref={plotRef} className={`intel-chart-plot${!data.length&&!tfLoading&&!loading?" intel-chart-plot-empty":""}`} style={{minHeight:!data.length&&!tfLoading&&!loading?80:height}}>
-      {useWorkstation ? <WorkstationBoundary key={assetKey} onFailure={()=>setRendererFailed(true)}><Suspense fallback={<p role="status">Loading chart controls…</p>}><PriceWorkstation bars={workstationBars} viewKey={`${range}:${requestKey}`} timeWindow={timeWindow ? {from:timeWindow.from,to:replay?Math.min(timeWindow.to,replayAt):timeWindow.to}:null} readOnly={readOnly} assetName={assetName} assetSymbol={assetSymbol} seriesCapture={coverage?.capture} replay={replay} knownOnly={knownOnly} chartSource={replay&&coverage?.chartSource?{...coverage.chartSource,observedAt:workstationBars.at(-1)?.t??null}:coverage?.chartSource} height={height} cursorTime={replay?replayAt:cursorTime} onCursorChange={replay?setReplayTime:onCursorChange} persistence={persistence} initialState={workspaceDraft.current} onReplayRestore={state=>{setKnownOnly(state?.knownOnly??false);setReplayTime(state?.at??null)}} onWorkspaceChange={state=>{workspaceDraft.current=state}} visibility={Object.fromEntries(layers.map(([group])=>[group,!hiddenGroups.has(group)]))} onVisibilityChange={state=>setHiddenGroups(new Set(Object.entries(state).filter(([,visible])=>!visible).map(([group])=>group)))} onFailure={()=>setRendererFailed(true)} onViewportChange={v=>setViewport(previous=>previous?.from===v.from&&previous?.to===v.to&&previous?.width===v.width?previous:v)} clusters={clusters} renderMarker={renderMarker} keyLevels={keyLevels} drawdown={drawdownFrom!=null&&drawdownTo!=null?{fromT:drawdownFrom,toT:drawdownTo}:null}/></Suspense></WorkstationBoundary> : data.length > 0 ? <WorkstationBoundary fallback={<p role="alert">The price plot could not load. Recorded activity remains available below. Reload to retry.</p>}><Suspense fallback={<p role="status">Loading price plot…</p>}><TokenChartFallback data={data} height={height} onCursorChange={onCursorChange} chartId={chartId} color={color} first={first} last={last} fmtT={fmtT} fmt={fmt} date={date} t={t} drawdownFrom={drawdownFrom} drawdownTo={drawdownTo} keyLevels={keyLevels} cursorTime={cursorTime} clusters={clusters} priceAt={priceAt} open={open} leave={leave} colors={COLORS}/></Suspense></WorkstationBoundary> : <div className="intel-chart-empty">{t('chart.price_period_unavailable', { defaultValue: 'Price observations are unavailable for this period. Recorded activity remains on its own timeline.' })}</div>}
+      {useWorkstation ? <WorkstationBoundary key={assetKey} onFailure={()=>setRendererFailed(true)}><Suspense fallback={<p role="status">Loading chart controls…</p>}><PriceWorkstation bars={workstationBars} viewKey={`${range}:${requestKey}`} timeWindow={timeWindow ? {from:timeWindow.from,to:replay?Math.min(timeWindow.to,replayAt):timeWindow.to}:null} readOnly={readOnly} assetName={assetName} assetSymbol={assetSymbol} seriesCapture={coverage?.capture} replay={replay} knownOnly={knownOnly} chartSource={replay&&coverage?.chartSource?{...coverage.chartSource,observedAt:workstationBars.at(-1)?.t??null}:coverage?.chartSource} height={height} cursorTime={replay?replayAt:cursorTime} onCursorChange={replay?setReplayTime:onCursorChange} persistence={persistence} initialState={workspaceDraft.current} onReplayRestore={state=>{setKnownOnly(state?.knownOnly??false);setReplayTime(state?.at??null)}} onWorkspaceChange={state=>{workspaceDraft.current=state;if(!replay)draftStore.current.set(state)}} visibility={Object.fromEntries(layers.map(([group])=>[group,!hiddenGroups.has(group)]))} onVisibilityChange={state=>setHiddenGroups(new Set(Object.entries(state).filter(([,visible])=>!visible).map(([group])=>group)))} onFailure={()=>setRendererFailed(true)} onViewportChange={v=>setViewport(previous=>previous?.from===v.from&&previous?.to===v.to&&previous?.width===v.width?previous:v)} clusters={clusters} renderMarker={renderMarker} keyLevels={keyLevels} drawdown={drawdownFrom!=null&&drawdownTo!=null?{fromT:drawdownFrom,toT:drawdownTo}:null}/></Suspense></WorkstationBoundary> : data.length > 0 ? <WorkstationBoundary fallback={<p role="alert">The price plot could not load. Recorded activity remains available below. Reload to retry.</p>}><Suspense fallback={<p role="status">Loading price plot…</p>}><TokenChartFallback data={data} height={height} onCursorChange={onCursorChange} chartId={chartId} color={color} first={first} last={last} fmtT={fmtT} fmt={fmt} date={date} t={t} drawdownFrom={drawdownFrom} drawdownTo={drawdownTo} keyLevels={keyLevels} cursorTime={cursorTime} clusters={clusters} priceAt={priceAt} open={open} leave={leave} colors={COLORS}/></Suspense></WorkstationBoundary> : <div className="intel-chart-empty">{t('chart.price_period_unavailable', { defaultValue: 'Price observations are unavailable for this period. Recorded activity remains on its own timeline.' })}</div>}
       {selection?.length>0 && <MarkerDetails events={visibleSelection || []} onClose={closeDetail} t={t} onSelect={event=>{if(event){pinRef.current=true;onCursorChange?.(event.t);onEventSelect?.([event])}}} onMouseEnter={() => clearTimeout(hoverTimer.current)} onMouseLeave={leave}/>}
     </div>
     {!data.length&&window.visible.length>0&&<div className="intel-event-period"><time dateTime={new Date(first).toISOString()}>{date(first)}</time><time dateTime={new Date(last).toISOString()}>{date(last)}</time></div>}

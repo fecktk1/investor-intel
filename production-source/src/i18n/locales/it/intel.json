@@ -1054,6 +1054,10 @@
       "full": "Schermo intero",
       "exit": "Esci da schermo intero",
       "covering": "Il browser ha rifiutato lo schermo intero, quindi il grafico copre questa finestra. Premi Esc oppure scegli «Esci da schermo intero» per tornare indietro."
+    },
+    "working": {
+      "saving": "Salvataggio",
+      "saved": "Salvato"
     }
   },
   "charts": {
@@ -2937,7 +2941,8 @@
     "read_failed": "Non è stato possibile completare la lettura dell’asset.",
     "research_heading": "Contesto di mercato",
     "sections": "In questa pagina dell’asset",
-    "workspace": "Prezzo, posizione e ricerca"
+    "workspace": "Prezzo, posizione e ricerca",
+    "restoring_chart": "Ripristino del grafico che avevi lasciato…"
   },
   "coverage": {
     "available_count": "{{available}} di {{total}} sezioni disponibili",

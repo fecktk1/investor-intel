@@ -1054,6 +1054,10 @@
       "full": "Volledig scherm",
       "exit": "Volledig scherm verlaten",
       "covering": "De browser weigerde volledig scherm, dus de grafiek bedekt dit venster. Druk op Escape of kies „Volledig scherm verlaten” om terug te gaan."
+    },
+    "working": {
+      "saving": "Opslaan",
+      "saved": "Opgeslagen"
     }
   },
   "charts": {
@@ -2937,7 +2941,8 @@
     "read_failed": "Het lezen van het activum kon niet worden voltooid.",
     "research_heading": "Marktcontext",
     "sections": "Op deze activumpagina",
-    "workspace": "Prijs, positie en research"
+    "workspace": "Prijs, positie en research",
+    "restoring_chart": "Je laatst verlaten grafiek herstellen…"
   },
   "coverage": {
     "available_count": "{{available}} van {{total}} secties beschikbaar",

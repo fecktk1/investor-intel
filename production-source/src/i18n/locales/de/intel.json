@@ -1054,6 +1054,10 @@
       "full": "Vollbild",
       "exit": "Vollbild beenden",
       "covering": "Der Browser hat das Vollbild abgelehnt, deshalb deckt der Chart dieses Fenster ab. Drücke Escape oder wähle „Vollbild beenden“, um zurückzukehren."
+    },
+    "working": {
+      "saving": "Wird gespeichert",
+      "saved": "Gespeichert"
     }
   },
   "charts": {
@@ -2937,7 +2941,8 @@
     "read_failed": "Das Lesen der Asset-Daten konnte nicht abgeschlossen werden.",
     "research_heading": "Marktkontext",
     "sections": "Auf dieser Asset-Seite",
-    "workspace": "Preis, Position und Recherche"
+    "workspace": "Preis, Position und Recherche",
+    "restoring_chart": "Dein zuletzt verlassener Chart wird wiederhergestellt…"
   },
   "coverage": {
     "available_count": "{{available}} von {{total}} Abschnitten verfügbar",

@@ -1054,6 +1054,10 @@
       "full": "Ekran i plotë",
       "exit": "Dil nga ekrani i plotë",
       "covering": "Shfletuesi e refuzoi ekranin e plotë, prandaj grafiku e mbulon këtë dritare. Shtyp Escape ose zgjidh „Dil nga ekrani i plotë“ për t’u kthyer."
+    },
+    "working": {
+      "saving": "Po ruhet",
+      "saved": "U ruajt"
     }
   },
   "charts": {
@@ -2937,7 +2941,8 @@
     "read_failed": "Leximi i aktivit nuk mund të përfundohej.",
     "research_heading": "Konteksti i tregut",
     "sections": "Në këtë faqe aktivi",
-    "workspace": "Çmimi, pozicioni dhe hulumtimi"
+    "workspace": "Çmimi, pozicioni dhe hulumtimi",
+    "restoring_chart": "Po rikthehet grafiku që le…"
   },
   "coverage": {
     "available_count": "{{available}} nga {{total}} seksione të disponueshme",
