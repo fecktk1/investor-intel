@@ -2860,7 +2860,7 @@
     "answer_priced": "Priced",
     "answer_unsupported_platform": "Unsupported chain",
     "arc_label": "{{chain}} — {{priced}} of {{total}} priced",
-    "caption": "Prices here come from CoinMarketCap’s DEX aggregate, not from a wallet or an exchange. A run spends provider credits and this workspace may start four an hour; what is recorded is the workspace’s run, never the person who started it.",
+    "caption": "Prices here come from CoinMarketCap’s DEX aggregate, not from a wallet or an exchange. A run spends provider credits and this workspace may start four an hour; what is recorded is the workspace’s run, never the person who started it. A resolved price lasts until the next scheduled wallet sync, which rewrites every holding from its own sources; keeping it across syncs is part of the worker release.",
     "col_address": "Address",
     "col_asset": "Asset",
     "col_chain": "Chain",

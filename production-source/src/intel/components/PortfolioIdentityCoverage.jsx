@@ -621,7 +621,7 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
       ) : null}
 
       <p className="text-[12px] text-[var(--fg-4)]">
-        {t('holding_identity.caption', { defaultValue: 'Prices here come from CoinMarketCap’s DEX aggregate, not from a wallet or an exchange. A run spends provider credits and this workspace may start four an hour; what is recorded is the workspace’s run, never the person who started it.' })}
+        {t('holding_identity.caption', { defaultValue: 'Prices here come from CoinMarketCap’s DEX aggregate, not from a wallet or an exchange. A run spends provider credits and this workspace may start four an hour; what is recorded is the workspace’s run, never the person who started it. A resolved price lasts until the next scheduled wallet sync, which rewrites every holding from its own sources; keeping it across syncs is part of the worker release.' })}
       </p>
     </section>
   )
