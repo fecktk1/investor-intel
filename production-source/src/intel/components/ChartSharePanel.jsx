@@ -3,6 +3,7 @@ import {useTranslation} from 'react-i18next'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
 import ChartShareControls from './ChartShareControls'
 import ChartShareCard from './ChartShareCard'
+import ChartShareImage from './ChartShareImage'
 
 /** The share flow itself: the brand card, the save, and the audience, expiry
  * and revocation controls.
@@ -13,7 +14,7 @@ import ChartShareCard from './ChartShareCard'
  *
  * `autoStart` opens the flow as soon as the code lands, so the press that
  * loaded this module is the press that opened it. */
-export default function ChartSharePanel({context,captureLayout,seriesCapture=null,chartSource=null,latestObservation=null,disabled=false,autoStart=false}) {
+export default function ChartSharePanel({context,captureLayout,captureFrame=null,seriesCapture=null,chartSource=null,latestObservation=null,disabled=false,autoStart=false}) {
  const {t}=useTranslation('intel',{useSuspense:false})
  const [open,setOpen]=useState(false),[preview,setPreview]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(null),[snapshot,setSnapshot]=useState(null)
  const [title,setTitle]=useState(()=>t('chart.share.default_title',{defaultValue:'Shared chart research'}))
@@ -50,6 +51,8 @@ export default function ChartSharePanel({context,captureLayout,seriesCapture=nul
  {error&&!open&&<span role="alert">{error}</span>}
  {open&&preview&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby={heading} onCancel={e=>{e.preventDefault();close()}}>
   <div className="intel-investigation-analysis-heading"><h2 id={heading}>{t('chart.share.dialog_title',{defaultValue:'Share this chart'})}</h2><button type="button" onClick={close}>{t('common.close',{defaultValue:'Close'})}</button></div>
+  {captureFrame&&<ChartShareImage capture={()=>captureFrame(preview.range)} layout={preview} source={chartSource}/>}
+  <h3 className="eyebrow">{t('chart.share.link_option',{defaultValue:'Or share a link'})}</h3>
   <p className="intel-analysis-caption">{t('chart.share.intro',{defaultValue:'A link points at a saved version of this chart, so a reader sees exactly what you saw. Save that version first, then choose an audience, an expiry and the notes to include.'})}</p>
   <ChartShareCard layout={preview} source={chartSource} capturedAt={seriesCapture?.proof?.issuedAt??null} latestObservation={latestObservation}/>
   <label>{t('chart.share.title_label',{defaultValue:'Saved version title'})}<input maxLength={120} value={title} disabled={busy} onChange={e=>setTitle(e.target.value)}/></label>

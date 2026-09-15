@@ -16,6 +16,7 @@ import ChartIndicatorMenu from './ChartIndicatorMenu'
 import deferredTool from './deferred-tool'
 import deferredPanel from './deferred-panel'
 import ChartWatermark from './ChartWatermark'
+import {WATERMARK_SOURCE} from '../lib/chart-watermark'
 import ChartShareLaunch from './ChartShareLaunch'
 import {chartSizeHeight,isChartSize,nextChartSize} from '../lib/chart-size'
 import {validateChartLayout} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
@@ -45,7 +46,7 @@ const barTime=(t,timeZone)=>new Date(t).toLocaleString(undefined,{dateStyle:'med
 // time, 4 time with seconds). A multi-year range marks years and months; a day
 // mark keeps the month so a week of daily bars still reads as dates.
 const tickMarkParts=type=>type===0?{year:'numeric'}:type===1?{month:'short',year:'2-digit'}:type===2?{month:'short',day:'numeric'}:{hour:'2-digit',minute:'2-digit',hour12:false}
-function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,replay=false,knownOnly=false,readOnly=false,height:baseHeight=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
+function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,assetName=null,assetSymbol=null,replay=false,knownOnly=false,readOnly=false,height:baseHeight=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
  const {t}=useTranslation('intel',{useSuspense:false})
  const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null),root=useRef(null)
 
@@ -328,6 +329,22 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  }
 
+ // What the share image is composed from: the renderer's own screenshot, which
+ // already carries the indicator panes, the drawings overlay serialized as it
+ // stands, and the brand mark. Pixels only; the layout and the verified capture
+ // still travel the saved-version path.
+ const captureFrame=range=>{
+  const chart=api.current,element=host.current
+  if(!chart||!element)throw new Error('chart_not_ready')
+  const surface=root.current?.querySelector('.intel-drawing-surface'),background=palette?.background||'#14171C'
+  const shown=bars.filter(b=>b.t>=range.from&&b.t<=range.to)
+  return {chart:{canvas:chart.takeScreenshot(),width:element.clientWidth,height:totalHeight},
+   overlay:surface?{svg:new XMLSerializer().serializeToString(surface).replaceAll('var(--bg-1)',background),width:geometry.width,height:totalHeight}:null,
+   background,wordmark:import.meta.env.BASE_URL+WATERMARK_SOURCE,
+   name:assetName||persistence?.asset||'',symbol:assetSymbol||'',
+   first:shown[0]?.o??shown[0]?.c??null,last:shown.at(-1)?.c??null,interval:chartSource?.intervalMs??source?.grid?.step??null}
+ }
+
  const restoreLayout=input=>{
 
   const layout=validateChartLayout(input);if(layout.comparison)throw new Error('Open this linked chart layout in Compare to restore every asset.');if(layout.asset!==persistence?.asset)throw new Error('Open this layout from its original asset.')
@@ -373,7 +390,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true)}}>Reset view</button>
 
-   {persistence&&!readOnly&&<ChartLayoutLaunch context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<SnapshotSave triggerLabel={t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})} context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><AssetNavigator triggerLabel="Assets" context={persistence}/><AlertEditor triggerLabel="Create alert" context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
+   {persistence&&!readOnly&&<ChartLayoutLaunch context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<SnapshotSave triggerLabel={t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})} context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} captureFrame={captureFrame} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><AssetNavigator triggerLabel="Assets" context={persistence}/><AlertEditor triggerLabel="Create alert" context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
   </div>
 
   {!replay&&!readOnly&&drawings.controls}
