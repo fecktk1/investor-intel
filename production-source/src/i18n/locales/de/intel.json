@@ -940,7 +940,14 @@
       "dialog_choose": "Indikator",
       "add": "Indikator hinzufügen",
       "remove": "Entfernen",
-      "calculating": "Indikatoren werden berechnet…"
+      "calculating": "Indikatoren werden berechnet…",
+      "loading": "Indikatorliste wird geladen…",
+      "appearance": "Chart-Darstellung",
+      "appearance_app": "App-Theme folgen",
+      "appearance_dark": "Anthrazit",
+      "appearance_light": "Hell",
+      "appearance_gray": "Neutralgrau",
+      "vwap_anchor": "Optionaler Anker (UTC)"
     },
     "workstation": {
       "layout_outside": "Diese gespeicherte Ansicht liegt außerhalb des geladenen Preiszeitraums. Wähle einen längeren Zeitraum, um ihre Markthistorie zu laden.",

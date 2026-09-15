@@ -940,7 +940,14 @@
       "dialog_choose": "Indicador",
       "add": "Acrescentar indicador",
       "remove": "Remover",
-      "calculating": "Calculando indicadores…"
+      "calculating": "Calculando indicadores…",
+      "loading": "Carregando a lista de indicadores…",
+      "appearance": "Aparência do gráfico",
+      "appearance_app": "Seguir o tema do app",
+      "appearance_dark": "Carvão",
+      "appearance_light": "Claro",
+      "appearance_gray": "Cinza neutro",
+      "vwap_anchor": "Âncora opcional (UTC)"
     },
     "workstation": {
       "layout_outside": "Esta visão salva fica fora do período de preços carregado. Escolha um período mais longo para carregar seu histórico de mercado.",

@@ -940,7 +940,14 @@
       "dialog_choose": "Indicateur",
       "add": "Ajouter un indicateur",
       "remove": "Retirer",
-      "calculating": "Calcul des indicateurs…"
+      "calculating": "Calcul des indicateurs…",
+      "loading": "Chargement de la liste des indicateurs…",
+      "appearance": "Apparence du graphique",
+      "appearance_app": "Suivre le thème de l’application",
+      "appearance_dark": "Anthracite",
+      "appearance_light": "Clair",
+      "appearance_gray": "Gris neutre",
+      "vwap_anchor": "Ancre facultative (UTC)"
     },
     "workstation": {
       "layout_outside": "Cette vue enregistrée se situe hors de la période de prix chargée. Choisissez une période plus longue pour charger son historique de marché.",

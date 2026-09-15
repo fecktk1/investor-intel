@@ -940,7 +940,14 @@
       "dialog_choose": "Tregues",
       "add": "Shto tregues",
       "remove": "Hiq",
-      "calculating": "Po llogariten treguesit…"
+      "calculating": "Po llogariten treguesit…",
+      "loading": "Po ngarkohet lista e treguesve…",
+      "appearance": "Pamja e grafikut",
+      "appearance_app": "Ndiq temën e aplikacionit",
+      "appearance_dark": "Antracit",
+      "appearance_light": "E çelët",
+      "appearance_gray": "Gri neutrale",
+      "vwap_anchor": "Spirancë opsionale (UTC)"
     },
     "workstation": {
       "layout_outside": "Kjo pamje e ruajtur bie jashtë periudhës së ngarkuar të çmimeve. Zgjidh një periudhë më të gjatë për të ngarkuar historinë e saj të tregut.",

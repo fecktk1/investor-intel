@@ -2,12 +2,15 @@ import React,{useEffect,useRef,useState} from 'react'
 import {Link} from 'react-router'
 import {useTranslation} from 'react-i18next'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
-export default function ChartSnapshotSave({context,captureLayout,seriesCapture}) {
+export default function ChartSnapshotSave({context,captureLayout,seriesCapture,autoOpen=false}) {
  const {t}=useTranslation('intel',{useSuspense:false})
  const [preview,setPreview]=useState(null),[title,setTitle]=useState(t('chart.snapshot_save.default_title',{defaultValue:'Chart research'})),[selected,setSelected]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(null),[saved,setSaved]=useState(null)
  const dialog=useRef(null),trigger=useRef(null),operation=useRef(null),alive=useRef(true),generation=useRef(0)
  useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
  useEffect(()=>{if(preview)dialog.current?.showModal()},[!!preview]) // eslint-disable-line
+ // Loaded on demand from the chart tools: the press that fetched this opens it.
+ const started=useRef(false)
+ useEffect(()=>{if(autoOpen&&!started.current){started.current=true;open()}},[autoOpen]) // eslint-disable-line react-hooks/exhaustive-deps
  const close=()=>{generation.current++;setBusy(false);setPreview(null);trigger.current?.focus()}
  const open=()=>{try{setPreview({layout:captureLayout(),capture:seriesCapture});setSelected([]);setError(null);setSaved(null)}catch(e){setError(e.message==='invalid_chart_asset'?t('chart.snapshot_save.invalid_asset',{asset:context?.asset||t('chart.snapshot_save.unresolved_asset',{defaultValue:'unresolved'}),defaultValue:'This chart cannot save the asset identity “{{asset}}”.'}):e.message)}}
  const verified=preview?.layout.comparison?preview.capture?.series?.length===preview.layout.comparison.assets.length&&preview.capture.series.every((c,i)=>c.proof&&c.asset===preview.layout.comparison.assets[i].asset):!!preview?.capture?.proof
