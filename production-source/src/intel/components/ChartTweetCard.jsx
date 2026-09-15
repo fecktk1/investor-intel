@@ -27,7 +27,7 @@ const XMark=()=><svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="tru
 // so, so the card is never blank. The member's own note sits under the post in
 // the drawing's colour. The card can be resized from its corner; the size is
 // part of the drawing, so it survives a reload and travels with a share.
-export default function ChartTweetCard({drawing,point,width,height,context,selected,readOnly,onSelect,onResize}) {
+export default function ChartTweetCard({drawing,point,width,height,context,selected,readOnly,onSelect,onResize,options=null}) {
  const {t}=useTranslation('intel',{useSuspense:false})
  const [post,setPost]=useState(null)
  const [draft,setDraft]=useState(null)
@@ -78,7 +78,7 @@ export default function ChartTweetCard({drawing,point,width,height,context,selec
  return <article ref={card} className="intel-draw-tweet" data-selected={!!selected} style={{left,top,width:cardWidth,...(box?.height?{height:box.height}:{}),'--intel-draw-tweet-note':drawing.color}}
   onPointerDown={readOnly?undefined:onSelect}>
   <header className="intel-draw-tweet-head">
-   <span className="intel-draw-tweet-avatar" aria-hidden="true">{initial}</span>
+   <span className="intel-draw-tweet-avatar" aria-hidden="true">{post?.avatar?<img src={post.avatar} alt="" width="40" height="40"/>:initial}</span>
    <span className="intel-draw-tweet-who">
     <span className="intel-draw-tweet-author">{author}</span>
     {post?.author&&handle&&<span className="intel-draw-tweet-handle">@{handle}</span>}
@@ -96,6 +96,7 @@ export default function ChartTweetCard({drawing,point,width,height,context,selec
     ?<time dateTime={post.postedAt}>{posted.toLocaleTimeString(undefined,{timeStyle:'short'})} · {posted.toLocaleDateString(undefined,{dateStyle:'medium'})}</time>
     :t('chart.draw.tweet_open',{defaultValue:'Open the post on X'})}</a>}
   </footer>
+  {options||null}
   {!readOnly&&selected&&<button type="button" className="intel-draw-tweet-resize" aria-label={t('chart.draw.tweet_resize',{defaultValue:'Resize the post card'})}
    onPointerDown={startResize} onPointerMove={moveResize} onPointerUp={endResize} onPointerCancel={endResize}/>}
  </article>

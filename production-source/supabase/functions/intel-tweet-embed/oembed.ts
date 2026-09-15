@@ -4,7 +4,7 @@
 // only plain text is taken out of it, so a post can carry no script, no style,
 // no tracking pixel and no markup into an Intel chart.
 
-export type TweetEmbed = { url: string; author: string | null; handle: string | null; text: string; postedAt: string | null }
+export type TweetEmbed = { url: string; author: string | null; handle: string | null; text: string; postedAt: string | null; avatar: string | null }
 
 export const TEXT_LIMIT = 1000
 export const HTML_LIMIT = 80_000
@@ -58,7 +58,7 @@ export function extractTweet(payload: unknown, url: string): TweetEmbed {
   const handle = handleFrom(row.author_url) ?? BYLINE.exec(html)?.[1] ?? handleFrom(url)
   const stamp = POSTED.exec(html)?.[1]
   const parsed = stamp ? Date.parse(decodeEntities(stamp).trim()) : NaN
-  return { url, author: author || null, handle, text, postedAt: Number.isFinite(parsed) ? new Date(parsed).toISOString() : null }
+  return { url, author: author || null, handle, text, postedAt: Number.isFinite(parsed) ? new Date(parsed).toISOString() : null, avatar: null }
 }
 
 // Per-process cache. Keys are the canonical status address, so the same post is
@@ -103,5 +103,65 @@ export async function fetchTweetEmbed(url: string, fetchImpl: typeof fetch = fet
   const body = (await response.text()).slice(0, RESPONSE_LIMIT)
   let payload: unknown
   try { payload = JSON.parse(body) } catch { throw new Error('tweet_embed_unavailable') }
-  return rememberTweet(url, extractTweet(payload, url), now)
+  const tweet = extractTweet(payload, url)
+  // The profile image is best effort: a post whose author's image cannot be
+  // read is still a post, with the author's initial standing in on the card.
+  const avatar = await fetchTweetAvatar(url, fetchImpl).catch(() => null)
+  return rememberTweet(url, { ...tweet, avatar }, now)
+}
+
+// ── The author's profile image ──
+//
+// oEmbed carries no image. X's public syndication payload (the one its own
+// embedded timelines read) does, under `user.profile_image_url_https`, and it
+// is read here on the server and handed to the browser as an inline data URL,
+// so the browser never contacts X or its image host. Only X's image host is
+// read, the image is bounded, and only an image content type is accepted.
+export const SYNDICATION = 'https://cdn.syndication.twimg.com/tweet-result'
+export const AVATAR_HOST = 'https://pbs.twimg.com/'
+export const AVATAR_LIMIT = 96_000
+const AVATAR_TYPES = ['image/jpeg', 'image/png', 'image/webp', 'image/gif']
+
+/** The token the syndication endpoint expects beside a post id: the id scaled
+ * and written in base 36, as X's own embed code computes it. */
+export function syndicationToken(id: string): string {
+  return ((Number(id) / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, '')
+}
+
+export function tweetIdFrom(url: string): string | null {
+  const match = /\/status\/([0-9]{1,25})$/.exec(url)
+  return match ? match[1] : null
+}
+
+/** The address of the author's profile image for one post, or null. A larger
+ * variant than the 48-pixel default is asked for, because the card draws the
+ * image at 40 CSS pixels on displays that are commonly twice as dense. */
+export async function fetchTweetAvatarUrl(url: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const id = tweetIdFrom(url)
+  if (!id) return null
+  const response = await fetchImpl(`${SYNDICATION}?id=${id}&lang=en&token=${syndicationToken(id)}`, { headers: { accept: 'application/json' }, signal: AbortSignal.timeout(6000) })
+  if (!response.ok) return null
+  const body = (await response.text()).slice(0, RESPONSE_LIMIT)
+  let payload: any
+  try { payload = JSON.parse(body) } catch { return null }
+  const image = payload?.user?.profile_image_url_https
+  if (typeof image !== 'string' || !image.startsWith(AVATAR_HOST) || image.length > 500) return null
+  return image.replace(/_normal(\.[a-z]+)$/i, '_bigger$1')
+}
+
+/** The image itself as a bounded data URL, or null. */
+export async function fetchTweetAvatar(url: string, fetchImpl: typeof fetch = fetch): Promise<string | null> {
+  const image = await fetchTweetAvatarUrl(url, fetchImpl)
+  if (!image) return null
+  const response = await fetchImpl(image, { signal: AbortSignal.timeout(6000) })
+  if (!response.ok) return null
+  const type = (response.headers.get('content-type') || '').split(';')[0].trim().toLowerCase()
+  if (!AVATAR_TYPES.includes(type)) return null
+  const declared = Number(response.headers.get('content-length'))
+  if (Number.isFinite(declared) && declared > AVATAR_LIMIT) return null
+  const bytes = new Uint8Array(await response.arrayBuffer())
+  if (!bytes.length || bytes.length > AVATAR_LIMIT) return null
+  let binary = ''
+  for (let i = 0; i < bytes.length; i += 0x8000) binary += String.fromCharCode(...bytes.subarray(i, i + 0x8000))
+  return `data:${type};base64,${btoa(binary)}`
 }

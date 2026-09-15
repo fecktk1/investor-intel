@@ -20,6 +20,9 @@ export async function readTweetEmbed(context,url,{signal}={}) {
    handle:typeof data.handle==='string'?data.handle.slice(0,15):null,
    text:data.text.slice(0,1000),
    postedAt:typeof data.postedAt==='string'&&Number.isFinite(Date.parse(data.postedAt))?data.postedAt:null,
+   // The author's image arrives inline from the server read, never as an
+   // address the browser would fetch from X; anything else is no image.
+   avatar:typeof data.avatar==='string'&&/^data:image\/(jpeg|png|webp|gif);base64,[A-Za-z0-9+/=]{1,140000}$/.test(data.avatar)?data.avatar:null,
   }
  }catch(e){
   if(e?.name==='AbortError')throw e

@@ -8,7 +8,7 @@
 // than empty text, the response is bounded, and one post is fetched once.
 
 import { assert, assertEquals as eq, assertRejects, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { cachedTweet, decodeEntities, extractTweet, fetchTweetEmbed, forgetTweets, plainText, TEXT_LIMIT } from './oembed.ts'
+import { cachedTweet, decodeEntities, extractTweet, fetchTweetEmbed, forgetTweets, plainText, syndicationToken, OEMBED, SYNDICATION, TEXT_LIMIT } from './oembed.ts'
 
 const URL_ONE = 'https://x.com/Interior/status/507185938620219395'
 const payload = (html: string, extra: Record<string, unknown> = {}) => ({
@@ -70,8 +70,9 @@ Deno.test('a missing or withheld post is a named refusal rather than an empty ca
 
 Deno.test('one post is read once for the life of the process and expires on its own', async () => {
   forgetTweets()
+  // Only the post read is counted: the image read beside it is its own request.
   let calls = 0
-  const source = () => { calls++; return Promise.resolve(respond(POST)) }
+  const source = ((input: RequestInfo | URL) => { if (String(input).startsWith(OEMBED)) calls++; return Promise.resolve(respond(POST)) }) as typeof fetch
   const first = await fetchTweetEmbed(URL_ONE, source)
   const second = await fetchTweetEmbed(URL_ONE, source)
   eq(calls, 1)
@@ -79,4 +80,31 @@ Deno.test('one post is read once for the life of the process and expires on its 
   await fetchTweetEmbed(URL_ONE, source, Date.now() + 7 * 60 * 60 * 1000)
   eq(calls, 2)
   forgetTweets()
+})
+
+Deno.test('the author image is read from the syndication payload, bounded to the image host, and inlined; a missing image is no image', async () => {
+  forgetTweets()
+  const png = new Uint8Array([137, 80, 78, 71, 13, 10, 26, 10])
+  const image = (body: Uint8Array, type = 'image/png') => new Response(body, { headers: { 'content-type': type } })
+  const source = ((input: RequestInfo | URL) => {
+    const u = String(input)
+    if (u.startsWith(OEMBED)) return Promise.resolve(respond(POST))
+    if (u.startsWith(SYNDICATION)) { assert(u.includes('id=507185938620219395&lang=en&token=' + syndicationToken('507185938620219395'))); return Promise.resolve(respond({ user: { profile_image_url_https: 'https://pbs.twimg.com/profile_images/1/a_normal.png' } })) }
+    if (u === 'https://pbs.twimg.com/profile_images/1/a_bigger.png') return Promise.resolve(image(png))
+    return Promise.resolve(respond('', { status: 404 }))
+  }) as typeof fetch
+  const tweet = await fetchTweetEmbed(URL_ONE, source)
+  eq(tweet.avatar, `data:image/png;base64,${btoa(String.fromCharCode(...png))}`)
+  eq(tweet.text.length > 0, true)
+  // The image is best effort: without it the post is still a post.
+  forgetTweets()
+  const offline = await fetchTweetEmbed(URL_ONE, ((input: RequestInfo | URL) => String(input).startsWith(OEMBED) ? Promise.resolve(respond(POST)) : Promise.reject(new Error('offline'))) as typeof fetch)
+  eq(offline.avatar, null); eq(offline.author, 'US Dept of Interior')
+  // Only X's own image host is read, and only an image content type is kept.
+  for (const [address, type] of [['https://evil.example/a_normal.png', 'image/png'], ['https://pbs.twimg.com/profile_images/1/a_normal.png', 'text/html']]) {
+    forgetTweets()
+    const refused = await fetchTweetEmbed(URL_ONE, ((input: RequestInfo | URL) => { const u = String(input); return Promise.resolve(u.startsWith(OEMBED) ? respond(POST) : u.startsWith(SYNDICATION) ? respond({ user: { profile_image_url_https: address } }) : image(png, type)) }) as typeof fetch)
+    eq(refused.avatar, null)
+  }
+  eq(syndicationToken('20'), ((20 / 1e15) * Math.PI).toString(36).replace(/(0+|\.)/g, ''))
 })

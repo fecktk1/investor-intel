@@ -40,7 +40,7 @@ export type ChartAnchor={t:number;price:number}
  * every other drawing is sized by its anchors. Bounded so a saved layout can
  * never hold a card wider or taller than a chart. */
 export type DrawingBox={width:number;height:number}
-export const DRAWING_BOX_LIMITS={minWidth:200,maxWidth:640,minHeight:80,maxHeight:720}
+export const DRAWING_BOX_LIMITS={minWidth:200,maxWidth:640,minHeight:110,maxHeight:720}
 export type ChartDrawing={id:string;tool:DrawingTool;anchors:ChartAnchor[];text:string;color:string;width:number;dash?:DrawingDash;url?:string;box?:DrawingBox;ratios?:number[];outcome?:SavedOutcomeAssumptions}
 export type ChartComparison={assets:{asset:string;label:string}[];arrangement:'overlay'|'2x2'|'1x4';priceScale:'independent'|'shared'|'returns';period:string}
 export type ChartLayout={purpose?:'study_template';replay?:{at:number;knownOnly:boolean};comparison?:ChartComparison;size?:string;preset?:string;schemaVersion:1;asset:string;interval:string;range:{from:number;to:number};mode:string;scale:string;autoScale:boolean;volume:boolean;theme:string;timezone:string;studies:Study[];drawings:ChartDrawing[];visibility:Record<string,boolean>}

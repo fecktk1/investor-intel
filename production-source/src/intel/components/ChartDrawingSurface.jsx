@@ -55,10 +55,12 @@ export default function ChartDrawingSurface({store,surfaceRef,items,selected,too
   <div className="intel-draw-layer" style={{width,height}}>
    {rendered.filter(drawing=>drawing.tool==='tweet').map(drawing=>{
     const point=project(drawing.anchors[0])
+    const active=selected===drawing.id&&!readOnly
     return point&&<TweetCard key={drawing.id} drawing={drawing} point={point} width={width} height={height} context={context} selected={selected===drawing.id} readOnly={readOnly}
-     onSelect={event=>onStart(event,drawing)} onResize={box=>onResize?.(drawing,box)}/>
+     onSelect={event=>onStart(event,drawing)} onResize={box=>onResize?.(drawing,box)}
+     options={active&&<DrawingOptions inline drawing={drawing} onChange={onStyle} onEdit={()=>onEdit(drawing)} onDelete={()=>onDelete(drawing.id)}/>}/>
    })}
-   {selectedDrawing&&selectedPoint&&<DrawingOptions drawing={selectedDrawing} point={selectedPoint} width={width} height={height} onChange={onStyle} onEdit={()=>onEdit(selectedDrawing)} onDelete={()=>onDelete(selectedDrawing.id)}/>}
+   {selectedDrawing&&selectedPoint&&selectedDrawing.tool!=='tweet'&&<DrawingOptions drawing={selectedDrawing} point={selectedPoint} width={width} height={height} onChange={onStyle} onEdit={()=>onEdit(selectedDrawing)} onDelete={()=>onDelete(selectedDrawing.id)}/>}
   </div>
  </>
 }

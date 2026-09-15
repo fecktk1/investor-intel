@@ -435,6 +435,9 @@
 .intel-draw-layer { position:absolute; top:0; left:0; z-index:2; pointer-events:none; overflow:hidden; }
 .intel-draw-options { position:absolute; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:5px 8px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); color:var(--fg-3); font-size:11px; }
 .intel-draw-options label { display:flex; align-items:center; gap:5px; }
+/* A post card's row hangs from the card's bottom edge, outside the size the
+   member gave the card, so it never covers the words and never squeezes them. */
+.intel-draw-tweet .intel-draw-options-inline { position:absolute; left:-1px; right:-1px; top:100%; margin-top:-1px; padding:8px 14px 10px; background:var(--bg-1); border:1px solid var(--accent); border-top:1px solid var(--border-default); border-radius:0 0 16px 16px; }
 .intel-draw-options select { color:var(--fg-1); background:var(--bg-1); border:1px solid var(--border-default); padding:2px 4px; font-size:11px; }
 .intel-draw-options button { color:var(--fg-2); text-decoration:underline; text-underline-offset:3px; font-size:11px; }
 .intel-draw-swatches { display:flex; gap:4px; }
@@ -443,10 +446,11 @@
 /* A post from X on the chart, laid out the way a post reads on X: round avatar,
    name over handle, the words at reading size, the time as the link, the X mark
    in the corner. Sized by the member from the corner handle. */
-.intel-draw-tweet { position:absolute; width:300px; max-width:calc(100% - 8px); box-sizing:border-box; display:flex; flex-direction:column; gap:8px; padding:12px 14px 10px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); border-radius:16px; color:var(--fg-1); font-size:14px; line-height:1.4; overflow:hidden; box-shadow:0 8px 24px rgba(0,0,0,.28); }
+.intel-draw-tweet { position:absolute; width:300px; max-width:calc(100% - 8px); box-sizing:border-box; display:flex; flex-direction:column; gap:8px; padding:12px 14px 10px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); border-radius:16px; color:var(--fg-1); font-size:14px; line-height:1.4; box-shadow:0 8px 24px rgba(0,0,0,.28); }
 .intel-draw-tweet[data-selected="true"] { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 8px 24px rgba(0,0,0,.28); }
 .intel-draw-tweet-head { display:flex; align-items:center; gap:10px; }
-.intel-draw-tweet-avatar { flex:0 0 40px; width:40px; height:40px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; background:var(--bg-3); color:var(--fg-1); font-weight:600; font-size:16px; }
+.intel-draw-tweet-avatar { flex:0 0 40px; width:40px; height:40px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg-3); color:var(--fg-1); font-weight:600; font-size:16px; }
+.intel-draw-tweet-avatar img { width:40px; height:40px; object-fit:cover; display:block; }
 .intel-draw-tweet-who { display:flex; flex-direction:column; min-width:0; flex:1 1 auto; line-height:1.25; }
 .intel-draw-tweet-author { color:var(--fg-1); font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .intel-draw-tweet-handle { color:var(--fg-4); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
