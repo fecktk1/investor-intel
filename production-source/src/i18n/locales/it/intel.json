@@ -874,6 +874,26 @@
       "layout_restored": "Vista salvata, disegni e indicatori ripristinati.",
       "readings_summary": "Leggi i dati di prezzo e le definizioni degli indicatori",
       "readings_note": "Ultime {{observations}} osservazioni caricate · {{timezone}}. Gli indicatori usano le candele osservate; le candele mancanti non vengono inventate."
+    },
+    "replay": {
+      "region": "Riproduzione storica del grafico",
+      "previous": "Candela precedente",
+      "next": "Candela successiva",
+      "play": "Avvia riproduzione",
+      "pause": "Metti in pausa",
+      "exit": "Esci dalla riproduzione",
+      "speed": "Velocità",
+      "speed_option": "{{rate}}× al secondo",
+      "known_only": "Solo dati registrati entro quel momento",
+      "through": "Riproduci fino a",
+      "bar_slider": "Candela di riproduzione",
+      "ended": "La riproduzione ha raggiunto l’ultima candela caricata. Torna indietro oppure esci dalla riproduzione per tornare al grafico dal vivo.",
+      "note_recorded": "Riproduzione delle prove registrate. Le candele e le note registrate più tardi restano nascoste.",
+      "note_historical": "Riproduzione delle candele storiche. Possono esserci correzioni successive della fonte; questo non prova ciò che si sapeva allora.",
+      "gap_unknown_close": "{{bars}} candele omesse perché il loro orario di chiusura non è verificato.",
+      "gap_unknown_recording": "{{bars}} candele non hanno un orario di registrazione.",
+      "gap_omitted_events": "{{events}} eventi passati non hanno una storia di registrazione ammissibile.",
+      "note_hidden": "I disegni salvati e i livelli senza data restano nascosti durante la riproduzione."
     }
   },
   "charts": {

@@ -362,6 +362,7 @@
 .intel-chart-navigation span { margin-left: auto; font-size: 11px; color: var(--fg-4); }
 .intel-chart-readings { padding-top: 8px; font-size: 12px; }
 .intel-chart-replay { padding: 10px 0; border-block: 1px solid var(--border-default); }
+.intel-chart-replay select { background: var(--bg-1); color: var(--fg-1); border: 1px solid var(--border-default); border-radius: 3px; padding: 4px 8px; font-family: Inter, sans-serif; font-size: 12px; min-height: 30px; }
 .intel-replay-clock { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; margin-top: 8px; }
 .intel-replay-clock input { flex: 1; min-width: 120px; accent-color: var(--accent); }
 .intel-chart-readings summary { width: fit-content; color: var(--fg-3); cursor: pointer; }

@@ -1689,6 +1689,26 @@
       "layout_restored": "Saved view, drawings and indicators restored.",
       "readings_summary": "Read price data and indicator definitions",
       "readings_note": "Latest {{observations}} loaded observations · {{timezone}}. Indicators use observed bars; missing bars are not synthesized."
+    },
+    "replay": {
+      "region": "Historical chart replay",
+      "previous": "Previous bar",
+      "next": "Next bar",
+      "play": "Play replay",
+      "pause": "Pause replay",
+      "exit": "Exit replay",
+      "speed": "Speed",
+      "speed_option": "{{rate}}× per second",
+      "known_only": "Only data recorded by then",
+      "through": "Replay through",
+      "bar_slider": "Replay bar",
+      "ended": "Replay reached the last loaded bar. Step back, or exit replay to return to the live chart.",
+      "note_recorded": "Recorded evidence replay. Later-recorded bars and notes are hidden.",
+      "note_historical": "Historical bar replay. Later source corrections may be present; this does not prove what was known then.",
+      "gap_unknown_close": "{{bars}} bars omitted because their close time is unverified.",
+      "gap_unknown_recording": "{{bars}} bars lack a recording timestamp.",
+      "gap_omitted_events": "{{events}} past events have no eligible recording history.",
+      "note_hidden": "Saved drawings and undated levels are hidden during replay."
     }
   },
   "charts": {

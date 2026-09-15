@@ -874,6 +874,26 @@
       "layout_restored": "Vue enregistrée, dessins et indicateurs restaurés.",
       "readings_summary": "Lire les données de prix et les définitions des indicateurs",
       "readings_note": "Dernières {{observations}} observations chargées · {{timezone}}. Les indicateurs utilisent les bougies observées ; les bougies manquantes ne sont pas inventées."
+    },
+    "replay": {
+      "region": "Relecture historique du graphique",
+      "previous": "Bougie précédente",
+      "next": "Bougie suivante",
+      "play": "Lancer la relecture",
+      "pause": "Mettre en pause",
+      "exit": "Quitter la relecture",
+      "speed": "Vitesse",
+      "speed_option": "{{rate}}× par seconde",
+      "known_only": "Uniquement les données enregistrées à cette date",
+      "through": "Relecture jusqu’à",
+      "bar_slider": "Bougie de relecture",
+      "ended": "La relecture a atteint la dernière bougie chargée. Revenez en arrière ou quittez la relecture pour retrouver le graphique en direct.",
+      "note_recorded": "Relecture des preuves enregistrées. Les bougies et notes enregistrées plus tard restent masquées.",
+      "note_historical": "Relecture des bougies historiques. Des corrections ultérieures de la source peuvent être présentes ; cela ne prouve pas ce qui était connu alors.",
+      "gap_unknown_close": "{{bars}} bougies omises car leur heure de clôture n’est pas vérifiée.",
+      "gap_unknown_recording": "{{bars}} bougies n’ont pas d’horodatage d’enregistrement.",
+      "gap_omitted_events": "{{events}} événements passés n’ont aucun historique d’enregistrement admissible.",
+      "note_hidden": "Les dessins enregistrés et les niveaux sans date restent masqués pendant la relecture."
     }
   },
   "charts": {

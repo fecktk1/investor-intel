@@ -874,6 +874,26 @@
       "layout_restored": "Gespeicherte Ansicht, Zeichnungen und Indikatoren wiederhergestellt.",
       "readings_summary": "Preisdaten und Indikator-Definitionen lesen",
       "readings_note": "Neueste {{observations}} geladene Beobachtungen · {{timezone}}. Indikatoren nutzen beobachtete Bars; fehlende Bars werden nicht erzeugt."
+    },
+    "replay": {
+      "region": "Historische Chart-Wiedergabe",
+      "previous": "Vorherige Bar",
+      "next": "Nächste Bar",
+      "play": "Wiedergabe starten",
+      "pause": "Wiedergabe pausieren",
+      "exit": "Wiedergabe beenden",
+      "speed": "Tempo",
+      "speed_option": "{{rate}}× pro Sekunde",
+      "known_only": "Nur bis dahin erfasste Daten",
+      "through": "Wiedergabe bis",
+      "bar_slider": "Wiedergabe-Bar",
+      "ended": "Die Wiedergabe hat die letzte geladene Bar erreicht. Gehe zurück oder beende die Wiedergabe, um zum Live-Chart zurückzukehren.",
+      "note_recorded": "Wiedergabe der erfassten Belege. Später erfasste Bars und Notizen bleiben verborgen.",
+      "note_historical": "Historische Bar-Wiedergabe. Spätere Quellenkorrekturen können enthalten sein; das belegt nicht, was damals bekannt war.",
+      "gap_unknown_close": "{{bars}} Bars ausgelassen, weil ihre Schlusszeit unbestätigt ist.",
+      "gap_unknown_recording": "{{bars}} Bars fehlt ein Erfassungszeitstempel.",
+      "gap_omitted_events": "{{events}} vergangene Ereignisse haben keine geeignete Erfassungshistorie.",
+      "note_hidden": "Gespeicherte Zeichnungen und undatierte Marken bleiben während der Wiedergabe verborgen."
     }
   },
   "charts": {

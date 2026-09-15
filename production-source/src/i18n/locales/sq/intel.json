@@ -874,6 +874,26 @@
       "layout_restored": "Pamja e ruajtur, vizatimet dhe treguesit u rikthyen.",
       "readings_summary": "Lexo të dhënat e çmimit dhe përkufizimet e treguesve",
       "readings_note": "Vëzhgimet e fundit {{observations}} të ngarkuara · {{timezone}}. Treguesit përdorin qirinjtë e vëzhguar; qirinjtë që mungojnë nuk trillohen."
+    },
+    "replay": {
+      "region": "Riprodhim historik i grafikut",
+      "previous": "Qiriri i mëparshëm",
+      "next": "Qiriri tjetër",
+      "play": "Nis riprodhimin",
+      "pause": "Ndalo riprodhimin",
+      "exit": "Dil nga riprodhimi",
+      "speed": "Shpejtësia",
+      "speed_option": "{{rate}}× në sekondë",
+      "known_only": "Vetëm të dhënat e regjistruara deri atëherë",
+      "through": "Riprodho deri te",
+      "bar_slider": "Qiriri i riprodhimit",
+      "ended": "Riprodhimi arriti te qiriri i fundit i ngarkuar. Kthehu një hap ose dil nga riprodhimi për t’u kthyer te grafiku i drejtpërdrejtë.",
+      "note_recorded": "Riprodhim i provave të regjistruara. Qirinjtë dhe shënimet e regjistruara më vonë mbeten të fshehura.",
+      "note_historical": "Riprodhim i qirinjve historikë. Mund të ketë korrigjime të mëvonshme të burimit; kjo nuk vërteton çfarë dihej atëherë.",
+      "gap_unknown_close": "{{bars}} qirinj u lanë jashtë sepse ora e mbylljes së tyre nuk është verifikuar.",
+      "gap_unknown_recording": "{{bars}} qirinj nuk kanë vulë kohore regjistrimi.",
+      "gap_omitted_events": "{{events}} ngjarje të shkuara nuk kanë histori regjistrimi të pranueshme.",
+      "note_hidden": "Vizatimet e ruajtura dhe nivelet pa datë mbeten të fshehura gjatë riprodhimit."
     }
   },
   "charts": {

@@ -874,6 +874,26 @@
       "layout_restored": "Opgeslagen weergave, tekeningen en indicatoren hersteld.",
       "readings_summary": "Prijsgegevens en indicatordefinities lezen",
       "readings_note": "Laatste {{observations}} geladen waarnemingen · {{timezone}}. Indicatoren gebruiken waargenomen candles; ontbrekende candles worden niet verzonnen."
+    },
+    "replay": {
+      "region": "Historische grafiekweergave",
+      "previous": "Vorige candle",
+      "next": "Volgende candle",
+      "play": "Weergave starten",
+      "pause": "Weergave pauzeren",
+      "exit": "Weergave verlaten",
+      "speed": "Snelheid",
+      "speed_option": "{{rate}}× per seconde",
+      "known_only": "Alleen gegevens die toen waren vastgelegd",
+      "through": "Weergave tot",
+      "bar_slider": "Weergavecandle",
+      "ended": "De weergave heeft de laatst geladen candle bereikt. Ga terug of verlaat de weergave om terug te keren naar de live grafiek.",
+      "note_recorded": "Weergave van vastgelegd bewijs. Later vastgelegde candles en notities blijven verborgen.",
+      "note_historical": "Historische candleweergave. Latere broncorrecties kunnen aanwezig zijn; dit bewijst niet wat toen bekend was.",
+      "gap_unknown_close": "{{bars}} candles weggelaten omdat hun sluittijd niet is geverifieerd.",
+      "gap_unknown_recording": "{{bars}} candles hebben geen vastlegtijdstempel.",
+      "gap_omitted_events": "{{events}} eerdere gebeurtenissen hebben geen bruikbare vastleggeschiedenis.",
+      "note_hidden": "Opgeslagen tekeningen en niveaus zonder datum blijven tijdens de weergave verborgen."
     }
   },
   "charts": {
