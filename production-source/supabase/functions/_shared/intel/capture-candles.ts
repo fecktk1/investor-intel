@@ -335,18 +335,32 @@ export async function backfillAssetHistory(db: any, asset: { assetKey: string; s
 // ─── Seeding the queue ────────────────────────────────────────────────────────
 
 /** CoinMarketCap-sourced catalogue rows, indexed two ways for the identity join
- * below. A symbol claimed by MORE THAN ONE CoinMarketCap asset is dropped from
- * the symbol index entirely: a same-ticker match is not an identity, and buying
- * a decade of the wrong asset's history is worse than buying none. */
+ * below.
+ *
+ * `byKey` holds each row's OWN canonical identity AND one entry per platform it
+ * lists. A multi-chain asset (a stablecoin, say) has no single canonical key of
+ * its own, but a CoinMarketCap asset that lists this exact contract on this
+ * exact chain IS that asset, which is what lets a demanded contract key resolve.
+ *
+ * `bySymbol` drops any ticker claimed by MORE THAN ONE CoinMarketCap asset: a
+ * same-ticker match is not an identity, and buying a decade of the wrong asset's
+ * history is worse than buying none. */
 export interface CmcCatalogueIndex { byKey: Map<string, string>; bySymbol: Map<string, string> }
 // deno-lint-ignore no-explicit-any
 export function cmcCatalogueIndex(rows: any[]): CmcCatalogueIndex {
   const byKey = new Map<string, string>(), counts = new Map<string, number>(), first = new Map<string, string>()
+  const register = (key: string | null, id: string) => { if (key && !byKey.has(key)) byKey.set(key, id) }
   for (const row of rows || []) {
     const id = String(row?.provider_id ?? '')
     if (!/^[1-9][0-9]{0,9}$/.test(id)) continue
-    const key = marketCanonicalIdentity(row).canonicalAssetKey
-    if (key && !byKey.has(key)) byKey.set(key, id)
+    register(marketCanonicalIdentity(row).canonicalAssetKey, id)
+    const platforms = row?.platforms && typeof row.platforms === 'object' && !Array.isArray(row.platforms) ? row.platforms as Record<string, unknown> : {}
+    for (const [platform, address] of Object.entries(platforms)) {
+      if (typeof address !== 'string' || !address) continue
+      // One platform at a time, so the resolver returns that platform's own
+      // canonical key rather than refusing a multi-chain row.
+      register(marketCanonicalIdentity({ platforms: { [platform]: address } }).canonicalAssetKey, id)
+    }
     const symbol = String(row?.normalized_symbol || row?.symbol || '').toUpperCase().trim()
     if (!symbol) continue
     counts.set(symbol, (counts.get(symbol) ?? 0) + 1)
@@ -379,15 +393,58 @@ export function cmcIdOf(row: any, index: CmcCatalogueIndex = { byKey: new Map(),
     const direct = marketCmcIdentity(row)
     if (typeof direct === 'string' && /^[1-9][0-9]{0,9}$/.test(direct)) return direct
   } catch { /* an unresolvable row is a null identity, not a failed run */ }
+  // A demand row carries its canonical key directly and has no platforms of its
+  // own, so the key it was queued under is the identity to look up.
   const key = marketCanonicalIdentity(row).canonicalAssetKey
+    ?? (typeof row?.asset_key === 'string' && row.asset_key ? String(row.asset_key) : null)
   if (key && index.byKey.has(key)) return index.byKey.get(key) as string
   const symbol = String(row?.normalized_symbol || row?.symbol || '').toUpperCase().trim()
   return symbol && index.bySymbol.has(symbol) ? index.bySymbol.get(symbol) as string : null
 }
 
+/** A key of the shape `market:<provider>:<id>` is the FALLBACK an asset gets when
+ * it has no single canonical chain identity (a multi-chain stablecoin, say). A
+ * key of any other shape is a real chain identity. */
+const isCanonicalKey = (key: unknown) => !!key && !String(key).startsWith('market:')
+
+/**
+ * One queue row per ASSET, not per representation of it.
+ *
+ * Two candidates can describe the same asset under different keys: the catalogue
+ * offers `market:coingecko:tether` (Tether has many platforms, so it has no
+ * single canonical chain identity) while a reader who opened USDT on Ethereum
+ * leaves `eip155:1:0xdac17f95…` in the demand table. Merging on the key alone
+ * queued both and bought the same 4,214 days twice, at 54 credits each.
+ *
+ * So candidates are merged on the key AND on the resolved CoinMarketCap id. When
+ * two rows resolve to the same id one survives, chosen deterministically:
+ *
+ *   1. a row that is BOTH a real chain identity and inside the ranked cohort;
+ *   2. failing that, the RANKED row — the cohort is what this lane exists to
+ *      fill, and keeping the unranked representation would leave a top-five
+ *      asset queued behind a hundred others;
+ *   3. failing that, a real chain identity;
+ *   4. failing that, the first candidate seen.
+ *
+ * The survivor takes the better (lower) priority of the pair, and the archive
+ * rows are written under whichever key survives.
+ */
+// deno-lint-ignore no-explicit-any
+function preferCandidate(held: Record<string, unknown>, next: Record<string, unknown>): Record<string, unknown> {
+  const score = (row: Record<string, unknown>) => {
+    const ranked = Number(row.priority) <= BACKFILL_TOP_N
+    const canonical = isCanonicalKey(row.asset_key)
+    return (ranked && canonical ? 3 : ranked ? 2 : canonical ? 1 : 0)
+  }
+  const winner = score(next) > score(held) ? next : held
+  // Whichever representation survives, the asset is filled at the better rank.
+  return { ...winner, priority: Math.min(Number(held.priority) || Infinity, Number(next.priority) || Infinity) }
+}
+
 /** The catalogue's top N by rank, plus every asset a reader has opened. The two
- * lists are merged on the canonical asset key; a demanded asset that is also in
- * the top N keeps the better (lower) priority. */
+ * lists are merged on the canonical asset key AND on the resolved CoinMarketCap
+ * id; a demanded asset that is also in the top N keeps the better (lower)
+ * priority. */
 // deno-lint-ignore no-explicit-any
 export function backfillCandidates(catalogue: any[], demand: any[], now: number,
   index: CmcCatalogueIndex = { byKey: new Map(), bySymbol: new Map() }): Record<string, unknown>[] {
@@ -419,11 +476,22 @@ export function backfillCandidates(catalogue: any[], demand: any[], now: number,
     // ahead of nothing, because someone has actually opened it.
     add(text(row?.asset_key, 200), {
       provider: text(row?.provider, 40), provider_id: text(row?.provider_id, 40), symbol: null,
-      cmc_id: cmcIdOf({ source_provider: row?.provider, provider_id: row?.provider_id, platforms: row?.platforms }, index),
+      cmc_id: cmcIdOf({ source_provider: row?.provider, provider_id: row?.provider_id, asset_key: text(row?.asset_key, 200) }, index),
       priority: BACKFILL_TOP_N + 1, state: 'pending', first_seen_at: new Date(now).toISOString(),
     })
   }
-  return [...byKey.values()]
+  // Second pass: collapse the representations that resolve to ONE CoinMarketCap
+  // asset. A candidate with no resolved id cannot be compared this way and is
+  // kept as it is, because "unknown" is not evidence of sameness.
+  const byCmcId = new Map<string, Record<string, unknown>>()
+  const kept: Record<string, unknown>[] = []
+  for (const row of byKey.values()) {
+    const id = typeof row.cmc_id === 'string' && row.cmc_id ? row.cmc_id : null
+    if (!id) { kept.push(row); continue }
+    const held = byCmcId.get(id)
+    byCmcId.set(id, held ? preferCandidate(held, row) : row)
+  }
+  return [...kept, ...byCmcId.values()]
 }
 
 /** Put the queue in the state table. Existing rows are never reset: the insert
