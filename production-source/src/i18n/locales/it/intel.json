@@ -994,7 +994,22 @@
       "card_captured": "catturato {{time}}",
       "card_source": "Fonte",
       "card_unrecorded": "Non registrato",
-      "card_note": "L’anteprima social del link mostra solo questa scheda di marca. Prezzi, note e contenuti del portafoglio restano dietro il link e l’accesso viene verificato di nuovo all’apertura."
+      "card_note": "L’anteprima social del link mostra solo questa scheda di marca. Prezzi, note e contenuti del portafoglio restano dietro il link e l’accesso viene verificato di nuovo all’apertura.",
+      "image_title": "Condividi immagine",
+      "image_intro": "Un’immagine nera e oro di questo grafico, con i tuoi disegni e la filigrana, pronta da pubblicare.",
+      "image_shape": "Formato dell’immagine",
+      "image_landscape": "Orizzontale",
+      "image_portrait": "Verticale",
+      "image_composing": "Composizione dell’immagine…",
+      "image_candles": "candele da {{width}}",
+      "image_save": "Salva immagine",
+      "image_copy": "Copia immagine",
+      "image_copied": "Immagine copiata.",
+      "image_copy_unavailable": "Questo browser non può copiare immagini. Salva invece l’immagine.",
+      "image_alt": "Anteprima dell’immagine del grafico che stai per condividere",
+      "image_not_ready": "Il grafico si sta ancora disegnando. Chiudi e riapri Condividi tra un momento.",
+      "image_failed": "Questa immagine non è stata composta in questo browser. Il link qui sotto funziona comunque.",
+      "link_option": "Oppure condividi un link"
     },
     "size": {
       "taller": "Grafico più alto",

@@ -994,7 +994,22 @@
       "card_captured": "vastgelegd {{time}}",
       "card_source": "Bron",
       "card_unrecorded": "Niet vastgelegd",
-      "card_note": "Een sociale voorvertoning van de link toont alleen deze merkkaart. Prijzen, notities en portefeuille-inhoud blijven achter de link en de toegang wordt bij het openen opnieuw gecontroleerd."
+      "card_note": "Een sociale voorvertoning van de link toont alleen deze merkkaart. Prijzen, notities en portefeuille-inhoud blijven achter de link en de toegang wordt bij het openen opnieuw gecontroleerd.",
+      "image_title": "Afbeelding delen",
+      "image_intro": "Een zwart-gouden afbeelding van deze grafiek, met je tekeningen en het watermerk, klaar om te posten.",
+      "image_shape": "Beeldformaat",
+      "image_landscape": "Liggend",
+      "image_portrait": "Staand",
+      "image_composing": "De afbeelding wordt samengesteld…",
+      "image_candles": "candles van {{width}}",
+      "image_save": "Afbeelding opslaan",
+      "image_copy": "Afbeelding kopiëren",
+      "image_copied": "Afbeelding gekopieerd.",
+      "image_copy_unavailable": "Deze browser kan geen afbeeldingen kopiëren. Sla de afbeelding in plaats daarvan op.",
+      "image_alt": "Voorvertoning van de grafiekafbeelding die je gaat delen",
+      "image_not_ready": "De grafiek wordt nog getekend. Sluit dit en open Delen zo meteen opnieuw.",
+      "image_failed": "Deze afbeelding kon in deze browser niet worden samengesteld. De link hieronder werkt nog wel.",
+      "link_option": "Of deel een link"
     },
     "size": {
       "taller": "Hogere grafiek",

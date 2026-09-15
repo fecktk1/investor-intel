@@ -994,7 +994,22 @@
       "card_captured": "capturado em {{time}}",
       "card_source": "Fonte",
       "card_unrecorded": "Não registrado",
-      "card_note": "A prévia social do link mostra apenas este cartão de marca. Preços, notas e conteúdo de carteira ficam atrás do link e o acesso é conferido de novo na abertura."
+      "card_note": "A prévia social do link mostra apenas este cartão de marca. Preços, notas e conteúdo de carteira ficam atrás do link e o acesso é conferido de novo na abertura.",
+      "image_title": "Compartilhar imagem",
+      "image_intro": "Uma imagem preta e dourada deste gráfico, com seus desenhos e a marca-d’água, pronta para postar.",
+      "image_shape": "Formato da imagem",
+      "image_landscape": "Horizontal",
+      "image_portrait": "Vertical",
+      "image_composing": "Compondo a imagem…",
+      "image_candles": "candles de {{width}}",
+      "image_save": "Salvar imagem",
+      "image_copy": "Copiar imagem",
+      "image_copied": "Imagem copiada.",
+      "image_copy_unavailable": "Este navegador não consegue copiar imagens. Salve a imagem em vez disso.",
+      "image_alt": "Prévia da imagem do gráfico que você vai compartilhar",
+      "image_not_ready": "O gráfico ainda está sendo desenhado. Feche isto e abra Compartilhar de novo em instantes.",
+      "image_failed": "Esta imagem não pôde ser composta neste navegador. O link abaixo continua funcionando.",
+      "link_option": "Ou compartilhe um link"
     },
     "size": {
       "taller": "Gráfico mais alto",

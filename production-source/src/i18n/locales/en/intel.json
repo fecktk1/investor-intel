@@ -1809,7 +1809,22 @@
       "card_captured": "captured {{time}}",
       "card_source": "Source",
       "card_unrecorded": "Not recorded",
-      "card_note": "A social preview of the link shows this brand card only. Prices, notes and portfolio content stay behind the link and access is checked again when it is opened."
+      "card_note": "A social preview of the link shows this brand card only. Prices, notes and portfolio content stay behind the link and access is checked again when it is opened.",
+      "image_title": "Share image",
+      "image_intro": "A black and gold image of this chart, with your drawings and the watermark, ready to post.",
+      "image_shape": "Image shape",
+      "image_landscape": "Landscape",
+      "image_portrait": "Portrait",
+      "image_composing": "Composing the image…",
+      "image_candles": "{{width}} candles",
+      "image_save": "Save image",
+      "image_copy": "Copy image",
+      "image_copied": "Image copied.",
+      "image_copy_unavailable": "This browser cannot copy images. Save the image instead.",
+      "image_alt": "Preview of the chart image you are about to share",
+      "image_not_ready": "The chart is still drawing. Close this and open Share again in a moment.",
+      "image_failed": "This image could not be composed in this browser. The link below still works.",
+      "link_option": "Or share a link"
     },
     "size": {
       "taller": "Taller chart",

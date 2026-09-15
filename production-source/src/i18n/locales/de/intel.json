@@ -994,7 +994,22 @@
       "card_captured": "erfasst {{time}}",
       "card_source": "Quelle",
       "card_unrecorded": "Nicht erfasst",
-      "card_note": "Eine soziale Vorschau des Links zeigt nur diese Markenkarte. Preise, Notizen und Portfolio-Inhalte bleiben hinter dem Link, und der Zugriff wird beim Öffnen erneut geprüft."
+      "card_note": "Eine soziale Vorschau des Links zeigt nur diese Markenkarte. Preise, Notizen und Portfolio-Inhalte bleiben hinter dem Link, und der Zugriff wird beim Öffnen erneut geprüft.",
+      "image_title": "Bild teilen",
+      "image_intro": "Ein schwarz-goldenes Bild dieses Charts, mit deinen Zeichnungen und dem Wasserzeichen, bereit zum Posten.",
+      "image_shape": "Bildformat",
+      "image_landscape": "Querformat",
+      "image_portrait": "Hochformat",
+      "image_composing": "Bild wird erstellt…",
+      "image_candles": "{{width}}-Kerzen",
+      "image_save": "Bild speichern",
+      "image_copy": "Bild kopieren",
+      "image_copied": "Bild kopiert.",
+      "image_copy_unavailable": "Dieser Browser kann keine Bilder kopieren. Speichere das Bild stattdessen.",
+      "image_alt": "Vorschau des Chart-Bilds, das du teilen willst",
+      "image_not_ready": "Der Chart zeichnet noch. Schließe das hier und öffne Teilen gleich noch einmal.",
+      "image_failed": "Dieses Bild ließ sich in diesem Browser nicht erstellen. Der Link unten funktioniert weiterhin.",
+      "link_option": "Oder einen Link teilen"
     },
     "size": {
       "taller": "Höherer Chart",

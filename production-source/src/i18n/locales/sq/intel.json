@@ -994,7 +994,22 @@
       "card_captured": "regjistruar më {{time}}",
       "card_source": "Burimi",
       "card_unrecorded": "E paregjistruar",
-      "card_note": "Parapamja sociale e lidhjes shfaq vetëm këtë kartë marke. Çmimet, shënimet dhe përmbajtja e portofolit mbeten pas lidhjes dhe qasja kontrollohet sërish kur hapet."
+      "card_note": "Parapamja sociale e lidhjes shfaq vetëm këtë kartë marke. Çmimet, shënimet dhe përmbajtja e portofolit mbeten pas lidhjes dhe qasja kontrollohet sërish kur hapet.",
+      "image_title": "Ndaj një imazh",
+      "image_intro": "Një imazh i zi me ar i këtij grafiku, me vizatimet e tua dhe filigranin, gati për t’u postuar.",
+      "image_shape": "Formati i imazhit",
+      "image_landscape": "Horizontal",
+      "image_portrait": "Vertikal",
+      "image_composing": "Po krijohet imazhi…",
+      "image_candles": "qirinj {{width}}",
+      "image_save": "Ruaj imazhin",
+      "image_copy": "Kopjo imazhin",
+      "image_copied": "Imazhi u kopjua.",
+      "image_copy_unavailable": "Ky shfletues nuk mund të kopjojë imazhe. Ruaje imazhin në vend të kësaj.",
+      "image_alt": "Parapamje e imazhit të grafikut që do të ndash",
+      "image_not_ready": "Grafiku ende po vizatohet. Mbylle këtë dhe hape Ndaje sërish pas pak.",
+      "image_failed": "Ky imazh nuk u krijua dot në këtë shfletues. Lidhja më poshtë vazhdon të funksionojë.",
+      "link_option": "Ose ndaj një lidhje"
     },
     "size": {
       "taller": "Grafik më i lartë",

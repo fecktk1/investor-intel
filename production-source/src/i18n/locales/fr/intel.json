@@ -994,7 +994,22 @@
       "card_captured": "capturé le {{time}}",
       "card_source": "Source",
       "card_unrecorded": "Non enregistré",
-      "card_note": "L’aperçu social du lien n’affiche que cette carte de marque. Les prix, les notes et le contenu du portefeuille restent derrière le lien, et l’accès est vérifié de nouveau à l’ouverture."
+      "card_note": "L’aperçu social du lien n’affiche que cette carte de marque. Les prix, les notes et le contenu du portefeuille restent derrière le lien, et l’accès est vérifié de nouveau à l’ouverture.",
+      "image_title": "Partager une image",
+      "image_intro": "Une image noir et or de ce graphique, avec vos tracés et le filigrane, prête à publier.",
+      "image_shape": "Format de l’image",
+      "image_landscape": "Paysage",
+      "image_portrait": "Portrait",
+      "image_composing": "Composition de l’image…",
+      "image_candles": "bougies de {{width}}",
+      "image_save": "Enregistrer l’image",
+      "image_copy": "Copier l’image",
+      "image_copied": "Image copiée.",
+      "image_copy_unavailable": "Ce navigateur ne peut pas copier d’images. Enregistrez plutôt l’image.",
+      "image_alt": "Aperçu de l’image du graphique que vous allez partager",
+      "image_not_ready": "Le graphique est encore en cours de tracé. Fermez ceci et rouvrez Partager dans un instant.",
+      "image_failed": "Cette image n’a pas pu être composée dans ce navigateur. Le lien ci-dessous fonctionne toujours.",
+      "link_option": "Ou partager un lien"
     },
     "size": {
       "taller": "Graphique plus haut",
