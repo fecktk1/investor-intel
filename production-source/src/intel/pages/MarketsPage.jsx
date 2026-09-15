@@ -334,7 +334,7 @@ export default function MarketsPage() {
             </div>
 
             {marketsLoading && !marketsData ? (
-              <p role="status" className="py-8 text-sm text-[var(--fg-4)]">{t('markets.loading', { defaultValue: 'Loading market observations…' })}</p>
+              <p role="status" className="py-8 min-h-[60vh] text-sm text-[var(--fg-4)]">{t('markets.loading', { defaultValue: 'Loading market observations…' })}</p>
             ) : !hasData ? (
               <p className="py-6 text-[13px] text-[var(--fg-4)]">{marketError ? t('markets.screen_read_failed', { defaultValue: 'The market screen could not be loaded. Use Refresh to retry.' }) : t('markets.screen_no_matches', { defaultValue: 'No assets match this screen. Adjust or clear the filters.' })}</p>
             ) : (
@@ -600,7 +600,7 @@ export default function MarketsPage() {
 
             {degenError && <p role="alert">{degenError} <button onClick={() => setDegenRetry(value => value + 1)}>{t('common.retry', { defaultValue: 'Retry' })}</button></p>}
             {!degenData && !degenError ? (
-              <p role="status" className="py-8 text-sm text-[var(--fg-4)]">{t('markets.loading', { defaultValue: 'Loading market observations…' })}</p>
+              <p role="status" className="py-8 min-h-[60vh] text-sm text-[var(--fg-4)]">{t('markets.loading', { defaultValue: 'Loading market observations…' })}</p>
             ) : (
               <>
                 {!degenError && <MemecoinTable rows={drows} sort={degenSort.sort} dir={degenSort.dir} onSort={degenSort.toggle} pageOffset={degenParams.page * degenParams.limit} />}

@@ -265,7 +265,7 @@ export default function NewListingsBoard() {
           {reason || t('charts.no_reason', { defaultValue: 'No reason was reported.' })}
         </p>
       ) : state === 'empty' ? (
-        <p className="intel-chart-kit-state" role="status">
+        <p className={`intel-chart-kit-state${read.status === 'loading' ? ' min-h-[60vh]' : ''}`} role="status">
           {t('listings.empty', { defaultValue: 'No listing has been captured for this window yet.' })}
         </p>
       ) : (
