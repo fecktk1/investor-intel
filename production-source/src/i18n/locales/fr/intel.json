@@ -1046,7 +1046,8 @@
         "previous": "Précédent",
         "next": "Suivant",
         "page": "Page {{page}}"
-      }
+      },
+      "image_stamp": "Graphique de marché · {{date}}"
     },
     "size": {
       "taller": "Graphique plus haut",

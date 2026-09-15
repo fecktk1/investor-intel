@@ -33,7 +33,8 @@ export default function ChartShareImage({capture,layout=null,source=null}) {
   const from=clock(layout?.range?.from,timezone),to=clock(layout?.range?.to,timezone)
   const change=Number.isFinite(frame.first)&&frame.first>0&&Number.isFinite(frame.last)?(frame.last/frame.first-1)*100:null
   const currency=source?.currency&&source.currency!=='USD'?source.currency:null
-  return {eyebrow:'Investor Intel',name:frame.name||layout?.asset||'',symbol:frame.symbol||'',
+  const stamp=t('chart.share.image_stamp',{date:new Date().toLocaleDateString(undefined,{dateStyle:'medium',timeZone:timezone}),defaultValue:'Market chart · {{date}}'})
+  return {eyebrow:'Investor Intel',company:'TheContentForge',site:'thecontentforge.io',stamp,name:frame.name||layout?.asset||'',symbol:frame.symbol||'',
    price:Number.isFinite(frame.last)?fmtPrice(frame.last):null,
    change:change==null?null:fmtPct(change),direction:change==null?null:change<0?'down':'up',
    meta:[from&&to?t('chart.share.card_range',{from,to,defaultValue:'{{from}} to {{to}}'}):null,
@@ -47,7 +48,8 @@ export default function ChartShareImage({capture,layout=null,source=null}) {
   try{
    const frame=capture()
    const {chartShareImageBlob}=await import('../lib/chart-share-image')
-   const blob=await chartShareImageBlob({...frame,invert:watermarkNeedsInvert(frame.background),header:headerFor(frame)},{size:target})
+   const base=import.meta.env.BASE_URL
+   const blob=await chartShareImageBlob({...frame,brandmark:`${base}logo-color.png`,mark:`${base}apple-touch-icon.png`,invert:watermarkNeedsInvert(frame.background),header:headerFor(frame)},{size:target})
    if(!alive.current||generation.current!==id)return
    if(held.current)URL.revokeObjectURL(held.current)
    held.current=URL.createObjectURL(blob)

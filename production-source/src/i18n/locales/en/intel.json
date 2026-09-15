@@ -1861,7 +1861,8 @@
         "previous": "Previous",
         "next": "Next",
         "page": "Page {{page}}"
-      }
+      },
+      "image_stamp": "Market chart · {{date}}"
     },
     "size": {
       "taller": "Taller chart",

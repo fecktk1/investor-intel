@@ -1046,7 +1046,8 @@
         "previous": "Prapa",
         "next": "Para",
         "page": "Faqja {{page}}"
-      }
+      },
+      "image_stamp": "Grafiku i tregut · {{date}}"
     },
     "size": {
       "taller": "Grafik më i lartë",

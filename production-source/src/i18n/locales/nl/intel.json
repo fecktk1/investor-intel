@@ -1046,7 +1046,8 @@
         "previous": "Vorige",
         "next": "Volgende",
         "page": "Pagina {{page}}"
-      }
+      },
+      "image_stamp": "Marktgrafiek · {{date}}"
     },
     "size": {
       "taller": "Hogere grafiek",
