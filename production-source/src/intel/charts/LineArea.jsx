@@ -97,6 +97,7 @@ export default function LineArea({
   return (
     <ChartFrame
       t={t} title={title} description={description} state={resolved} reason={reason}
+      plot={{ width: W, height: H }}
       legend={
         <ChartLegend t={t} items={[
           { key: 'value', color: TONES.accent, label: valueLabel || t('charts.value', { defaultValue: 'Value' }), value: usable.length ? fmtValue(usable.at(-1).value) : null },

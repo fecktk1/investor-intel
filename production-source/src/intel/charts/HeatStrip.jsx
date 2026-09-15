@@ -23,6 +23,7 @@ export default function HeatStrip({
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: w, height: h, maxWidth: `${w * 1.5}px` }}
       table={
         <ChartTable
           t={t} caption={title}

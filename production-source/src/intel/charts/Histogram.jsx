@@ -74,6 +74,7 @@ export default function Histogram({
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: W, height: H }}
       table={
         <ChartTable
           t={t} caption={title}

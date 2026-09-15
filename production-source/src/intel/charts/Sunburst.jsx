@@ -53,6 +53,7 @@ export default function Sunburst({ title, description, root, depth = 3, formatVa
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: 340, height: 340, radial: true }}
       readout={<p className="intel-chart-kit-readout" aria-live="polite">{active ? `${readoutPath} · ${fmt(active.value)}` : readoutPath}</p>}
       table={
         <ChartTable

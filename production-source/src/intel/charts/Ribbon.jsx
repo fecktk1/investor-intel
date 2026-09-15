@@ -18,6 +18,9 @@ export default function Ribbon({
   const span = Number.isFinite(from) && Number.isFinite(to) && to > from ? to - from : 0
   const at = value => (span ? clamp((Number(value) - from) / span, 0, 1) * w : 0)
 
+  // No reserved plot box is passed: this band is 14 to 20 pixels tall, and a box
+  // that short would cut the state message off. It is the one figure whose plot
+  // is shorter than the line of text that stands in for it.
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}

@@ -18,7 +18,7 @@
 //
 // Endpoint list read from
 // https://pro.coinmarketcap.com/api/documentation/pro-api-reference/keyless-public-api.md
-// on 2026-09-15. See docs/investor-intel/keyless-demo-mode.md for the probe log.
+// on 2026-09-15. See examples/investor-intel-hackathon/docs/keyless-demo-mode.md for the probe log.
 import { CMC_CAPABILITIES, cmcParams, cmcRows, cmcObservedAt } from './cmc-capabilities.ts'
 import { cmcDexNetwork, cmcDexAddress } from './cmc-dex.ts'
 

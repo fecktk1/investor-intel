@@ -3249,6 +3249,7 @@
     "col_schedule": "Zeitplan",
     "col_active": "Aktiv",
     "job_active": "Aktiv",
-    "job_paused": "Pausiert"
+    "job_paused": "Pausiert",
+    "profile_promotional": "Aktionsprofil"
   }
 }

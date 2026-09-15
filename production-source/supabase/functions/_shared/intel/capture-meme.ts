@@ -9,14 +9,24 @@
 // the module tests without a network or a database.
 //
 // What one hourly run does:
-//   ONE `dexMeme` call per VERIFIED CMC DEX platform, probed in the order
-//   solana (16), base (199), ethereum (1), arbitrum (51) — Solana first because
-//   it is where the launchpads the audit names actually live. `pageSize` is 25,
-//   which is the provider's ceiling for a discovery page, and the response
-//   carries three arrays: `newCreations`, `aboutGraduates`, `graduates`. Each is
-//   1 credit, so a run costs at most 4 credits: 96 a day, ~2,880 a month against
-//   the scaled `attention` feature cap. The shared transport serves a still-fresh
+//   ONE `dexMeme` call, full stop — 1 credit, 24 a day, ~720 a month against the
+//   scaled `attention` feature cap. The shared transport serves a still-fresh
 //   snapshot for 0 credits, so the billed total is never higher.
+//
+//   CORRECTED 2026-09-15. This lane used to make one call PER PLATFORM, sending
+//   {platformIds, interval, pageSize}. /v1/dex/meme/list accepts none of those
+//   three: its documented body is {protocol, exclusive, limit, newCreationFilter,
+//   aboutGraduateFilter, graduateFilter}, and it has NO platform filter at all.
+//   The four per-platform calls were therefore four identical, unfiltered
+//   questions — and because `limit` was missing the provider answered 200,
+//   error_code 0, 1 credit and three EMPTY arrays to each of them (36 calls,
+//   252 bytes each, 2026-09-15 03:57-11:37 UTC; zero rows stored). We now ask the
+//   documented question once, with `limit`, and SPLIT the answer by platform
+//   ourselves: every row names its own `pid`, and a row whose platform is not one
+//   of the four verified CMC DEX networks is DROPPED, never repaired.
+//
+//   The response still carries three arrays: `newCreations`, `aboutGraduates`,
+//   `graduates`.
 //
 // FOUR.MEME IS NOT COVERED. The audit names Pump.fun, Moonshot and Four.meme.
 // Four.meme launches on BNB Chain, which is NOT one of the four platforms this
@@ -43,6 +53,13 @@
 //   * `dexMeme` is a Startup capability. Below Startup the lane is skipped with
 //     `plan_below_startup` and spends nothing, the way `network_stats` is
 //     skipped below Growth.
+//   * An EMPTY answer is a result, not a no-op. There is no contract-less row to
+//     write — the snapshot table is keyed (chain, contract_address, captured_at)
+//     — so the honest empty capture is the reasoned JobResult plus ONE info line
+//     per run (`intel_meme_capture`) carrying {platform, stage, rows, reason} for
+//     every platform and stage, zeros included. The next run is then diagnosable
+//     from the function log alone, which is exactly what the first thirty-six
+//     silent runs were not.
 //
 // The helpers `capture-jobs.ts` does not export (num/text, dedupe, upsert,
 // newestAt, guardJob, failed) are copied here from `capture-categories.ts`
@@ -50,7 +67,7 @@
 // concurrently against it.
 
 import { cmcRows, planAllows, estimateCmcCredits } from '../market-assets/cmc-capabilities.ts'
-import { CMC_DEX_NETWORKS, cmcDexIdentity, cmcDexNumber } from '../market-assets/cmc-dex.ts'
+import { CMC_DEX_NETWORKS, CMC_DEX_MEME_LIMIT, cmcDexRowIdentity, cmcDexNumber } from '../market-assets/cmc-dex.ts'
 import type { MarketAssetsContext } from '../market-assets/types.ts'
 import { CAPTURE_PROVIDER, hourBucket, schedulePolicy } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult } from './capture-jobs.ts'
@@ -62,12 +79,14 @@ export type MemeStage = typeof MEME_STAGES[number]
 /** Furthest stage wins when one response names a contract twice. */
 const STAGE_RANK: Record<string, number> = { newCreations: 1, aboutGraduates: 2, graduates: 3 }
 
-/** Probe order. Solana first: the launchpads this lane is about live there. */
+/** Reporting order of the platforms we can recognise in the answer. It is no
+ * longer a PROBE order: the endpoint has no platform filter, so there is nothing
+ * to probe per platform. Solana leads because that is where the launchpads live. */
 export const MEME_PLATFORM_ORDER = ['solana', 'base', 'ethereum', 'arbitrum'] as const
-/** The provider's ceiling for a discovery page. */
-export const MEME_PAGE_SIZE = 25
-/** One call per platform, so the per-run ceiling is the platform count. */
-export const MEME_MAX_CALLS = MEME_PLATFORM_ORDER.length
+/** Rows requested per stage array. The documented request field is `limit`. */
+export const MEME_LIMIT = CMC_DEX_MEME_LIMIT
+/** One unfiltered call answers for every platform at once. */
+export const MEME_MAX_CALLS = 1
 /** Previous-snapshot read ceiling per platform. Three stage arrays of 25 is at
  * most 75 contracts, so 2,000 rows is more than a full day of hourly history
  * for every one of them. */
@@ -151,25 +170,33 @@ const callBudget = (ctx: MarketAssetsContext, ceiling: number): number => {
 }
 
 export interface MemeCandidate {
-  chain: string; address: string; stage: MemeStage
+  platform: string; platformId: number; chain: string; address: string; stage: MemeStage
   name: string | null; symbol: string | null; price: number | null; marketCap: number | null
 }
 
 /**
  * One `dexMeme` response → at most one candidate per contract, with the stage it
- * reached. A row whose canonical identity does not resolve to the platform the
- * request pinned is DROPPED, not repaired: the response would then be about a
- * different chain than the question.
+ * reached and the platform the ROW named.
+ *
+ * The endpoint takes no platform filter, so the answer legitimately spans chains
+ * this platform has no verified CMC DEX evidence for. Such a row is DROPPED —
+ * `cmcDexRowIdentity` (the one pid → registry mapping, shared with the discovery
+ * cohort path) resolves only the four verified networks — never repaired into an
+ * identity and never attributed to a chain it did not name. `dropped` counts the
+ * rows that fell out this way so a run can say so instead of looking empty.
  */
 // deno-lint-ignore no-explicit-any
-export function memeCandidates(payload: any, platformId: number): MemeCandidate[] {
+export function memeCandidates(payload: any): { candidates: MemeCandidate[]; dropped: number } {
   const byContract = new Map<string, MemeCandidate>()
-  for (const row of cmcRows('dexMeme', payload).rows) {
+  let dropped = 0
+  for (const row of cmcRows('dexMeme', payload, { limit: String(MEME_LIMIT) }).rows) {
     const stage = String(row?.discoveryStage || '')
-    if (!MEME_STAGES.includes(stage as MemeStage)) continue
-    const identity = cmcDexIdentity(row?.canonicalKey)
-    if (!identity || identity.platformId !== platformId) continue
+    if (!MEME_STAGES.includes(stage as MemeStage)) { dropped += 1; continue }
+    // No pin: this lane keeps every verified platform and splits them afterwards.
+    const identity = cmcDexRowIdentity(row?.canonicalKey, null)
+    if (!identity) { dropped += 1; continue }
     const candidate: MemeCandidate = {
+      platform: identity.platform, platformId: identity.platformId,
       chain: identity.chain, address: identity.address, stage: stage as MemeStage,
       name: text(row?.name, 200), symbol: text(row?.symbol, 50),
       price: cmcDexNumber(row?.quote?.price), marketCap: cmcDexNumber(row?.mcap),
@@ -177,7 +204,45 @@ export function memeCandidates(payload: any, platformId: number): MemeCandidate[
     const previous = byContract.get(identity.subject)
     if (!previous || STAGE_RANK[candidate.stage] > STAGE_RANK[previous.stage]) byContract.set(identity.subject, candidate)
   }
-  return [...byContract.values()]
+  return { candidates: [...byContract.values()], dropped }
+}
+
+export interface MemeStageLine { platform: string; stage: MemeStage; rows: number; reason: string | null }
+
+/** Every platform × every stage, zeros included. A stage that answered nothing
+ * has to appear as a zero with a reason; an absent line would be indistinguishable
+ * from a lane that never ran, which is precisely how this lane failed silently. */
+export function stageBreakdown(candidates: MemeCandidate[], reason: string | null): MemeStageLine[] {
+  const lines: MemeStageLine[] = []
+  for (const platform of MEME_PLATFORM_ORDER) {
+    for (const stage of MEME_STAGES) {
+      const rows = candidates.filter((c) => c.platform === platform && c.stage === stage).length
+      lines.push({ platform, stage, rows, reason: rows ? null : reason })
+    }
+  }
+  return lines
+}
+
+/** ONE info line a run. Everything needed to diagnose the next run — the call
+ * state, the reason, the rows per platform and stage — is on this single line,
+ * so no follow-up query is needed to tell "nothing was there" from "we asked the
+ * wrong question". Never logs a request parameter that could carry a secret; the
+ * API key travels in a transport header this module never sees. */
+function logCapture(entry: {
+  capturedAt: string; calls: number; credits: number; state: string
+  reason: string | null; dropped: number; stages: MemeStageLine[]
+}): void {
+  try {
+    console.info(JSON.stringify({
+      intel_meme_capture: {
+        lane: 'meme_stages', capability: 'dexMeme', limit: MEME_LIMIT,
+        capturedAt: entry.capturedAt, calls: entry.calls, credits: entry.credits,
+        state: entry.state, reason: entry.reason ?? null, droppedRows: entry.dropped,
+        rows: entry.stages.reduce((sum, line) => sum + line.rows, 0),
+        stages: entry.stages,
+      },
+    }))
+  } catch { /* a log must never fail a capture */ }
 }
 
 interface Prior { stage: string | null; firstSeenAt: string | null }
@@ -235,32 +300,46 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
     const snapshots: Record<string, unknown>[] = []
     const transitions: Record<string, unknown>[] = []
     const platforms: Record<string, unknown>[] = []
-    let requested = 0, priorTruncated = false, reason: string | null = null
+    let priorTruncated = false, reason: string | null = null, dropped = 0
 
+    // ── ONE unfiltered call. The endpoint has no platform filter; asking four
+    // times only spent four credits on the same question. ──
+    credits += estimateCmcCredits('dexMeme', { limit: String(MEME_LIMIT) })
+    const result = await deps.request('dexMeme', { limit: MEME_LIMIT }, ctx).catch(() => null)
+    let candidates: MemeCandidate[] = []
+    let callState: string, callReason: string | null = null
+    if (!result?.payload) {
+      callState = 'unavailable'
+      callReason = reason = result?.reason || 'provider_unavailable'
+    } else {
+      try {
+        const read = memeCandidates(result.payload)
+        candidates = read.candidates
+        dropped = read.dropped
+        callState = candidates.length ? 'captured' : 'empty'
+        // An empty board is an answer, and it is reported as one. `dropped` says
+        // whether the board was genuinely empty or only empty of chains we verify.
+        if (!candidates.length) callReason = dropped ? 'unverified_platforms_only' : 'provider_reported_empty'
+      } catch (e) {
+        callState = 'unreadable'
+        callReason = reason = ((e as Error)?.message || 'invalid_response').slice(0, 120)
+      }
+    }
+
+    // ── split the one answer by the platform each ROW named ──
     for (const platform of MEME_PLATFORM_ORDER) {
       const network = CMC_DEX_NETWORKS.find((n) => n.platform === platform)
       if (!network) continue
-      if (requested >= budget) { platforms.push({ platform, platformId: null, state: 'skipped', reason: 'call_budget', rows: 0 }); continue }
-      requested += 1
-      const params = { platformIds: String(network.platformId), interval: '24h', pageSize: MEME_PAGE_SIZE }
-      credits += estimateCmcCredits('dexMeme', { platformIds: String(network.platformId), pageSize: String(MEME_PAGE_SIZE) })
-      const result = await deps.request('dexMeme', params, ctx).catch(() => null)
-      if (!result?.payload) {
-        reason = reason || result?.reason || 'provider_unavailable'
-        platforms.push({ platform, platformId: network.platformId, state: 'unavailable', reason: result?.reason || 'provider_unavailable', rows: 0 })
+      const mine = candidates.filter((c) => c.platformId === network.platformId)
+      if (!mine.length) {
+        platforms.push({ platform, platformId: network.platformId, state: callState === 'captured' ? 'empty' : callState, reason: callReason, rows: 0 })
         continue
       }
-      let candidates: MemeCandidate[] = []
-      try { candidates = memeCandidates(result.payload, network.platformId) } catch (e) {
-        platforms.push({ platform, platformId: network.platformId, state: 'unreadable', reason: ((e as Error)?.message || 'invalid_response').slice(0, 120), rows: 0 })
-        continue
-      }
-      if (!candidates.length) { platforms.push({ platform, platformId: network.platformId, state: 'empty', reason: null, rows: 0 }); continue }
-      const prior = await priorSnapshots(db, network.chain, candidates.map((c) => c.address), capturedAt)
+      const prior = await priorSnapshots(db, network.chain, mine.map((c) => c.address), capturedAt)
       priorTruncated = priorTruncated || prior.truncated
       reason = reason || prior.reason
       let moved = 0
-      for (const candidate of candidates) {
+      for (const candidate of mine) {
         const previous = prior.byAddress.get(candidate.address)
         const firstSeenAt = previous?.firstSeenAt || capturedAt
         snapshots.push({
@@ -280,10 +359,23 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
           })
         }
       }
-      platforms.push({ platform, platformId: network.platformId, state: 'captured', reason: null, rows: candidates.length, transitions: moved })
+      platforms.push({ platform, platformId: network.platformId, state: 'captured', reason: prior.reason, rows: mine.length, transitions: moved })
     }
 
-    if (!snapshots.length) return { job, rows: 0, credits, capturedAt, platforms, ...(reason ? { error: reason } : { skipped: 'no_reported_contracts' }) }
+    const stages = stageBreakdown(candidates, callReason)
+    logCapture({ capturedAt, calls: 1, credits, state: callState, reason: callReason ?? reason, dropped, stages })
+
+    if (!snapshots.length) {
+      // An honest empty capture: the reason travels on the result and on the log
+      // line above. Nothing is written, because there is no contract-less row the
+      // snapshot table could hold — and a zero is never invented to fill the gap.
+      return {
+        job, rows: 0, credits, capturedAt, platforms, stages, dropped,
+        ...(callState === 'unavailable' || callState === 'unreadable'
+          ? { error: callReason ?? 'provider_unavailable' }
+          : { skipped: callReason ?? 'no_reported_contracts' }),
+      }
+    }
     const wroteSnapshots = await upsert(db, 'intel_meme_stage_snapshots',
       dedupe(snapshots, (r) => `${r.chain}|${r.contract_address}`), 'chain,contract_address,captured_at')
     const wroteTransitions = transitions.length
@@ -291,7 +383,7 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
       : { rows: 0 }
     const error = wroteSnapshots.error || wroteTransitions.error || null
     return {
-      job, rows: wroteSnapshots.rows, credits, capturedAt, platforms,
+      job, rows: wroteSnapshots.rows, credits, capturedAt, platforms, stages, dropped,
       transitions: wroteTransitions.rows, contracts: snapshots.length,
       ...(priorTruncated ? { priorTruncated: true } : {}),
       ...(reason ? { partial: reason } : {}), ...(error ? { error } : {}),

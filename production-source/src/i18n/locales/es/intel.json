@@ -3249,6 +3249,7 @@
     "col_schedule": "Programación",
     "col_active": "Activo",
     "job_active": "Activo",
-    "job_paused": "En pausa"
+    "job_paused": "En pausa",
+    "profile_promotional": "promocional"
   }
 }

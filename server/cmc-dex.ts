@@ -42,6 +42,15 @@ export function cmcDexNumber(value:unknown):number|null {
  * A missing or unreadable bound is itself a rejection: an unbounded answer to a
  * bounded question is not the answer to that question. */
 const withinLimit=(list:unknown[],bound:unknown)=>{const n=cmcDexInteger(bound);return n!=null&&n>0&&list.length<=n}
+/** /v1/dex/holders/list is NOT paginated. The 2026-09-15 05:00 UTC capture proved
+ * the provider ignores `limit` and returns the whole tag cohort: tag_smart_money
+ * answered 29 rows and tag_kol answered 253 rows, both for a requested limit of
+ * 50. The request's `limit` therefore cannot bound the response — it bounds only
+ * what we keep (see cmcRows). What is left here is an absolute sanity ceiling:
+ * past it the answer is not a holder page at all. 2500 is already the practical
+ * maximum, because cmc-transport reads at most 2 MB of body and a row of this
+ * endpoint's ~25 fields runs several hundred bytes. */
+export const CMC_DEX_HOLDER_RESPONSE_MAX=2500
 /** One page of /v1/dex/holders/list. The published reference puts the rows under
  * data.holders; the live tape has also answered with data.list and with a bare
  * data array, and the cursor is optional (lastId, or nextId, or absent).
@@ -173,11 +182,12 @@ export function validateCmcDexResponse(name:string,body:any,params:Record<string
     // cmcDexHolderAddress so a documented alias is not a malformed response.
     // Numbers arrive as strings here exactly as they do from tag_count, so no
     // numeric field is type-checked: the row mapping parses them instead.
-    // What stays strict is identity and size: an address must be valid for the
-    // requested platform, a row that names another contract is refused, and a
-    // page longer than the one that was asked for is not that page.
+    // The endpoint is unpaginated and ignores `limit`, so the bound is the
+    // absolute ceiling, not the requested page (see CMC_DEX_HOLDER_RESPONSE_MAX).
+    // What stays strict is identity: an address must be valid for the requested
+    // platform, and a row that names another contract is refused.
     const page=cmcDexHolderPage(d)
-    if(!page||!withinLimit(page.rows,params.limit))return false
+    if(!page||!withinLimit(page.rows,CMC_DEX_HOLDER_RESPONSE_MAX))return false
     if(page.cursor!=null&&!isCmcDexCursor(page.cursor))return false
     return page.rows.every((r:any)=>{
       if(!r||typeof r!=='object'||Array.isArray(r)||!cmcDexAddress(cmcDexHolderAddress(r),network.platform))return false

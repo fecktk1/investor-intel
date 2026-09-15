@@ -1,4 +1,4 @@
-import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_HOLDER_TAGS} from './cmc-dex.ts'
+import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexInteger,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_HOLDER_TAGS} from './cmc-dex.ts'
 /** Re-exported from cmc-dex.ts, where the response validators also need it. */
 export {CMC_HOLDER_TAGS}
 // Reviewed against official CMC endpoint references 2026-09-09. Access is a
@@ -271,7 +271,11 @@ export function cmcUsdQuote(row: Record<string,unknown>): Record<string,unknown>
   if (Array.isArray(q)) return q.find(v=>v?.symbol==='USD'||v?.convert_symbol==='USD'||Number(v?.id)===2781||Number(v?.crypto_id)===2781||Number(v?.convert_id)===2781) ?? {}
   return q && typeof q==='object' ? (q as Record<string,any>).USD ?? q : {}
 }
-export function cmcRows(name:string,body:any): {rows:Record<string,any>[];total:number|null;hasMore:boolean;nextCursor?:string|null} {
+/** `params` is optional and used only where the response cannot be bounded by its
+ * own shape: /v1/dex/holders/list is unpaginated and ignores `limit`, so the
+ * requested limit is applied here instead. Callers that omit it keep the 250-row
+ * registry ceiling. */
+export function cmcRows(name:string,body:any,params?:Record<string,string>): {rows:Record<string,any>[];total:number|null;hasMore:boolean;nextCursor?:string|null} {
   const data=body?.data ?? body
   if(name==='dexCandles'){
     // k-line rows are positional arrays [o,h,l,c,v,t,traders], not objects.
@@ -294,21 +298,30 @@ export function cmcRows(name:string,body:any): {rows:Record<string,any>[];total:
     // validator uses (data.holders | data.list | a bare array; walletAddress |
     // address | holderAddress; tags as an array or one comma string), so a
     // documented alias can never make validation and projection disagree.
-    // Only these fields survive;
-    // every other provider key (name, symbol, price, totalSupply, risk flags, the
-    // separate buyCount/sellCount, avg prices) is dropped rather than carried.
-    // An address is a classified account, never a person: no row here may be given
-    // a label that names or describes a human being.
-    // Provider key -> retained field, as documented for /v1/dex/holders/list:
+    // Live row keys, verbatim from the 2026-09-15 05:00 UTC tag_smart_money capture:
+    //   name, tags, price, symbol, balance, logoUrl, percent, tokenLogo, platformId,
+    //   publicName, spotOpenTs, blockHeight, fundingTime, tokenSymbol, totalSupply,
+    //   tokenAddress, fundingSource, nativeBalance, walletAddress, stableCoinFlag,
+    //   firstActiveTime, spotClearanceTs, platformCryptoId, dexerPlatformName,
+    //   memePumpInnerFlag, addressExplorerUrl.
+    // PROVIDER FACT: that list contains NO buy/sell volume, NO realized PnL and no
+    // transaction count, so buyVolumeUsd, sellVolumeUsd, realizedPnlUsd,
+    // unrealizedPnlUsd and txCount are null from this endpoint. The aliases below
+    // stay in place for the documented buyUsd/sellUsd/realizedPnl names in case a
+    // plan or a tag returns them; they are not synthesised when absent.
+    // lastSeenAt is likewise null: the live rows carry firstActiveTime only.
+    // Everything not whitelisted is dropped rather than carried — including name
+    // and publicName. An address here is a classified account, never a person, and
+    // no row may be given a label that names or describes a human being.
+    // Provider key -> retained field:
     //   walletAddress->walletAddress, balance->balance, percent->percent,
     //   tags->tags, fundingSource->fundingSource, buyUsd->buyVolumeUsd,
     //   sellUsd->sellVolumeUsd, realizedPnl->realizedPnlUsd,
     //   firstActiveTime->firstSeenAt, lastActiveTime->lastSeenAt.
-    // UNKNOWN provider names, left null until a probe names them: unrealizedPnlUsd
-    // (no unrealised field is documented) and txCount (the response documents
-    // separate buyCount and sellCount, which are deliberately NOT summed here).
+    // The endpoint ignores `limit`, so the requested limit is applied HERE.
     const page=cmcDexHolderPage(data)
-    const rows=(page?.rows??[]).filter((v:any)=>v&&typeof v==='object'&&!Array.isArray(v)).slice(0,250).map((r:any)=>({
+    const keep=Math.min(cmcDexInteger(params?.limit)||250,250)
+    const rows=(page?.rows??[]).filter((v:any)=>v&&typeof v==='object'&&!Array.isArray(v)).slice(0,keep).map((r:any)=>({
       walletAddress:cmcDexHolderAddress(r),
       balance:r.balance??r.actualBalance??null,percent:r.percent??null,
       tags:cmcDexHolderTagList(r.tags)?.slice(0,CMC_HOLDER_TAGS.length)??null,

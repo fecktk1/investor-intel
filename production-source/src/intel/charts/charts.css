@@ -6,6 +6,13 @@
 .intel-chart-kit-title { color: var(--fg-1); font-size: .95rem; line-height: 1.4; }
 .intel-chart-kit-description { color: var(--fg-4); font-size: .78rem; line-height: 1.6; max-width: 80ch; }
 .intel-chart-kit-state { color: var(--fg-4); font-size: .82rem; line-height: 1.6; padding-block: 1.25rem; }
+/* The state box stands in for the plot. It carries the same aspect ratio and
+   the same width caps the svg will carry, so a figure that is loading, empty or
+   failed is exactly as tall as the drawn figure and nothing below it moves when
+   the chart arrives. The message sits in the middle of that reserved space. */
+.intel-chart-kit-plot { width: 100%; min-width: 0; }
+.intel-chart-kit-plot[data-reserved] { display: grid; align-content: center; }
+.intel-chart-kit-plot[data-reserved] .intel-chart-kit-state { padding-block: 0; max-width: 60ch; }
 .intel-chart-kit-readout { color: var(--fg-3); font-size: .78rem; line-height: 1.6; padding-top: .6rem; min-height: 1.6em; }
 .intel-chart-kit svg { display: block; width: 100%; max-width: 100%; height: auto; overflow: visible; }
 /* Round figures (gauges, rings, sunbursts, clocks) read at one size; a ring

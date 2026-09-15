@@ -3249,6 +3249,7 @@
     "col_schedule": "Schedule",
     "col_active": "Active",
     "job_active": "Active",
-    "job_paused": "Paused"
+    "job_paused": "Paused",
+    "profile_promotional": "promotional"
   }
 }

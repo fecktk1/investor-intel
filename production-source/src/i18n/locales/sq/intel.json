@@ -3249,6 +3249,7 @@
     "col_schedule": "Orari",
     "col_active": "Aktive",
     "job_active": "Aktive",
-    "job_paused": "E ndalur"
+    "job_paused": "E ndalur",
+    "profile_promotional": "promocional"
   }
 }

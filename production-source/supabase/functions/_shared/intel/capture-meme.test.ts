@@ -1,8 +1,10 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  captureMemeStages, memeCandidates, hoursBetween, MEME_CAPTURE_OPS,
-  MEME_PLATFORM_ORDER, MEME_PAGE_SIZE, MEME_MAX_CALLS, MEME_STAGES,
+  captureMemeStages, memeCandidates, stageBreakdown, hoursBetween, MEME_CAPTURE_OPS,
+  MEME_PLATFORM_ORDER, MEME_LIMIT, MEME_MAX_CALLS, MEME_STAGES,
 } from './capture-meme.ts'
+import { cmcParams, cmcRequestBody } from '../market-assets/cmc-capabilities.ts'
+import { validateCmcDexResponse } from '../market-assets/cmc-dex.ts'
 
 const HOUR = 3_600_000
 // A week in the past keeps every stamp behind the real clock.
@@ -83,21 +85,51 @@ const memeRow = (platformId: number, addr: string, sym: string, price = 0.002, m
 const memePayload = (stages: Partial<Record<typeof MEME_STAGES[number], unknown[]>>) =>
   ({ data: { newCreations: stages.newCreations ?? [], aboutGraduates: stages.aboutGraduates ?? [], graduates: stages.graduates ?? [] } })
 const ok = (payload: unknown) => ({ payload, state: 'fresh', reason: null, provenance: { provider: 'coinmarketcap', fetchedAt: CAPTURED } })
-const nothing = () => ok(memePayload({}))
 
-/** Only solana answers; the other three return an empty board. */
-const onlySolana = (rows: Partial<Record<typeof MEME_STAGES[number], unknown[]>>) =>
-  fakeRequest((_n, params) => String(params.platformIds) === '16' ? ok(memePayload(rows)) : nothing())
+/** The endpoint has no platform filter, so one answer serves every platform. */
+const board = (rows: Partial<Record<typeof MEME_STAGES[number], unknown[]>>) =>
+  fakeRequest(() => ok(memePayload(rows)))
 
-Deno.test('the probe order is solana, base, ethereum, arbitrum and the page size is 25', async () => {
-  const { request, calls } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+Deno.test('one unfiltered call a run, asking with the documented `limit`', async () => {
+  const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const db = fakeDb()
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
-  eq(calls.map((c) => String(c.params.platformIds)), ['16', '199', '1', '51'])
-  eq(MEME_PLATFORM_ORDER, ['solana', 'base', 'ethereum', 'arbitrum'])
-  eq(calls.every((c) => c.name === 'dexMeme' && Number(c.params.pageSize) === MEME_PAGE_SIZE && c.params.interval === '24h'), true)
-  eq(result.credits, MEME_MAX_CALLS, 'one credit a platform')
+  eq(calls.length, 1, 'the provider has no platform filter; four calls asked the same question')
+  eq(MEME_MAX_CALLS, 1)
+  eq(calls[0].name, 'dexMeme')
+  eq(Number(calls[0].params.limit), MEME_LIMIT)
+  // The three fields that produced the empty boards must never be sent again.
+  eq(Object.keys(calls[0].params).some((k) => ['platformIds', 'interval', 'pageSize', 'nextPageIndex'].includes(k)), false)
+  eq(result.credits, 1, 'one credit a run, not four')
   eq(result.rows, 1)
+  eq(MEME_PLATFORM_ORDER, ['solana', 'base', 'ethereum', 'arbitrum'])
+})
+
+Deno.test('the registry refuses the parameters the endpoint does not read', () => {
+  // The bug, pinned: platformIds/interval/pageSize are not this endpoint's fields.
+  for (const key of ['platformIds', 'interval', 'pageSize', 'nextPageIndex']) {
+    let threw = ''
+    try { cmcParams('dexMeme', { [key]: '16' }) } catch (e) { threw = (e as Error).message }
+    eq(threw, `invalid_parameter:${key}`, key)
+  }
+  // The documented shape, with `limit` defaulted and sent as an int32.
+  eq(cmcParams('dexMeme', {}), { limit: String(MEME_LIMIT) })
+  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', {})), { limit: MEME_LIMIT })
+  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', { protocol: 1, limit: 10 })), { protocol: 1, limit: 10 })
+})
+
+Deno.test('the validator accepts a multi-chain board and rejects an unbounded or malformed one', () => {
+  const params = cmcParams('dexMeme', {})
+  // Rows from a chain we do not verify are a LEGAL answer here: no platform was pinned.
+  eq(validateCmcDexResponse('dexMeme', memePayload({ newCreations: [memeRow(16, SOL, 'AAA'), { pid: 56, addr: 'bnb-token-1' }] }), params), true)
+  // A row claiming a verified platform must carry a valid address for it.
+  eq(validateCmcDexResponse('dexMeme', memePayload({ newCreations: [memeRow(16, EVM, 'AAA')] }), params), false)
+  // A missing stage array, and a page longer than the limit, are both rejected.
+  eq(validateCmcDexResponse('dexMeme', { data: { newCreations: [], graduates: [] } }, params), false)
+  eq(validateCmcDexResponse('dexMeme', memePayload({ newCreations: Array.from({ length: 3 }, () => memeRow(16, SOL, 'AAA')) }), { limit: '2' }), false)
+  // An unbounded question has no bounded answer.
+  eq(validateCmcDexResponse('dexMeme', memePayload({}), {}), false)
+  eq(validateCmcDexResponse('dexMeme', memePayload({}), params), true, 'an empty board is a valid answer')
 })
 
 Deno.test('stage detection keeps the furthest stage when one response names a contract twice', () => {
@@ -105,22 +137,27 @@ Deno.test('stage detection keeps the furthest stage when one response names a co
     newCreations: [memeRow(16, SOL, 'AAA')],
     graduates: [memeRow(16, SOL, 'AAA')],
   })
-  const candidates = memeCandidates(payload, 16)
+  const { candidates } = memeCandidates(payload)
   eq(candidates.length, 1)
   eq(candidates[0].stage, 'graduates')
   eq(candidates[0].chain, 'solana')
   eq(candidates[0].address, SOL)
+  eq(candidates[0].platform, 'solana')
 })
 
-Deno.test('a row whose platform does not match the request is dropped, not repaired', () => {
-  // A base row inside a solana answer: the response would be about another chain.
-  eq(memeCandidates(memePayload({ newCreations: [memeRow(199, EVM, 'BBB')] }), 16).length, 0)
-  eq(memeCandidates(memePayload({ newCreations: [memeRow(199, EVM, 'BBB')] }), 199).length, 1)
+Deno.test('a row is attributed to the platform it names, and an unverified chain is dropped', () => {
+  const mixed = memeCandidates(memePayload({ newCreations: [memeRow(199, EVM, 'BBB'), memeRow(16, SOL, 'AAA')] }))
+  eq(mixed.candidates.map((c) => c.platform).sort(), ['base', 'solana'])
+  eq(mixed.dropped, 0)
+  // BNB Chain is not one of the four verified networks; the row is dropped, never repaired.
+  const bnb = memeCandidates(memePayload({ newCreations: [{ pid: 56, addr: EVM, n: 'x', sym: 'X' }] }))
+  eq(bnb.candidates.length, 0)
+  eq(bnb.dropped, 1)
 })
 
 Deno.test('a first sighting sets first_seen_at to this hour and writes no transition', async () => {
   const writes: Record<string, unknown[]> = {}
-  const { request } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const { request } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const db = fakeDb({}, writes)
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
   const snapshot = (writes.intel_meme_stage_snapshots as Record<string, unknown>[])[0]
@@ -141,7 +178,7 @@ Deno.test('first_seen_at is carried forward and a changed stage writes a transit
       { chain: 'solana', contract_address: SOL, captured_at: hourBefore(1), stage: 'aboutGraduates', first_seen_at: hourBefore(5) },
     ],
   }, writes)
-  const { request } = onlySolana({ graduates: [memeRow(16, SOL, 'AAA')] })
+  const { request } = board({ graduates: [memeRow(16, SOL, 'AAA')] })
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
   const snapshot = (writes.intel_meme_stage_snapshots as Record<string, unknown>[])[0]
   eq(snapshot.first_seen_at, hourBefore(5), 'the first sighting is five hours ago, not now')
@@ -159,7 +196,7 @@ Deno.test('a stage that did not change writes no transition', async () => {
   const db = fakeDb({
     intel_meme_stage_snapshots: [{ chain: 'solana', contract_address: SOL, captured_at: hourBefore(1), stage: 'newCreations', first_seen_at: hourBefore(3) }],
   }, writes)
-  const { request } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const { request } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
   eq(result.transitions, 0)
   eq(writes.intel_meme_stage_transitions, undefined)
@@ -168,12 +205,12 @@ Deno.test('a stage that did not change writes no transition', async () => {
 Deno.test('re-running the same hour is idempotent: the run never reads its own rows back', async () => {
   const tables: Record<string, unknown[]> = {}
   const first: Record<string, unknown[]> = {}
-  const { request } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const { request } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   // deno-lint-ignore no-explicit-any
   const db = fakeDb(tables as any, first)
   await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
   const second: Record<string, unknown[]> = {}
-  const { request: request2 } = onlySolana({ graduates: [memeRow(16, SOL, 'AAA')] })
+  const { request: request2 } = board({ graduates: [memeRow(16, SOL, 'AAA')] })
   // deno-lint-ignore no-explicit-any
   const db2 = fakeDb(tables as any, second, {})
   // The cadence guard is what normally stops an overlapping run; shorten it and
@@ -189,7 +226,7 @@ Deno.test('re-running the same hour is idempotent: the run never reads its own r
 })
 
 Deno.test('the cadence guard skips a run inside the hour', async () => {
-  const { request, calls } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const db = fakeDb({ intel_meme_stage_snapshots: [{ chain: 'solana', contract_address: SOL, captured_at: new Date(NOW.getTime() - 60_000).toISOString(), stage: 'newCreations', first_seen_at: hourBefore(2) }] })
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
   eq(result.skipped, 'within_cadence')
@@ -198,56 +235,90 @@ Deno.test('the cadence guard skips a run inside the hour', async () => {
 })
 
 Deno.test('a disabled policy row skips the lane', async () => {
-  const { request, calls } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const result = await captureMemeStages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [{ feature: 'meme_stages', enabled: false }] })
   eq(result.skipped, 'policy_disabled')
   eq(calls.length, 0)
 })
 
 Deno.test('below Startup the lane spends nothing', async () => {
-  const { request, calls } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const result = await captureMemeStages(fakeDb(), ctxFor, NOW, 'builder', { request, policy: [] })
   eq(result.skipped, 'plan_below_startup')
   eq(result.credits, 0)
   eq(calls.length, 0)
 })
 
-Deno.test('a platform that does not answer is recorded and the others still run', async () => {
+Deno.test('a provider that does not answer is an error, never a stored zero', async () => {
   const writes: Record<string, unknown[]> = {}
-  const { request } = fakeRequest((_n, params) =>
-    String(params.platformIds) === '16' ? { payload: null, state: 'unavailable', reason: 'provider_unavailable' }
-      : String(params.platformIds) === '199' ? ok(memePayload({ graduates: [memeRow(199, EVM, 'BBB')] }))
-        : nothing())
+  const { request } = fakeRequest(() => ({ payload: null, state: 'unavailable', reason: 'provider_unavailable' }))
   const result = await captureMemeStages(fakeDb({}, writes), ctxFor, NOW, 'startup', { request, policy: [] })
+  eq(result.rows, 0)
+  eq(result.error, 'provider_unavailable', 'a failed run is never silent')
+  eq(result.skipped, undefined, 'an unavailable provider is not a clean skip')
+  eq(writes.intel_meme_stage_snapshots, undefined, 'nothing is written when nothing was read')
   const platforms = result.platforms as Record<string, unknown>[]
-  eq(platforms.find((p) => p.platform === 'solana')?.state, 'unavailable')
-  eq(platforms.find((p) => p.platform === 'base')?.state, 'captured')
-  eq(platforms.find((p) => p.platform === 'ethereum')?.state, 'empty')
-  eq(result.rows, 1)
-  eq(result.partial, 'provider_unavailable', 'a failed platform is never silent')
-  eq((writes.intel_meme_stage_snapshots as Record<string, unknown>[])[0].chain, 'eip155:8453')
+  eq(platforms.map((p) => p.state), ['unavailable', 'unavailable', 'unavailable', 'unavailable'])
 })
 
-Deno.test('a call budget below the platform count stops after the budget', async () => {
-  const { request, calls } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
-  const result = await captureMemeStages(fakeDb(), (name, _max) => ctxFor(name, 2), NOW, 'startup', { request, policy: [] })
-  eq(calls.length, 2)
-  const platforms = result.platforms as Record<string, unknown>[]
-  eq(platforms.filter((p) => p.state === 'skipped').length, 2)
-  eq(platforms.filter((p) => p.reason === 'call_budget').length, 2)
+Deno.test('an empty board is an honest empty capture with its reason, not a no-op', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const { request, calls } = board({})
+  const result = await captureMemeStages(fakeDb({}, writes), ctxFor, NOW, 'startup', { request, policy: [] })
+  eq(calls.length, 1, 'the credit was spent, so the run is reported')
+  eq(result.rows, 0)
+  eq(result.credits, 1)
+  eq(result.skipped, 'provider_reported_empty')
+  eq(result.error, undefined, 'an empty answer is not a failure')
+  assert(result.capturedAt, 'the empty capture still names the hour it covers')
+  eq(writes.intel_meme_stage_snapshots, undefined)
+  // Every platform and every stage is still accounted for, as a zero with a reason.
+  const stages = result.stages as Record<string, unknown>[]
+  eq(stages.length, 12)
+  eq(stages.every((s) => s.rows === 0 && s.reason === 'provider_reported_empty'), true)
 })
 
-Deno.test('several contracts and chains in one run', async () => {
+Deno.test('a board of unverified chains only says so rather than reading as empty', async () => {
+  const { request } = board({ newCreations: [{ pid: 56, addr: EVM, n: 'x', sym: 'X' }] })
+  const result = await captureMemeStages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [] })
+  eq(result.rows, 0)
+  eq(result.dropped, 1)
+  eq(result.skipped, 'unverified_platforms_only')
+})
+
+Deno.test('a call budget of zero stops the lane before it spends', async () => {
+  const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const result = await captureMemeStages(fakeDb(), (name, _max) => ctxFor(name, 0), NOW, 'startup', { request, policy: [] })
+  eq(calls.length, 0)
+  eq(result.skipped, 'call_budget')
+  eq(result.credits, 0)
+})
+
+Deno.test('one answer is split across the chains its rows name', async () => {
   const writes: Record<string, unknown[]> = {}
-  const { request } = fakeRequest((_n, params) =>
-    String(params.platformIds) === '16' ? ok(memePayload({ newCreations: [memeRow(16, SOL, 'AAA')], aboutGraduates: [] }))
-      : String(params.platformIds) === '1' ? ok(memePayload({ graduates: [memeRow(1, EVM, 'BBB'), memeRow(1, EVM2, 'CCC')] }))
-        : nothing())
+  const { request, calls } = board({
+    newCreations: [memeRow(16, SOL, 'AAA')],
+    graduates: [memeRow(1, EVM, 'BBB'), memeRow(1, EVM2, 'CCC')],
+  })
   const result = await captureMemeStages(fakeDb({}, writes), ctxFor, NOW, 'startup', { request, policy: [] })
+  eq(calls.length, 1)
   eq(result.rows, 3)
   const rows = writes.intel_meme_stage_snapshots as Record<string, unknown>[]
   eq(new Set(rows.map((r) => r.chain)).size, 2)
   eq(rows.filter((r) => r.stage === 'graduates').length, 2)
+  eq(new Set(rows.filter((r) => r.stage === 'graduates').map((r) => r.chain)), new Set(['eip155:1']))
+  const platforms = result.platforms as Record<string, unknown>[]
+  eq(platforms.find((p) => p.platform === 'solana')?.rows, 1)
+  eq(platforms.find((p) => p.platform === 'ethereum')?.rows, 2)
+  eq(platforms.find((p) => p.platform === 'base')?.state, 'empty')
+})
+
+Deno.test('the stage breakdown covers every platform and stage, zeros included', () => {
+  const lines = stageBreakdown([], 'provider_reported_empty')
+  eq(lines.length, MEME_PLATFORM_ORDER.length * MEME_STAGES.length)
+  eq(lines[0], { platform: 'solana', stage: 'newCreations', rows: 0, reason: 'provider_reported_empty' })
+  eq(new Set(lines.map((l) => l.platform)).size, 4)
+  eq(new Set(lines.map((l) => l.stage)).size, 3)
 })
 
 Deno.test('hoursBetween is null rather than negative', () => {
@@ -259,7 +330,7 @@ Deno.test('hoursBetween is null rather than negative', () => {
 
 Deno.test('the lane is reachable as the meme_stages op', async () => {
   eq(Object.keys(MEME_CAPTURE_OPS), ['meme_stages'])
-  const { request } = onlySolana({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const { request } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const result = await MEME_CAPTURE_OPS.meme_stages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [] })
   eq(result.job, 'meme_stages')
   assert(result.capturedAt)

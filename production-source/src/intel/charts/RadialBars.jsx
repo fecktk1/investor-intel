@@ -19,6 +19,7 @@ export default function RadialBars({ title, description, series = [], formatValu
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: 280, height: 280, radial: true }}
       legend={<ChartLegend t={t} items={rows.map(r => ({ key: r.key ?? r.index, color: r.color, label: r.label, value: fmt(r.value) }))} />}
       table={
         <ChartTable

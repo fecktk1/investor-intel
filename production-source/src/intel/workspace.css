@@ -517,8 +517,14 @@
 .intel-saved-reader-heading h2 { font-family:var(--font-body,Inter,sans-serif); font-weight:500; font-size:22px; line-height:1.4; margin-bottom:6px; overflow-wrap:anywhere; }
 .intel-saved-reader-heading>button { flex:none; }
 @media(max-width:640px) {
- .intel-saved-index table { min-width:620px; }
- .intel-saved-index th:first-child { width:300px; }
+ /* A phone shares the width instead of forcing a 620px table: a forced minimum
+    inside the scroll container widened the mobile layout viewport to 600px
+    (measured 2026-09-15), so the whole page scrolled sideways. */
+ .intel-saved-index table { min-width:0; }
+ .intel-saved-index th:first-child { width:50%; }
+ .intel-saved-index th:nth-child(2),.intel-saved-index th:nth-child(3) { width:auto; }
+ .intel-saved-index td,.intel-saved-index th { padding:10px 6px; }
+ .intel-saved-index td:first-child,.intel-saved-index th:first-child { padding-left:0; }
  .intel-saved-reader-heading h2 { font-size:18px; }
  .intel-saved-reader-heading { gap:12px; }
 }

@@ -30,6 +30,7 @@ export default function RadialGauge({
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: 420, height: 246, radial: true, maxHeight: `${height * 1.4}px` }}
       legend={<ChartLegend t={t} items={bands.map((b, i) => ({ key: b.label ?? i, color: toneColor(b.tone), label: b.label, value: fmt(b.to) }))} />}
       table={
         <ChartTable

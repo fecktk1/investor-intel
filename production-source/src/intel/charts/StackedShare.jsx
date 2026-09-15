@@ -41,6 +41,7 @@ export default function StackedShare({ title, description, series = [], formatTi
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: W, height: H }}
       legend={<ChartLegend t={t} items={bands.map(b => ({ key: b.key ?? b.index, color: b.color, label: b.label }))} />}
       table={
         <ChartTable

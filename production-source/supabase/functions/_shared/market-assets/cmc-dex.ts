@@ -7,6 +7,12 @@ export const CMC_DEX_NETWORKS=[
  {chain:'solana',platform:'solana',platformId:16,label:'Solana'},
 ] as const
 export const CMC_DEX_DISCOVERY=['dexTrending','dexNew','dexMeme','dexGainers'] as const
+/** The three stage arrays /v1/dex/meme/list answers with, verbatim. They are the
+ * response envelope, not a request parameter: the endpoint has no stage selector. */
+export const CMC_DEX_MEME_STAGES=['newCreations','aboutGraduates','graduates'] as const
+/** Rows kept per stage array. The documented request field is `limit`, not
+ * `pageSize`; 25 is what this platform asks for and what the lane budgets. */
+export const CMC_DEX_MEME_LIMIT=25
 /** Holder classifications returned by /v1/dex/holders/tag_count. Probed on
  * 2026-09-14 (docs/investor-intel/evidence/cmc-cost-probe-2026-09-14.json):
  * data.holders came back with exactly these eight rows. They are CMC's labels
@@ -23,6 +29,21 @@ export function cmcDexIdentity(value:unknown) {
   const network=CMC_DEX_NETWORKS.find(n=>n.chain===(match?.[1]??(sol?'solana':null)))
   const address=match?.[2]?.toLowerCase()??sol?.[1]
   return network&&address?{...network,subject:`${network.chain}:${address}`,address}:null
+}
+/**
+ * The verified network a DISCOVERY ROW names, honouring an optional client-side
+ * platform pin. Shared by every caller that has to split a platform-unfiltered
+ * answer (/v1/dex/meme/list takes no platform filter) by the platform each row
+ * claims for itself, so the pid -> registry mapping exists in exactly one place.
+ *
+ * Null means "not ours", for one of two reasons the CALLER must tell apart: a
+ * chain this platform has no verified CMC DEX evidence for, or a verified chain
+ * other than the pinned one. Neither is ever repaired into an identity.
+ */
+export function cmcDexRowIdentity(canonicalKey:unknown,pinnedPlatformId:number|null=null) {
+  const identity=cmcDexIdentity(canonicalKey)
+  if(!identity)return null
+  return pinnedPlatformId!=null&&identity.platformId!==pinnedPlatformId?null:identity
 }
 /** Provider cursors are opaque, bounded base64-compatible values. Transport
  * uses URLSearchParams; separators cannot introduce another query argument. */
@@ -75,8 +96,39 @@ export function cmcDexHolderTagList(value:unknown):string[]|null {
 export function validateCmcDexResponse(name:string,body:any,params:Record<string,string>) {
   const d=body?.data
   if(name==='dexPlatforms')return Array.isArray(d)&&d.length<=500&&d.every(r=>r&&Number.isSafeInteger(r.id)&&typeof r.n==='string')
+  // /v1/dex/meme/list is NOT shaped like the other three discovery lists. Read
+  // against the published DEX token reference on 2026-09-15: its request body is
+  // {protocol, exclusive, limit, newCreationFilter, aboutGraduateFilter,
+  // graduateFilter} and it accepts NO platformIds, interval, pageSize or
+  // nextPageIndex. It therefore has no platform filter at all: the answer spans
+  // every chain the provider indexes and each row names its own `pid`. Requiring
+  // one pinned platform of every row (what this validator did until 2026-09-15)
+  // was checking the response against a parameter we were never entitled to send.
+  //
+  // What IS still required, fail-closed: three stage arrays, each no longer than
+  // the `limit` we asked for, of bounded objects with a readable platform id; and
+  // a row that claims one of OUR verified platforms must carry a valid address
+  // for that platform. A row on an unverified chain is a legal answer here — it
+  // is dropped later by cmcDexIdentity, never repaired into an identity.
+  if(name==='dexMeme'){
+   if(!d||typeof d!=='object'||Array.isArray(d))return false
+   // An unbounded question has no bounded answer: without a limit we cannot tell
+   // a full page from a truncated one, so the response is not accepted at all.
+   const bound=cmcDexInteger(params.limit)
+   if(bound==null||bound<1)return false
+   return CMC_DEX_MEME_STAGES.every(stage=>{
+    const list=(d as any)[stage]
+    return Array.isArray(list)&&list.length<=bound&&list.every((r:any)=>{
+     if(!r||typeof r!=='object'||Array.isArray(r))return false
+     const id=cmcDexInteger(r.pid)
+     if(id==null||id<1)return false
+     const net=CMC_DEX_NETWORKS.find(n=>n.platformId===id)
+     return net?cmcDexAddress(r.addr,net.platform):typeof r.addr==='string'&&/^[!-~]{1,200}$/.test(r.addr)
+    })
+   })
+  }
   if(isDexDiscovery(name)){
-   const lists=name==='dexMeme'?[d?.newCreations,d?.aboutGraduates,d?.graduates]:[d?.leaderboardList]
+   const lists=[d?.leaderboardList]
    return lists.every(list=>Array.isArray(list)&&list.length<=Number(params.pageSize)&&list.every(r=>{
     const network=CMC_DEX_NETWORKS.find(n=>n.platformId===r?.pid)
     return network&&String(r.pid)===params.platformIds&&cmcDexAddress(r.addr,network.platform)

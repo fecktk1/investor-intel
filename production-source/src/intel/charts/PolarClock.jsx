@@ -29,6 +29,7 @@ export default function PolarClock({ title, description, period = '24h', buckets
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: 340, height: 340, radial: true }}
       table={
         <ChartTable
           t={t} caption={title}

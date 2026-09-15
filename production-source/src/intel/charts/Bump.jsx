@@ -44,6 +44,7 @@ export default function Bump({
   return (
     <ChartFrame
       t={t} title={title} description={description} state={state} reason={reason}
+      plot={{ width: W, height: H }}
       legend={<ChartLegend t={t} items={lines.map(l => ({ key: l.key ?? l.index, color: l.color, label: l.label, value: l.points.length ? `#${l.points.at(-1).rank}` : '—' }))} />}
       table={
         <ChartTable

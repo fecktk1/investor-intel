@@ -250,7 +250,9 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
         <p>
           {t('data_budget.plan_line', {
             effective: String(plan.effective ?? t('data_budget.not_reported', { defaultValue: 'not reported' })),
-            profile: String(plan.profile ?? t('data_budget.not_reported', { defaultValue: 'not reported' })),
+            profile: plan.profile === 'hackathon'
+              ? t('data_budget.profile_promotional', { defaultValue: 'promotional' })
+              : String(plan.profile ?? t('data_budget.not_reported', { defaultValue: 'not reported' })),
             baseline: String(plan.baseline ?? t('data_budget.not_reported', { defaultValue: 'not reported' })),
             defaultValue: 'Effective plan {{effective}} · access profile {{profile}} · declared baseline {{baseline}}',
           })}

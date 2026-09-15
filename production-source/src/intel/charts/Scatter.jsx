@@ -83,6 +83,7 @@ export default function Scatter({
   return (
     <ChartFrame
       t={t} title={title} description={description} state={resolved} reason={reason}
+      plot={{ width: W, height: H }}
       table={
         <ChartTable
           t={t} caption={title}

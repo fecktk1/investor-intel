@@ -265,24 +265,6 @@ export default function MarketAssetPage() {
         {sig && d.price == null && <MarketSignalBadge direction={sig.direction} />}
       </div>
 
-      {/* What this identity can feed, and why the rest cannot. Detail payloads
-          from before universal resolution carry no coverage: render nothing. */}
-      {d.coverage && <MarketCoverageRing coverage={d.coverage} identity={d.identity} />}
-
-      {/* How the platform knows what this asset IS — every rung of the resolver
-          ladder, with its timing. It reads nothing unless this page's identity
-          is a contract or a CoinMarketCap id, because a resolution is a paid
-          question and an exchange market is not one it can be asked. */}
-      <AssetProvenance sourceProvider={d.sourceProvider} providerId={d.providerId} canonicalKey={canonicalKey} />
-
-      {/* Price history is read on request only — one range is one provider
-          sampling charged against the shared budget — so this figure fetches
-          nothing until the reader chooses a range. The facts panel below it
-          reads rows the daily passes already wrote and costs nothing. */}
-      <AssetHistoryFigure sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
-      <AssetFactsPanel sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
-      <AttentionPersistence sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
-
       <AssetSectionNav sections={[
         { id: 'asset-chart', key: 'asset.chart_position', label: 'Chart & position' },
         { id: 'asset-research', key: 'asset.context', label: 'Market context' },
@@ -334,6 +316,29 @@ export default function MarketAssetPage() {
           </>
         )}
       /></div>
+
+      {/* The five reads below each size themselves only once their own read
+          returns. They sit under the chart and the research heading so a late
+          read grows into space no one is looking at, instead of pushing the
+          chart down the page after first paint. */}
+
+      {/* What this identity can feed, and why the rest cannot. Detail payloads
+          from before universal resolution carry no coverage: render nothing. */}
+      {d.coverage && <MarketCoverageRing coverage={d.coverage} identity={d.identity} />}
+
+      {/* How the platform knows what this asset IS — every rung of the resolver
+          ladder, with its timing. It reads nothing unless this page's identity
+          is a contract or a CoinMarketCap id, because a resolution is a paid
+          question and an exchange market is not one it can be asked. */}
+      <AssetProvenance sourceProvider={d.sourceProvider} providerId={d.providerId} canonicalKey={canonicalKey} />
+
+      {/* Price history is read on request only — one range is one provider
+          sampling charged against the shared budget — so this figure fetches
+          nothing until the reader chooses a range. The facts panel below it
+          reads rows the daily passes already wrote and costs nothing. */}
+      <AssetHistoryFigure sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
+      <AssetFactsPanel sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
+      <AttentionPersistence sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
 
       {/* Market signal + WHY (the point of this page) */}
       {sig && (

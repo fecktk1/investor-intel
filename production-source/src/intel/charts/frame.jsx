@@ -35,11 +35,31 @@ export function markProps({ label, onActivate, reduced, className = '', selected
   }
 }
 
+// The footprint the plot will take, as the chart itself knows it: the viewBox
+// width and height it draws into, the 22rem cap a round figure carries, and any
+// extra width or height cap the chart puts on its own svg. A chart that reports
+// its plot keeps one height across loading, empty, error and ready, so the
+// arriving svg never pushes the rest of the page down.
+export function plotBoxStyle(plot) {
+  if (!plot) return undefined
+  const style = {}
+  const width = Number(plot.width)
+  const height = Number(plot.height)
+  if (typeof plot.height === 'string') style.height = plot.height
+  else if (width > 0 && height > 0) style.aspectRatio = `${width} / ${height}`
+  else return undefined
+  if (plot.radial) style.maxWidth = '22rem'
+  if (plot.maxWidth) style.maxWidth = plot.maxWidth
+  if (plot.maxHeight) style.maxHeight = plot.maxHeight
+  return style
+}
+
 // A chart is a plain figure: no border, no background, no card. Legends are text
 // rows with a small colour swatch; every chart carries a table twin.
-export function ChartFrame({ t, title, description, state = 'ready', reason, legend, table, readout, children }) {
+export function ChartFrame({ t, title, description, state = 'ready', reason, legend, table, readout, plot, children }) {
   const failed = state === 'error'
-  const empty = state === 'empty'
+  const empty = state !== 'error' && state !== 'ready'
+  const box = plotBoxStyle(plot)
   return (
     <figure className="intel-chart intel-chart-kit">
       <figcaption>
@@ -47,14 +67,18 @@ export function ChartFrame({ t, title, description, state = 'ready', reason, leg
         {description ? <span className="intel-chart-kit-description">{description}</span> : null}
       </figcaption>
       {failed ? (
-        <p className="intel-chart-kit-state" role="alert">
-          {t('charts.unavailable', { defaultValue: 'This chart could not be built.' })}{' '}
-          {reason || t('charts.no_reason', { defaultValue: 'No reason was reported.' })}
-        </p>
+        <div className="intel-chart-kit-plot" style={box} data-reserved={box ? 'true' : undefined}>
+          <p className="intel-chart-kit-state" role="alert">
+            {t('charts.unavailable', { defaultValue: 'This chart could not be built.' })}{' '}
+            {reason || t('charts.no_reason', { defaultValue: 'No reason was reported.' })}
+          </p>
+        </div>
       ) : empty ? (
-        <p className="intel-chart-kit-state" role="status">
-          {t('charts.empty', { defaultValue: 'No observations are available for this chart.' })}
-        </p>
+        <div className="intel-chart-kit-plot" style={box} data-reserved={box ? 'true' : undefined}>
+          <p className="intel-chart-kit-state" role="status">
+            {t('charts.empty', { defaultValue: 'No observations are available for this chart.' })}
+          </p>
+        </div>
       ) : (
         <>
           {children}
