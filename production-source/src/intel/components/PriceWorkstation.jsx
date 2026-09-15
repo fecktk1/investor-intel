@@ -60,12 +60,15 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  useEffect(()=>{if(!source)callbacks.current.onFailure?.()},[source])
 
- const drawings=useChartDrawings({width:geometry.width,height:geometry.height,scale,readOnly,initialItems:initialState.drawings||[],
+ const drawings=useChartDrawings({width:geometry.width,height:geometry.height,scale,readOnly,initialItems:initialState.drawings||[],bars,intervalMs:chartSource?.intervalMs??source?.grid?.step??null,context:persistence,
   project:anchor=>{const x=api.current?.timeScale().logicalToCoordinate(continuousChartLogical(gridRef.current,anchor.t)),y=main.current?.priceToCoordinate(anchor.price);return x==null||y==null?null:{x,y}},
 
   unproject:point=>{const logical=api.current?.timeScale().coordinateToLogical(point.x),t=continuousChartTime(gridRef.current,logical),price=main.current?.coordinateToPrice(point.y);return t!=null&&Number.isFinite(price)&&price>0?{t:Math.round(t),price}:null}})
 
  useEffect(()=>{onWorkspaceChange?.({mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings:drawings.items,replay:replay?{at:cursorTime,knownOnly}:undefined})},[mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings.items,replay,cursorTime,knownOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+
+ // The drawing toolbar's crosshair button drives the chart's own crosshair.
+ useEffect(()=>{api.current?.applyOptions({crosshair:{mode:drawings.crosshair?0:2}})},[drawings.crosshair,ready])
 
  const studyResult=useChartStudies(bars,studies,chartSource?.intervalMs??null)
 
@@ -318,6 +321,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
    </svg>
 
    {!replay&&drawings.overlay}
+   {!replay&&drawings.toolbar}
 
   </div>
 
