@@ -1,4 +1,5 @@
 import React,{lazy,Suspense,useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react'
+import {useTranslation} from 'react-i18next'
 import {createChart,CandlestickSeries,BarSeries,LineSeries,HistogramSeries,PriceScaleMode} from '../vendor/lightweight-charts-5.2.0/renderer.mjs'
 
 import {STUDY_CATALOG,calculateStudy} from '../../../supabase/functions/_shared/intel/chart-analysis'
@@ -14,6 +15,10 @@ import ChartAssetNavigator from './ChartAssetNavigator'
 import ChartSnapshotSave from './ChartSnapshotSave'
 import ChartAlertEditor from './ChartAlertEditor'
 import ResponsiveChartTools from './ResponsiveChartTools'
+import ChartIndicatorMenu from './ChartIndicatorMenu'
+import ChartWatermark from './ChartWatermark'
+import ChartShareLaunch from './ChartShareLaunch'
+import {chartSizeHeight,isChartSize,nextChartSize} from '../lib/chart-size'
 import {validateChartLayout} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 const ChartStructurePanel=lazy(()=>import('./ChartStructurePanel'))
 
@@ -31,8 +36,16 @@ const barTime=(t,timeZone)=>new Date(t).toLocaleString(undefined,{dateStyle:'med
 
 
 
-function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,replay=false,knownOnly=false,readOnly=false,height=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
- const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null)
+function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,replay=false,knownOnly=false,readOnly=false,height:baseHeight=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
+ const {t}=useTranslation('intel',{useSuspense:false})
+ const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null),root=useRef(null)
+
+ // Size cycles default to tall to full screen. `covering` records that the
+ // browser refused the Fullscreen API and the workstation is covering the
+ // viewport in place instead, which needs its own Escape.
+ const [size,setSize]=useState(isChartSize(initialState.size)?initialState.size:'default'),[covering,setCovering]=useState(false)
+ const [screenHeight,setScreenHeight]=useState(()=>typeof window==='undefined'?900:window.innerHeight)
+ const height=chartSizeHeight(size,baseHeight,screenHeight)
 
  const callbacks=useRef({onCursorChange,onViewportChange,onFailure});callbacks.current={onCursorChange,onViewportChange,onFailure}
 
@@ -65,7 +78,48 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   unproject:point=>{const logical=api.current?.timeScale().coordinateToLogical(point.x),t=continuousChartTime(gridRef.current,logical),price=main.current?.coordinateToPrice(point.y);return t!=null&&Number.isFinite(price)&&price>0?{t:Math.round(t),price}:null}})
 
- useEffect(()=>{onWorkspaceChange?.({mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings:drawings.items,replay:replay?{at:cursorTime,knownOnly}:undefined})},[mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings.items,replay,cursorTime,knownOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+ useEffect(()=>{onWorkspaceChange?.({mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings:drawings.items,replay:replay?{at:cursorTime,knownOnly}:undefined})},[mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings.items,replay,cursorTime,knownOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+
+ // The browser owns full screen: leaving it by its own Escape, its own control
+ // or a navigation must bring the workstation back rather than strand it.
+ useEffect(()=>{
+  const sync=()=>{if(!document.fullscreenElement&&!covering)setSize(current=>current==='fullscreen'?'default':current)}
+  document.addEventListener('fullscreenchange',sync)
+  return()=>document.removeEventListener('fullscreenchange',sync)
+ },[covering])
+
+ useEffect(()=>{
+  if(size!=='fullscreen')return
+  const read=()=>setScreenHeight(window.innerHeight)
+  read();window.addEventListener('resize',read)
+  return()=>window.removeEventListener('resize',read)
+ },[size])
+
+ const leaveFullscreen=useCallback(()=>{
+  setCovering(false);setSize('default')
+  if(document.fullscreenElement)document.exitFullscreen?.()?.catch?.(()=>{})
+ },[])
+
+ // Escape leaves the in-place cover. A dialog or the indicator list owns Escape
+ // while it is open, so the cover only answers once they have closed.
+ useEffect(()=>{
+  if(!covering)return
+  const key=event=>{if(event.key==='Escape'&&!root.current?.querySelector('dialog[open], .intel-indicator-panel:not([hidden])'))leaveFullscreen()}
+  document.addEventListener('keydown',key)
+  return()=>document.removeEventListener('keydown',key)
+ },[covering,leaveFullscreen])
+
+ const cycleSize=async()=>{
+  const next=nextChartSize(size)
+  if(next!=='fullscreen'){leaveFullscreen();setSize(next);return}
+  setSize('fullscreen')
+  try{
+   const request=root.current?.requestFullscreen
+   if(!request)throw new Error('fullscreen_unavailable')
+   await request.call(root.current)
+   setCovering(false)
+  }catch{setCovering(true)}
+ }
 
  // The drawing toolbar's crosshair button drives the chart's own crosshair.
  useEffect(()=>{api.current?.applyOptions({crosshair:{mode:drawings.crosshair?0:2}})},[drawings.crosshair,ready])
@@ -223,18 +277,29 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  const closeStudies=()=>{setStudyDialog(false);setStudyError(null);returnFocus.current?.focus?.()}
 
+ // One admission gate for both entry points: the checkbox list and Advanced.
+ // A refused indicator always answers with a reason rather than nothing.
+ const prepareIndicator=(type,params)=>{
+  const study={id:crypto.randomUUID(),type,params}
+  try{calculateStudy(bars,study)}catch(error){return {study:null,reason:error.message}}
+  if(studies.length>=20)return {study:null,reason:t('chart.indicators.limit_count',{defaultValue:'A chart carries up to 20 indicators. Remove one to add another.'})}
+  const panes=new Set([...studies.map(s=>STUDY_CATALOG[s.type].pane),STUDY_CATALOG[type].pane].filter(p=>p!=='price'))
+  if(panes.size>3)return {study:null,reason:t('chart.indicators.limit_panes',{defaultValue:'Use up to three indicator panes per chart. Remove one to add another.'})}
+  return {study,reason:null}
+ }
+
  const addStudy=()=>{
+  const {study,reason}=prepareIndicator(draftType,draftParams)
+  if(reason){setStudyError(reason);return}
+  setStudies(previous=>[...previous,study]);setPreset('Custom');closeStudies()
+ }
 
-  try{const study={id:crypto.randomUUID(),type:draftType,params:draftParams};calculateStudy(bars,study)
-
-   if(studies.length>=20)throw new Error('A chart supports up to 20 studies.')
-
-   const panes=new Set([...studies.map(s=>STUDY_CATALOG[s.type].pane),STUDY_CATALOG[draftType].pane].filter(p=>p!=='price'));if(panes.size>3)throw new Error('Use up to three indicator panes per chart. Remove one to add another.')
-
-   setStudies(previous=>[...previous,study]);setPreset('Custom');closeStudies()
-
-  }catch(error){setStudyError(error.message)}
-
+ /** Returns null when the change was applied, or the reason it was refused. */
+ const toggleIndicator=(type,on)=>{
+  if(!on){setStudies(rows=>rows.filter(row=>row.type!==type));setPreset('Custom');return null}
+  const {study,reason}=prepareIndicator(type,{...STUDY_CATALOG[type].defaults})
+  if(reason)return reason
+  setStudies(previous=>[...previous,study]);setPreset('Custom');return null
  }
 
  const xFor=t=>api.current?.timeScale().logicalToCoordinate(continuousChartLogical(source?.grid,t))
@@ -263,7 +328,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   fitFrame.current=requestAnimationFrame(()=>{const grid=gridRef.current;if(api.current&&grid)api.current.timeScale().setVisibleLogicalRange({from:continuousChartLogical(grid,layout.range.from),to:continuousChartLogical(grid,layout.range.to)})})
 
-  setLayoutNote(layout.range.to<(source?.grid.start??0)||layout.range.from>(source?.grid.end??Infinity)?'This saved view is outside the loaded price period. Choose a longer period to load its market history.':'Saved view, drawings and studies restored.')
+  setLayoutNote(layout.range.to<(source?.grid.start??0)||layout.range.from>(source?.grid.end??Infinity)?t('chart.workstation.layout_outside',{defaultValue:'This saved view is outside the loaded price period. Choose a longer period to load its market history.'}):t('chart.workstation.layout_restored',{defaultValue:'Saved view, drawings and indicators restored.'}))
 
  }
 
@@ -274,7 +339,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   '--border-default':theme==='gray'?'#464b55':'#343b46','--border-subtle':'#464b55','--signal-green':'#6cc6a2','--signal-red':'#e89a9d','--accent':'#dfa647','--forge-gold':'#dfa647'}
 
 
- return <div className="intel-price-workstation" style={chartTheme}>
+ return <div className="intel-price-workstation" ref={root} data-size={covering?'covering':size} style={chartTheme}>
 
   <ResponsiveChartTools label="Chart tools">
   <div className="intel-workstation-toolbar" role="group" aria-label="Chart display controls">
@@ -287,20 +352,24 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    <label>Time<select value={timezone} onChange={e=>setTimezone(e.target.value)}><option value="UTC">UTC</option>{deviceZone!=='UTC'&&<option value={deviceZone}>Device time</option>}{!['UTC',deviceZone].includes(timezone)&&<option value={timezone}>{timezone}</option>}</select></label>
 
-   <button type="button" disabled={readOnly} onClick={()=>setStudyDialog(true)}>Studies{studies.length?` (${studies.length})`:''}</button>
+   <ChartIndicatorMenu studies={studies} disabled={readOnly} onToggle={toggleIndicator} onAdvanced={()=>setStudyDialog(true)}/>
    <button type="button" aria-expanded={structureOpen} onClick={()=>{setStructureOpen(v=>!v);setStructureSelection(null)}}>Structure</button>
 
    <label className="intel-workstation-check"><input type="checkbox" checked={volume} disabled={!hasVolume} onChange={e=>setVolume(e.target.checked)}/>{volumeLabel}</label>
 
    <button type="button" aria-pressed={autoScale} onClick={()=>setAutoScale(v=>!v)}>Auto scale</button>
 
+   <button type="button" onClick={cycleSize}>{size==='fullscreen'?t('chart.size.exit',{defaultValue:'Exit full screen'}):size==='tall'?t('chart.size.full',{defaultValue:'Full screen'}):t('chart.size.taller',{defaultValue:'Taller chart'})}</button>
+
    <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true)}}>Reset view</button>
 
-   {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<ChartSnapshotSave context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>} {persistence&&!replay&&!readOnly&&<><ChartAssetNavigator context={persistence}/><ChartAlertEditor context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
+   {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<ChartSnapshotSave context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><ChartAssetNavigator context={persistence}/><ChartAlertEditor context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
   </div>
 
   {!replay&&!readOnly&&drawings.controls}
   </ResponsiveChartTools>
+
+  {covering&&<p role="status" className="intel-analysis-caption">{t('chart.size.covering',{defaultValue:'Full screen was refused by the browser, so the chart covers this window instead. Press Escape or choose Exit full screen to return.'})}</p>}
 
   {chartSource&&<p className="intel-analysis-caption intel-chart-source">{chartSource.provider === 'coinmarketcap' ? 'CoinMarketCap' : chartSource.provider === 'coingecko' ? 'CoinGecko' : chartSource.provider} · {chartSource.currency}{chartSource.intervalMs?` · ${spacing(chartSource.intervalMs)}`:''}<span> · {chartSource.timestampMeaning==='close'?'Times mark candle closes':chartSource.timestampMeaning==='open'?'Times mark candle opens':'Source observation times'}{chartSource.observedAt?` · latest observation ${barTime(chartSource.observedAt,timezone)}`:''}</span></p>}
 
@@ -309,6 +378,8 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   <div className="intel-workstation-canvas" style={{height:totalHeight}} onPointerMoveCapture={e=>{if(e.buttons)refreshAfterGesture()}} onPointerUpCapture={refreshAfterGesture} onWheelCapture={refreshAfterGesture}>
 
    <div ref={host} style={{height:totalHeight}} role="img" aria-label={`${mode==='line'?'Price':mode==='candles'?'Candlestick':'OHLC'} chart, ${bars.length} observations. Use chart navigation controls or read price data below.`}/>
+
+   <ChartWatermark background={palette?.background}/>
 
    <svg className="intel-workstation-overlay" width={geometry.width} height={totalHeight} aria-label="Chart research markers" style={{pointerEvents:'none'}}>
 
@@ -327,18 +398,20 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   <div className="intel-chart-navigation" role="group" aria-label="Chart navigation"><button type="button" onClick={()=>pan(-1)}>Earlier</button><button type="button" onClick={()=>zoom(0.7)}>Zoom in</button><button type="button" onClick={()=>zoom(1.4)}>Zoom out</button><button type="button" onClick={()=>pan(1)}>Later</button><span>{source?.grid.step?`${spacing(source.grid.step)} observation spacing · `:''}Gaps remain empty</span></div>
 
-  {studyResult.loading&&<p role="status" className="intel-analysis-caption">Calculating studies…</p>}{studyResult.error&&<p role="alert">{studyResult.error}</p>}
+  {studyResult.loading&&<p role="status" className="intel-analysis-caption">{t('chart.indicators.calculating',{defaultValue:'Calculating indicators…'})}</p>}{studyResult.error&&<p role="alert">{studyResult.error}</p>}
 
   {studyResult.results.filter(r=>r.reason).map(r=><p className="intel-analysis-caption" key={r.id}>{STUDY_CATALOG[r.type].label}: {r.reason}</p>)}
   {structureOpen&&<Suspense fallback={<p role="status">Loading structure tools…</p>}><ChartStructurePanel bars={bars} at={replay?cursorTime:analysisNow} knownOnly={replay&&knownOnly} intervalMs={chartSource?.intervalMs??null} timezone={timezone} source={`${chartSource?.provider||'Source unavailable'} · ${chartSource?.currency||'Currency unavailable'}`} readOnly={readOnly||replay} savedNotes={replay?[]:drawings.items} onInspect={finding=>{setStructureSelection(finding?{bars,finding}:null);if(finding)onCursorChange?.(finding.confirmedAt)}} onKeep={drawings.add}/></Suspense>}
 
-  <details className="intel-chart-readings"><summary>Read price data and study definitions</summary><div className="intel-table-scroll"><table><thead><tr><th>Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody>{bars.slice(-30).map(b=><tr key={b.t}><th>{barTime(b.t,timezone)}</th>{[b.o,b.h,b.l,b.c,b.v].map((v,i)=><td key={i}>{price(v)}</td>)}</tr>)}</tbody></table></div><p className="intel-analysis-caption">Latest 30 loaded observations · {timezone}. Studies use observed bars; missing bars are not synthesized.</p>{studyResult.results.map(r=><p key={r.id}>{STUDY_CATALOG[r.type].label}: {r.definition} Warm-up: {r.warmup} observations.{r.coverage?.resets>0&&` Reset after ${r.coverage.resets} missing-period boundaries; ${r.coverage.latestBars} bars in the latest continuous segment.`}</p>)}</details>
+  <details className="intel-chart-readings"><summary>{t('chart.workstation.readings_summary',{defaultValue:'Read price data and indicator definitions'})}</summary><div className="intel-table-scroll"><table><thead><tr><th>Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody>{bars.slice(-30).map(b=><tr key={b.t}><th>{barTime(b.t,timezone)}</th>{[b.o,b.h,b.l,b.c,b.v].map((v,i)=><td key={i}>{price(v)}</td>)}</tr>)}</tbody></table></div><p className="intel-analysis-caption">{t('chart.workstation.readings_note',{observations:30,timezone,defaultValue:'Latest {{observations}} loaded observations · {{timezone}}. Indicators use observed bars; missing bars are not synthesized.'})}</p>{studyResult.results.map(r=><p key={r.id}>{STUDY_CATALOG[r.type].label}: {r.definition} Warm-up: {r.warmup} observations.{r.coverage?.resets>0&&` Reset after ${r.coverage.resets} missing-period boundaries; ${r.coverage.latestBars} bars in the latest continuous segment.`}</p>)}</details>
 
   {!replay&&drawings.list}{!replay&&!readOnly&&drawings.editor}{layoutNote&&<p role="status" className="intel-analysis-caption">{layoutNote}</p>}
 
-  {studyDialog&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby="chart-study-title" onCancel={e=>{e.preventDefault();closeStudies()}}><div className="intel-investigation-analysis-heading"><h2 id="chart-study-title">Chart studies</h2><button type="button" onClick={closeStudies}>Close</button></div>
+  {studyDialog&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby="chart-study-title" onCancel={e=>{e.preventDefault();closeStudies()}}><div className="intel-investigation-analysis-heading"><h2 id="chart-study-title">{t('chart.indicators.dialog_title',{defaultValue:'Chart indicators'})}</h2><button type="button" onClick={closeStudies}>{t('common.close',{defaultValue:'Close'})}</button></div>
 
-   <label>Study<select className="select" value={draftType} onChange={e=>{setDraftType(e.target.value);setDraftParams({...STUDY_CATALOG[e.target.value].defaults});setStudyError(null)}}>{Object.entries(STUDY_CATALOG).map(([id,s])=><option key={id} value={id}>{s.label}</option>)}</select></label>
+   <p className="intel-analysis-caption">{t('chart.indicators.dialog_intro',{defaultValue:'Choose an indicator and set its parameters. The list in Chart tools turns the same indicators on and off with their defaults.'})}</p>
+
+   <label>{t('chart.indicators.dialog_choose',{defaultValue:'Indicator'})}<select className="select" value={draftType} onChange={e=>{setDraftType(e.target.value);setDraftParams({...STUDY_CATALOG[e.target.value].defaults});setStudyError(null)}}>{Object.entries(STUDY_CATALOG).map(([id,s])=><option key={id} value={id}>{s.label}</option>)}</select></label>
 
    <p className="intel-analysis-caption">{STUDY_CATALOG[draftType].definition}</p><div className="intel-study-parameters">{Object.keys(STUDY_CATALOG[draftType].defaults).map(key=><label key={key}>{key.charAt(0).toUpperCase()+key.slice(1)}<input type="number" min="1" max={key==='multiplier'?10:500} step={key==='multiplier'?0.25:1} value={draftParams[key]??''} onChange={e=>setDraftParams(p=>({...p,[key]:e.target.value}))}/></label>)}</div>
 
@@ -346,9 +419,9 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    {draftType==='vwap'&&<label>Optional anchor (UTC)<input type="datetime-local" onChange={e=>setDraftParams(p=>({...p,anchor:e.target.value?Date.parse(`${e.target.value}Z`):undefined}))}/></label>}
 
-   {studyError&&<p role="alert">{studyError}</p>}<button type="button" className="btn btn--primary" onClick={addStudy}>Add study</button>
+   {studyError&&<p role="alert">{studyError}</p>}<button type="button" className="btn btn--primary" onClick={addStudy}>{t('chart.indicators.add',{defaultValue:'Add indicator'})}</button>
 
-   {studies.length>0&&<ul className="intel-study-list">{studies.map(s=><li key={s.id}><span>{STUDY_CATALOG[s.type].label} · {Object.entries(s.params||STUDY_CATALOG[s.type].defaults).filter(([,v])=>v!=null).map(([k,v])=>`${k}: ${v}`).join(', ')}</span><button type="button" onClick={()=>{setStudies(rows=>rows.filter(r=>r.id!==s.id));setPreset('Custom')}}>Remove</button></li>)}</ul>}
+   {studies.length>0&&<ul className="intel-study-list">{studies.map(s=><li key={s.id}><span>{STUDY_CATALOG[s.type].label} · {Object.entries(s.params||STUDY_CATALOG[s.type].defaults).filter(([,v])=>v!=null).map(([k,v])=>`${k}: ${v}`).join(', ')}</span><button type="button" onClick={()=>{setStudies(rows=>rows.filter(r=>r.id!==s.id));setPreset('Custom')}}>{t('chart.indicators.remove',{defaultValue:'Remove'})}</button></li>)}</ul>}
 
   </dialog>}
 

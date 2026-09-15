@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState, useRef } from 'react'
 import ResponsiveChartTools from './ResponsiveChartTools'
 import TokenAvatar from './TokenAvatar'
+import ChartWatermark from './ChartWatermark'
 import {assetLogoUrl} from '../lib/asset-identity'
 import { ResponsiveContainer, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine } from 'recharts'
 import { comparisonTimeline, comparisonWindow, comparisonPriceDomain, comparisonAssetLink } from '../lib/chart-comparison'
@@ -34,7 +35,7 @@ export default function MultiTokenChart({ series, loading, view = {}, onViewChan
   }
   const plot = (members, index) => <div className="intel-compare-plot" key={index}>
     {arrangement !== 'overlay' && <h3><a className="intel-compare-asset-name" href={members[0].asset ? comparisonAssetLink(members[0].asset) : undefined}><TokenAvatar src={members[0].logo||assetLogoUrl(members[0].asset)} symbol={members[0].label} size="sm"/>{members[0].label}</a><span>{returns ? 'Return' : members[0].chartSource?.currency || 'Currency unavailable'}</span></h3>}
-    {members.length===1&&!members[0].data.length?<p className="intel-compare-gap" role="status">{members[0].error||'Price history is unavailable for this asset.'}</p>:returns&&model.baseline==null?<p className="intel-compare-gap" role="status">A return comparison needs matching observations for every selected asset. Choose independent prices to inspect available histories.</p>:<ResponsiveContainer width="100%" height={arrangement === 'overlay' ? 330 : 230}>
+    {members.length===1&&!members[0].data.length?<p className="intel-compare-gap" role="status">{members[0].error||'Price history is unavailable for this asset.'}</p>:returns&&model.baseline==null?<p className="intel-compare-gap" role="status">A return comparison needs matching observations for every selected asset. Choose independent prices to inspect available histories.</p>:<div className="intel-compare-plot-surface"><ChartWatermark/><ResponsiveContainer width="100%" height={arrangement === 'overlay' ? 330 : 230}>
       <LineChart data={rows} margin={{ top: 12, right: 12, bottom: 0, left: 0 }} onMouseMove={event => { if (rows.some(r => r.t === Number(event?.activeLabel))) setCursor(Number(event.activeLabel)) }}>
         <CartesianGrid stroke="var(--border-default)" vertical={false} strokeDasharray="2 6" />
         <XAxis dataKey="t" type="number" scale="time" domain={axisRange ? [axisRange.from,axisRange.to] : ['dataMin', 'dataMax']} allowDataOverflow tickFormatter={t => new Date(t).toLocaleDateString(undefined, { month: 'short', day: 'numeric', timeZone: timezone })} tick={{ fill: 'var(--fg-4)', fontSize: 10 }} minTickGap={55} axisLine={false} tickLine={false} />
@@ -44,7 +45,7 @@ export default function MultiTokenChart({ series, loading, view = {}, onViewChan
         {Number.isFinite(eventTime)&&axisRange&&eventTime>=axisRange.from&&eventTime<=axisRange.to&&<ReferenceLine x={eventTime} stroke="var(--signal-blue)" strokeDasharray="6 3" />}
         {members.map(s => <Line key={s.key} name={s.label} type="linear" dataKey={s.key + (returns ? '_return' : '')} stroke={COLORS[model.series.indexOf(s)]} strokeWidth={1.6} dot={false} activeDot={false} connectNulls={false} isAnimationActive={false} />)}
       </LineChart>
-    </ResponsiveContainer>}
+    </ResponsiveContainer></div>}
   </div>
   return <section className="intel-compare-workspace" aria-label="Linked asset charts" aria-busy={loading}>
     <ResponsiveChartTools label={`Chart controls · ${arrangement === 'overlay' ? 'Return overlay' : arrangement === '2x2' ? '2 × 2 charts' : '1 × 4 charts'}`}>

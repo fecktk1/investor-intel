@@ -1,5 +1,6 @@
 import React,{useEffect,useId,useRef,useState} from 'react'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
+import {watermarkedChartSvg} from '../lib/chart-watermark'
 export async function chartPng(svg,width,height){
  if(width>4096||height>8192||width*height>12000000)throw new Error('This chart is too tall for PNG. Download the SVG to preserve all selected notes.')
  const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}))
@@ -19,7 +20,7 @@ export default function ChartExportControls({context,snapshot}){
  useEffect(()=>{if(!preview){setUrl(null);return}const next=URL.createObjectURL(new Blob([preview.svg],{type:'image/svg+xml;charset=utf-8'}));setUrl(next);return()=>URL.revokeObjectURL(next)},[preview])
  const close=()=>{revision.current++;setOpen(false);setPreview(null);setBusy(false);trigger.current?.focus()}
  useEffect(()=>{if(!exportAllowed){revision.current++;setOpen(false);setPreview(null);setBusy(false)}},[exportAllowed])
- const render=async()=>{if(!exportAllowed)return;const current=++revision.current;setBusy(true);setError(null);setNotice(null);setPreview(null);try{const r=await requestChartWorkspace(context,{operation:'snapshot_export',id:snapshot.id,includeDrawingIds:selected});if(alive.current&&revision.current===current)setPreview(r.image)}catch(e){if(alive.current&&revision.current===current)setError(e.message)}finally{if(alive.current&&revision.current===current)setBusy(false)}}
+ const render=async()=>{if(!exportAllowed)return;const current=++revision.current;setBusy(true);setError(null);setNotice(null);setPreview(null);try{const r=await requestChartWorkspace(context,{operation:'snapshot_export',id:snapshot.id,includeDrawingIds:selected});if(alive.current&&revision.current===current)setPreview({...r.image,svg:watermarkedChartSvg(r.image.svg,r.image.width,r.image.height)})}catch(e){if(alive.current&&revision.current===current)setError(e.message)}finally{if(alive.current&&revision.current===current)setBusy(false)}}
  const download=async(format,copy=false)=>{
   const current=revision.current;setBusy(true);setError(null)
   try{const blob=format==='png'?await chartPng(preview.svg,preview.width,preview.height):new Blob([preview.svg],{type:'image/svg+xml;charset=utf-8'});if(!alive.current||revision.current!==current)return
