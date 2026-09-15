@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import BoardTableHeader from './BoardTableHeader'
 import { Link } from 'react-router'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -273,11 +274,7 @@ export default function NewListingsBoard() {
           <table className="w-full text-[12px]">
             <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">{caption}</caption>
             <thead>
-              <tr>
-                {columns.map(column => (
-                  <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-                ))}
-              </tr>
+              <BoardTableHeader columns={columns} numeric={[4, 5, 6]} />
             </thead>
             <tbody>
               {rows.map((row, index) => {

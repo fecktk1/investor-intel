@@ -186,7 +186,7 @@ export default function AssetFactsPanel({ sourceProvider, providerId, symbol }) 
             <thead>
               <tr>
                 <th scope="col">{t('asset_facts.column_measure', { defaultValue: 'Measure' })}</th>
-                <th scope="col">{t('charts.value', { defaultValue: 'Value' })}</th>
+                <th scope="col" className="intel-number">{t('charts.value', { defaultValue: 'Value' })}</th>
               </tr>
             </thead>
             <tbody>
@@ -279,10 +279,10 @@ export default function AssetFactsPanel({ sourceProvider, providerId, symbol }) 
               <thead>
                 <tr>
                   <th scope="col">{t('asset_facts.column_cohort', { defaultValue: 'Listing quarter' })}</th>
-                  <th scope="col">{t('asset_facts.column_median_change', { defaultValue: 'Median 30-day change' })}</th>
-                  <th scope="col">{t('asset_facts.column_median_cap', { defaultValue: 'Median market cap' })}</th>
-                  <th scope="col">{t('asset_facts.column_assets', { defaultValue: 'Assets' })}</th>
-                  <th scope="col">{t('asset_facts.column_assets_with_change', { defaultValue: 'With a change' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.column_median_change', { defaultValue: 'Median 30-day change' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.column_median_cap', { defaultValue: 'Median market cap' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.column_assets', { defaultValue: 'Assets' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.column_assets_with_change', { defaultValue: 'With a change' })}</th>
                 </tr>
               </thead>
               <tbody>
@@ -333,12 +333,12 @@ export default function AssetFactsPanel({ sourceProvider, providerId, symbol }) 
               <thead>
                 <tr>
                   <th scope="col">{t('asset_facts.column_date', { defaultValue: 'Date' })}</th>
-                  <th scope="col">{t('asset_facts.market_pairs', { defaultValue: 'Market pairs' })}</th>
-                  <th scope="col">{t('asset_facts.column_pairs_delta', { defaultValue: 'Pairs change' })}</th>
-                  <th scope="col">{t('asset_facts.supply_circulating', { defaultValue: 'Circulating' })}</th>
-                  <th scope="col">{t('asset_facts.column_supply_delta', { defaultValue: 'Supply change' })}</th>
-                  <th scope="col">{t('asset_facts.market_cap', { defaultValue: 'Market cap' })}</th>
-                  <th scope="col">{t('asset_facts.column_rank', { defaultValue: 'Rank' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.market_pairs', { defaultValue: 'Market pairs' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.column_pairs_delta', { defaultValue: 'Pairs change' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.supply_circulating', { defaultValue: 'Circulating' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.column_supply_delta', { defaultValue: 'Supply change' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.market_cap', { defaultValue: 'Market cap' })}</th>
+                  <th scope="col" className="intel-number">{t('asset_facts.column_rank', { defaultValue: 'Rank' })}</th>
                 </tr>
               </thead>
               <tbody>

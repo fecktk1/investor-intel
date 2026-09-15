@@ -67,8 +67,8 @@ export default function MarketCoverageRing({ coverage, identity }) {
           <thead>
             <tr>
               <th scope="col">{t('coverage.column_section', { defaultValue: 'Section' })}</th>
-              <th scope="col">{t('coverage.column_state', { defaultValue: 'State' })}</th>
-              <th scope="col">{t('coverage.column_reason', { defaultValue: 'Reason' })}</th>
+              <th scope="col" data-align="right" className="intel-number">{t('coverage.column_state', { defaultValue: 'State' })}</th>
+              <th scope="col" data-align="right" className="intel-number">{t('coverage.column_reason', { defaultValue: 'Reason' })}</th>
             </tr>
           </thead>
           <tbody>

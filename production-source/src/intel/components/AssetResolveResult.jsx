@@ -221,8 +221,8 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
           <thead>
             <tr>
               <th scope="col">{t('resolve.column_step', { defaultValue: 'Source' })}</th>
-              <th scope="col">{t('resolve.column_outcome', { defaultValue: 'Outcome' })}</th>
-              <th scope="col">{t('resolve.column_ms', { defaultValue: 'Milliseconds' })}</th>
+              <th scope="col" className="intel-number">{t('resolve.column_outcome', { defaultValue: 'Outcome' })}</th>
+              <th scope="col" className="intel-number">{t('resolve.column_ms', { defaultValue: 'Milliseconds' })}</th>
             </tr>
           </thead>
           <tbody>

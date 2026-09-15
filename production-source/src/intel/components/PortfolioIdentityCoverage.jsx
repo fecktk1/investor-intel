@@ -1,5 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import BoardTableHeader from './BoardTableHeader'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { RadialBars } from '../charts'
@@ -355,8 +356,8 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
                 })}
               </caption>
               <thead>
-                <tr>
-                  {[
+                <BoardTableHeader
+                  columns={[
                     t('holding_identity.col_chain', { defaultValue: 'Chain' }),
                     t('holding_identity.col_total', { defaultValue: 'Open' }),
                     t('holding_identity.col_priced', { defaultValue: 'Priced' }),
@@ -365,10 +366,9 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
                     t('holding_identity.col_estimated', { defaultValue: 'Estimated' }),
                     t('holding_identity.col_resolvable', { defaultValue: 'Askable' }),
                     t('holding_identity.col_reason', { defaultValue: 'Reason' }),
-                  ].map(column => (
-                    <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-                  ))}
-                </tr>
+                  ]}
+                  numeric={[1, 2, 3, 4, 5, 6, 7]}
+                />
               </thead>
               <tbody>
                 {arcs.map(row => (
@@ -505,18 +505,17 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
                 : null}
             </caption>
             <thead>
-              <tr>
-                {[
+              <BoardTableHeader
+                columns={[
                   t('holding_identity.col_asset', { defaultValue: 'Asset' }),
                   t('holding_identity.col_chain', { defaultValue: 'Chain' }),
                   t('holding_identity.col_outcome', { defaultValue: 'Outcome' }),
                   t('holding_identity.col_price', { defaultValue: 'Price' }),
                   t('holding_identity.col_value', { defaultValue: 'Value' }),
                   t('holding_identity.col_undo', { defaultValue: 'Undo' }),
-                ].map(column => (
-                  <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-                ))}
-              </tr>
+                ]}
+                numeric={[1, 2, 3, 4, 5]}
+              />
             </thead>
             <tbody>
               {answers.length ? answers.map(row => {
@@ -584,17 +583,16 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
               })}
             </caption>
             <thead>
-              <tr>
-                {[
+              <BoardTableHeader
+                columns={[
                   t('holding_identity.col_entity', { defaultValue: 'Entity' }),
                   t('holding_identity.col_chain', { defaultValue: 'Chain' }),
                   t('holding_identity.col_address', { defaultValue: 'Address' }),
                   t('holding_identity.col_cmc_id', { defaultValue: 'CoinMarketCap id' }),
                   t('holding_identity.col_outcome', { defaultValue: 'Outcome' }),
-                ].map(column => (
-                  <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-                ))}
-              </tr>
+                ]}
+                numeric={[1, 2, 3, 4]}
+              />
             </thead>
             <tbody>
               {entities.length ? entities.map((row, index) => (

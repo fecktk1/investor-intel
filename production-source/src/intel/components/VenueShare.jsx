@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import BoardTableHeader from './BoardTableHeader'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { StackedShare, RadialBars, Sparkline } from '../charts'
@@ -299,11 +300,7 @@ export default function VenueShare() {
                 })}
               </caption>
               <thead>
-                <tr>
-                  {columns.map(column => (
-                    <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-                  ))}
-                </tr>
+                <BoardTableHeader columns={columns} numeric={[1, 2, 3, 4]} />
               </thead>
               <tbody>
                 {rows.map(row => (

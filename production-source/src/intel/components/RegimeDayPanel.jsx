@@ -147,7 +147,7 @@ export default function RegimeDayPanel({ coverageFrom = null, logos = null }) {
           <table aria-label={t('regime.day_top_title', { defaultValue: 'Top ten on this date' })}>
             <thead>
               <tr>
-                <th scope="col">{t('regime.col_rank', { defaultValue: 'Rank' })}</th>
+                <th scope="col" className="intel-number">{t('regime.col_rank', { defaultValue: 'Rank' })}</th>
                 <th scope="col">{t('regime.col_asset', { defaultValue: 'Asset' })}</th>
                 <th scope="col" className="intel-number">{t('regime.col_price', { defaultValue: 'Price' })}</th>
                 <th scope="col" className="intel-number">{t('regime.col_market_cap', { defaultValue: 'Market cap' })}</th>

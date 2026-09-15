@@ -1,5 +1,6 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
+import BoardTableHeader from './BoardTableHeader'
 import { Histogram, RadialBars } from '../charts'
 import { formatUsd, formatCompact } from '../lib/market-format'
 
@@ -213,18 +214,17 @@ export default function HolderTagBoard({ result, loading = false, selection = {}
                   : ''}
               </caption>
               <thead>
-                <tr>
-                  {[
+                <BoardTableHeader
+                  columns={[
                     t('holder_tags.col_tag', { defaultValue: 'Tag' }),
                     t('holder_tags.col_holders_from', { defaultValue: 'Holders before' }),
                     t('holder_tags.col_holders_to', { defaultValue: 'Holders after' }),
                     t('holder_tags.col_holder_delta', { defaultValue: 'Change in holders' }),
                     t('holder_tags.col_balance_delta', { defaultValue: 'Change in balance' }),
                     t('holder_tags.col_ratio_delta', { defaultValue: 'Change in ratio (unit unknown)' }),
-                  ].map(column => (
-                    <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-                  ))}
-                </tr>
+                  ]}
+                  numeric={[1, 2, 3, 4, 5]}
+                />
               </thead>
               <tbody>
                 {(Array.isArray(comparison.tags) ? comparison.tags : []).map(row => (
@@ -277,18 +277,17 @@ export default function HolderTagBoard({ result, loading = false, selection = {}
             })}
           </caption>
           <thead>
-            <tr>
-              {[
+            <BoardTableHeader
+              columns={[
                 t('holder_tags.col_address', { defaultValue: 'Address' }),
                 t('holder_tags.col_balance', { defaultValue: 'Balance' }),
                 t('holder_tags.col_percent', { defaultValue: 'Percent (as reported)' }),
                 t('holder_tags.col_buy', { defaultValue: 'Buy volume' }),
                 t('holder_tags.col_sell', { defaultValue: 'Sell volume' }),
                 t('holder_tags.col_realized', { defaultValue: 'Realized' }),
-              ].map(column => (
-                <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-              ))}
-            </tr>
+              ]}
+              numeric={[1, 2, 3, 4, 5]}
+            />
           </thead>
           <tbody>
             {wallets.map(wallet => (

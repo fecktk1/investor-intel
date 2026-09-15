@@ -138,8 +138,8 @@ export default function DataBudgetPage() {
                   <tr>
                     <th scope="col">{t('data_budget.col_feature', { defaultValue: 'Feature' })}</th>
                     <th scope="col">{t('data_budget.col_action', { defaultValue: 'Action' })}</th>
-                    <th scope="col">{t('data_budget.col_from', { defaultValue: 'From' })}</th>
-                    <th scope="col">{t('data_budget.col_to', { defaultValue: 'To' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_from', { defaultValue: 'From' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_to', { defaultValue: 'To' })}</th>
                     <th scope="col">{t('data_budget.col_min_plan', { defaultValue: 'Minimum plan' })}</th>
                   </tr>
                 </thead>

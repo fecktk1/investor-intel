@@ -577,7 +577,11 @@
 .intel-compare-readings table { width: 100%; border-collapse: collapse; }
 .intel-compare-readings caption { text-align: left; padding: 8px 0; font-family: 'Geist Mono',monospace; font-size: 11px; }
 .intel-compare-readings th, .intel-compare-readings td { text-align: left; border-bottom: 1px solid var(--border-default); padding: 9px 12px; vertical-align: top; white-space: nowrap; }
-.intel-compare-readings td:nth-child(2), .intel-compare-readings td:nth-child(3) { font-family: 'Geist Mono',monospace; text-align: right; }
+/* The header follows its column: the second and third columns are figures, so
+   the two cells above them are right-aligned with them rather than left behind
+   at the far side of the column. */
+.intel-compare-readings :is(th,td):nth-child(2), .intel-compare-readings :is(th,td):nth-child(3) { text-align: right; }
+.intel-compare-readings td:nth-child(2), .intel-compare-readings td:nth-child(3) { font-family: 'Geist Mono',monospace; }
 .intel-compare-readings small { display: block; font-weight: 400; color: var(--fg-4); margin-top: 4px; }
 .intel-compare-inputs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
 .intel-compare-inputs fieldset { min-width: 0; display: grid; gap: 8px; border-top: 1px solid var(--border-default); padding-top: 10px; }

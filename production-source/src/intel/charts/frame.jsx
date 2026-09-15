@@ -110,6 +110,9 @@ export function ChartLegend({ t, items = [], dense = false }) {
 
 // The table twin repeats the same values with the same formatting. First cell of
 // every row is the row header, so a screen reader announces the series name.
+// Every other cell is a value and carries .intel-number; its header carries the
+// same class, so the column label sits over the figures rather than away to the
+// left of them.
 export function ChartTable({ t, caption, columns = [], rows = [] }) {
   return (
     <details className="intel-chart-table">
@@ -117,7 +120,9 @@ export function ChartTable({ t, caption, columns = [], rows = [] }) {
       <table>
         <caption>{caption}</caption>
         <thead>
-          <tr>{columns.map((column, i) => <th key={`${column}-${i}`} scope="col">{column}</th>)}</tr>
+          <tr>{columns.map((column, i) => (
+            <th key={`${column}-${i}`} scope="col" data-align={i === 0 ? 'left' : 'right'} className={i === 0 ? undefined : 'intel-number'}>{column}</th>
+          ))}</tr>
         </thead>
         <tbody>
           {rows.map((row, i) => (

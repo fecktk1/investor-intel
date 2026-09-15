@@ -322,7 +322,7 @@ export default function ChartLabPage() {
             <thead>
               <tr>
                 <th scope="col">{t('charts.legend', { defaultValue: 'Series' })}</th>
-                <th scope="col">{t('charts.value', { defaultValue: 'Value' })}</th>
+                <th scope="col" className="intel-number">{t('charts.value', { defaultValue: 'Value' })}</th>
                 <th scope="col">{t('charts.time', { defaultValue: 'Time' })}</th>
               </tr>
             </thead>

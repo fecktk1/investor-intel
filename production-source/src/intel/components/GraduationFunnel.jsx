@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import BoardTableHeader from './BoardTableHeader'
 import { Histogram, RadialBars } from '../charts'
 import { ChartFrame } from '../charts/frame'
 import { useProfile } from '../../lib/profile-context'
@@ -306,16 +307,15 @@ export default function GraduationFunnel() {
             })}
           </caption>
           <thead>
-            <tr>
-              {[
+            <BoardTableHeader
+              columns={[
                 t('graduation.col_hours', { defaultValue: 'Hours since first seen' }),
                 t('graduation.col_still', { defaultValue: 'Still listed' }),
                 t('graduation.col_eligible', { defaultValue: 'Eligible' }),
                 t('graduation.col_share', { defaultValue: 'Share' }),
-              ].map(column => (
-                <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-              ))}
-            </tr>
+              ]}
+              numeric={[1, 2, 3]}
+            />
           </thead>
           <tbody>
             {retention.length ? retention.map(row => {
@@ -346,8 +346,8 @@ export default function GraduationFunnel() {
             })}
           </caption>
           <thead>
-            <tr>
-              {[
+            <BoardTableHeader
+              columns={[
                 t('graduation.col_symbol', { defaultValue: 'Symbol' }),
                 t('graduation.col_name', { defaultValue: 'Name' }),
                 t('graduation.col_chain', { defaultValue: 'Chain' }),
@@ -356,10 +356,9 @@ export default function GraduationFunnel() {
                 t('graduation.col_first_seen', { defaultValue: 'First seen (UTC)' }),
                 t('graduation.col_captured', { defaultValue: 'Captured (UTC)' }),
                 t('graduation.col_market_cap', { defaultValue: 'Market cap' }),
-              ].map(column => (
-                <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-              ))}
-            </tr>
+              ]}
+              numeric={[7]}
+            />
           </thead>
           <tbody>
             {recent.length ? recent.map((row, index) => (

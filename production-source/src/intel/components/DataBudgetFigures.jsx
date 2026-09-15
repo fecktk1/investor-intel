@@ -318,11 +318,11 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
                 <tr>
                   <th scope="col">{t('data_budget.col_feature', { defaultValue: 'Feature' })}</th>
                   <th scope="col">{t('data_budget.col_status', { defaultValue: 'Status' })}</th>
-                  <th scope="col">{t('data_budget.col_cadence', { defaultValue: 'Cadence' })}</th>
-                  <th scope="col">{t('data_budget.col_target', { defaultValue: 'Plan target' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_cadence', { defaultValue: 'Cadence' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_target', { defaultValue: 'Plan target' })}</th>
                   <th scope="col">{t('data_budget.col_min_plan', { defaultValue: 'Minimum plan' })}</th>
-                  <th scope="col">{t('data_budget.col_projected', { defaultValue: 'Projected credits' })}</th>
-                  <th scope="col">{t('data_budget.col_used', { defaultValue: 'Used this month' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_projected', { defaultValue: 'Projected credits' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_used', { defaultValue: 'Used this month' })}</th>
                   <th scope="col">{t('data_budget.col_reason', { defaultValue: 'Reason' })}</th>
                 </tr>
               </thead>
@@ -356,8 +356,8 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
               <thead>
                 <tr>
                   <th scope="col">{t('data_budget.col_table', { defaultValue: 'Table' })}</th>
-                  <th scope="col">{t('data_budget.col_rows', { defaultValue: 'Rows' })}</th>
-                  <th scope="col">{t('data_budget.col_newest', { defaultValue: 'Newest row' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_rows', { defaultValue: 'Rows' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_newest', { defaultValue: 'Newest row' })}</th>
                   <th scope="col">{t('data_budget.col_newest_column', { defaultValue: 'Dated by' })}</th>
                 </tr>
               </thead>
@@ -388,9 +388,9 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
                 <tr>
                   <th scope="col">{t('data_budget.col_series', { defaultValue: 'Series' })}</th>
                   <th scope="col">{t('data_budget.col_shape', { defaultValue: 'Shape' })}</th>
-                  <th scope="col">{t('data_budget.col_latest', { defaultValue: 'Newest day' })}</th>
-                  <th scope="col">{t('data_budget.col_peak', { defaultValue: 'Peak' })}</th>
-                  <th scope="col">{t('data_budget.col_days', { defaultValue: 'Days recorded' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_latest', { defaultValue: 'Newest day' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_peak', { defaultValue: 'Peak' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_days', { defaultValue: 'Days recorded' })}</th>
                 </tr>
               </thead>
               <tbody>
@@ -430,9 +430,9 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
               <thead>
                 <tr>
                   <th scope="col">{t('data_budget.col_job', { defaultValue: 'Job' })}</th>
-                  <th scope="col">{t('data_budget.col_schedule', { defaultValue: 'Schedule' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_schedule', { defaultValue: 'Schedule' })}</th>
                   <th scope="col">{t('data_budget.col_active', { defaultValue: 'Active' })}</th>
-                  <th scope="col">{t('data_budget.col_last_run', { defaultValue: 'Last run' })}</th>
+                  <th scope="col" className="intel-number">{t('data_budget.col_last_run', { defaultValue: 'Last run' })}</th>
                   <th scope="col">{t('data_budget.col_last_status', { defaultValue: 'Last status' })}</th>
                 </tr>
               </thead>

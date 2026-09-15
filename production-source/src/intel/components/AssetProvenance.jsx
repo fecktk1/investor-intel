@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
+import BoardTableHeader from './BoardTableHeader'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { RadialBars, Sunburst } from '../charts'
@@ -252,16 +253,15 @@ export default function AssetProvenance({ sourceProvider = null, providerId = nu
                 })}
               </caption>
               <thead>
-                <tr>
-                  {[
+                <BoardTableHeader
+                  columns={[
                     t('resolve.column_step', { defaultValue: 'Source' }),
                     t('resolve.column_outcome', { defaultValue: 'Outcome' }),
                     t('resolve.column_ms', { defaultValue: 'Milliseconds' }),
                     t('provenance.column_detail', { defaultValue: 'What it said' }),
-                  ].map(column => (
-                    <th key={column} scope="col" className="text-left font-normal text-[var(--fg-4)] border-b border-[var(--border-default)] py-2 pr-3">{column}</th>
-                  ))}
-                </tr>
+                  ]}
+                  numeric={[1, 2, 3]}
+                />
               </thead>
               <tbody>
                 {arcs.map(arc => (
