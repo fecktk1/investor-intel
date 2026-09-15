@@ -15,6 +15,8 @@ const DAY = 86_400_000
 const NOW = Date.UTC(2026, 8, 15, 12, 0, 0)
 const YESTERDAY = Math.floor(NOW / DAY) * DAY - DAY
 const KEY = 'bip122:native:BTC'
+const USDT = '0xdac17f958d2ee523a2206206994597c13d831ec7'
+const USDC = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
 
 // ─── a tiny PostgREST-shaped stand-in ─────────────────────────────────────────
 
@@ -276,6 +278,55 @@ Deno.test('the queue is the ranked cohort plus everything a reader opened, merge
   // A demanded asset with no rank still queues, behind the cohort.
   assertEquals(rows.find((row) => row.asset_key.toString().startsWith('solana:'))!.priority, 101)
   assertEquals(rows.every((row) => row.state === 'pending'), true)
+})
+
+Deno.test('two representations of ONE asset become one queue row, so its history is not bought twice', () => {
+  // The live cohort filled eip155:1:0xdac17f95… and market:coingecko:tether
+  // separately: 4,214 rows and 54 credits EACH, for the same Tether history.
+  // Tether has many platforms, so the catalogue row has no single canonical chain
+  // identity and falls back to the market: key, while a reader who opened USDT on
+  // Ethereum leaves the contract key in the demand table.
+  const index = cmcCatalogueIndex([{ source_provider: 'coinmarketcap', provider_id: '825', symbol: 'USDT', normalized_symbol: 'USDT', platforms: { ethereum: USDT, tron: 'TR7NHq...' } }])
+  const rows = backfillCandidates(
+    [{ source_provider: 'coingecko', provider_id: 'tether', symbol: 'USDT', normalized_symbol: 'USDT', market_cap_rank: 3, platforms: { ethereum: USDT, tron: 'TR7NHq...', solana: 'Es9vMF...' } }],
+    [{ asset_key: `eip155:1:${USDT}`, provider: 'coingecko', provider_id: 'tether' }],
+    NOW, index,
+  )
+  assertEquals(rows.length, 1)
+  // Both resolve to CoinMarketCap 825, so one row survives, and it is the ranked
+  // one: the cohort is what this lane exists to fill.
+  assertEquals(rows[0].cmc_id, '825')
+  assertEquals(rows[0].asset_key, 'market:coingecko:tether')
+  assertEquals(rows[0].priority, 3)
+})
+
+Deno.test('a real chain identity wins when neither representation is ranked, and an unresolved pair is never merged', () => {
+  const index = cmcCatalogueIndex([{ source_provider: 'coinmarketcap', provider_id: '3408', symbol: 'USDC', normalized_symbol: 'USDC', platforms: { ethereum: USDC, solana: 'EPjFWd...' } }])
+  // Two demanded representations of USDC, neither ranked: the real chain
+  // identity survives rather than the market: fallback.
+  const unranked = backfillCandidates([], [
+    { asset_key: 'market:coingecko:usd-coin', provider: 'coingecko', provider_id: 'usd-coin' },
+    { asset_key: `eip155:1:${USDC}`, provider: 'coingecko', provider_id: 'usd-coin' },
+  ], NOW, index)
+  assertEquals(unranked.length, 1)
+  assertEquals(unranked[0].asset_key, `eip155:1:${USDC}`)
+
+  // Two assets that resolve to NOTHING are never merged with each other:
+  // "unknown" is not evidence that two keys are the same asset.
+  const unresolved = backfillCandidates([], [
+    { asset_key: 'market:contract:a', provider: 'contract', provider_id: 'solana:a' },
+    { asset_key: 'market:contract:b', provider: 'contract', provider_id: 'solana:b' },
+  ], NOW, index)
+  assertEquals(unresolved.length, 2)
+  assertEquals(unresolved.every((row) => row.cmc_id === null), true)
+
+  // Two DIFFERENT assets keep their own rows.
+  const distinct = backfillCandidates(
+    [{ source_provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', normalized_symbol: 'BTC', market_cap_rank: 1, platforms: {} },
+      { source_provider: 'coinmarketcap', provider_id: '1027', symbol: 'ETH', normalized_symbol: 'ETH', market_cap_rank: 2, platforms: {} }],
+    [], NOW, index,
+  )
+  assertEquals(distinct.length, 2)
 })
 
 Deno.test('a disabled policy stops the lane without a single provider call', async () => {
