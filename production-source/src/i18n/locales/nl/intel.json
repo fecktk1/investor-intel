@@ -867,7 +867,14 @@
       "dialog_choose": "Indicator",
       "add": "Indicator toevoegen",
       "remove": "Verwijderen",
-      "calculating": "Indicatoren worden berekend…"
+      "calculating": "Indicatoren worden berekend…",
+      "loading": "Indicatorlijst wordt geladen…",
+      "appearance": "Uiterlijk van de grafiek",
+      "appearance_app": "Het app-thema volgen",
+      "appearance_dark": "Antraciet",
+      "appearance_light": "Licht",
+      "appearance_gray": "Neutraal grijs",
+      "vwap_anchor": "Optioneel anker (UTC)"
     },
     "workstation": {
       "layout_outside": "Deze opgeslagen weergave valt buiten de geladen prijsperiode. Kies een langere periode om de marktgeschiedenis te laden.",

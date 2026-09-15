@@ -3,11 +3,14 @@ import {Link} from 'react-router'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
 const time=t=>new Date(t).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'long'})
 export default function ChartAlertEditor(props){return <Editor key={`${props.context?.userId}:${props.context?.orgId}:${props.context?.asset}:${props.rule?.id}`} {...props}/>}
-function Editor({context,getAnchors=()=>[],rule=null,onSaved,label='Create alert',initialDraft=null,draftOnly=false}) {
+function Editor({context,getAnchors=()=>[],rule=null,onSaved,label='Create alert',initialDraft=null,draftOnly=false,autoOpen=false}) {
  const [open,setOpen]=useState(false),[sources,setSources]=useState([]),[sourceIndex,setSourceIndex]=useState('0'),[form,setForm]=useState(null),[busy,setBusy]=useState(false),[error,setError]=useState(null),[saved,setSaved]=useState(null)
  const dialog=useRef(null),trigger=useRef(null),operation=useRef(null),generation=useRef(0),alive=useRef(true),heading=useId()
  useEffect(()=>{alive.current=true;return()=>{alive.current=false;generation.current++}},[])
  useEffect(()=>{if(open)dialog.current?.showModal()},[open])
+ // Loaded on demand from the chart tools: the press that fetched this opens it.
+ const started=useRef(false)
+ useEffect(()=>{if(autoOpen&&!started.current){started.current=true;begin()}},[autoOpen]) // eslint-disable-line react-hooks/exhaustive-deps
  const close=()=>{generation.current++;dialog.current?.close?.();setOpen(false);setBusy(false);trigger.current?.focus()}
  const begin=()=>{
   const list=rule?.config.anchor?[{label:'Original chart reference',...rule.config.anchor}]:getAnchors().filter(a=>Number.isFinite(a.t)&&Number.isFinite(a.price)&&a.price>0).slice(0,201)

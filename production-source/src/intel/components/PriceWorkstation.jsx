@@ -11,16 +11,21 @@ import {useChartStudies} from '../lib/useChartStudies'
 import {useChartDrawings} from './ChartDrawings'
 
 import ChartLayoutLibrary from './ChartLayoutLibrary'
-import ChartAssetNavigator from './ChartAssetNavigator'
-import ChartSnapshotSave from './ChartSnapshotSave'
-import ChartAlertEditor from './ChartAlertEditor'
 import ResponsiveChartTools from './ResponsiveChartTools'
 import ChartIndicatorMenu from './ChartIndicatorMenu'
+import deferredTool from './deferred-tool'
+import deferredPanel from './deferred-panel'
 import ChartWatermark from './ChartWatermark'
 import ChartShareLaunch from './ChartShareLaunch'
 import {chartSizeHeight,isChartSize,nextChartSize} from '../lib/chart-size'
 import {validateChartLayout} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 const ChartStructurePanel=lazy(()=>import('./ChartStructurePanel'))
+const IndicatorDialog=deferredPanel(()=>import('./ChartIndicatorDialog'),{label:'Advanced indicator parameters'})
+// Chart tools whose dialog code arrives on the first press. The triggers below
+// stay eager and in place; only the dialog behind each one is deferred.
+const SnapshotSave=deferredTool(()=>import('./ChartSnapshotSave'),{label:'Snapshot saving'})
+const AssetNavigator=deferredTool(()=>import('./ChartAssetNavigator'),{label:'The asset list'})
+const AlertEditor=deferredTool(()=>import('./ChartAlertEditor'),{label:'Chart conditions'})
 
 
 
@@ -62,9 +67,9 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  const sourceBounds=useRef(null),plottedGrid=useRef(null),initialView=useRef(initialState.range)
 
- const [palette,setPalette]=useState(null),[studyDialog,setStudyDialog]=useState(false),[draftType,setDraftType]=useState('sma'),[draftParams,setDraftParams]=useState({period:50}),[studyError,setStudyError]=useState(null)
+ const [palette,setPalette]=useState(null),[studyDialog,setStudyDialog]=useState(false)
 
- const dialog=useRef(null),returnFocus=useRef(null),studySeries=useRef([])
+ const returnFocus=useRef(null),studySeries=useRef([])
 
  const ohlc=bars.every(b=>b.o!=null),hasVolume=bars.some(b=>b.v!=null)
  const volumeLabel=bars.some(b=>b.volumeKind==='snapshot')?'Volume snapshot (USD)':bars.some(b=>b.volumeUnit==='USD')?'Volume (USD)':'Volume'
@@ -270,9 +275,9 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  },[keyLevels,selectedStructure,ready,mode])
 
- useEffect(()=>{if(studyDialog){returnFocus.current=document.activeElement;dialog.current?.showModal()}},[studyDialog])
+ useEffect(()=>{if(studyDialog)returnFocus.current=document.activeElement},[studyDialog])
 
- const closeStudies=()=>{setStudyDialog(false);setStudyError(null);returnFocus.current?.focus?.()}
+ const closeStudies=()=>{setStudyDialog(false);returnFocus.current?.focus?.()}
 
  // One admission gate for both entry points: the checkbox list and Advanced.
  // A refused indicator always answers with a reason rather than nothing.
@@ -285,10 +290,11 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   return {study,reason:null}
  }
 
- const addStudy=()=>{
-  const {study,reason}=prepareIndicator(draftType,draftParams)
-  if(reason){setStudyError(reason);return}
-  setStudies(previous=>[...previous,study]);setPreset('Custom');closeStudies()
+ /** Returns the reason the indicator was refused, or null once it is added. */
+ const addStudy=(type,params)=>{
+  const {study,reason}=prepareIndicator(type,params)
+  if(reason)return reason
+  setStudies(previous=>[...previous,study]);setPreset('Custom');closeStudies();return null
  }
 
  /** Returns null when the change was applied, or the reason it was refused. */
@@ -360,7 +366,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true)}}>Reset view</button>
 
-   {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<ChartSnapshotSave context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><ChartAssetNavigator context={persistence}/><ChartAlertEditor context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
+   {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<SnapshotSave triggerLabel={t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})} context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><AssetNavigator triggerLabel="Assets" context={persistence}/><AlertEditor triggerLabel="Create alert" context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
   </div>
 
   {!replay&&!readOnly&&drawings.controls}
@@ -403,23 +409,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   {!replay&&drawings.list}{!replay&&!readOnly&&drawings.editor}{layoutNote&&<p role="status" className="intel-analysis-caption">{layoutNote}</p>}
 
-  {studyDialog&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby="chart-study-title" onCancel={e=>{e.preventDefault();closeStudies()}}><div className="intel-investigation-analysis-heading"><h2 id="chart-study-title">{t('chart.indicators.dialog_title',{defaultValue:'Chart indicators'})}</h2><button type="button" onClick={closeStudies}>{t('common.close',{defaultValue:'Close'})}</button></div>
-
-   <p className="intel-analysis-caption">{t('chart.indicators.dialog_intro',{defaultValue:'Choose an indicator and set its parameters. The list in Chart tools turns the same indicators on and off with their defaults.'})}</p>
-
-   <label>{t('chart.indicators.dialog_choose',{defaultValue:'Indicator'})}<select className="select" value={draftType} onChange={e=>{setDraftType(e.target.value);setDraftParams({...STUDY_CATALOG[e.target.value].defaults});setStudyError(null)}}>{Object.entries(STUDY_CATALOG).map(([id,s])=><option key={id} value={id}>{s.label}</option>)}</select></label>
-
-   <p className="intel-analysis-caption">{STUDY_CATALOG[draftType].definition}</p><div className="intel-study-parameters">{Object.keys(STUDY_CATALOG[draftType].defaults).map(key=><label key={key}>{key.charAt(0).toUpperCase()+key.slice(1)}<input type="number" min="1" max={key==='multiplier'?10:500} step={key==='multiplier'?0.25:1} value={draftParams[key]??''} onChange={e=>setDraftParams(p=>({...p,[key]:e.target.value}))}/></label>)}</div>
-
-   <label>Chart appearance<select value={theme} onChange={e=>setTheme(e.target.value)}><option value="app">Follow app theme</option><option value="dark">Charcoal</option><option value="light">Light</option><option value="gray">Neutral gray</option></select></label>
-
-   {draftType==='vwap'&&<label>Optional anchor (UTC)<input type="datetime-local" onChange={e=>setDraftParams(p=>({...p,anchor:e.target.value?Date.parse(`${e.target.value}Z`):undefined}))}/></label>}
-
-   {studyError&&<p role="alert">{studyError}</p>}<button type="button" className="btn btn--primary" onClick={addStudy}>{t('chart.indicators.add',{defaultValue:'Add indicator'})}</button>
-
-   {studies.length>0&&<ul className="intel-study-list">{studies.map(s=><li key={s.id}><span>{STUDY_CATALOG[s.type].label} · {Object.entries(s.params||STUDY_CATALOG[s.type].defaults).filter(([,v])=>v!=null).map(([k,v])=>`${k}: ${v}`).join(', ')}</span><button type="button" onClick={()=>{setStudies(rows=>rows.filter(r=>r.id!==s.id));setPreset('Custom')}}>{t('chart.indicators.remove',{defaultValue:'Remove'})}</button></li>)}</ul>}
-
-  </dialog>}
+  {studyDialog&&<IndicatorDialog studies={studies} theme={theme} onTheme={setTheme} onAdd={addStudy} onRemove={id=>{setStudies(rows=>rows.filter(row=>row.id!==id));setPreset('Custom')}} onClose={closeStudies}/>}
 
  </div>
 

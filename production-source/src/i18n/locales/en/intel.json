@@ -1682,7 +1682,14 @@
       "dialog_choose": "Indicator",
       "add": "Add indicator",
       "remove": "Remove",
-      "calculating": "Calculating indicators…"
+      "calculating": "Calculating indicators…",
+      "loading": "Loading the indicator list…",
+      "appearance": "Chart appearance",
+      "appearance_app": "Follow app theme",
+      "appearance_dark": "Charcoal",
+      "appearance_light": "Light",
+      "appearance_gray": "Neutral gray",
+      "vwap_anchor": "Optional anchor (UTC)"
     },
     "workstation": {
       "layout_outside": "This saved view is outside the loaded price period. Choose a longer period to load its market history.",

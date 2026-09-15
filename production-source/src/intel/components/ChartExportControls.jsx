@@ -1,6 +1,6 @@
 import React,{useEffect,useId,useRef,useState} from 'react'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
-import {watermarkedChartSvg} from '../lib/chart-watermark'
+import {watermarkedChartSvg} from '../lib/chart-export-watermark'
 export async function chartPng(svg,width,height){
  if(width>4096||height>8192||width*height>12000000)throw new Error('This chart is too tall for PNG. Download the SVG to preserve all selected notes.')
  const url=URL.createObjectURL(new Blob([svg],{type:'image/svg+xml;charset=utf-8'}))
