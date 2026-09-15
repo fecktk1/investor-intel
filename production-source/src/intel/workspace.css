@@ -376,13 +376,42 @@
 .intel-study-parameters { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
 .intel-study-list { padding: 0; list-style: none; margin-top: 20px; }
 .intel-study-list li { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--border-default); padding: 12px 0; font-size: 12px; }
-.intel-drawing-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; border-top:1px solid var(--border-default); padding:6px 0; color:var(--fg-3); font-size:11px; }
-.intel-drawing-toolbar label { display:flex; align-items:center; gap:8px; }
-.intel-drawing-toolbar select { color:var(--fg-1); background:var(--bg-1); padding:5px 7px; border:1px solid var(--border-default); }
-.intel-drawing-toolbar button { min-height:30px; }
-.intel-drawing-toolbar button:disabled { opacity:.4; }
-.intel-drawing-toolbar span { color:var(--accent); margin-left:auto; }
 .intel-drawing-anchor-fields { display:grid; grid-template-columns:2fr 1fr; gap:12px; }
+/* Drawing toolbar docked to the left edge of the plot, and the HTML layer that
+   carries anchored post cards and the style row for the selected drawing. */
+.intel-draw-dock { position:absolute; inset:0 auto 0 0; z-index:3; pointer-events:none; }
+.intel-draw-dock-toggle { display:none; }
+.intel-draw-dock-strip { display:flex; flex-direction:column; width:30px; max-height:100%; overflow:auto; overscroll-behavior:contain; pointer-events:auto; background:color-mix(in srgb, var(--bg-1) 88%, transparent); border-right:1px solid var(--border-default); }
+.intel-draw-tool { display:flex; align-items:center; justify-content:center; width:30px; height:28px; flex:0 0 auto; color:var(--fg-4); background:none; border:0; cursor:pointer; }
+.intel-draw-tool:hover:not(:disabled) { color:var(--fg-1); }
+.intel-draw-tool:disabled { opacity:.35; cursor:default; }
+.intel-draw-tool[aria-pressed="true"] { color:var(--accent); background:color-mix(in srgb, var(--accent) 16%, transparent); box-shadow:inset 2px 0 0 var(--accent); }
+.intel-draw-tool:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.intel-draw-tool-name { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.intel-draw-dock-rule { flex:0 0 auto; height:1px; margin:4px 5px; background:var(--border-default); }
+.intel-draw-dock-hint { position:absolute; left:38px; top:4px; width:max-content; max-width:min(320px, calc(100% - 46px)); color:var(--accent); font-size:11px; pointer-events:none; }
+.intel-draw-layer { position:absolute; top:0; left:0; z-index:2; pointer-events:none; overflow:hidden; }
+.intel-draw-options { position:absolute; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:5px 8px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); color:var(--fg-3); font-size:11px; }
+.intel-draw-options label { display:flex; align-items:center; gap:5px; }
+.intel-draw-options select { color:var(--fg-1); background:var(--bg-1); border:1px solid var(--border-default); padding:2px 4px; font-size:11px; }
+.intel-draw-options button { color:var(--fg-2); text-decoration:underline; text-underline-offset:3px; font-size:11px; }
+.intel-draw-swatches { display:flex; gap:4px; }
+.intel-draw-swatch { width:14px; height:14px; border:1px solid var(--border-default); cursor:pointer; }
+.intel-draw-swatch[aria-pressed="true"] { outline:1px solid var(--fg-1); outline-offset:1px; }
+.intel-draw-tweet { position:absolute; width:224px; max-width:calc(100% - 8px); padding:6px 9px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); border-left-width:3px; color:var(--fg-2); font-size:11px; line-height:1.45; }
+.intel-draw-tweet[data-selected="true"] { border-color:var(--accent); }
+.intel-draw-tweet-author { display:block; color:var(--fg-1); font-size:12px; }
+.intel-draw-tweet-handle { display:block; color:var(--fg-4); font-size:10px; }
+.intel-draw-tweet-text, .intel-draw-tweet-note { margin:3px 0; overflow-wrap:anywhere; }
+.intel-draw-tweet a { color:var(--accent); text-decoration:underline; text-underline-offset:3px; }
+.intel-draw-tweet time { display:block; color:var(--fg-4); font-size:10px; }
+@media (max-width: 640px) {
+ .intel-draw-dock { inset:0 0 auto 0; }
+ .intel-draw-dock-toggle { display:flex; align-items:center; min-height:30px; padding:2px 10px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); color:var(--fg-1); font-size:12px; }
+ .intel-draw-dock-strip { flex-direction:row; flex-wrap:wrap; width:auto; max-height:none; border-right:0; border-bottom:1px solid var(--border-default); }
+ .intel-draw-dock[data-open="false"] .intel-draw-dock-strip { display:none; }
+ .intel-draw-dock-hint { position:static; max-width:100%; padding:2px 0 0 2px; }
+}
 .intel-layout-list { list-style:none; margin:12px 0; padding:0; }
 .intel-layout-list li { border-top:1px solid var(--border-default); padding:12px 0; }
 .intel-layout-list strong { font-size:13px; font-weight:500; }

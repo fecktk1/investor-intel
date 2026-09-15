@@ -1,10 +1,24 @@
 import {calculateStudy,STUDY_CATALOG,CHART_ANALYSIS_VERSION,type Study} from './chart-analysis.ts'
 import {validateSavedOutcome,type SavedOutcomeAssumptions} from './chart-outcome-contract.ts'
 export const CHART_LAYOUT_VERSION=1
-export const DRAWING_TOOLS=['trendline','arrow','horizontal','ray','rectangle','price_range','fibonacci','text'] as const
+export const DRAWING_TOOLS=['trendline','arrow','horizontal','ray','rectangle','price_range','fibonacci','text','extended','horizontal_ray','vertical','channel','arrow_up','arrow_down','price_label','measure','tweet'] as const
 export type DrawingTool=typeof DRAWING_TOOLS[number]
+// How many time/price anchors each tool stores. Everything not listed keeps the
+// original two-anchor shape, so layouts saved before these tools still validate.
+export const DRAWING_ANCHOR_COUNT:Record<string,number>={horizontal:1,text:1,horizontal_ray:1,vertical:1,arrow_up:1,arrow_down:1,price_label:1,tweet:1,channel:3}
+export const drawingAnchorCount=(tool:string)=>DRAWING_ANCHOR_COUNT[tool]??2
+export const DRAWING_DASHES=['solid','dashed','dotted'] as const
+export type DrawingDash=typeof DRAWING_DASHES[number]
+// A public post address on X. Query strings and the twitter.com host are accepted
+// and normalized away so the same post caches under one key.
+const TWEET_URL=/^https:\/\/(?:www\.|mobile\.)?(?:x|twitter)\.com\/([A-Za-z0-9_]{1,15})\/status(?:es)?\/([0-9]{1,25})(?:[/?#].*)?$/
+export function tweetStatusUrl(value:unknown):string {
+ const match=typeof value==='string'&&value.length<=500?TWEET_URL.exec(value.trim()):null
+ if(!match)throw new Error('invalid_tweet_url')
+ return `https://x.com/${match[1]}/status/${match[2]}`
+}
 export type ChartAnchor={t:number;price:number}
-export type ChartDrawing={id:string;tool:DrawingTool;anchors:ChartAnchor[];text:string;color:string;width:number;ratios?:number[];outcome?:SavedOutcomeAssumptions}
+export type ChartDrawing={id:string;tool:DrawingTool;anchors:ChartAnchor[];text:string;color:string;width:number;dash?:DrawingDash;url?:string;ratios?:number[];outcome?:SavedOutcomeAssumptions}
 export type ChartComparison={assets:{asset:string;label:string}[];arrangement:'overlay'|'2x2'|'1x4';priceScale:'independent'|'shared'|'returns';period:string}
 export type ChartLayout={purpose?:'study_template';replay?:{at:number;knownOnly:boolean};comparison?:ChartComparison;schemaVersion:1;asset:string;interval:string;range:{from:number;to:number};mode:string;scale:string;autoScale:boolean;volume:boolean;theme:string;timezone:string;studies:Study[];drawings:ChartDrawing[];visibility:Record<string,boolean>}
 export const isUuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
@@ -21,10 +35,14 @@ export function chartAnchor(value:any):ChartAnchor {
  return {t:value.t,price:value.price}
 }
 export function validateDrawing(value:any):ChartDrawing {
- if(!object(value)||!isUuid(value.id)||!DRAWING_TOOLS.includes(value.tool)||!Array.isArray(value.anchors)||value.anchors.length!==(value.tool==='horizontal'||value.tool==='text'?1:2))throw new Error('invalid_drawing')
- const text=value.text??'',color=value.color??'#DFA647',width=value.width??2
- if(!string(text,2000)||typeof color!=='string'||!/^#[a-f0-9]{6}$/i.test(color)||!Number.isInteger(width)||width<1||width>5)throw new Error('invalid_drawing_style')
+ if(!object(value)||!isUuid(value.id)||!DRAWING_TOOLS.includes(value.tool)||!Array.isArray(value.anchors)||value.anchors.length!==drawingAnchorCount(value.tool))throw new Error('invalid_drawing')
+ const text=value.text??'',color=value.color??'#DFA647',width=value.width??2,dash=value.dash??'solid'
+ if(!string(text,2000)||typeof color!=='string'||!/^#[a-f0-9]{6}$/i.test(color)||!Number.isInteger(width)||width<1||width>5||!(DRAWING_DASHES as readonly string[]).includes(dash))throw new Error('invalid_drawing_style')
  const drawing:ChartDrawing={id:value.id,tool:value.tool,anchors:value.anchors.map(chartAnchor),text,color,width}
+ // Only a non-default dash is stored, so a layout saved before dashes existed keeps its exact fingerprint.
+ if(dash!=='solid')drawing.dash=dash as DrawingDash
+ if(value.tool==='tweet')drawing.url=tweetStatusUrl(value.url)
+ else if(value.url!=null)throw new Error('invalid_tweet_url')
  if(value.outcome!=null){if(value.tool!=='text')throw new Error('invalid_chart_outcome_assumptions');drawing.outcome=validateSavedOutcome(value.outcome)}
  if(value.tool==='fibonacci'){
   const ratios=value.ratios??[0,0.236,0.382,0.5,0.618,0.786,1]

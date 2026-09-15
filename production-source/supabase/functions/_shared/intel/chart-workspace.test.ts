@@ -88,3 +88,21 @@ Deno.test('replay layouts retain exact cutoff and recording rules without arbitr
  for(const replay of [{at:-1,knownOnly:false},{at:Infinity,knownOnly:false},{at:1788998400123,knownOnly:'yes'}])assertThrows(()=>validateChartLayout({...layout(),replay}))
  assertThrows(()=>validateChartLayout({...layout(),replay:{at:1788998400123,knownOnly:false},comparison:{assets:[{asset:'native:bitcoin',label:'BTC'},{asset:'native:ethereum',label:'ETH'}]}}))
 })
+
+Deno.test('tools added with the docked toolbar keep their own anchor counts and dash styles',()=>{
+ const anchor={t:1788998400000,price:100},second={t:1789084800000,price:120}
+ for(const tool of ['horizontal_ray','vertical','arrow_up','arrow_down','price_label'])eq(validateDrawing({...drawing(),tool,anchors:[anchor]}).tool,tool)
+ for(const tool of ['extended','measure'])eq(validateDrawing({...drawing(),tool,anchors:[anchor,second]}).anchors.length,2)
+ eq(validateDrawing({...drawing(),tool:'channel',anchors:[anchor,second,second]}).anchors.length,3)
+ for(const patch of [{tool:'channel',anchors:[anchor,second]},{tool:'vertical',anchors:[anchor,second]},{tool:'extended',anchors:[anchor]}])assertThrows(()=>validateDrawing({...drawing(),...patch}))
+ eq(validateDrawing({...drawing(),dash:'dashed'}).dash,'dashed')
+ eq('dash' in validateDrawing(drawing()),false)
+ assertThrows(()=>validateDrawing({...drawing(),dash:'wavy'}))
+})
+Deno.test('a post drawing accepts only a public status address and stores it in one canonical form',()=>{
+ const post=(url:unknown)=>validateDrawing({...drawing(),tool:'tweet',url})
+ eq(post('https://twitter.com/forge/status/1899?ref_src=x').url,'https://x.com/forge/status/1899')
+ eq(post('https://www.x.com/forge/statuses/1899').url,'https://x.com/forge/status/1899')
+ for(const url of [undefined,'','http://x.com/forge/status/1','https://evil.com/x.com/forge/status/1','javascript:alert(1)','https://x.com/forge/status/abc','https://x.com/forge'])assertThrows(()=>post(url))
+ assertThrows(()=>validateDrawing({...drawing(),url:'https://x.com/forge/status/1899'}))
+})
