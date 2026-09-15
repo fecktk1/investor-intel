@@ -163,6 +163,17 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   // The draft the chart reports on every change, held outside React so a pan or
   // an added drawing costs no render here and the saver can arrive afterwards.
   const draftStore = useRef(null); if (!draftStore.current) draftStore.current = workingDraftStore()
+  // A NEW PERIOD IS A NEW WINDOW. The draft handed to a workstation that is being
+  // rebuilt keeps the member's drawings, indicators and view, but not the window
+  // of the period they just left: the rebuilt chart would fit to that window over
+  // the new bars and report it straight back as the state, so pressing 7D went on
+  // saving the month it replaced. Dropped during render, because the rebuild can
+  // happen in this same commit.
+  const windowBasis = useRef(`${range}:${requestKey}`)
+  if (windowBasis.current !== `${range}:${requestKey}`) {
+    windowBasis.current = `${range}:${requestKey}`
+    if (workspaceDraft.current?.range) workspaceDraft.current = { ...workspaceDraft.current, range: undefined }
+  }
   const [localReplayAt,setReplayAt]=useState(initialLayout?.replay?.at??null),[knownOnly,setKnownOnly]=useState(initialLayout?.replay?.knownOnly??false)
   const replayAt=replayCursor===undefined?localReplayAt:replayCursor
   const replayBasis=useRef(`${range}:${requestKey}`)

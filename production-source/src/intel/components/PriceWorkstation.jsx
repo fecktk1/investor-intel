@@ -96,11 +96,30 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  // named layout and the automatic one. Built on demand from the live chart rather
  // than mirrored into state, so pan and zoom cost no render.
  const studyParams=list=>list.map(s=>({...s,params:Object.fromEntries(Object.entries(s.params||{}).filter(([,v])=>v!=null).map(([k,v])=>[k,Number(v)]))}))
+ // The window the chart ACTUALLY SHOWS, held inside the bars it is plotting.
+ //
+ // A viewport is a pair of LOGICAL INDICES, and the indices left over from the
+ // period before this one extrapolate over a new grid: a month-wide view read
+ // back over seven days of hourly bars reported the month it had replaced, with
+ // an end 23 days in the FUTURE. Unclamped, that window was saved again after
+ // every range change, restored on the next load, and carried into snapshots and
+ // share links as a timeframe no price capture could cover.
+ //
+ // So the window is bounded by the grid: never before its first bar, and never
+ // past its newest bar plus the single bar of right-edge whitespace the renderer
+ // keeps (`rightOffset: 1`). A saved window can only ever describe observed time.
+ const chartWindow=grid=>{
+  const view=api.current?.timeScale().getVisibleLogicalRange()
+  const first=grid.start,last=grid.end+grid.step
+  const edge=value=>Math.min(last,Math.max(first,value))
+  const from=edge(continuousChartTime(grid,view?.from)??first)
+  return {from,to:Math.max(from+1,edge(continuousChartTime(grid,view?.to)??grid.end))}
+ }
  const chartState=()=>{
-  const range=api.current?.timeScale().getVisibleLogicalRange(),grid=gridRef.current
+  const grid=gridRef.current
   if(!grid)return null
   return {schemaVersion:1,...(replay?{replay:{at:cursorTime,knownOnly}}:{}),asset:persistence?.asset,interval:persistence?.interval?.toLowerCase()||'auto',
-   range:{from:Math.max(0,continuousChartTime(grid,range?.from)??grid.start),to:continuousChartTime(grid,range?.to)??grid.end},
+   range:chartWindow(grid),
    mode,scale,autoScale,volume,timezone,theme,visibility,
    studies:studyParams(studies),drawings:drawings.items}
  }
@@ -115,7 +134,10 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  // not placed its window yet would describe a window the member never saw.
  const emitWorkspace=useCallback(()=>{if(!fitted.current)return;const draft=draftRef.current?.();if(draft)callbacks.current.onWorkspaceChange?.(draft)},[])
  const visibilityKey=JSON.stringify(visibility)
- useEffect(()=>{emitWorkspace()},[mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings.items,replay,cursorTime,knownOnly,visibilityKey,emitWorkspace]) // eslint-disable-line react-hooks/exhaustive-deps
+ // `viewKey` is in here so a period or candle-width change alone reports a state,
+ // the same as any other change. It normally reports from the fit that follows,
+ // because the new period clears `fitted` before this runs.
+ useEffect(()=>{emitWorkspace()},[mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings.items,replay,cursorTime,knownOnly,visibilityKey,viewKey,emitWorkspace]) // eslint-disable-line react-hooks/exhaustive-deps
 
  // The browser owns full screen: leaving it by its own Escape, its own control
  // or a navigation must bring the workstation back rather than strand it.
