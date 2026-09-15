@@ -23,7 +23,7 @@ Deno.test('alert chart history uses reviewed identity aliases without joining un
 })
 Deno.test('bounded chart history ignores forged owner selection and validates both period and keyset cursor',async()=>{
  const db=mock({rows:[],nextCursor:null}),from=1788998400000,to=from+1000;await chartAlertService(db,actor,{operation:'alert_history',asset:'native:bitcoin',from,to,userId:'forged',p_limit:100000});const args=db.calls[0][2];eq(args.p_org,actor.orgId);eq(args.p_user,actor.userId);eq(args.p_from,new Date(from).toISOString());eq(args.p_cursor,null);eq('p_limit' in args,false)
- for(const patch of [{from:NaN},{to:from-1},{to:from+367*86400000},{cursor:{at:'invalid',id}},{cursor:{at:new Date(from).toISOString(),id:'bad'}}])await assertRejects(()=>chartAlertService(db,actor,{operation:'alert_history',asset:'native:bitcoin',from,to,...patch}))
+ for(const patch of [{from:NaN},{to:from-1},{to:from+7302*86400000},{cursor:{at:'invalid',id}},{cursor:{at:new Date(from).toISOString(),id:'bad'}}])await assertRejects(()=>chartAlertService(db,actor,{operation:'alert_history',asset:'native:bitcoin',from,to,...patch}))
 })
 Deno.test('chart alert config keeps exact anchors and words but excludes ambient private fields',()=>{const r=chartAlertConfig({...config,portfolioNotes:'excluded',snapshot:{secret:1},delivery:'telegram',method:'invented'});eq(r.threshold_usd,config.threshold_usd);eq(r.anchor,config.anchor);eq(r.note,config.note);eq(r.delivery,'in_app');eq('snapshot' in r,false);eq('portfolioNotes' in r,false)})
 Deno.test('condition behavior validates duration, rearm and reset margin without losing valid zero',()=>{eq(chartAlertConfig({...config,hysteresis_pct:0}).hysteresis_pct,0);eq(chartAlertConfig({...config,condition:'sustained',sustain_minutes:30,repeat:'once'}).sustain_minutes,30);for(const patch of [{condition:'sustained',sustain_minutes:0},{condition:'crossing',sustain_minutes:30},{hysteresis_pct:NaN},{hysteresis_pct:51},{repeat:'always'},{sustain_minutes:15.5}])assertThrows(()=>chartAlertConfig({...config,...patch}))})
@@ -32,3 +32,15 @@ Deno.test('chart save uses authenticated identity, revision and operation withou
 Deno.test('chart evidence preview cannot commit or target another actor from client fields',async()=>{const db=mock({results:[{state:'baseline'}]});await chartAlertService(db,actor,{operation:'alert_preview',id,p_commit:true,p_user:'spoof'});eq(db.calls[0][2],{p_limit:1,p_rule:id,p_org:actor.orgId,p_user:actor.userId,p_commit:false})})
 Deno.test('chart audit reads retain owner organization bounds and one page plus sentinel',async()=>{const db=mock(Array.from({length:21},(_,id)=>({id})));const r=await chartAlertService(db,actor,{operation:'alert_audit',id,page:3});eq(r.rows.length,20);eq(r.hasMore,true);eq(db.calls.filter(c=>c[0]==='eq'),[['eq','org_id',actor.orgId],['eq','user_id',actor.userId],['eq','rule_id',id]]);eq(db.calls.find(c=>c[0]==='range'),['range',60,80])})
 Deno.test('invalid operation identifiers, cooldowns, versions and inaccessible rules fail explicitly',async()=>{for(const patch of [{revision:-1},{operationId:'retry'},{cooldownMinutes:0},{active:'true'}])await assertRejects(()=>chartAlertService(mock({}),actor,{operation:'alert_save',operationId:id,revision:0,active:false,cooldownMinutes:15,config,...patch}));await assertRejects(()=>chartAlertService(mock({results:[]}),actor,{operation:'alert_preview',id}),Error,'chart_alert_not_found');await assertRejects(()=>chartAlertService(mock({}),actor,{operation:'alert_audit',id,page:1001}))})
+
+// The chart's 'ALL' range is twenty years, which the stored candle archive can
+// answer. A window cap written for a one-year chart refused it, so 2Y, 5Y and
+// ALL drew no alert markers at all.
+Deno.test('alert history accepts the widest chart window and still refuses one wider',async()=>{
+ const from=1788998400000,DAY=86400000
+ const db=mock({rows:[],nextCursor:null})
+ await chartAlertService(db,actor,{operation:'alert_history',asset:'native:bitcoin',from,to:from+7301*DAY})
+ eq(db.calls[0][2].p_from,new Date(from).toISOString())
+ eq(db.calls[0][2].p_to,new Date(from+7301*DAY).toISOString())
+ await assertRejects(()=>chartAlertService(db,actor,{operation:'alert_history',asset:'native:bitcoin',from,to:from+7302*DAY}))
+})

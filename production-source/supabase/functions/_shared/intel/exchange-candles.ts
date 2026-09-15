@@ -18,6 +18,13 @@
 //     with `committed: false`; it is dropped rather than drawn as a candle.
 //   * A zero volume is a completed period in which nothing traded and stays a
 //     zero. A volume the venue did not report stays null.
+//   * THE VOLUME UNIT IS REPORTED, NOT ASSUMED. A venue that publishes a quote
+//     turnover gives a figure in the pair's quote currency, which is a USD
+//     stablecoin for these pairs and therefore the same unit the stored archive
+//     and the CoinMarketCap series use; a venue that publishes only a base
+//     figure is labelled as the base asset instead of being relabelled. The
+//     chosen unit travels on `volumeUnit` and is named in the coverage sentence,
+//     so a merged chart never carries one label over two different units.
 //   * One request is the whole answer. A window needing more periods than the
 //     venue returns is answered with the newest it can, and the coverage
 //     sentence says how far back they reach.
@@ -57,10 +64,20 @@ async function readTickers(db: any, symbol: string): Promise<any[]> {
   } catch { return [] }
 }
 
-/** Venue kline snapshots → chart bars. `closeTime` is the venue's own, so the
- * close is a provider fact here rather than something derived. */
+/** Venue kline snapshots → chart bars and the unit their volume is in.
+ *
+ * `closeTime` is the venue's own, so the close is a provider fact here rather
+ * than something derived. The QUOTE turnover is preferred, because it is the
+ * unit the stored archive and the CoinMarketCap series use; it is taken only
+ * when EVERY period carries one, so a series can never be half quote and half
+ * base under a single label. */
 // deno-lint-ignore no-explicit-any
-export function exchangeBars(klines: any[], now: number): Bar[] {
+export function exchangeBars(klines: any[], now: number): { bars: Bar[]; volumeUnit: string } {
+  const rows = (klines || []).filter((k) => {
+    const t = Number(k?.openTime), closedAt = Number(k?.closeTime)
+    return Number.isFinite(t) && t > 0 && Number.isFinite(closedAt) && closedAt > t && k?.committed !== false && closedAt <= now && Number.isFinite(Number(k?.close))
+  })
+  const quoted = rows.length > 0 && rows.every((k) => { const n = Number(k?.volumeQuote); return k?.volumeQuote != null && Number.isFinite(n) && n >= 0 })
   const bars = (klines || []).flatMap((k) => {
     const t = Number(k?.openTime), closedAt = Number(k?.closeTime)
     if (!Number.isFinite(t) || t <= 0 || !Number.isFinite(closedAt) || closedAt <= t) return []
@@ -71,15 +88,15 @@ export function exchangeBars(klines: any[], now: number): Bar[] {
     // `Number(null)` is 0, so an absent value must be rejected BEFORE conversion:
     // a volume the venue did not report is not a period with no trades.
     const value = (v: unknown) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
-    const volume = value(k?.volumeBase)
+    const volume = value(quoted ? k?.volumeQuote : k?.volumeBase)
     return [{
       t, closedAt, o: value(k?.open), h: value(k?.high), l: value(k?.low), c,
       // A period with no trades is a real zero; an unreported volume stays null.
       v: volume != null && volume >= 0 ? volume : null,
-      volumeKind: 'period' as const,
+      volumeKind: 'period' as const, ...(quoted ? { volumeUnit: 'USD' as const } : {}),
     }]
   })
-  return normalizeBars(bars).bars
+  return { bars: normalizeBars(bars).bars, volumeUnit: quoted ? 'quote asset' : 'base asset' }
 }
 
 export interface ExchangeCandleResult {
@@ -141,18 +158,23 @@ export async function loadExchangeCandles(db: any, symbol: string, range = '7D',
       klines = provider ? await provider.getKlines(providerSymbol, providerInterval, plan.limit, { supabase: db, jobName: 'intel-markets-candles', kind: 'request' } as any) : null
     } catch { klines = null }
     if (!klines || !klines.length) { lastReason = lastReason || 'venue_unavailable'; continue }
-    const bars = exchangeBars(klines, now).filter((bar) => bar.t >= plan.from && (bar.closedAt ?? bar.t) <= plan.to)
+    const mapped = exchangeBars(klines, now)
+    const bars = mapped.bars.filter((bar) => bar.t >= plan.from && (bar.closedAt ?? bar.t) <= plan.to)
     if (!bars.length) { lastReason = lastReason || 'no_completed_candles'; continue }
+    const quote = row?.quote_asset ? String(row.quote_asset) : null
+    const unit = mapped.volumeUnit === 'quote asset' ? (quote ? `${quote} (the pair's quote asset)` : 'the pair\'s quote asset') : 'the base asset'
     const coverage = candleCoverage({
       plan, source: venue, oldest: bars[0]?.t ?? null, count: bars.length, reason: null,
       extra: [
-        `Volume is the base asset for each completed period; a period with no trades is a real zero.`,
+        `Volume is ${unit} for each completed period; a period with no trades is a real zero.`,
         attempted.length > 1 ? `${attempted.slice(0, -1).join(', ')} could not answer (${lastReason || 'no_completed_candles'}).` : null,
       ],
     })
     return {
       candles: bars, source: venue, timestampMeaning: 'open', barIntervalMs: plan.step,
-      volumeUnit: 'base asset', currency: row?.quote_asset ? String(row.quote_asset) : null,
+      // What it ACTUALLY is, per venue, rather than a fixed label.
+      volumeUnit: mapped.volumeUnit === 'quote asset' ? (quote || 'quote asset') : 'base asset',
+      currency: quote,
       coverage, sourceState: 'fresh', sourceReason: null,
       bestPair: providerSymbol, bestProvider: venue, plan, provenance: [],
     }

@@ -5,7 +5,7 @@ import { assertEquals, assertStringIncludes, assertThrows } from 'https://deno.l
 import {
   backfillAssetHistory, backfillCandidates, backfillOneAsset, candleRow, captureCandleBackfill,
   captureCandleDaily, ohlcvHistoryPages, CANDLE_CAPTURE_OPS, HISTORY_EPOCH_MS, OHLCV_MAX_PAGES,
-  OHLCV_PAGE_COUNT, OHLCV_PAGE_DAYS, BACKFILL_CREDIT_CEILING,
+  OHLCV_PAGE_COUNT, OHLCV_PAGE_DAYS, BACKFILL_CREDIT_CEILING, cmcCatalogueIndex, cmcIdOf,
 } from './capture-candles.ts'
 import { binanceDailyBar, binanceDailyHistory, BINANCE_EPOCH_MS } from './exchange-history.ts'
 import { readCandleCoverage } from './capture-candles-read.ts'
@@ -56,22 +56,42 @@ function fakeDb(store: Store, fail: Record<string, string> = {}) {
 }
 
 const ctxFor = () => ({ kind: 'job' as const })
-const kline = (t: number, close: number, volume: number | null = 10) =>
-  [t, close - 1, close + 1, close - 2, close, volume, t + DAY - 1, 0, 0, 0, 0, 0]
+/** A real `/api/v3/klines` row, in the documented order and with the documented
+ * string types: open time, O, H, L, C, BASE volume, close time, QUOTE volume,
+ * trades, taker base, taker quote, ignore. */
+const kline = (t: number, close: number, base: number | string | null = 10, quote: number | string | null = 600_000) =>
+  [t, String(close - 1), String(close + 1), String(close - 2), String(close), base == null ? null : String(base),
+    t + DAY - 1, quote == null ? null : String(quote), 812, '5.0', '300000.0', '0']
 
 // ─── Binance history ──────────────────────────────────────────────────────────
 
 Deno.test('a Binance daily row becomes a candle only when it is a completed UTC day', () => {
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100), NOW)!.t, YESTERDAY)
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100), NOW)!.closedAt, YESTERDAY + DAY - 1)
+  const bar = binanceDailyBar(kline(YESTERDAY, 100), NOW)!
+  assertEquals(bar.t, YESTERDAY)
+  assertEquals(bar.closedAt, YESTERDAY + DAY - 1)
+  // The venue publishes strings; they become numbers, not NaN.
+  assertEquals([bar.o, bar.h, bar.l, bar.c], [99, 101, 98, 100])
   // A day that has not closed is not a candle.
   assertEquals(binanceDailyBar(kline(YESTERDAY + DAY, 100), NOW), null)
   // A row whose open time is not on a UTC day boundary is not a daily candle.
   assertEquals(binanceDailyBar(kline(YESTERDAY + 3600_000, 100), NOW), null)
-  // A zero volume is a real zero; an unreported one is null.
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, 0), NOW)!.v, 0)
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, null), NOW)!.v, null)
   assertEquals(binanceDailyBar('not a row', NOW), null)
+})
+
+Deno.test('the stored Binance volume is the QUOTE turnover, so the archive is one unit', () => {
+  // Field 7, not field 5. CoinMarketCap OHLCV rows beside these are in USD, and
+  // `binancePair` picks the pair with the most quote volume, which is a USD
+  // stablecoin; storing the base-asset amount would put two units in one column.
+  const bar = binanceDailyBar(kline(YESTERDAY, 60_000, '2.5', '150000.0'), NOW)!
+  assertEquals(bar.v, 150_000)
+  assertEquals(bar.volumeUnit, 'USD')
+  // A day in which nothing traded is a real zero.
+  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, '0', '0'), NOW)!.v, 0)
+  // An unreported quote turnover stays NULL; the base figure is never used in
+  // its place, because that would be a different unit under the same label.
+  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, '7', null), NOW)!.v, null)
+  // A row too short to carry field 7 has no quote turnover at all.
+  assertEquals(binanceDailyBar([YESTERDAY, '1', '2', '0.5', '1.5', '9', YESTERDAY + DAY - 1], NOW)!.v, null)
 })
 
 Deno.test('Binance history pages forward and only a short page proves it saw the first day', async () => {
@@ -207,7 +227,7 @@ Deno.test('an asset on a free venue costs nothing and the paid rung only buys th
 })
 
 Deno.test('a venue-only asset spends no credits at all', async () => {
-  const { db, writes } = fakeDb({ exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'XYZUSDT', normalized_symbol: 'XYZ', volume_quote_24h: 1 }] })
+  const { db, writes } = fakeDb({ exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'XYZUSDT', normalized_symbol: 'XYZ', quote_asset: 'USDT', volume_quote_24h: 1 }] })
   let requests = 0
   const result = await backfillAssetHistory(db, { assetKey: 'market:coingecko:xyz', symbol: 'XYZ', cmcId: null }, {}, NOW, 400, {
     request: () => { requests += 1; return Promise.resolve(null) },
@@ -217,6 +237,8 @@ Deno.test('a venue-only asset spends no credits at all', async () => {
   assertEquals(result.credits, 0)
   assertEquals(result.complete, true)
   assertEquals(writes[0].onConflict, 'asset_key,provider,candle_interval,candle_time')
+  // The stored reference NAMES the unit, so a reader of the table never infers it.
+  assertEquals(writes[0].rows[0].source_ref, 'binance:XYZUSDT:volume_quote_USDT')
 })
 
 Deno.test('an asset with neither a venue nor a listing is recorded as unavailable with a reason', async () => {
@@ -480,6 +502,77 @@ Deno.test("a complete asset's daily append never walks older years", async () =>
     assertEquals(Date.parse(String(params.time_start)) >= Date.parse(storedNewest), true, 'the append never reaches behind the stored window')
     assertEquals(Number(params.count) <= OHLCV_PAGE_COUNT, true)
   }
+})
+
+Deno.test('a CoinGecko-sourced asset still resolves its CoinMarketCap id, by canonical identity or a unique ticker', () => {
+  const index = cmcCatalogueIndex([
+    { source_provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', normalized_symbol: 'BTC', platforms: {} },
+    { source_provider: 'coinmarketcap', provider_id: '52', symbol: 'XRP', normalized_symbol: 'XRP', platforms: {} },
+    { source_provider: 'coinmarketcap', provider_id: '825', symbol: 'USDT', normalized_symbol: 'USDT', platforms: {} },
+    // Two CoinMarketCap assets claim this ticker, so it resolves to neither.
+    { source_provider: 'coinmarketcap', provider_id: '9001', symbol: 'GRASS', normalized_symbol: 'GRASS', platforms: {} },
+    { source_provider: 'coinmarketcap', provider_id: '9002', symbol: 'GRASS', normalized_symbol: 'GRASS', platforms: {} },
+  ])
+  // 1. The resolver the chart itself uses, for a row it can read directly.
+  assertEquals(cmcIdOf({ source_provider: 'coinmarketcap', provider_id: '1027' }, index), '1027')
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'usd-coin' }, index), '3408')
+  // 2. The canonical identity: both providers' rows for Bitcoin are one asset.
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'bitcoin', normalized_symbol: 'BTC' }, index), '1')
+  // 3. A ticker exactly one CoinMarketCap asset claims. This is what XRP and
+  //    USDT need: a CoinGecko-sourced catalogue row with no canonical native key.
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'ripple', normalized_symbol: 'XRP' }, index), '52')
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'tether', normalized_symbol: 'USDT' }, index), '825')
+  // An ambiguous ticker resolves to nothing rather than to a guess, and an asset
+  // with no listing anywhere keeps its honest null.
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'grass', normalized_symbol: 'GRASS' }, index), null)
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'nothing', normalized_symbol: 'NOPE' }, index), null)
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'ripple', normalized_symbol: 'XRP' }), null)
+})
+
+Deno.test('the seeded queue carries the resolved id, and the paid rung uses it for a CoinGecko-sourced asset', async () => {
+  const catalogue = [{ source_provider: 'coingecko', provider_id: 'ripple', symbol: 'XRP', normalized_symbol: 'XRP', market_cap_rank: 4, platforms: {} }]
+  const rows = backfillCandidates(catalogue, [], NOW, cmcCatalogueIndex([
+    { source_provider: 'coinmarketcap', provider_id: '52', symbol: 'XRP', normalized_symbol: 'XRP', platforms: {} },
+  ]))
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].provider, 'coingecko')
+  assertEquals(rows[0].cmc_id, '52')
+
+  // And the run spends its paid rung against that id rather than answering
+  // 'no_cmc_listing' because the CATALOGUE row is not a CoinMarketCap one.
+  const asked: Record<string, unknown>[] = []
+  const { db, updates } = fakeDb({
+    exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'XRPUSDT', normalized_symbol: 'XRP', quote_asset: 'USDT', volume_quote_24h: 1 }],
+    market_asset_candle_backfill: [{ ...rows[0], state: 'pending', candles: 0, credits_spent: 0, attempts: 0 }],
+  })
+  const result = await captureCandleBackfill(db, ctxFor, new Date(NOW), 'startup', {
+    request: (_name, params) => { asked.push(params!); return Promise.resolve({ payload: ohlcvPayload('52', Date.UTC(2013, 7, 4), 20), provenance: { fetchedAt: new Date(NOW).toISOString() } }) },
+    exchange: () => Promise.resolve({ bars: [{ t: Date.UTC(2018, 4, 4), c: 0.9, closedAt: Date.UTC(2018, 4, 4) + DAY - 1 }], pages: 1, reason: null, complete: true }),
+    policy: [],
+  })
+  assertEquals(asked.length > 0, true)
+  assertEquals(asked.every((params) => params.id === '52'), true)
+  assertEquals(result.credits > 0, true)
+  assertEquals(updates[0].patch.source, 'binance+coinmarketcap')
+  assertEquals(updates[0].patch.reason, null)
+  // The pre-venue years are stored, so the archive no longer starts in 2018.
+  assertEquals(updates[0].patch.oldest_candle, '2013-08-04')
+})
+
+Deno.test('an asset that genuinely resolves to nothing keeps its no_cmc_listing reason', async () => {
+  const { db, updates } = fakeDb({
+    exchange_latest_tickers: [],
+    market_asset_candle_backfill: [{ asset_key: 'market:coingecko:nothing', provider: 'coingecko', provider_id: 'nothing', cmc_id: null, symbol: 'NOPE', state: 'pending', priority: 101, candles: 0, credits_spent: 0, attempts: 0 }],
+  })
+  let requests = 0
+  const result = await captureCandleBackfill(db, ctxFor, new Date(NOW), 'startup', {
+    request: () => { requests += 1; return Promise.resolve(null) },
+    policy: [],
+  })
+  assertEquals(requests, 0)
+  assertEquals(result.credits, 0)
+  assertEquals(updates[0].patch.reason, 'no_cmc_listing')
+  assertEquals(updates[0].patch.state, 'unavailable')
 })
 
 // ─── the read view ────────────────────────────────────────────────────────────

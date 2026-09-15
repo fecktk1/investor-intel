@@ -47,6 +47,7 @@ import type { CaptureDeps, JobResult } from './capture-jobs.ts'
 import { cmcOhlcvBars } from './cmc-chart.ts'
 import { binanceDailyHistory, BINANCE_EPOCH_MS } from './exchange-history.ts'
 import { marketCanonicalIdentity } from './market-read-quality.ts'
+import { marketCmcIdentity } from './market-asset-source.ts'
 import type { Bar } from './chart-analysis.ts'
 
 const DAY = 86_400_000
@@ -83,6 +84,9 @@ export const DAILY_APPEND_ASSETS = 150
 /** Credits ONE daily append may spend. The free venue path costs nothing, so
  * this only ever binds for assets no venue lists. */
 export const DAILY_APPEND_CREDITS = 150
+/** CoinMarketCap-sourced catalogue rows read for the identity join. The whole
+ * ranked universe is 1,000 rows, which is also this project's PostgREST ceiling. */
+export const CMC_INDEX_ROWS = 1_000
 /** Rows written in one statement. */
 const MAX_UPSERT_ROWS = 500
 /** Cadence a lane falls back to when its policy row is missing. */
@@ -183,14 +187,18 @@ export interface AssetHistoryResult {
   error?: string
 }
 
-/** The Binance pair for a normalized symbol, or null. */
+/** The Binance pair for a normalized symbol and the asset its volume is quoted
+ * in, or null. The pair with the highest quote volume is a USD stablecoin for
+ * every asset in this catalogue, which is why the stored quote volume is one
+ * unit with the CoinMarketCap USD figures beside it. */
 // deno-lint-ignore no-explicit-any
-async function binancePair(db: any, symbol: string): Promise<string | null> {
+async function binancePair(db: any, symbol: string): Promise<{ symbol: string; quote: string | null } | null> {
   if (!symbol) return null
   const page = await readRows(() => db.from('exchange_latest_tickers')
-    .select('provider,provider_symbol,volume_quote_24h').eq('normalized_symbol', symbol).eq('provider', 'binance')
+    .select('provider,provider_symbol,quote_asset,volume_quote_24h').eq('normalized_symbol', symbol).eq('provider', 'binance')
     .order('volume_quote_24h', { ascending: false }).limit(1))
-  return page.rows[0]?.provider_symbol ? String(page.rows[0].provider_symbol) : null
+  const row = page.rows[0]
+  return row?.provider_symbol ? { symbol: String(row.provider_symbol), quote: row.quote_asset ? String(row.quote_asset) : null } : null
 }
 
 /** How a pass relates to what is already stored.
@@ -243,12 +251,15 @@ export async function backfillAssetHistory(db: any, asset: { assetKey: string; s
   // 1. The free venue, walking FORWARD in every mode.
   const pair = await binancePair(db, String(asset.symbol || '').toUpperCase())
   if (pair) {
-    const history = await (deps.exchange ?? binanceDailyHistory)(ctx, pair, Math.max(from, BINANCE_EPOCH_MS), yesterday + DAY - 1, now).catch(() => null)
+    const history = await (deps.exchange ?? binanceDailyHistory)(ctx, pair.symbol, Math.max(from, BINANCE_EPOCH_MS), yesterday + DAY - 1, now).catch(() => null)
     if (history?.bars.length) {
       result.source = 'binance'
       venueOldest = history.bars[0].t
+      // The source reference NAMES THE UNIT the stored volume is in, so a reader
+      // of the table never has to infer it from the provider column.
+      const sourceRef = `binance:${pair.symbol}:volume_quote_${pair.quote ?? 'unknown'}`
       for (const bar of history.bars) {
-        const row = candleRow(asset.assetKey, 'binance', bar, `binance:${pair}`, recordedAt)
+        const row = candleRow(asset.assetKey, 'binance', bar, sourceRef, recordedAt)
         if (row) written.push(row)
       }
       // Only a walk that ran out of ROWS proves it saw the pair's first day.
@@ -289,7 +300,7 @@ export async function backfillAssetHistory(db: any, asset: { assetKey: string; s
       const recorded = Date.parse(response.provenance?.fetchedAt || '')
       const bars = cmcOhlcvBars(response.payload, asset.cmcId, Number.isFinite(recorded) ? recorded : null, DAY)
       for (const bar of bars) {
-        const row = candleRow(asset.assetKey, CAPTURE_PROVIDER, bar, `coinmarketcap:ohlcv:${asset.cmcId}`, recordedAt)
+        const row = candleRow(asset.assetKey, CAPTURE_PROVIDER, bar, `coinmarketcap:ohlcv:${asset.cmcId}:volume_USD`, recordedAt)
         if (row) written.push(row)
       }
       if (!result.source) result.source = CAPTURE_PROVIDER
@@ -323,11 +334,63 @@ export async function backfillAssetHistory(db: any, asset: { assetKey: string; s
 
 // ─── Seeding the queue ────────────────────────────────────────────────────────
 
+/** CoinMarketCap-sourced catalogue rows, indexed two ways for the identity join
+ * below. A symbol claimed by MORE THAN ONE CoinMarketCap asset is dropped from
+ * the symbol index entirely: a same-ticker match is not an identity, and buying
+ * a decade of the wrong asset's history is worse than buying none. */
+export interface CmcCatalogueIndex { byKey: Map<string, string>; bySymbol: Map<string, string> }
+// deno-lint-ignore no-explicit-any
+export function cmcCatalogueIndex(rows: any[]): CmcCatalogueIndex {
+  const byKey = new Map<string, string>(), counts = new Map<string, number>(), first = new Map<string, string>()
+  for (const row of rows || []) {
+    const id = String(row?.provider_id ?? '')
+    if (!/^[1-9][0-9]{0,9}$/.test(id)) continue
+    const key = marketCanonicalIdentity(row).canonicalAssetKey
+    if (key && !byKey.has(key)) byKey.set(key, id)
+    const symbol = String(row?.normalized_symbol || row?.symbol || '').toUpperCase().trim()
+    if (!symbol) continue
+    counts.set(symbol, (counts.get(symbol) ?? 0) + 1)
+    if (!first.has(symbol)) first.set(symbol, id)
+  }
+  const bySymbol = new Map<string, string>()
+  for (const [symbol, count] of counts) if (count === 1) bySymbol.set(symbol, first.get(symbol) as string)
+  return { byKey, bySymbol }
+}
+
+/** The CoinMarketCap id of a catalogue row, or null when it genuinely resolves
+ * to nothing.
+ *
+ * Three steps, narrowest first:
+ *   1. `marketCmcIdentity` — the SAME resolver `intel-markets` uses for the
+ *      chart. It accepts a CoinMarketCap-sourced row directly, maps an issuer
+ *      identity, and maps a native asset through its canonical key.
+ *   2. the CANONICAL KEY of a CoinMarketCap-sourced catalogue row. The catalogue
+ *      holds both providers' rows; when a CoinGecko-sourced asset and a
+ *      CoinMarketCap one resolve to the same canonical identity they ARE the
+ *      same asset, so the CoinMarketCap id is the one to buy history against.
+ *   3. a normalized symbol that exactly ONE CoinMarketCap asset claims. An
+ *      ambiguous ticker resolves to nothing rather than to a guess.
+ *
+ * Deriving the id from `source_provider` alone, as the lane first did, left every
+ * CoinGecko-sourced top-100 asset without its pre-venue years. */
+// deno-lint-ignore no-explicit-any
+export function cmcIdOf(row: any, index: CmcCatalogueIndex = { byKey: new Map(), bySymbol: new Map() }): string | null {
+  try {
+    const direct = marketCmcIdentity(row)
+    if (typeof direct === 'string' && /^[1-9][0-9]{0,9}$/.test(direct)) return direct
+  } catch { /* an unresolvable row is a null identity, not a failed run */ }
+  const key = marketCanonicalIdentity(row).canonicalAssetKey
+  if (key && index.byKey.has(key)) return index.byKey.get(key) as string
+  const symbol = String(row?.normalized_symbol || row?.symbol || '').toUpperCase().trim()
+  return symbol && index.bySymbol.has(symbol) ? index.bySymbol.get(symbol) as string : null
+}
+
 /** The catalogue's top N by rank, plus every asset a reader has opened. The two
  * lists are merged on the canonical asset key; a demanded asset that is also in
  * the top N keeps the better (lower) priority. */
 // deno-lint-ignore no-explicit-any
-export function backfillCandidates(catalogue: any[], demand: any[], now: number): Record<string, unknown>[] {
+export function backfillCandidates(catalogue: any[], demand: any[], now: number,
+  index: CmcCatalogueIndex = { byKey: new Map(), bySymbol: new Map() }): Record<string, unknown>[] {
   const byKey = new Map<string, Record<string, unknown>>()
   const add = (key: string | null, row: Record<string, unknown>) => {
     if (!key) return
@@ -340,6 +403,12 @@ export function backfillCandidates(catalogue: any[], demand: any[], now: number)
     const rank = Number(row?.market_cap_rank)
     add(key, {
       provider: text(row?.source_provider, 40), provider_id: text(row?.provider_id, 40),
+      // The CoinMarketCap id is resolved the SAME way the chart read resolves it,
+      // from the catalogue row: a CoinGecko-sourced asset can still have a CMC
+      // listing, through its issuer identity or the native-asset table. Deriving
+      // it from `source_provider` alone left XRP with Binance history from 2018
+      // and no pre-venue years, and stablecoins with no history at all.
+      cmc_id: cmcIdOf(row, index),
       symbol: text(row?.normalized_symbol || row?.symbol, 50),
       priority: Number.isFinite(rank) && rank > 0 ? Math.trunc(rank) : BACKFILL_TOP_N + 1,
       state: 'pending', first_seen_at: new Date(now).toISOString(),
@@ -350,6 +419,7 @@ export function backfillCandidates(catalogue: any[], demand: any[], now: number)
     // ahead of nothing, because someone has actually opened it.
     add(text(row?.asset_key, 200), {
       provider: text(row?.provider, 40), provider_id: text(row?.provider_id, 40), symbol: null,
+      cmc_id: cmcIdOf({ source_provider: row?.provider, provider_id: row?.provider_id, platforms: row?.platforms }, index),
       priority: BACKFILL_TOP_N + 1, state: 'pending', first_seen_at: new Date(now).toISOString(),
     })
   }
@@ -361,15 +431,23 @@ export function backfillCandidates(catalogue: any[], demand: any[], now: number)
  * keeps its progress. */
 // deno-lint-ignore no-explicit-any
 export async function seedBackfillQueue(db: any, now: number): Promise<{ seeded: number; reason: string | null }> {
-  const [catalogue, demand] = await Promise.all([
+  const [catalogue, demand, cmcRows] = await Promise.all([
     readRows(() => db.from('market_assets')
       .select('source_provider,provider_id,symbol,normalized_symbol,market_cap_rank,platforms')
       .eq('in_current_catalog', true).not('market_cap_rank', 'is', null)
       .order('market_cap_rank', { ascending: true }).limit(BACKFILL_TOP_N)),
     readRows(() => db.from('market_asset_demand').select('asset_key,provider,provider_id')
       .order('last_demanded_at', { ascending: false }).limit(250)),
+    // CoinMarketCap-sourced rows, for the identity join. NOT filtered by
+    // `in_current_catalog`: when the live catalogue is the CoinGecko one, the
+    // CoinMarketCap rows are retained rather than current, and they are exactly
+    // the rows that carry the ids the paid rung needs.
+    readRows(() => db.from('market_assets')
+      .select('source_provider,provider_id,symbol,normalized_symbol,market_cap_rank,platforms')
+      .eq('source_provider', CAPTURE_PROVIDER)
+      .order('market_cap_rank', { ascending: true }).limit(CMC_INDEX_ROWS)),
   ])
-  const rows = backfillCandidates(catalogue.rows, demand.rows, now)
+  const rows = backfillCandidates(catalogue.rows, demand.rows, now, cmcCatalogueIndex(cmcRows.rows))
   if (!rows.length) return { seeded: 0, reason: catalogue.reason || demand.reason }
   try {
     const { error } = await db.from(BACKFILL_TABLE).upsert(rows, { onConflict: 'asset_key', ignoreDuplicates: true })
@@ -398,7 +476,12 @@ async function saveState(db: any, assetKey: string, patch: Record<string, unknow
 async function runOne(db: any, row: any, ctx: MarketAssetsContext, now: number, budget: number, deps: CandleLaneDeps,
   mode: BackfillMode = 'full'): Promise<AssetHistoryResult> {
   const assetKey = String(row?.asset_key || '')
-  const cmcId = String(row?.provider || '') === CAPTURE_PROVIDER && /^[1-9][0-9]{0,9}$/.test(String(row?.provider_id || '')) ? String(row.provider_id) : null
+  // The id the SEED resolved, which is the one the stored years were bought
+  // against. A row seeded before the column existed falls back to the resolver,
+  // so an older queue is not left behind by the fix.
+  const seededCmcId = String(row?.cmc_id || '')
+  const cmcId = /^[1-9][0-9]{0,9}$/.test(seededCmcId) ? seededCmcId
+    : cmcIdOf({ source_provider: row?.provider, provider_id: row?.provider_id })
   // The FORWARD walk starts the day after what is already stored, so no pass
   // ever re-asks for a stored period. The mode is passed by the CALLER, not
   // inferred from the state: the daily append resumes an asset that is COMPLETE,
@@ -454,7 +537,7 @@ export async function captureCandleBackfill(db: any, ctxFor: (name: string, maxC
     // runs and costs nothing, so the lane is NOT skipped — only its paid rung is.
     if (!planAllows(plan, 'startup')) budget = 0
     const queue = await readRows(() => db.from(BACKFILL_TABLE)
-      .select('asset_key,provider,provider_id,symbol,source,state,priority,oldest_candle,newest_candle,candles,credits_spent,attempts,completed_at')
+      .select('asset_key,provider,provider_id,cmc_id,symbol,source,state,priority,oldest_candle,newest_candle,candles,credits_spent,attempts,completed_at')
       .in('state', ['pending', 'partial'])
       .order('priority', { ascending: true }).order('asset_key', { ascending: true })
       .limit(BACKFILL_ASSETS_PER_RUN))
@@ -496,19 +579,22 @@ export async function backfillOneAsset(db: any, assetKey: string, ctxFor: (name:
     const policy = lanePolicy(deps, 'candle_history')
     if (!policy.enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
     const existing = await readRows(() => db.from(BACKFILL_TABLE)
-      .select('asset_key,provider,provider_id,symbol,source,state,oldest_candle,newest_candle,candles,credits_spent,attempts,completed_at').eq('asset_key', key).limit(1))
+      .select('asset_key,provider,provider_id,cmc_id,symbol,source,state,oldest_candle,newest_candle,candles,credits_spent,attempts,completed_at').eq('asset_key', key).limit(1))
     let row = existing.rows[0]
     if (!row) {
       // The asset is not queued yet. Its identity is resolved from the SAME two
       // sources the seeder uses; a key in neither is refused rather than queued
       // from a guessed symbol that would fill the archive with the wrong asset.
-      const [catalogue, demand] = await Promise.all([
+      const [catalogue, demand, cmcRows] = await Promise.all([
         readRows(() => db.from('market_assets')
           .select('source_provider,provider_id,symbol,normalized_symbol,market_cap_rank,platforms')
-          .eq('in_current_catalog', true).order('market_cap_rank', { ascending: true }).limit(1000)),
+          .eq('in_current_catalog', true).order('market_cap_rank', { ascending: true }).limit(CMC_INDEX_ROWS)),
         readRows(() => db.from('market_asset_demand').select('asset_key,provider,provider_id').eq('asset_key', key).limit(1)),
+        readRows(() => db.from('market_assets')
+          .select('source_provider,provider_id,symbol,normalized_symbol,market_cap_rank,platforms')
+          .eq('source_provider', CAPTURE_PROVIDER).order('market_cap_rank', { ascending: true }).limit(CMC_INDEX_ROWS)),
       ])
-      const seeded = backfillCandidates(catalogue.rows, demand.rows, at).find((candidate) => candidate.asset_key === key)
+      const seeded = backfillCandidates(catalogue.rows, demand.rows, at, cmcCatalogueIndex(cmcRows.rows)).find((candidate) => candidate.asset_key === key)
       if (!seeded) return { job, rows: 0, credits: 0, error: 'asset_not_in_catalogue', assetKey: key }
       const write = await upsert(db, BACKFILL_TABLE, [seeded], 'asset_key')
       if (write.error) return { job, rows: 0, credits: 0, error: write.error }
@@ -545,7 +631,7 @@ export async function captureCandleDaily(db: any, ctxFor: (name: string, maxCall
     if (!policy.enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
     const yesterday = dayOnly(Math.floor(at / DAY) * DAY - DAY)
     const queue = await readRows(() => db.from(BACKFILL_TABLE)
-      .select('asset_key,provider,provider_id,symbol,source,state,oldest_candle,newest_candle,candles,credits_spent,attempts,completed_at')
+      .select('asset_key,provider,provider_id,cmc_id,symbol,source,state,oldest_candle,newest_candle,candles,credits_spent,attempts,completed_at')
       .in('state', ['complete', 'partial'])
       .order('newest_candle', { ascending: true, nullsFirst: true }).order('asset_key', { ascending: true })
       .limit(DAILY_APPEND_ASSETS))

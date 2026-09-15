@@ -14,6 +14,10 @@
 //   * A stored zero volume is a real zero and stays one. A stored NULL volume is
 //     a period whose volume was never reported and stays NULL — it is never
 //     read as zero.
+//   * THE ARCHIVE IS ONE UNIT. The lane stores CoinMarketCap OHLCV volume in USD
+//     and Binance's QUOTE turnover, which is a USD stablecoin for every pair it
+//     picks; the base-asset figure is never stored. So a window filled by two
+//     sources still carries a single `volumeUnit`, and the read says so.
 //   * The coverage sentence says how many candles came from the archive and
 //     where the archive ends, so a reader can see which part of the chart is
 //     stored history and which part is live.
@@ -36,10 +40,20 @@ export const STORED_INTERVALS: Record<string, string> = { '1H': '1h', '1D': '1d'
 export const ARCHIVE_INTERVALS = ['1H', '1D', '1W'] as const
 export const archiveCanAnswer = (interval: unknown) => (ARCHIVE_INTERVALS as readonly string[]).includes(String(interval))
 
-/** Rows one archive read may return. 20 years of daily candles is about 7,300;
- * the cap leaves room for that and for an hourly month, and a read that hits it
- * says so rather than quietly losing the oldest years. */
+/** Rows one archive read may return in total. 20 years of daily candles is about
+ * 7,300; the cap leaves room for that and for an hourly month, and a read that
+ * hits it says so rather than quietly losing years. */
 export const ARCHIVE_ROW_CAP = 9_000
+/** Rows ONE PostgREST request may return.
+ *
+ * This is not a preference: `max_rows = 1000` in supabase/config.toml is the
+ * server's own ceiling, applied silently. A single `.limit(9000)` therefore
+ * returns the OLDEST thousand rows of the window and nothing else, and the read
+ * cannot tell that it was cut — which is exactly how a five-year Bitcoin chart
+ * reported an archive ending 1,000 days after the window start. The read pages
+ * with `.range()` instead, and stops when a page comes back SHORT (the window is
+ * exhausted) or when the total cap binds (which is then reported as truncated). */
+export const ARCHIVE_PAGE_ROWS = 1_000
 
 export const CANDLE_COLUMNS = 'asset_key,provider,candle_interval,candle_time,open,high,low,close,volume,source_ref,recorded_at'
 
@@ -84,7 +98,10 @@ export function archiveBar(row: any, step: number): Bar | null {
     // A stored zero is a completed period with no trades. A stored NULL is a
     // period whose volume was never reported and is NOT read as zero.
     v: volume != null && volume >= 0 ? volume : null,
-    volumeKind: 'period' as const,
+    // ONE UNIT runs through the archive: the lane stores CoinMarketCap OHLCV in
+    // USD and Binance's QUOTE turnover (a USD stablecoin for these pairs), never
+    // the base-asset figure, so a merged series carries one honest label.
+    volumeKind: 'period' as const, volumeUnit: 'USD' as const,
     ...(Number.isFinite(recorded) ? { recordedAt: recorded } : {}),
   }
 }
@@ -98,16 +115,29 @@ export async function readArchiveCandles(db: any, assetKey: string, interval: st
   const stored = STORED_INTERVALS[interval] || (interval === '1W' ? '1d' : null)
   if (!assetKey || !stored) return { bars: [], reason: 'interval_not_archived', truncated: false, rows: 0 }
   const step = stored === '1h' ? 3_600_000 : DAY
+  // deno-lint-ignore no-explicit-any
+  const rows: any[] = []
+  let truncated = false
   try {
-    const { data, error } = await db.from('market_asset_candles').select(CANDLE_COLUMNS)
-      .eq('asset_key', assetKey).eq('candle_interval', stored)
-      .gte('candle_time', new Date(from).toISOString())
-      .lte('candle_time', new Date(to).toISOString())
-      .order('candle_time', { ascending: true }).limit(cap)
-    if (error) return { bars: [], reason: String(error.message || error.code || error).slice(0, 200), truncated: false, rows: 0 }
-    const rows = Array.isArray(data) ? data : data ? [data] : []
+    while (rows.length < cap) {
+      const size = Math.min(ARCHIVE_PAGE_ROWS, cap - rows.length)
+      const { data, error } = await db.from('market_asset_candles').select(CANDLE_COLUMNS)
+        .eq('asset_key', assetKey).eq('candle_interval', stored)
+        .gte('candle_time', new Date(from).toISOString())
+        .lte('candle_time', new Date(to).toISOString())
+        .order('candle_time', { ascending: true })
+        .range(rows.length, rows.length + size - 1)
+      if (error) return { bars: [], reason: String(error.message || error.code || error).slice(0, 200), truncated: false, rows: 0 }
+      const page = Array.isArray(data) ? data : data ? [data] : []
+      rows.push(...page)
+      // A short page is the end of the window. A full one may not be: ask again.
+      if (page.length < size) break
+      // The TOTAL cap bound before the window ran out, so the oldest years of
+      // this window are genuinely not in the answer, and the caller is told.
+      if (rows.length >= cap) { truncated = true; break }
+    }
     const bars = normalizeBars(preferArchiveProvider(rows).map((row) => archiveBar(row, step)).filter((bar): bar is Bar => !!bar)).bars
-    return { bars, reason: null, truncated: rows.length >= cap, rows: rows.length }
+    return { bars, reason: null, truncated, rows: rows.length }
   } catch (e) { return { bars: [], reason: ((e as Error)?.message || 'archive_read_failed').slice(0, 200), truncated: false, rows: 0 } }
 }
 

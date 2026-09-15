@@ -15,6 +15,13 @@ import { manualAssetIdentity } from './manual-asset'
 import { portfolioQuoteStatus } from '../../../supabase/functions/_shared/intel/portfolio-quote.ts'
 import { portfolioSyncChangesActivity } from './portfolio-refresh'
 import {requirePortfolioOverview,requirePortfolioPage} from './portfolio-response'
+/** The widest chart window any range can ask for: twenty years and a day. The
+ * chart's 'ALL' range is twenty years, which the stored candle archive answers,
+ * and a cap written for a one-year chart turned every range above 1Y into
+ * "Your position is unavailable". The extra day is slack for a request whose
+ * ends are clocks rather than exact boundaries. */
+export const MAX_CHART_WINDOW_MS = 7301 * 86400000
+
 export { loadMarketContextBySymbols }
 
 const clean = (s) => String(s || '').trim()
@@ -133,7 +140,7 @@ export async function getAssetPortfolioContext(supabase, orgId, { portfolioId, c
   const fromTime = typeof from === 'number' ? from : Date.parse(from)
   const toTime = typeof to === 'number' ? to : Date.parse(to)
   if (!orgId || !portfolioId || !canonicalAssetKey || !Number.isFinite(fromTime) || !Number.isFinite(toTime)
-    || fromTime > toTime || toTime - fromTime > 366 * 86400000) throw new Error('Invalid asset or chart range')
+    || fromTime > toTime || toTime - fromTime > MAX_CHART_WINDOW_MS) throw new Error('Invalid asset or chart range')
   const { data, error } = await supabase.rpc('intel_asset_portfolio_context', {
     p_org_id: orgId, p_portfolio_id: portfolioId, p_asset_key: canonicalAssetKey,
     p_from: new Date(fromTime).toISOString(), p_to: new Date(toTime).toISOString(),
