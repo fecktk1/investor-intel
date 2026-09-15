@@ -59,6 +59,37 @@ export const formatUsd = (v, opts) => {
   return out.charAt(0) === '-' ? `-$${out.slice(1)}` : `$${out}`
 }
 
+// Display currency. Everything Investor Intel stores is denominated in USD;
+// `formatMoney` renders a stored USD amount in the reader's chosen currency at
+// display time, on the SAME K/M/B/T/Q ladder as formatUsd so a converted column
+// lines up with an unconverted one.
+//
+//   sign            the currency's display sign ('€', 'CA$'). Pass null when the
+//                   sign is ambiguous (three different "kr", a right-to-left
+//                   dirham) and the ISO code is what a reader can identify.
+//   suffix          true where the sign conventionally follows the amount (zł).
+//   rate            units of `currency` per 1 USD.
+//
+// A missing, zero or non-finite rate is NOT an excuse to render a number that is
+// wrong by an unknown factor: the amount falls back to dollars, and the caller
+// (useDisplayCurrency) reports `fallback: true` so the surface can say so.
+// `rate` has no default on purpose: an omitted rate is an ABSENT rate, and an
+// absent rate renders dollars. Defaulting it to 1 would print a euro sign in
+// front of a dollar figure the first time a caller forgot to pass one.
+export const formatMoney = (v, { currency = 'USD', rate, sign = '$', suffix = false, digits } = {}) => {
+  const n = finiteOrNull(v)
+  if (n == null) return DASH
+  const factor = finiteOrNull(rate)
+  if (factor == null || factor <= 0) return formatUsd(v, { digits })
+  const out = abbreviate(n * factor, { digits })
+  if (out == null) return DASH
+  const negative = out.charAt(0) === '-'
+  const magnitude = negative ? out.slice(1) : out
+  const code = String(currency || 'USD').toUpperCase()
+  const label = sign ? (suffix ? `${magnitude} ${sign}` : `${sign}${magnitude}`) : `${magnitude} ${code}`
+  return negative ? `-${label}` : label
+}
+
 // Same unit ladder without the currency sign, for counts (holders, txns).
 export const formatCompact = (v, opts) => {
   const out = abbreviate(v, opts)

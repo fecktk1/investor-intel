@@ -12,14 +12,25 @@ const minus = (ms: number) => new Date(NOW.getTime() - ms).toISOString()
 
 /** Minimal PostgREST-shaped fake: eq/gt/gte/lte/in filters, order, limit and
  * upsert. Every chain in the jobs ends in `.limit()` or `.upsert()`. */
-function fakeDb(tables: Record<string, any[]> = {}, writes: Record<string, any[]> = {}) {
+function fakeDb(tables: Record<string, any[]> = {}, writes: Record<string, any[]> = {}, rpcs: Record<string, any> = {}) {
   const value = (row: any, key: string) => row?.[key]
+  // Recorded highs are refreshed through a database function, so the fake answers
+  // `rpc` too. A name with no fixture succeeds reporting nothing refreshed, which
+  // is what a catalogue the job has never seen would really report.
+  const rpcCalls: { name: string; params: any }[] = []
   const compare = (a: any, b: any) => {
     const [x, y] = [Number(a), Number(b)]
     return Number.isFinite(x) && Number.isFinite(y) ? x - y : String(a ?? '').localeCompare(String(b ?? ''))
   }
   return {
     upserts: writes,
+    rpcCalls,
+    rpc(name: string, params: any) {
+      rpcCalls.push({ name, params })
+      const fixture = rpcs[name]
+      if (typeof fixture === 'function') return Promise.resolve(fixture(params))
+      return Promise.resolve(fixture ?? { data: { provider: params?.p_provider, refreshed: 0 }, error: null })
+    },
     from(table: string) {
       const filters: [string, string, any][] = []
       let ordering: { column: string; ascending: boolean } | null = null
@@ -176,6 +187,29 @@ Deno.test('daily rank capture reads the catalogue and spends no credits', async 
   eq(rows.map((r: any) => r.provider_id), ['1', '1027'])
   eq(rows[0].snapshot_date, utcDate(NOW)); eq(rows[0].source, 'listings_latest'); eq(rows[0].rank, 1)
   eq(rows[0].observed_at, minus(600_000)); eq(rows[0].num_market_pairs, null); eq(rows[0].max_supply, 21e6)
+  // The recorded-high refresh runs AFTER the upsert, so today's row is already
+  // inside the window it measures against, and it is still a zero-credit job.
+  eq(db.rpcCalls, [{ name: 'intel_refresh_recorded_highs', params: { p_provider: 'coinmarketcap' } }])
+  eq(result.highsRefreshed, 0)
+})
+
+Deno.test('daily rank capture reports the recorded highs it refreshed and survives a refresh failure', async () => {
+  const assets = [{ source_provider: 'coinmarketcap', in_current_catalog: true, provider_id: '1', symbol: 'BTC', market_cap_rank: 1, current_price: 64000, as_of: minus(600_000) }]
+  const refreshed = await captureRankDaily(
+    fakeDb({ market_assets: assets }, {}, { intel_refresh_recorded_highs: { data: { provider: 'coinmarketcap', refreshed: 1000 }, error: null } }),
+    {}, NOW, { request: async () => ({ payload: {} }), policy: [] })
+  eq(refreshed.rows, 1); eq(refreshed.credits, 0); eq(refreshed.highsRefreshed, 1000); eq(refreshed.error, undefined)
+  // A failed refresh is a partial: the rank history was captured either way, and
+  // yesterday's drawdown is better than losing today's rank row to a rollback.
+  const broken = await captureRankDaily(
+    fakeDb({ market_assets: assets }, {}, { intel_refresh_recorded_highs: { data: null, error: { message: 'statement timeout' } } }),
+    {}, NOW, { request: async () => ({ payload: {} }), policy: [] })
+  eq(broken.rows, 1); eq(broken.highsRefreshed, null); eq(broken.partial, 'statement timeout'); eq(broken.error, undefined)
+  // A database client without the function at all is the same kind of partial.
+  const thrown = await captureRankDaily(
+    fakeDb({ market_assets: assets }, {}, { intel_refresh_recorded_highs: () => { throw new Error('function does not exist') } }),
+    {}, NOW, { request: async () => ({ payload: {} }), policy: [] })
+  eq(thrown.rows, 1); eq(thrown.highsRefreshed, null); eq(thrown.partial, 'function does not exist')
 })
 
 Deno.test('daily rank capture skips inside its cadence and reports an empty catalogue', async () => {

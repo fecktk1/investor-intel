@@ -171,8 +171,11 @@ export default function MarketsPage() {
   // screen reproduces the exact order its reader was looking at. Reordering
   // returns to page 1: page 7 of the previous order describes nothing.
   const setSort = useCallback(({ sort, dir }) => setParams(p => ({ ...p, sort, dir, page: 0 })), [setParams])
-  // Rank reads naturally from 1 upward, so its first click is ascending; every other column starts descending.
-  const columnSort = useColumnSort({ sort: params.sort, dir: params.dir, setSort, defaultSort: 'market_cap', defaultDir: 'desc', initialDir: key => key === 'rank' ? 'asc' : 'desc' })
+  // Rank reads naturally from 1 upward and a drawdown from its deepest (most
+  // negative) end, so both start ascending — the same two directions the
+  // database defaults them to. Every other column starts descending.
+  const ASCENDING_FIRST = ['rank', 'drawdown']
+  const columnSort = useColumnSort({ sort: params.sort, dir: params.dir, setSort, defaultSort: 'market_cap', defaultDir: ASCENDING_FIRST.includes(params.sort) ? 'asc' : 'desc', initialDir: key => ASCENDING_FIRST.includes(key) ? 'asc' : 'desc' })
 
   // The screen is read with the clamped order, never the raw URL text: an
   // `m_dir=sideways` in a pasted link falls back to the default direction
@@ -353,6 +356,7 @@ export default function MarketsPage() {
               macro={macro}
               macroError={macroError}
               macroLoading={macroLoading}
+              rows={rows}
               chains={marketsData?.chainHeatmap || []}
               categories={marketsData?.availableCategories || []}
               onChain={chain => setParam({ chain })}

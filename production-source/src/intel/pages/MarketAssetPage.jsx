@@ -23,6 +23,7 @@ import TokenAvatar from '../components/TokenAvatar'
 import AssetPortfolioPosition from '../components/AssetPortfolioPosition'
 import AssetNewsPanel from '../components/AssetNewsPanel'
 import { fmtPrice, fmtPct, fmtVol, fmtNum, pctClass, bucketConfidence } from '../lib/market-format'
+import { useDisplayCurrency } from '../lib/display-currency'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import ConfidenceChip from '../components/ConfidenceChip'
 import ProviderCoveragePill from '../components/ProviderCoveragePill'
@@ -59,6 +60,10 @@ export default function MarketAssetPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase, user } = useSupabase()
+  // Hero money in the reader's currency. Every figure below is still stored in
+  // USD; only the rendering changes. The venue rows further down stay in USD
+  // for now — see docs/investor-intel/display-currency.md.
+  const money = useDisplayCurrency()
   const detailCache = useMarketDetailCache()
   const location = useLocation()
   const navigate = useNavigate()
@@ -186,13 +191,13 @@ export default function MarketAssetPage() {
   const cap = d.marketCap
   const r1h = d.rollups?.['1h']?.price_change_pct
   const stats = [
-    [t('markets.priceLabel', { defaultValue: 'Price' }), fmtPrice(d.price)],
+    [t('markets.priceLabel', { defaultValue: 'Price' }), money.formatMoneyPrice(d.price)],
     ['1h', fmtPct(r1h), pctClass(r1h)],
     ['24h', fmtPct(d.change24h), pctClass(d.change24h)],
     ['7d', fmtPct(d.change7d), pctClass(d.change7d)],
-    [t('markets.volLabel', { defaultValue: '24h volume' }), fmtVol(d.volume24h)],
-    [t('markets.marketCap', { defaultValue: 'Market cap' }), cap?.market_cap != null ? fmtVol(cap.market_cap) : t('markets.marketCapUnavailable', { defaultValue: 'N/A' })],
-    ['FDV', cap?.fdv != null ? fmtVol(cap.fdv) : '—'],
+    [t('markets.volLabel', { defaultValue: '24h volume' }), money.formatMoney(d.volume24h)],
+    [t('markets.marketCap', { defaultValue: 'Market cap' }), cap?.market_cap != null ? money.formatMoney(cap.market_cap) : t('markets.marketCapUnavailable', { defaultValue: 'N/A' })],
+    ['FDV', cap?.fdv != null ? money.formatMoney(cap.fdv) : '—'],
     [t('markets.supply', { defaultValue: 'Circ. supply' }), cap?.circulating_supply != null ? fmtNum(cap.circulating_supply) : '—'],
   ]
 
@@ -210,7 +215,7 @@ export default function MarketAssetPage() {
             {marketKey && <Link className="intel-text-link text-sm" to={`/intel/investigate?${new URLSearchParams({asset:marketKey,...(network.canonicalAssetKey?{network:network.canonicalAssetKey}:{})})}`}>{t('investigation.open',{defaultValue:'Open connected research'})}</Link>}
             {d.price != null && (
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-semibold text-[var(--fg-1)]">{fmtPrice(d.price)}</span>
+                <span className="text-xl font-semibold text-[var(--fg-1)]">{money.formatMoneyPrice(d.price)}</span>
                 {d.change24h != null && <span className={`text-sm font-semibold flex items-center gap-0.5 ${pctClass(d.change24h)}`}>{d.change24h >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}{fmtPct(d.change24h)}</span>}
                 {sig && <MarketSignalBadge direction={sig.direction} />}
               </div>
@@ -220,6 +225,12 @@ export default function MarketAssetPage() {
           {d.bestPair && <p className="page-sub font-mono text-[12px]">{PROVIDER_LABELS[d.bestProvider] || d.bestProvider} · {d.bestPair}</p>}
           {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'?` · ${d.sourceFreshness}`:''}</p>}
           {liveQuote.error&&<p role="status" className="intel-event-meta">{liveQuote.error}</p>}
+          {/* Money above is converted from the stored USD at display time. When
+              the reader asked for a currency the hourly capture cannot supply,
+              the figures stay in dollars and say so rather than misprice. */}
+          {money.fallback
+            ? <p className="intel-event-meta" data-display-currency={money.currency}>{t('markets.currency_fallback', { currency: money.currency, defaultValue: 'Rates unavailable — money figures shown in USD.' })}</p>
+            : money.currency !== 'USD' && <p className="intel-event-meta" data-display-currency={money.currency}>{t('markets.currency_note', { currency: money.currency, defaultValue: 'Money figures in {{currency}}, converted from USD at display time.' })}</p>}
         </div>
         {sig && d.price == null && <MarketSignalBadge direction={sig.direction} />}
       </div>

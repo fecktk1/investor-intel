@@ -41,7 +41,22 @@ export function breadthPct(snapshot) {
   return (up / moved) * 100
 }
 
-export default function MarketsCharts({ snapshot = null, macro = null, macroError = null, macroLoading = false, chains = [], categories = [], onChain, onCategory, onOpenAsset }) {
+// Depth bands for the drawdown figure. A shallow pullback and a collapse are
+// different readings, so they are different tones rather than one ramp.
+export const drawdownTone = depth => depth == null ? 'muted' : depth >= 25 ? 'red' : depth >= 10 ? 'yellow' : 'green'
+
+// The deepest recorded drawdowns on the page a reader is actually looking at.
+// Rows with no reading are left out rather than drawn as zero, and a zero stays
+// zero: an asset sitting at its recorded high is a reading, not a gap.
+export function deepestDrawdowns(rows = [], limit = 8) {
+  return (Array.isArray(rows) ? rows : [])
+    .map(row => ({ row, pct: num(row?.drawdownPct) }))
+    .filter(entry => entry.pct != null && entry.pct <= 0)
+    .sort((a, b) => a.pct - b.pct)
+    .slice(0, Math.max(0, limit))
+}
+
+export default function MarketsCharts({ snapshot = null, macro = null, macroError = null, macroLoading = false, rows = [], chains = [], categories = [], onChain, onCategory, onOpenAsset }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const [note, setNote] = useState('')
 
@@ -69,6 +84,24 @@ export default function MarketsCharts({ snapshot = null, macro = null, macroErro
     : t('markets.dominance_incomplete', { defaultValue: 'The latest global observation did not report BTC and ETH dominance.' })
 
   const cells = chains.map(row => ({ t: row.chain, value: num(row.avg_change_24h_pct), label: row.chain }))
+
+  // Arcs carry the MAGNITUDE of the fall, on one scale shared by the whole
+  // figure, so the deepest row fills its ring and the rest are read against it.
+  // The floor keeps a quiet page (everything within a few percent) from drawing
+  // one full ring and seven empty ones.
+  const drawdowns = deepestDrawdowns(rows, 8)
+  const drawdownMax = Math.max(10, ...drawdowns.map(entry => Math.abs(entry.pct)))
+  // The value handed to the ring is unsigned; the label re-signs it, so a row
+  // sitting exactly at its recorded high reads "0.00%" and not "-0.00%".
+  const drawdownSeries = drawdowns.map(({ row, pct }) => ({
+    key: `${row.sourceProvider || 'unknown'}:${row.providerId || row.symbol}`,
+    label: row.symbol || row.normalizedSymbol || row.displayName || row.providerId,
+    value: Math.abs(pct), max: drawdownMax, tone: drawdownTone(Math.abs(pct)), href: row.detailHref || null,
+    windowDays: num(row.recordedWindowDays), highDate: row.recordedHighDate || null,
+  }))
+  // One window sentence for the whole figure: the shortest recorded window on
+  // the page, because a claim that holds for every row is the only honest one.
+  const drawdownWindow = drawdownSeries.map(s => s.windowDays).filter(days => days != null).sort((a, b) => a - b)[0] ?? null
 
   const openDominance = series => {
     setNote('')
@@ -119,6 +152,18 @@ export default function MarketsCharts({ snapshot = null, macro = null, macroErro
           formatValue={formatPct}
           state={cells.length ? 'ready' : 'empty'}
           onSelect={cell => { setNote(''); if (cell?.t) onChain?.(cell.t) }}
+        />
+        <RadialBars
+          title={t('markets.drawdown_title_figure', { defaultValue: 'Deepest drawdowns on this screen' })}
+          description={!drawdownSeries.length
+            ? t('markets.drawdown_empty', { defaultValue: 'No asset on this page has two recorded days yet, so no distance from a high can be measured.' })
+            : drawdownWindow == null
+              ? t('markets.drawdown_sub_unknown', { defaultValue: 'How far the assets on this page have fallen from the highest price this workspace has recorded. Select a ring to open that asset.' })
+              : t('markets.drawdown_sub', { days: drawdownWindow, defaultValue: 'How far the assets on this page have fallen from their high over the last {{days}} recorded days. Select a ring to open that asset.' })}
+          series={drawdownSeries}
+          formatValue={value => formatPct(-(num(value) ?? 0))}
+          state={drawdownSeries.length ? 'ready' : 'empty'}
+          onSelect={series => { setNote(''); if (series?.href) onOpenAsset?.(series.href) }}
         />
       </div>
       <p role="status" className="text-[12px] text-[var(--fg-4)] min-h-[1.2em]">{note}</p>

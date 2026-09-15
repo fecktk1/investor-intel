@@ -14,7 +14,21 @@ Deno.test('metadata notice rules are loaded and committed beside the existing ma
  const notice:any={metric:'metadata_notice',unit:'notice',overview:{noticePresent:true},observation:{id:'cmc-metadata-notice:1027:'+'b'.repeat(64),subject:'market:coinmarketcap:1027',provider:'coinmarketcap',sourceRef:'coinmarketcap:/v2/cryptocurrency/info',value:1,unit:'notice',periodSeconds:null,observedAt:'2026-09-14T06:00:00Z',recordedAt:'2026-09-14T06:00:00Z',expiresAt:'2026-09-16T06:00:00Z',sampleAt:'2026-09-14T06:00:00Z',clockBasis:'provider_observation',metadata:{noticeHash:'b'.repeat(64),excerpt:'Trading suspended.'},coverage:'fixture'}}
  let fired=0;const r=await evaluateMarketAlerts(db,async()=>{fired++},async()=>notice)
  eq(r.checked,1);eq(r.fired,1);eq(fired,1)
- eq(db.calls.find(c=>c[0]==='in')?.[2],['price_move','volume_spike','liquidity_drop','metadata_notice'])
+ eq(db.calls.find(c=>c[0]==='in')?.[2],['price_move','volume_spike','liquidity_drop','metadata_notice','liquidation_cascade','attention_entry'])
  eq(db.calls.find(c=>c[0]==='intel_record_market_alert')[1].p_observation.value,1)
  eq(db.calls.find(c=>c[0]==='intel_record_market_alert')[1].p_observation.unit,'notice')
+})
+Deno.test('capture-backed triggers are loaded and their source selectors are part of the read key',async()=>{
+ const cascade={...rule,id:'cascade',trigger_type:'liquidation_cascade',config:{multiple:3,window:'1h'},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ const attention={...rule,id:'attention',trigger_type:'attention_entry',config:{list:'trending',hours:3},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ // Same asset, same trigger, DIFFERENT window: two reads, never one shared answer.
+ const db=database([cascade,{...cascade,id:'cascade-4h',config:{multiple:3,window:'4h'}},attention],{state:'fired'})
+ const seen:string[]=[]
+ const r=await evaluateMarketAlerts(db,async()=>{},async(_db:any,loaded:any)=>{
+  seen.push(`${loaded.trigger_type}:${loaded.config?.window??loaded.config?.list}`)
+  return {...evidence,observation:{...evidence.observation,id:'obs:'+seen.length}}
+ })
+ eq(r.checked,3);eq(r.fired,3)
+ eq(seen,['liquidation_cascade:1h','liquidation_cascade:4h','attention_entry:trending'])
+ eq(db.calls.filter(c=>c[0]==='intel_record_market_alert').length,3)
 })

@@ -26,7 +26,8 @@ const SEEDED: Array<Partial<SchedulePolicyRow> & { feature: string }> = [
   { feature: 'history', cadence_seconds: 86400, min_plan: 'startup', reason: 'historical listings for rank history' },
   { feature: 'metadata', cadence_seconds: 86400, min_plan: 'basic', reason: 'asset metadata, links and descriptions' },
   { feature: 'exchange_reserves', cadence_seconds: 86400, min_plan: 'basic', reason: 'exchange asset reserves' },
-  { feature: 'venue_share', cadence_seconds: 604800, min_plan: 'basic', reason: 'spot and derivatives venue share' },
+  // Seeded weekly in 20260914232100; 20260915013913 moved it to daily.
+  { feature: 'venue_share', cadence_seconds: 86400, min_plan: 'basic', reason: 'spot and derivatives venue share' },
   { feature: 'airdrops', cadence_seconds: 86400, min_plan: 'basic', reason: 'airdrop list refresh' },
   { feature: 'network_stats', cadence_seconds: 3600, min_plan: 'basic', reason: 'chain hashrate, difficulty and throughput' },
   { feature: 'logo_verify', cadence_seconds: 86400, min_plan: 'basic', reason: 'logo and image URL verification' },
@@ -127,7 +128,7 @@ Deno.test('planTargets: the Basic table is the 15,000-credit month', () => {
   assertEquals(basic.structure.cadenceSeconds, 3600)
   assertEquals(basic.metadata.cadenceSeconds, 86400)
   assertEquals(basic.exchange_reserves.cadenceSeconds, 86400)
-  assertEquals(basic.venue_share.cadenceSeconds, 604800)
+  assertEquals(basic.venue_share.cadenceSeconds, 86400)
   assertEquals(basic.logo_verify.cadenceSeconds, 86400)
   // Startup-only, Builder-only and Growth-only work is off, each with a reason.
   assertEquals(basic.attention.enabled, false)
@@ -166,7 +167,7 @@ Deno.test('runCredits: catalogue is the only plan-dependent cost, logo mirroring
 Deno.test('monthlyBudgetEstimate: Basic targets fit inside the 12,000-credit ceiling', () => {
   const estimate = monthlyBudgetEstimate(schedulePolicyFromTargets('basic'), 'basic')
   assertEquals(estimate.monthSeconds, MONTH_SECONDS)
-  assertEquals(estimate.totalCredits, 9154)
+  assertEquals(estimate.totalCredits, 9180)
   assert(estimate.totalCredits < 15000 * 0.8, 'Basic projection must fit the governed ceiling')
   const line = (f: string) => estimate.lines.find((l) => l.feature === f)!
   assertEquals(line('catalogue').runsPerMonth, 720)
@@ -179,15 +180,15 @@ Deno.test('monthlyBudgetEstimate: Basic targets fit inside the 12,000-credit cei
   assertEquals(line('attention').credits, 0)
   assertEquals(line('history').reason, 'requires_plan:startup')
   assertEquals(line('network_stats').credits, 0)
-  assertEquals(line('venue_share').runsPerMonth, 4, 'a weekly job runs four whole times in a 30-day month')
+  assertEquals(line('venue_share').runsPerMonth, 30, 'a daily job runs thirty times in a 30-day month')
 })
 
 Deno.test('monthlyBudgetEstimate: Startup at seeded cadences, and unpriced rows are still listed', () => {
   const targetsOnly = monthlyBudgetEstimate(schedulePolicyFromTargets('startup'), 'startup')
-  assertEquals(targetsOnly.totalCredits, 61684)
+  assertEquals(targetsOnly.totalCredits, 61710)
   // The live seeded rows leave network_stats on min_plan basic, so it is priced.
   const seeded = monthlyBudgetEstimate(policyOf(SEEDED), 'startup')
-  assertEquals(seeded.totalCredits, 62404)
+  assertEquals(seeded.totalCredits, 62430)
   assertEquals(seeded.lines.find((l) => l.feature === 'catalogue')!.credits, 34560)
 
   const extra = monthlyBudgetEstimate(policyOf([...SEEDED, { feature: 'dex_pairs', cadence_seconds: 300 }]), 'startup')
@@ -199,7 +200,7 @@ Deno.test('monthlyBudgetEstimate: Startup at seeded cadences, and unpriced rows 
 
 Deno.test('monthlyBudgetEstimate: Startup cadences on a Basic plan is the outage this ships to prevent', () => {
   const stillStartup = monthlyBudgetEstimate(policyOf(SEEDED), 'basic')
-  assertEquals(stillStartup.totalCredits, 34024, 'more than twice a Basic month, from cadences nobody changed')
+  assertEquals(stillStartup.totalCredits, 34050, 'more than twice a Basic month, from cadences nobody changed')
   assert(stillStartup.totalCredits > 15000 * 0.8, `expected a blown month, got ${stillStartup.totalCredits}`)
   // Catalogue alone at five minutes is more than twice the whole Basic month.
   assertEquals(stillStartup.lines.find((l) => l.feature === 'catalogue')!.credits, 8640)

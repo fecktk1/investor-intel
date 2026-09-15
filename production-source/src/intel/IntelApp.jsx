@@ -10,6 +10,7 @@ import { PersonalWorkspaceProvider } from './context/PersonalWorkspace'
 import { WatchlistSelectionProvider } from './context/WatchlistSelection'
 import { ResearchThreadsProvider } from './context/ResearchThreads'
 import { DashboardCacheProvider } from './context/DashboardCache'
+import { DisplayCurrencyProvider } from './lib/display-currency'
 import './workspace.css'
 import IntelModeShell from './components/IntelModeShell'
 const IntelStubPage = React.lazy(() => import('./pages/IntelStubPage'))
@@ -73,6 +74,10 @@ export default function IntelApp() {
 
   return (
     <IntelProfileGate loading={profileLoading} user={user} profile={profile} org={org}><IntelProvider>
+      {/* One FX read an hour for the whole mode: money columns render in the
+          reader's chosen currency, converted from the stored USD at display
+          time. Outermost of the data providers so every route shares one rate. */}
+      <DisplayCurrencyProvider>
       <DashboardCacheProvider><PersonalWorkspaceProvider><ResearchThreadsProvider><WatchlistSelectionProvider><PortfolioSelectionProvider>
       <IntelModeShell>
         <React.Suspense fallback={<div className="intel-route-loading" role="status">Loading research…</div>}>
@@ -152,6 +157,7 @@ export default function IntelApp() {
       </React.Suspense>
       </IntelModeShell>
       </PortfolioSelectionProvider></WatchlistSelectionProvider></ResearchThreadsProvider></PersonalWorkspaceProvider></DashboardCacheProvider>
+      </DisplayCurrencyProvider>
     </IntelProvider></IntelProfileGate>
   )
 }

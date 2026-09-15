@@ -295,7 +295,11 @@ Deno.test('capabilities registered 2026-09-15 accept a documented request and re
  assert.throws(()=>cmcParams('blockchainStats',{}),/missing_identifier/)
  assert.deepEqual(cmcParams('priceConversion',{amount:1,id:1}),{amount:'1',convert:'USD',id:'1'})
  assert.throws(()=>cmcParams('priceConversion',{amount:0,id:1}),/invalid_amount/)
- assert.throws(()=>cmcParams('priceConversion',{amount:1,id:1,convert:'USD,EUR,GBP,JPY'}),/invalid_parameter:convert/)
+ // Thirty conversion targets are the display-currency set; thirty-one is refused.
+ const thirty=Array.from({length:30},(_,i)=>'C'+String(i).padStart(2,'0')).join(',')
+ assert.equal(cmcParams('priceConversion',{amount:1,id:1,convert:thirty}).convert,thirty)
+ assert.throws(()=>cmcParams('priceConversion',{amount:1,id:1,convert:thirty+',C30'}),/invalid_parameter:convert/)
+ assert.throws(()=>cmcParams('priceConversion',{amount:1,id:1,convert:'USD,EU R'}),/invalid_parameter:convert/)
  assert.throws(()=>cmcParams('priceConversion',{id:1}),/missing_amount/)
  assert.equal(cmcParams('fiatMap',{limit:1}).limit,'1')
  assert.throws(()=>cmcParams('fiatMap',{limit:0}),/invalid_parameter:limit/)

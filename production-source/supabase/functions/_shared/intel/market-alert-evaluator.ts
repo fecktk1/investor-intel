@@ -4,7 +4,7 @@ import {readMarketAlertEvidence,marketAlertFailure} from './market-alert-evidenc
  * membership, entitlement, activation and revision while committing the event. */
 export async function evaluateMarketAlerts(db:any,onFired:(rule:any,evidence:any,eventId:string)=>Promise<void>,read=readMarketAlertEvidence){
  const {data:rules,error}=await db.from('intel_alert_rules').select('*, entity:entities(*), org:orgs!inner(product_mode)')
-  .eq('is_active',true).eq('org.product_mode','intel').in('trigger_type',['price_move','volume_spike','liquidity_drop','metadata_notice'])
+  .eq('is_active',true).eq('org.product_mode','intel').in('trigger_type',['price_move','volume_spike','liquidity_drop','metadata_notice','liquidation_cascade','attention_entry'])
   .order('last_evaluation_attempt_at',{ascending:true,nullsFirst:true}).order('id').limit(400)
  if(error||!Array.isArray(rules))return {checked:0,fired:0,failed:1,unavailable:0,rules:[],reason:'Rule loading failed.'}
  let checked=0,fired=0,failed=0,unavailable=0
@@ -12,7 +12,10 @@ export async function evaluateMarketAlerts(db:any,onFired:(rule:any,evidence:any
  for(const rule of rules){
   checked++
   try{
-   const key=JSON.stringify([rule.entity?.canonical_ref_key,rule.trigger_type])
+   // One read per exact asset/metric, where the metric includes the source
+   // selectors a trigger reads by: two rules that ask for different windows,
+   // lists or multiples are different reads and must not share one answer.
+   const key=JSON.stringify([rule.entity?.canonical_ref_key,rule.trigger_type,rule.config?.window??null,rule.config?.multiple??null,rule.config?.list??null,rule.config?.hours??null])
    if(!memo.has(key))memo.set(key,read(db,rule,Date.now()))
    const evidence=await memo.get(key)
    const result=await db.rpc('intel_record_market_alert',{p_rule:rule.id,p_org:rule.org_id,p_revision:rule.chart_revision,p_observation:evidence.observation})

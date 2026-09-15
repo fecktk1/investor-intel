@@ -5,24 +5,26 @@ import MarketSignalBadge from './MarketSignalBadge'
 import ProviderCoveragePill from './ProviderCoveragePill'
 import TokenAvatar from './TokenAvatar'
 import SortableHeader, { StaticHeader } from './SortableHeader'
-import { formatPrice, formatPct, formatUsd, formatCompact, pctClass } from '../lib/market-format'
+import { formatPct, formatCompact, pctClass } from '../lib/market-format'
 import { marketIdentityParams } from '../lib/asset-identity'
 import { useTableScrollRestoration } from '../lib/useTableScrollRestoration'
+import { useDisplayCurrency } from '../lib/display-currency'
 
 // Column registry: [key, English label]. Everything here is offered by
 // DisplayOptions, so a column that is not in the default visible set below is
 // still one checkbox away rather than absent from the product.
-export const MARKET_COLUMNS = [['price', 'Price'], ['1h', '1h'], ['24h', '24h'], ['7d', '7d'], ['volume', 'Volume'], ['cap', 'Market cap'], ['fdv', 'FDV'], ['circulating', 'Circulating supply'], ['max_supply', 'Max supply'], ['pairs', 'Market pairs'], ['dominance', 'Share of tracked cap'], ['exchanges', 'Exchange coverage']]
+export const MARKET_COLUMNS = [['price', 'Price'], ['1h', '1h'], ['24h', '24h'], ['7d', '7d'], ['drawdown', 'From high'], ['volume', 'Volume'], ['cap', 'Market cap'], ['fdv', 'FDV'], ['circulating', 'Circulating supply'], ['max_supply', 'Max supply'], ['pairs', 'Market pairs'], ['dominance', 'Share of tracked cap'], ['exchanges', 'Exchange coverage']]
 
-// What a reader sees before they choose anything — unchanged by the columns
-// added above, so an existing screen keeps the shape it had.
-export const DEFAULT_MARKET_COLUMNS = ['price', '1h', '24h', '7d', 'volume', 'cap', 'fdv', 'exchanges']
+// What a reader sees before they choose anything. "From high" joins the
+// defaults next to the change columns it belongs with; everything else keeps
+// the position it had.
+export const DEFAULT_MARKET_COLUMNS = ['price', '1h', '24h', '7d', 'drawdown', 'volume', 'cap', 'fdv', 'exchanges']
 
 // Column key -> server sort key. Sorting is server-side over the whole screen,
 // never over the loaded page, so page 7 of "price ascending" is real. Dominance
 // is a strictly increasing function of market cap against one shared tracked
 // total, so it orders rows by `market_cap` rather than needing its own key.
-export const MARKET_SORT_KEYS = { rank: 'rank', price: 'price', '1h': 'change_1h', '24h': 'change_24h', '7d': 'change_7d', volume: 'volume', cap: 'market_cap', fdv: 'fdv', circulating: 'circulating_supply', max_supply: 'max_supply', pairs: 'market_pairs', dominance: 'market_cap', exchanges: 'exchange_availability' }
+export const MARKET_SORT_KEYS = { rank: 'rank', price: 'price', '1h': 'change_1h', '24h': 'change_24h', '7d': 'change_7d', drawdown: 'drawdown', volume: 'volume', cap: 'market_cap', fdv: 'fdv', circulating: 'circulating_supply', max_supply: 'max_supply', pairs: 'market_pairs', dominance: 'market_cap', exchanges: 'exchange_availability' }
 
 const DASH = '—'
 // null / '' / booleans / NaN never become 0: a missing supply is unknown, and a
@@ -39,9 +41,23 @@ export const dominancePct = (marketCap, trackedMarketCap) => {
 }
 const formatDominance = value => value == null ? DASH : formatPct(value).replace(/^\+/, '')
 
+// A drawdown is only meaningful against the window it was measured over, so the
+// cell always carries that window. No window, no reading and no claim: the cell
+// is a dash with nothing to explain.
+export const drawdownTitle = (row, t) => {
+  const days = num(row?.recordedWindowDays)
+  if (num(row?.drawdownPct) == null || days == null) return undefined
+  return row?.recordedHighDate
+    ? t('markets.drawdown_title_dated', { days, date: row.recordedHighDate, defaultValue: 'against the high of the last {{days}} recorded days (high on {{date}})' })
+    : t('markets.drawdown_title', { days, defaultValue: 'against the high of the last {{days}} recorded days' })
+}
+
 export const marketRowKey = row => `${row.sourceProvider || 'unknown'}:${row.providerId || row.canonicalAssetKey || row.symbol}`
 export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/intel', assetPath = null, columns = DEFAULT_MARKET_COLUMNS, selected = [], onSelect, onInspect, sort, dir = 'desc', onSort, snapshot = null, scrollScope }) {
   const { t } = useTranslation('intel', { useSuspense: false })
+  // Money columns are stored in USD and converted for display only; percent
+  // columns are ratios and are the same number in every currency.
+  const money = useDisplayCurrency()
   const location = useLocation()
   const returnState = { from: `${location.pathname}${location.search}` }
   const tableRef = useTableScrollRestoration(scrollScope, returnState.from)
@@ -54,7 +70,17 @@ export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/i
   const header = (key, label, align = 'right', title) => sortable && MARKET_SORT_KEYS[key]
     ? <SortableHeader key={key} sortKey={MARKET_SORT_KEYS[key]} label={label} title={title} align={align} sort={sort} dir={dir} onToggle={onSort}/>
     : <StaticHeader key={key} label={label} align={align} title={title}/>
-  return <div ref={tableRef} className={`intel-table-scroll intel-market-table ${onSelect ? 'has-selection' : ''}`} tabIndex={0} role="region" aria-label={t('markets.scroll_table', { defaultValue: 'Market results, scroll for more columns' })}><table>
+  // The currency is stated ONCE above the table rather than repeated in four
+  // column headings — and when the reader asked for a currency the capture
+  // cannot supply, the line says so instead of letting dollars pass as euros.
+  const currencyNote = money.fallback
+    ? t('markets.currency_fallback', { currency: money.currency, defaultValue: 'Rates unavailable — money figures shown in USD.' })
+    : money.currency !== 'USD'
+      ? t('markets.currency_note', { currency: money.currency, defaultValue: 'Money figures in {{currency}}, converted from USD at display time.' })
+      : null
+  return <>
+    {currencyNote && <p className="text-xs text-[var(--fg-4)] mb-2" data-display-currency={money.currency}>{currencyNote}</p>}
+    <div ref={tableRef} className={`intel-table-scroll intel-market-table ${onSelect ? 'has-selection' : ''}`} tabIndex={0} role="region" aria-label={t('markets.scroll_table', { defaultValue: 'Market results, scroll for more columns' })}><table>
     <caption className="sr-only">{t('markets.title', { defaultValue: 'Crypto markets' })}</caption>
     {/* "#" is a symbol, not a word: passing it as a node keeps the visible
         header short while the button announces "Sort by Rank". */}
@@ -63,15 +89,16 @@ export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/i
       const key = marketRowKey(row)
       const symbol = row.symbol || row.normalizedSymbol || row.normalized_symbol || row.providerId
       const href = row.detailHref || (assetPath ? assetPath(row) : symbol ? `${linkBase}/markets/${encodeURIComponent(symbol)}${marketIdentityParams(row)}` : null)
-      const values = { price: formatPrice(row.price), '1h': formatPct(row.change1hPct), '24h': formatPct(row.change24hPct), '7d': formatPct(row.change7dPct), volume: formatUsd(row.volumeQuote24h), cap: formatUsd(row.marketCap), fdv: formatUsd(row.fdv), circulating: formatCompact(row.circulatingSupply), max_supply: formatCompact(row.maxSupply), pairs: plainInteger(row.numMarketPairs), dominance: formatDominance(dominancePct(row.marketCap, snapshot?.trackedMarketCap)) }
+      const values = { price: money.formatMoneyPrice(row.price), '1h': formatPct(row.change1hPct), '24h': formatPct(row.change24hPct), '7d': formatPct(row.change7dPct), volume: money.formatMoney(row.volumeQuote24h), cap: money.formatMoney(row.marketCap), fdv: money.formatMoney(row.fdv), circulating: formatCompact(row.circulatingSupply), max_supply: formatCompact(row.maxSupply), pairs: plainInteger(row.numMarketPairs), dominance: formatDominance(dominancePct(row.marketCap, snapshot?.trackedMarketCap)), drawdown: num(row.drawdownPct) == null ? DASH : formatPct(row.drawdownPct) }
       const changes = { '1h': row.change1hPct, '24h': row.change24hPct, '7d': row.change7dPct }
       const asset = <span className="intel-market-asset-label flex items-center gap-3"><TokenAvatar src={row.imageUrl} fallbackSrc={row.imageSourceUrl} symbol={symbol} name={row.displayName} size="md"/><span><strong className="font-medium">{row.displayName || symbol}</strong><span className="block text-xs text-[var(--fg-4)]">{symbol}{row.chain ? ` · ${row.chain}` : ''}</span></span></span>
       return <tr key={key} data-selected={selected.includes(key) || undefined}>{onSelect && <td className="intel-select-cell"><input type="checkbox" aria-label={`${t('markets.select', { defaultValue: 'Select' })} ${row.displayName || symbol}`} checked={selected.includes(key)} onChange={() => onSelect(row)}/></td>}<td className="intel-number">{row.rank ?? pageOffset + index + 1}</td><td className="intel-identity-cell">{href ? <Link to={href} state={returnState}>{asset}</Link> : asset}</td>
-        {orderedColumns.map(([column]) => <td key={column} className={`intel-number ${Object.hasOwn(changes, column) ? pctClass(changes[column]) : ''}`}>
+        {orderedColumns.map(([column]) => <td key={column} title={column === 'drawdown' ? drawdownTitle(row, t) : undefined} className={`intel-number ${Object.hasOwn(changes, column) ? pctClass(changes[column]) : ''}`}>
           {column !== 'exchanges' ? values[column] : <span className="flex gap-3 justify-end items-center">{row.signalDirection && <MarketSignalBadge direction={row.signalDirection} size="sm"/>}{row.cex?.availableCount > 0 ? <ProviderCoveragePill providers={row.providers} confirming={row.confirmingProviders} size="sm"/> : <span className="text-xs text-[var(--fg-4)]">{row.cex?.coverageState === 'verified_absent' ? t('markets.no_verified_venue', { defaultValue: 'No covered venue' }) : t('markets.coverage_unknown', { defaultValue: 'Not verified' })}</span>}</span>}
         </td>)}
         {onInspect && <td><button type="button" className="intel-inspect-button" aria-label={`${t('inspector.inspect', { defaultValue: 'Inspect' })} ${row.displayName || symbol}`} onClick={() => onInspect(row)}>{t('inspector.inspect', { defaultValue: 'Inspect' })}</button></td>}
       </tr>
     })}</tbody>
-  </table></div>
+    </table></div>
+  </>
 }

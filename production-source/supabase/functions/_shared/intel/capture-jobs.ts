@@ -323,8 +323,28 @@ export async function captureRankDaily(db: any, _ctx: MarketAssetsContext, now =
       source: 'listings_latest', observed_at: iso(row.as_of),
     })).filter((row) => row.provider_id && row.provider_id !== 'null'), (r) => r.provider_id)
     const written = await upsert(db, 'intel_rank_history', rows, 'provider,snapshot_date,provider_id')
-    return { job, rows: written.rows, credits: 0, snapshotDate, ...(written.error ? { error: written.error } : {}) }
+    // The recorded high is derived from the rows just written plus the
+    // catalogue's own price, so it is another zero-credit reading rather than a
+    // provider call. It runs after the upsert so today's row is already part of
+    // the window it measures against, and a failure here is reported as a
+    // partial: the rank history was still captured.
+    const highs = await refreshRecordedHighs(db)
+    return {
+      job, rows: written.rows, credits: 0, snapshotDate, highsRefreshed: highs.refreshed,
+      ...(written.error ? { error: written.error } : highs.error ? { partial: highs.error } : {}),
+    }
   } catch (e) { return failed(job, 0, e) }
+}
+
+/** Recompute market_assets.recorded_high_* / drawdown_pct for the catalogue's
+ * top 1,000. One bounded service-role statement, no provider call. Returns the
+ * row count the database reports, or a reason when the call could not be made. */
+export async function refreshRecordedHighs(db: any): Promise<{ refreshed: number | null; error?: string }> {
+  try {
+    const { data, error } = await db.rpc('intel_refresh_recorded_highs', { p_provider: CAPTURE_PROVIDER })
+    if (error) return { refreshed: null, error: String(error.message || error).slice(0, 200) }
+    return { refreshed: count((data as any)?.refreshed) ?? 0 }
+  } catch (e) { return { refreshed: null, error: ((e as Error)?.message || 'recorded_highs_failed').slice(0, 200) } }
 }
 
 // ─── 5. Weekly rank-history backfill (listings/historical) ────────────────────

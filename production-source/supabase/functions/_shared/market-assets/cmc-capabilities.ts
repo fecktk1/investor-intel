@@ -68,6 +68,9 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   // a plan (Basic one year, Startup from 2013); this registry does not restate it.
   listingsHistorical: cap('/v1/cryptocurrency/listings/historical','history',['date','start','limit','sort','sort_dir','cryptocurrency_type'],{demand:false,cost:'100',ttl:86400,stale:604800,required:['date']}),
   exchangeMap: cap('/v1/exchange/map','metadata',['listing_status','slug','start','limit','sort'],{ttl:86400,stale:86400}),
+  // Registered 2026-09-15 for the venue-share lane: every active exchange with
+  // its 24-hour spot volume and pair count in one page (100 rows a credit).
+  exchangeListings: cap('/v1/exchange/listings/latest','structure',['start','limit','sort','sort_dir','market_type','category'],{demand:false,cost:'100',ttl:3600,stale:86400}),
   exchangeHistory: cap('/v1/exchange/quotes/historical','structure',['id','slug','time_start','time_end','count','interval'],{demand:false,cost:'100',ttl:3600,required:['id','slug']}),
   // Probed 2026-09-14 on the Startup key: 403 / 1006, the subscription plan does not include this endpoint.
   blockchainStats: cap('/v1/blockchain/statistics/latest','regime',['id','symbol','slug'],{tier:'growth',ttl:900,required:['id','symbol','slug']}),
@@ -197,7 +200,10 @@ export function cmcParams(name: string, input: Record<string,unknown> = {}): Rec
   if(name==='priceConversion'){
     if(!out.amount)throw new Error('missing_amount')
     if(out.convert&&out.convert_id)throw new Error('multiple_identifier_types')
-    if(out.convert&&(out.convert.split(',').length>3||!/^[a-z0-9]{1,20}(,[a-z0-9]{1,20}){0,2}$/i.test(out.convert)))throw new Error('invalid_parameter:convert')
+    // Up to 30 conversion targets in one call: the hourly display-currency
+    // capture prices the whole supported fiat set for one credit (the provider
+    // allows 120 on a paid plan; 30 is what the app supports).
+    if(out.convert&&(out.convert.split(',').length>30||!/^[a-z0-9]{1,20}(,[a-z0-9]{1,20}){0,29}$/i.test(out.convert)))throw new Error('invalid_parameter:convert')
     if(out.convert)out.convert=out.convert.toUpperCase()
     else if(!out.convert_id)out.convert='USD'
   }

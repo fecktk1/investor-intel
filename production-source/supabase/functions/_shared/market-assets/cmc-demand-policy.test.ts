@@ -46,6 +46,6 @@ Deno.test('the database candidate scan is bounded per feature and read failure c
   const q:any={select:()=>q,eq:()=>q,in:(field:string,values:string[])=>{input[field]=values;return q},gte:()=>q,lte:()=>q,order:()=>q,limit:(value:number)=>{input.limit=value;return Promise.resolve({data:fail?null:[],error:fail?{message:'offline'}:null})}};return q
  }})
  assert.equal(await refreshCmcDemand(db(),now),'idle');assert.equal(queries.length,7)
- assert.ok(queries.every(q=>q.limit===12));assert.equal(new Set(queries.flatMap(q=>q.capability)).size,61)
+ assert.ok(queries.every(q=>q.limit===12));assert.equal(new Set(queries.flatMap(q=>q.capability)).size,62)
  queries.length=0;assert.equal(await refreshCmcDemand(db(true),now),'error')
 })

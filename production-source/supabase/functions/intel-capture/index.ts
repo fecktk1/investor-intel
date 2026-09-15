@@ -28,13 +28,24 @@ import {
   backfillRankHistory, captureLiquidations, captureAttention, captureAirdrops, type CaptureDeps, type JobResult,
 } from '../_shared/intel/capture-jobs.ts'
 import { readCaptureView, CAPTURE_VIEWS } from '../_shared/intel/capture-read.ts'
+// Stage 3 lanes live in their own modules and plug in through one shared
+// surface: ops run like the jobs above, views read like the views above.
+import { VENUE_CAPTURE_OPS } from '../_shared/intel/capture-venues.ts'
+import { VENUE_CAPTURE_VIEWS } from '../_shared/intel/capture-venues-read.ts'
+import { CATEGORY_CAPTURE_OPS } from '../_shared/intel/capture-categories.ts'
+import { CATEGORY_CAPTURE_VIEWS } from '../_shared/intel/capture-categories-read.ts'
+import { FX_CAPTURE_OPS } from '../_shared/intel/capture-fx.ts'
+import { FX_CAPTURE_VIEWS } from '../_shared/intel/capture-fx-read.ts'
+
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS }
+const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json', 'Cache-Control': 'private, no-store' } })
 }
 
-const CAPTURE_OPS = ['regime', 'index', 'rwa', 'rank_daily', 'rank_backfill', 'liquidations', 'attention', 'airdrops', 'all_hourly'] as const
+const CAPTURE_OPS = ['regime', 'index', 'rwa', 'rank_daily', 'rank_backfill', 'liquidations', 'attention', 'airdrops', 'all_hourly', ...Object.keys(LANE_OPS)] as const
 const HOURLY_SEQUENCE = ['regime', 'index', 'rwa', 'attention'] as const
 const BUDGET_MS = 100_000          // total wall clock for one invocation
 const JOB_RESERVE_MS = 15_000      // stop starting another job this close to the budget
@@ -56,8 +67,9 @@ Deno.serve(async (req) => {
       const actor = await requireIntelAccess(req, createClient, admin, orgId)
       if (!actor?.userId) return json({ error: 'unauthorized' }, 401)
       const view = String(body.view || '')
-      if (!CAPTURE_VIEWS.includes(view as typeof CAPTURE_VIEWS[number])) return json({ error: 'unsupported_view', views: CAPTURE_VIEWS }, 400)
-      const result = await readCaptureView(admin, view, body, Date.now())
+      const laneView = Object.hasOwn(LANE_VIEWS, view) ? LANE_VIEWS[view] : null
+      if (!laneView && !CAPTURE_VIEWS.includes(view as typeof CAPTURE_VIEWS[number])) return json({ error: 'unsupported_view', views: [...CAPTURE_VIEWS, ...Object.keys(LANE_VIEWS)] }, 400)
+      const result = laneView ? await laneView(admin, body, Date.now()) : await readCaptureView(admin, view, body, Date.now())
       return json({ ...result, durationMs: Date.now() - startedAt })
     }
 
@@ -94,6 +106,7 @@ Deno.serve(async (req) => {
       liquidations: () => captureLiquidations(admin, ctxFor('liquidations', 1), now, deps),
       attention: () => captureAttention(admin, ctxFor('attention', 4), now, plan, deps),
       airdrops: () => captureAirdrops(admin, ctxFor('airdrops', 2), now, plan, deps),
+      ...Object.fromEntries(Object.entries(LANE_OPS).map(([name, run]) => [name, () => run(admin, ctxFor, now, plan, deps)])),
     }
 
     const sequence = op === 'all_hourly' ? [...HOURLY_SEQUENCE] : [op]

@@ -1,7 +1,7 @@
 import React, { useEffect, useState, useCallback, lazy, Suspense } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
-import { Bot, Check, Copy, Plus, Settings, Trash2, Coins } from 'lucide-react'
+import { Bot, Check, Copy, Globe, Plus, Settings, Trash2, Coins } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useAuth } from '../../lib/auth-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -12,6 +12,7 @@ const SparqAccessCard = lazy(() => import('../../components/sparq/SparqAccessCar
 import { CHAINS } from '../lib/chains'
 import { getIntelProfile, getNotificationPrefs, saveIntelProfile, saveNotificationPrefs } from '../lib/intel-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import { useDisplayCurrency, SUPPORTED_CURRENCIES } from '../lib/display-currency'
 
 const EXPERIENCE = ['new', 'intermediate', 'advanced']
 const STYLE = ['short', 'standard', 'deep']
@@ -51,6 +52,56 @@ function displayTelegramUser(row) {
   const handle = row.telegram_username ? `@${row.telegram_username}` : null
   const name = [row.telegram_first_name, row.telegram_last_name].filter(Boolean).join(' ')
   return handle || name || row.telegram_user_id
+}
+
+// Display currency. Everything Investor Intel stores stays denominated in USD:
+// this setting changes what a reader SEES, never what the product recorded, so
+// the section says so in as many words rather than leaving a reader to wonder
+// whether their cost basis was just rewritten.
+// Exported so the section can be rendered on its own in a test.
+export function DisplayCurrencySection() {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  const { currency, setCurrency, rate, state, observedAt, currencies, saving, error, fallback } = useDisplayCurrency()
+  const options = Array.isArray(currencies) && currencies.length ? currencies : SUPPORTED_CURRENCIES
+  const observed = observedAt ? new Date(observedAt) : null
+  const observedLabel = observed && Number.isFinite(observed.getTime()) ? observed.toLocaleString() : null
+  return (
+    <div className="card p-4 space-y-3">
+      <div className="flex items-center gap-2">
+        <Globe className="h-4 w-4 text-[var(--accent)]" />
+        <div className="text-sm font-medium text-[var(--fg-1)]">{t('settings.currency_heading', { defaultValue: 'Display currency' })}</div>
+      </div>
+      <p className="text-[13px] text-[var(--fg-3)]">
+        {t('settings.currency_explainer', { defaultValue: 'Every amount in Investor Intel is stored in US dollars. Choosing another currency converts figures when they are shown to you; nothing recorded is changed or re-denominated.' })}
+      </p>
+      <label className="block text-[12px] text-[var(--fg-3)]">
+        {t('settings.currency_label', { defaultValue: 'Currency' })}
+        <select
+          className="input mt-1 text-[13px]"
+          value={currency}
+          disabled={saving}
+          onChange={(e) => setCurrency(e.target.value)}
+          aria-label={t('settings.currency_label', { defaultValue: 'Currency' })}
+        >
+          {options.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+        </select>
+      </label>
+      {currency === 'USD' ? (
+        <p className="text-[12px] text-[var(--fg-4)]">{t('settings.currency_base', { defaultValue: 'Figures are shown in US dollars, exactly as they are stored. No conversion is applied.' })}</p>
+      ) : fallback ? (
+        <p role="status" className="text-[12px] text-[var(--fg-4)]">
+          {t('settings.currency_unavailable', { currency, defaultValue: 'No rate has been captured for {{currency}} yet, so figures are shown in US dollars. The hourly capture fills this in on its next run.' })}
+        </p>
+      ) : (
+        <p className="text-[12px] text-[var(--fg-4)]">
+          {t('settings.currency_rate', { currency, rate: Number(rate).toLocaleString(undefined, { maximumFractionDigits: 6 }), defaultValue: '1 USD = {{rate}} {{currency}}' })}
+          {observedLabel ? ` · ${t('settings.currency_observed', { time: observedLabel, defaultValue: 'rate observed {{time}}' })}` : ''}
+          {state === 'stale' ? ` · ${t('settings.currency_stale', { defaultValue: 'this rate is more than six hours old' })}` : ''}
+        </p>
+      )}
+      {error && <p role="alert" className="text-[12px] text-red-400">{error}</p>}
+    </div>
+  )
 }
 
 export default function IntelSettingsPage() {
@@ -319,6 +370,8 @@ export default function IntelSettingsPage() {
           <SparqAccessCard session={session} scope="user" />
         </Suspense>
       </div>
+
+      <DisplayCurrencySection />
 
       <div className="card p-4 space-y-2">
         <div className="text-sm font-medium text-[var(--fg-1)]">{t('onboarding.q_experience', { defaultValue: 'Experience' })}</div>

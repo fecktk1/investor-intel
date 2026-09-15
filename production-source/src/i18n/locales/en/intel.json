@@ -230,6 +230,9 @@
     "column_circulating": "Circulating supply",
     "column_max_supply": "Max supply",
     "column_pairs": "Market pairs",
+    "column_drawdown": "From high",
+    "drawdown_title": "against the high of the last {{days}} recorded days",
+    "drawdown_title_dated": "against the high of the last {{days}} recorded days (high on {{date}})",
     "column_dominance": "Share of tracked cap",
     "column_exchanges": "Exchange coverage",
     "chain_filter": "Chain",
@@ -258,6 +261,10 @@
     "dominance_other_note": "Everything outside BTC, ETH and stablecoins. Use the filters to narrow the screen.",
     "chains_title": "Chains",
     "chains_sub": "Average 24h move per chain. Select a chain to filter the screen.",
+    "drawdown_title_figure": "Deepest drawdowns on this screen",
+    "drawdown_sub": "How far the assets on this page have fallen from their high over the last {{days}} recorded days. Select a ring to open that asset.",
+    "drawdown_sub_unknown": "How far the assets on this page have fallen from the highest price this workspace has recorded. Select a ring to open that asset.",
+    "drawdown_empty": "No asset on this page has two recorded days yet, so no distance from a high can be measured.",
     "locate_resolving": "Reading the asset identity…",
     "sort_price": "Price",
     "sort_fdv": "FDV",
@@ -272,7 +279,9 @@
     "macro_eth_dominance_pct": "ETH dominance",
     "macro_stablecoin_market_cap_usd": "Stablecoin cap",
     "sort_unusual_volume": "Unusual volume",
-    "sort_multi_exchange_strength": "Multi-exchange strength"
+    "sort_multi_exchange_strength": "Multi-exchange strength",
+    "currency_note": "Money figures in {{currency}}, converted from USD at display time.",
+    "currency_fallback": "Rates unavailable — money figures shown in USD."
   },
   "degen": {
     "subtitle": "Multi-chain memecoin discovery and risk context. Extremely high risk — not financial advice.",
@@ -2103,7 +2112,15 @@
     "plan_current": "Current tier: {{tier}}",
     "plan_manage": "Upgrade / manage plan",
     "sparq_heading": "FORGE Holder Access",
-    "sparq_loading": "Loading holder access…"
+    "sparq_loading": "Loading holder access…",
+    "currency_heading": "Display currency",
+    "currency_explainer": "Every amount in Investor Intel is stored in US dollars. Choosing another currency converts figures when they are shown to you; nothing recorded is changed or re-denominated.",
+    "currency_label": "Currency",
+    "currency_base": "Figures are shown in US dollars, exactly as they are stored. No conversion is applied.",
+    "currency_rate": "1 USD = {{rate}} {{currency}}",
+    "currency_observed": "rate observed {{time}}",
+    "currency_stale": "this rate is more than six hours old",
+    "currency_unavailable": "No rate has been captured for {{currency}} yet, so figures are shown in US dollars. The hourly capture fills this in on its next run."
   },
   "comment": {
     "placeholder": "Paste an X post or token context…",
@@ -2546,7 +2563,8 @@
     "reason_no_asset": "No asset was selected for this read.",
     "reason_failed": "The capture service did not answer this read.",
     "reason_empty_body": "The capture service answered without a body.",
-    "reason_unknown": "The capture service reported no reason."
+    "reason_unknown": "The capture service reported no reason.",
+    "reason_fx_not_captured": "No currency rates have been captured yet."
   },
   "asset_history": {
     "budget_note": "Each range is sampled once and then shared. The cost beside a range is what a live refresh of that range spends from the shared provider budget; a cached window costs nothing.",

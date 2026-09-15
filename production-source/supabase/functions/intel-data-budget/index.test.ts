@@ -133,10 +133,10 @@ Deno.test('read: the month projects the Basic cadences against the governed ceil
   // ceiling belongs to rather than hiding the difference.
   assertEquals(body.month.ceiling, body.month.ceilingPlan === 'basic' ? 12000 : 360000)
   assert(['basic', 'startup'].includes(body.month.ceilingPlan))
-  assertEquals(body.month.projectedAtCurrentCadence, 9154)
+  assertEquals(body.month.projectedAtCurrentCadence, 9180)
   assertEquals(body.month.periodStart, '2026-09-22T00:00:00Z')
   assert(body.month.projectedAtCurrentCadence < 15000 * 0.8, 'the Basic schedule must fit a Basic month')
-  assertEquals(body.projection, { startup: 61684, basic: 9154 })
+  assertEquals(body.projection, { startup: 61710, basic: 9180 })
 })
 
 Deno.test('read: every feature carries its cadence, plan gate, reason and credit bucket', async () => {
