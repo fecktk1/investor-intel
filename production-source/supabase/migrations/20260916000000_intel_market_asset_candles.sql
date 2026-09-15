@@ -39,11 +39,13 @@
 --
 -- RETENTION. DAILY CANDLES ARE NEVER THINNED AND NEVER DELETED. That is the whole point of the table: an archive that
 -- forgets is not an archive. Only the optional HOURLY rows are pruned, at 400 days, because they exist for recent
--- intraday reading and the chart's own provider window covers that period anyway. The retention function is restated
--- IN FULL from its live definition (20260915034150_intel_new_listing_capture), because a CREATE OR REPLACE is the
--- whole function: a lost DELETE block means that lane's table grows without bound. Blocks carried from earlier lanes
--- keep their `to_regclass` guards; this migration's own block is unguarded, its table having just been created.
--- If a LATER capture lane restates this function again, it must carry the market_asset_candles block below.
+-- intraday reading and the chart's own provider window covers that period anyway. The retention block is PATCHED
+-- into the LIVE definition of app_private.intel_capture_retention (the meme graduation lane's technique, 20260915034403)
+-- rather than restated: the live function carries blocks from every lane before this one (category, FX, new listing,
+-- holder tags, meme stages), a restatement copied from any one migration silently drops the blocks added after it,
+-- and a lost DELETE block means that lane's table grows without bound. The patch reads the function as it is, refuses
+-- to run twice, and inserts one block before its single `RETURN removed;`.
+-- If a LATER capture lane restates this function in full, it must carry the market_asset_candles block below.
 --
 -- Vault + net.http_post cron pattern, identical to 20260915010343_intel_capture_cron. Safe to apply anytime;
 -- idempotent.
@@ -168,95 +170,35 @@ INSERT INTO public.provider_schedule_policy (provider, feature, cadence_seconds,
   ('coinmarketcap', 'candle_daily', 86400, true, 'startup', 150, 'daily append of yesterday''s candle for every stored asset')
 ON CONFLICT (provider, feature) DO NOTHING;
 
--- 5. Retention, restated in full from 20260915034150. DAILY CANDLES ARE NEVER DELETED; only the optional hourly rows
--- are pruned, at 400 days.
-CREATE OR REPLACE FUNCTION app_private.intel_capture_retention(p_now timestamptz DEFAULT now())
-RETURNS jsonb
-LANGUAGE plpgsql
-SET search_path = ''
-AS $$
-DECLARE
-  removed jsonb := '{}'::jsonb;
-  n integer;
+-- 5. Retention, PATCHED into the live definition (see the header). DAILY CANDLES ARE NEVER DELETED AND NEVER THINNED:
+-- an archive that forgets is not an archive, and the whole reason this table exists is that a provider window cannot
+-- reach the years behind it. Only the optional hourly rows are pruned, at 400 days, because the chart's own provider
+-- window already covers recent intraday reading. The daily count is reported as 0 so a reader of the function's
+-- result can see that the block ran and deliberately removed nothing.
+DO $retention$
+DECLARE original text; changed text; block text;
 BEGIN
-  DELETE FROM public.intel_regime_snapshots WHERE captured_at < p_now - interval '400 days';
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_regime_snapshots', n);
-
-  DELETE FROM public.intel_rank_history WHERE snapshot_date < (p_now - interval '3 years')::date;
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_rank_history', n);
-
-  DELETE FROM public.intel_rwa_universe_snapshots WHERE captured_at < p_now - interval '400 days';
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_rwa_universe_snapshots', n);
-
-  DELETE FROM public.intel_index_constituent_snapshots WHERE captured_at < p_now - interval '400 days';
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_index_constituent_snapshots', n);
-
-  n := app_private.intel_thin_liquidation_snapshots(p_now);
-  removed := removed || jsonb_build_object('intel_liquidation_snapshots', n);
-
-  DELETE FROM public.intel_exchange_reserve_snapshots WHERE snapshot_date < (p_now - interval '400 days')::date;
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_exchange_reserve_snapshots', n);
-
-  DELETE FROM public.intel_venue_share_snapshots WHERE snapshot_date < (p_now - interval '3 years')::date;
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_venue_share_snapshots', n);
-
-  DELETE FROM public.intel_attention_snapshots WHERE captured_at < p_now - interval '90 days';
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_attention_snapshots', n);
-
-  DELETE FROM public.intel_network_stats_snapshots WHERE captured_at < p_now - interval '400 days';
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('intel_network_stats_snapshots', n);
-
-  -- From the category capture lane, carried so this restatement does not drop it. Guarded because that lane may not
-  -- be present in every environment.
-  IF to_regclass('public.intel_category_snapshots') IS NOT NULL THEN
-    EXECUTE 'DELETE FROM public.intel_category_snapshots WHERE captured_at < $1 - interval ''90 days''' USING p_now;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    removed := removed || jsonb_build_object('intel_category_snapshots', n);
+  original := pg_get_functiondef('app_private.intel_capture_retention(timestamptz)'::regprocedure);
+  -- Refuse a second application rather than adding the same DELETE block twice.
+  IF position('market_asset_candles' in original) > 0 THEN
+    RAISE EXCEPTION 'candle_retention_block_already_present';
   END IF;
-
-  IF to_regclass('public.intel_category_members') IS NOT NULL THEN
-    EXECUTE 'DELETE FROM public.intel_category_members WHERE snapshot_date < ($1 - interval ''400 days'')::date' USING p_now;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    removed := removed || jsonb_build_object('intel_category_members', n);
+  -- Exactly one `RETURN removed;` is what makes the insertion point unambiguous. Any other count means the function
+  -- is not the one this migration was written against, and guessing at a second anchor is how a lane's horizon gets
+  -- lost.
+  IF (SELECT count(*) FROM regexp_matches(original, '\n[ \t]*RETURN removed;', 'g')) <> 1 THEN
+    RAISE EXCEPTION 'unexpected_retention_definition';
   END IF;
-
-  DELETE FROM public.market_asset_demand_daily WHERE day < (p_now - interval '400 days')::date;
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('market_asset_demand_daily', n);
-
-  -- From the display-currency lane (20260915014404), carried for the same reason and guarded the same way.
-  IF to_regclass('public.intel_fx_rates') IS NOT NULL THEN
-    EXECUTE 'DELETE FROM public.intel_fx_rates WHERE captured_at < $1 - interval ''400 days''' USING p_now;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    removed := removed || jsonb_build_object('intel_fx_rates', n);
-  END IF;
-
-  -- From the new-listing lane (20260915034150). 180 days is twice the widest read window.
-  IF to_regclass('public.intel_new_listing_snapshots') IS NOT NULL THEN
-    EXECUTE 'DELETE FROM public.intel_new_listing_snapshots WHERE snapshot_date < ($1 - interval ''180 days'')::date' USING p_now;
-    GET DIAGNOSTICS n = ROW_COUNT;
-    removed := removed || jsonb_build_object('intel_new_listing_snapshots', n);
-  END IF;
-
-  -- Added here: the candle archive. DAILY CANDLES ARE NEVER DELETED AND NEVER THINNED — an archive that forgets is
-  -- not an archive, and the whole reason this table exists is that a provider window cannot reach the years behind
-  -- it. Only the optional hourly rows are pruned, at 400 days, because the chart's own provider window already covers
-  -- recent intraday reading. The count is reported as 0 for the daily rows so a reader of this function's result can
-  -- see that the block ran and deliberately removed nothing.
-  DELETE FROM public.market_asset_candles WHERE candle_interval = '1h' AND candle_time < p_now - interval '400 days';
-  GET DIAGNOSTICS n = ROW_COUNT;
-  removed := removed || jsonb_build_object('market_asset_candles_1h', n, 'market_asset_candles_1d', 0);
-
-  RETURN removed;
-END $$;
+  block :=
+       E'  -- Added by the candle archive lane. Daily candles are never deleted and never thinned; only the optional hourly\n'
+    || E'  -- rows are pruned, at 400 days. The daily count is reported as 0 so the block is seen to run and remove nothing.\n'
+    || E'  DELETE FROM public.market_asset_candles WHERE candle_interval = ''1h'' AND candle_time < p_now - interval ''400 days'';\n'
+    || E'  GET DIAGNOSTICS n = ROW_COUNT;\n'
+    || E'  removed := removed || jsonb_build_object(''market_asset_candles_1h'', n, ''market_asset_candles_1d'', 0);\n';
+  changed := regexp_replace(original, '(\n[ \t]*RETURN removed;)', E'\n' || replace(block, '\', '\\') || E'\\1');
+  IF changed = original THEN RAISE EXCEPTION 'unexpected_retention_definition'; END IF;
+  EXECUTE changed;
+END $retention$;
 REVOKE ALL ON FUNCTION app_private.intel_capture_retention(timestamptz) FROM PUBLIC, anon, authenticated;
 
 -- SECTION: candle archive schedule
