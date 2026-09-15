@@ -781,6 +781,7 @@
     "journal_exit_result": "Tagebuchergebnis für diesen Ausstieg",
     "legs_limited": "Es werden bis zu 64 Teilbuchungen angezeigt. Öffne die zugrunde liegende Portfolio-Aktivität für den vollständigen Datensatz.",
     "loading": "Preisverlauf wird geladen…",
+    "range_all": "Alle",
     "loading_activity": "Deine Aktivität wird geladen…",
     "market_history": "Verlauf von Preis und persönlicher Aktivität",
     "more_history": "Weitere Aktivität laden",

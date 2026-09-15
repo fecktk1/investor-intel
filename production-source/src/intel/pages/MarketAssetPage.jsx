@@ -106,9 +106,9 @@ export default function MarketAssetPage() {
   const liveQuote=useMarketQuote({supabase,orgId:org?.id,userId:user?.id,detail:initialDetail})
   const d=initialDetail?{...initialDetail,...liveQuote.quote,chain:marketNativeChain(initialDetail.sourceProvider,initialDetail.providerId)||initialDetail.chain}:null
   const [chartOptions,setChartOptions]=useScreenParams('chart_', {range:'7D',interval:'auto'})
-  // Sub-hour widths exist only for a contract identity; a saved '5M' on any other
-  // asset falls back to automatic rather than being sent and refused.
-  const candleIntervalChoices=candleIntervals(d?.sourceProvider)
+  // Every width is selectable for every identity now: the backend ladder decides
+  // which source can serve it and states the width it actually served.
+  const candleIntervalChoices=candleIntervals()
   const candleInterval=candleIntervalChoices.includes(chartOptions.interval)?chartOptions.interval:'auto'
   const setCandleInterval=interval=>setChartOptions(previous=>({...previous,interval}))
   const sym = String(d?.symbol || routeSymbol).toUpperCase()
@@ -293,7 +293,7 @@ export default function MarketAssetPage() {
         </div>}
         {chartPending ? <div role="status" className="min-h-[420px] flex items-center justify-center text-sm text-[var(--fg-4)]">{t('asset.matching_chart_network', { defaultValue: 'Matching your portfolio network…' })}</div> : <TokenChart key={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} assetKey={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} candles={d.candles} persistence={canonicalKey ? {supabase,userId:user?.id,orgId:org?.id,asset:canonicalKey} : null} readOnly={!canonicalKey}
           requestKey={candleInterval}
-          rangeExtra={<label className="intel-event-meta">Candle interval <select aria-label="Candle interval" value={candleInterval} onChange={e=>setCandleInterval(e.target.value)}>{candleIntervalChoices.map(choice=><option key={choice} value={choice}>{candleIntervalLabel(choice,d.sourceProvider)}</option>)}</select>{d.sourceProvider==='contract'&&<span> Sub-hour candles come only from the CoinMarketCap k-line aggregate for this contract.</span>}</label>}
+          rangeExtra={<label className="intel-event-meta">Candle interval <select aria-label="Candle interval" value={candleInterval} onChange={e=>setCandleInterval(e.target.value)}>{candleIntervalChoices.map(choice=><option key={choice} value={choice}>{candleIntervalLabel(choice)}</option>)}</select><span> The chart names its source and the width it served under Price coverage.</span></label>}
           markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers,...tapeMarkers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles defaultRange={historyRange} onRangeChange={setHistoryRange}
           historyLoading={research.loading || position.loading || research.loadingMore || position.loadingMore}
           historyError={research.error || (position.error && intelReadError(position.error, 'Your portfolio activity is temporarily unavailable. Please retry from Your position.'))} historyHasMore={!!(research.nextCursor || position.nextCursor)}

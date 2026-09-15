@@ -24,7 +24,11 @@ export type RwaAssetType = typeof RWA_ASSET_TYPES[number]
 
 // deno-lint-ignore no-explicit-any
 export type CaptureRequest = (name: string, params?: Record<string, unknown>, ctx?: MarketAssetsContext) => Promise<any>
-export interface SchedulePolicyRow { provider?: string; feature: string; cadence_seconds?: number | null; enabled?: boolean | null; min_plan?: string | null }
+/** `max_credits` is the STANDING credit ceiling for a feature, added with the
+ * candle history lane: a lane that fills an archive once needs a budget it can
+ * be held to across runs, not only a per-run ceiling. A lane with no ceiling in
+ * its row falls back to its own documented default. */
+export interface SchedulePolicyRow { provider?: string; feature: string; cadence_seconds?: number | null; enabled?: boolean | null; min_plan?: string | null; max_credits?: number | null }
 export interface CaptureDeps { request: CaptureRequest; policy?: SchedulePolicyRow[] }
 export interface JobResult { job: string; rows: number; credits: number; skipped?: string; error?: string; [key: string]: unknown }
 
@@ -66,7 +70,7 @@ export function backfillMondays(now: Date, weeks: number): string[] {
 export async function loadSchedulePolicy(db: any): Promise<SchedulePolicyRow[]> {
   try {
     const { data, error } = await db.from('provider_schedule_policy')
-      .select('provider,feature,cadence_seconds,enabled,min_plan').eq('provider', CAPTURE_PROVIDER).limit(100)
+      .select('provider,feature,cadence_seconds,enabled,min_plan,max_credits').eq('provider', CAPTURE_PROVIDER).limit(100)
     return error ? [] : ((data || []) as SchedulePolicyRow[])
   } catch { return [] }
 }

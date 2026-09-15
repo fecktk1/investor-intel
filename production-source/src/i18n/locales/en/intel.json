@@ -1596,6 +1596,7 @@
     "journal_exit_result": "Journal result for this exit",
     "legs_limited": "Showing up to 64 legs. Open the underlying portfolio activity for the complete record.",
     "loading": "Loading price history…",
+    "range_all": "All",
     "loading_activity": "Loading your activity…",
     "market_history": "Price and personal activity history",
     "more_history": "Load more activity",

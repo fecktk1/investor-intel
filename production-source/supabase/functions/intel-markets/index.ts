@@ -11,7 +11,6 @@
 // unchanged from the exchange-market layer.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { getProvider } from '../_shared/exchange-market/provider-registry.ts'
 import { matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
 import { requireIntelAccess } from '../_shared/intel/research-service.ts'
 import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
@@ -24,13 +23,16 @@ import {loadAssetHistory,historyPlan,unavailableHistory} from '../_shared/intel/
 import {realizedVolatility,maxDrawdown,distanceFromHigh,timeUnderWaterDays} from '../_shared/intel/risk-metrics.ts'
 import {marketCoverage,type MarketIdentityKind} from '../_shared/intel/market-coverage.ts'
 import { resolveCmcAsset } from '../_shared/intel/cmc-asset-identity.ts'
-import {assetMarketRead,marketCmcIdentity,chooseMarketCandles} from '../_shared/intel/market-asset-source.ts'
+import {assetMarketRead,marketCmcIdentity} from '../_shared/intel/market-asset-source.ts'
 import type {MarketAssetsContext} from '../_shared/market-assets/types.ts'
 import { fetchCoingeckoOhlc } from '../_shared/market-assets/coingecko-provider.ts'
 import { getChain } from '../_shared/chains.ts'
 import {positionDepthQuotes} from '../_shared/intel/position-depth.ts'
-import {loadCmcChart,CHART_WINDOWS,CHART_INTERVALS,isSubHourInterval} from '../_shared/intel/cmc-chart.ts'
-import {contractCandleLadder} from '../_shared/intel/cmc-kline-chart.ts'
+import {loadCmcChart,CHART_WINDOWS,CHART_INTERVALS} from '../_shared/intel/cmc-chart.ts'
+import {contractCandleLadder,klineIdentity} from '../_shared/intel/cmc-kline-chart.ts'
+import {loadMarketCandles} from '../_shared/intel/market-candle-read.ts'
+import {loadExchangeCandles} from '../_shared/intel/exchange-candles.ts'
+import {archiveSeries} from '../_shared/intel/candle-archive.ts'
 import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
 import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
@@ -142,62 +144,49 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
 }
 if(import.meta.main)Deno.serve(req=>handleMarkets(req))
 
-// ─── DETAIL mode (CEX breakdown + on-demand candles) — unchanged behavior ─────
-// Range → (kline interval, count). Intervals are provider-portable (1m/5m/15m/
-// 1h/4h/1d map across binance/coinbase/kraken/kucoin). Lets the chart cycle
-// 1H…1Y with real intraday data for short ranges.
-const CANDLE_TF: Record<string, { interval: string; limit: number }> = {
-  '1H': { interval: '1m', limit: 60 },
-  '12H': { interval: '5m', limit: 144 },
-  '24H': { interval: '15m', limit: 96 },
-  '3D': { interval: '1h', limit: 72 },
-  '7D': { interval: '1h', limit: 168 },
-  '1M': { interval: '4h', limit: 180 },
-  '3M': { interval: '1d', limit: 90 },
-  '6M': { interval: '1d', limit: 180 },
-  '1Y': { interval: '1d', limit: 365 },
-}
+// ─── DETAIL mode (CEX breakdown + on-demand candles) ─────────────────────────
+//
+// The ladder and its bounds live in `_shared/intel/market-candle-read.ts`; this
+// function is the WIRING that gives each rung its real dependencies. Source
+// order for every identity: the free public exchange registry first (when the
+// asset has a verified exchange identity), then CoinMarketCap OHLCV, then the
+// DEX k-line aggregate for a contract, then the CoinGecko window — with the
+// stored daily archive merged under the long ranges.
+//
+// A same-symbol market is still never a substitute history: the exchange rung is
+// offered ONLY on a confidence-gated verified identity, so a pasted contract
+// reaches the k-line rung first exactly as before.
+/** Days of CoinGecko OHLC a range asks for. Its spacing is the provider's own
+ * and is never relabelled as a candle width. */
+const COINGECKO_DAYS: Record<string, number> = { '1H':1,'12H':1,'24H':1,'3D':7,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365,'2Y':365,'5Y':365,'ALL':365 }
+const RANGE_DAYS: Record<string, number> = { '1H':1/24,'12H':.5,'24H':1,'3D':3,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365,'2Y':730,'5Y':1825,'ALL':7300 }
 // deno-lint-ignore no-explicit-any
-async function fetchCandles(admin: any, sym: string, timeframe = '7D'): Promise<{ candles: { t: number; c: number }[]; bestPair: string | null; bestProvider: string | null }> {
-  try {
-    const tf = CANDLE_TF[timeframe] || CANDLE_TF['7D']
-    const { data: tk } = await admin.from('exchange_latest_tickers').select('provider, provider_symbol, quote_asset, volume_quote_24h').eq('normalized_symbol', sym).order('volume_quote_24h', { ascending: false }).limit(1).maybeSingle()
-    if (!tk) return { candles: [], bestPair: null, bestProvider: null }
-    const prov = getProvider(tk.provider)
-    if (!prov) return { candles: [], bestPair: tk.provider_symbol, bestProvider: tk.provider }
-    const ctx = { supabase: admin, jobName: 'intel-markets-detail', kind: 'request' as const }
-    let k = await prov.getKlines(tk.provider_symbol, tf.interval, tf.limit, ctx)
-    if (!k || !k.length) k = await prov.getKlines(tk.provider_symbol, '1d', Math.min(tf.limit, 365), ctx)  // provider-safe fallback
-    const candles = (k || []).map(x=>({t:x.openTime,o:x.open,h:x.high,l:x.low,c:x.close,v:x.volumeBase,closedAt:x.closeTime}))
-    return { candles, bestPair: tk.provider_symbol, bestProvider: tk.provider, timestampMeaning:'open',currency:tk.quote_asset,volumeUnit:'base asset' } as any
-  } catch { return { candles: [], bestPair: null, bestProvider: null } }
+async function coingeckoCandles(admin: any, canonical: any, timeframe: string) {
+  const days = COINGECKO_DAYS[timeframe] || 7
+  const rows = await fetchCoingeckoOhlc(String(canonical.provider_id), days, { supabase: admin, jobName: 'intel-markets-detail', caller: 'canonical-chart', kind: 'request' }).catch(() => null)
+  const end = Date.now(), start = end - (RANGE_DAYS[timeframe] || 7) * 86400000
+  // deno-lint-ignore no-explicit-any
+  const candles = Array.isArray(rows) ? rows.filter((row:any) => Number(row[0]) >= start && Number(row[0]) <= end).map((row:any) => ({t:Number(row[0]),o:Number(row[1]),h:Number(row[2]),l:Number(row[3]),c:Number(row[4]),v:null})) : []
+  return { candles, source: 'coingecko', bestPair: null, bestProvider: candles.length ? 'coingecko' : null, sourceReason: candles.length ? null : 'no_completed_candles' }
 }
 
-// Exact provider identity also supports assets without a verified exchange pair.
-// Never use a same-symbol market as a substitute price history.
+// deno-lint-ignore no-explicit-any
 async function assetCandles(admin: any, canonical: any, verified: boolean, timeframe: string, interval='auto',context:MarketAssetsContext={}) {
- return chooseMarketCandles(canonical,id=>loadCmcChart(admin,id,timeframe,interval,Date.now(),undefined,context),async()=>{
-  // A contract identity's only genuine history is its own on-chain trading. Try
-  // it BEFORE the CEX/CoinGecko ladder — a same-ticker market is never a
-  // substitute. Inside that rung the CoinMarketCap k-line aggregate (every pool
-  // on a verified CMC DEX chain) comes before the single GeckoTerminal pool.
-  if (canonical?.source_provider === 'contract') {
-    const pool = await contractCandleLadder(admin, canonical, timeframe, interval, context)
-    if (pool.candles.length || !verified) return pool
-  }
-  if (verified) {
-    const result = await fetchCandles(admin, canonical.normalized_symbol, timeframe)
-    if (result.candles.length) return result
-  }
-  if (canonical.source_provider === 'coingecko' && canonical.provider_id) {
-    const days = ({ '1H':1,'12H':1,'24H':1,'3D':7,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365 } as Record<string,number>)[timeframe] || 7
-    const rows = await fetchCoingeckoOhlc(String(canonical.provider_id), days, { supabase: admin, jobName: 'intel-markets-detail', caller: 'canonical-chart', kind: 'request' }).catch(() => null)
-    const end = Date.now(), start = end - (({'1H':1/24,'12H':.5,'24H':1,'3D':3,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365} as Record<string,number>)[timeframe] || 7) * 86400000
-    const candles = Array.isArray(rows) ? rows.filter((row:any) => Number(row[0]) >= start && Number(row[0]) <= end).map((row:any) => ({t:Number(row[0]),o:Number(row[1]),h:Number(row[2]),l:Number(row[3]),c:Number(row[4]),v:null})) : []
-    return { candles, bestPair: null, bestProvider: candles.length ? 'coingecko' : null }
-  }
-  return { candles: [], bestPair: null, bestProvider: null }
- })
+  const identityKey = marketCanonicalIdentity(canonical).canonicalAssetKey || (canonical?.source_provider && canonical?.provider_id != null ? `market:${canonical.source_provider}:${canonical.provider_id}` : null)
+  return loadMarketCandles({
+    assetKey: identityKey,
+    symbol: canonical?.normalized_symbol ? String(canonical.normalized_symbol) : null,
+    cexVerified: verified,
+    cmcId: marketCmcIdentity(canonical),
+    klineIdentity: canonical?.source_provider === 'contract' && !!klineIdentity(canonical),
+    coingeckoId: canonical?.source_provider === 'coingecko' && canonical?.provider_id != null,
+  }, timeframe, interval, Date.now(), {
+    exchange: (range, width) => loadExchangeCandles(admin, String(canonical?.normalized_symbol || ''), range, width),
+    cmc: (id, range, width) => loadCmcChart(admin, id, range, width, Date.now(), undefined, context),
+    kline: (range, width) => contractCandleLadder(admin, canonical, range, width, context),
+    coingecko: () => coingeckoCandles(admin, canonical, timeframe),
+    archive: (assetKey, width, from, to) => archiveSeries(admin, assetKey, width, from, to),
+  })
 }
 
 // deno-lint-ignore no-explicit-any
@@ -234,20 +223,19 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
 async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; interval?:string; candlesOnly?: boolean; quotesOnly?:boolean; sourceProvider?:string; providerId?:string;orgId?:string|null;userId?:string } = {}): Promise<Response> {
   const timeframe = opts.timeframe || '7D'
   const interval = opts.interval || 'auto'
-  // The four sub-hour intervals exist ONLY for the CoinMarketCap k-line source,
-  // which is keyed by a contract address. A CMC-listed or CoinGecko asset asking
-  // for one is not a range we can sample, so it still answers invalid_chart_range
-  // rather than being quietly served hourly bars under a one-minute label. The
-  // first test is on the REQUESTED provider (a contract identity is always
-  // addressed as `provider=contract`), the second on the RESOLVED row, so a
-  // request that resolves to something else cannot slip through.
+  // EVERY identity may ask for every width. The four sub-hour widths used to be
+  // refused outside a contract identity because the k-line aggregate was the only
+  // source that could sample them; the free public exchange registry samples them
+  // for any pair a venue lists, so the LADDER now decides whether a width can be
+  // served and the coverage sentence names the width that WAS served. A width no
+  // source can sample is answered at the finest width one of them can, said
+  // plainly — never relabelled. Only a range or width outside the vocabulary
+  // itself is still a 400.
   if(!CHART_WINDOWS[timeframe]||(interval!=='auto'&&!CHART_INTERVALS[interval]))return json({error:'invalid_chart_range'},400)
-  if(isSubHourInterval(interval)&&opts.sourceProvider!=='contract')return json({error:'invalid_chart_range'},400)
   const resolved=await resolveMarketAsset(admin,sym,opts.sourceProvider,opts.providerId)
   if(resolved.ambiguous)return json({error:'ambiguous_asset',symbol:sym},409)
   if(resolved.error)return json({error:'identity_unavailable'},503)
   if(!resolved.data)return json({error:'asset_not_found',symbol:sym},404)
-  if(isSubHourInterval(interval)&&resolved.data.source_provider!=='contract')return json({error:'invalid_chart_range'},400)
   const context={supabase:admin,orgId:opts.orgId,userId:opts.userId,kind:'request' as const,waitForFresh:opts.quotesOnly===true}
   const cmcId=marketCmcIdentity(resolved.data)
   const cmc=cmcId&&!opts.candlesOnly?await resolveCmcAsset(admin,cmcId,undefined,context):null

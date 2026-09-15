@@ -781,6 +781,7 @@
     "journal_exit_result": "Résultat du journal pour cette sortie",
     "legs_limited": "Affichage de 64 jambes au maximum. Ouvrez l’activité de portefeuille sous-jacente pour consulter l’enregistrement complet.",
     "loading": "Chargement de l’historique des prix…",
+    "range_all": "Tout",
     "loading_activity": "Chargement de votre activité…",
     "market_history": "Historique des prix et de l’activité personnelle",
     "more_history": "Charger plus d’activité",

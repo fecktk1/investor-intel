@@ -20,8 +20,15 @@ class WorkstationBoundary extends React.Component {
   render() { return this.state.failed ? this.props.fallback ?? null : this.props.children }
 }
 
-const RANGES = ['1H', '12H', '24H', '3D', '7D', '1M', '3M', '6M', '1Y']
-export const CHART_RANGE_MS = { '1H': 3600000, '12H': 43200000, '24H': 86400000, '3D': 259200000, '7D': 604800000, '1M': 2592000000, '3M': 7776000000, '6M': 15552000000, '1Y': 31536000000 }
+// RANGE vocabulary, mirroring CHART_WINDOWS in
+// supabase/functions/_shared/intel/cmc-chart.ts. The last three exist because
+// stored daily candles (`market_asset_candles`) carry the years no single
+// provider window can reach; 'ALL' is twenty years, which predates every asset
+// the catalogue carries.
+const RANGES = ['1H', '12H', '24H', '3D', '7D', '1M', '3M', '6M', '1Y', '2Y', '5Y', 'ALL']
+export const CHART_RANGE_MS = { '1H': 3600000, '12H': 43200000, '24H': 86400000, '3D': 259200000, '7D': 604800000, '1M': 2592000000, '3M': 7776000000, '6M': 15552000000, '1Y': 31536000000, '2Y': 63072000000, '5Y': 157680000000, ALL: 630720000000 }
+/** Ranges the stored archive is expected to supply most of. */
+export const ARCHIVE_RANGES = ['1Y', '2Y', '5Y', 'ALL']
 
 // Candle INTERVAL vocabulary, mirroring CHART_INTERVALS in
 // supabase/functions/_shared/intel/cmc-chart.ts.
@@ -30,23 +37,23 @@ export const CHART_RANGE_MS = { '1H': 3600000, '12H': 43200000, '24H': 86400000,
 // maps describe different things and are never interchangeable: reading a range
 // key out of the interval map (or the reverse) is a bug, not a fallback.
 export const CANDLE_INTERVAL_MS = { '1M': 60000, '5M': 300000, '15M': 900000, '30M': 1800000, '1H': 3600000, '4H': 14400000, '1D': 86400000, '1W': 604800000 }
-// The four sub-hour widths are served ONLY by the CoinMarketCap k-line aggregate,
-// which is keyed by a contract address. `intel-markets` answers
-// `invalid_chart_range` for every other identity, so they are offered only where
-// they can actually be sampled rather than being offered and then refused.
 export const SUB_HOUR_INTERVALS = ['1M', '5M', '15M', '30M']
 export const CANDLE_INTERVAL_LABELS = { auto: 'Automatic', '1M': '1 minute', '5M': '5 minutes', '15M': '15 minutes', '30M': '30 minutes', '1H': '1 hour', '4H': '4 hours', '1D': '1 day', '1W': '1 week' }
-/** The intervals an identity may ask for. A contract adds the four sub-hour
- * widths; everything else keeps the hourly-and-wider vocabulary it always had. */
-export const candleIntervals = sourceProvider => (sourceProvider === 'contract'
-  ? ['auto', ...Object.keys(CANDLE_INTERVAL_MS)]
-  : ['auto', ...Object.keys(CANDLE_INTERVAL_MS).filter(key => !SUB_HOUR_INTERVALS.includes(key))])
+/** The intervals an identity may ask for: ALL EIGHT, for every source.
+ *
+ * The four sub-hour widths used to be offered only for a contract identity,
+ * because the CoinMarketCap k-line aggregate was the only source that could
+ * sample them. The free public exchange registry samples them for every pair a
+ * venue lists, so the width is now always selectable and the LADDER decides
+ * which source can serve it. When no source for this asset can sample the width,
+ * the read answers the finest width one of them can and the coverage sentence
+ * names the width that was actually served — it is never relabelled. */
+export const candleIntervals = () => ['auto', ...Object.keys(CANDLE_INTERVAL_MS)]
 /** What "Automatic" actually does, said in the control rather than left implicit:
- * for a contract the k-line planner picks a MINUTE width on a short window
- * (≤ 1H → 1 minute, ≤ 12H → 5 minutes, ≤ 24H → 15 minutes), then hourly and
- * daily. Every other identity is sampled hourly at its shortest. */
-export const candleIntervalLabel = (interval, sourceProvider) => (interval === 'auto' && sourceProvider === 'contract'
-  ? 'Automatic (minute candles on short ranges)'
+ * ≤ 1H → 1 minute, ≤ 12H → 5 minutes, ≤ 24H → 15 minutes, ≤ 7D → 1 hour,
+ * ≤ 1M → 4 hours, ≤ 2Y → 1 day, wider → 1 week. */
+export const candleIntervalLabel = interval => (interval === 'auto'
+  ? 'Automatic (minute candles on short ranges, weekly on the longest)'
   : CANDLE_INTERVAL_LABELS[interval] || interval)
 const LAYERS = [['thesis', 'Thesis'], ['trade', 'Journal trades'], ['portfolio', 'Portfolio'], ['rules', 'Rules'], ['news', 'News'], ['partnerships', 'Partnerships'], ['unlocks', 'Unlocks']]
 const COLORS = { thesis: '#DFA647', trade: '#B4A0DC', portfolio: '#6CC6A2', news: '#A7AFBC', partnerships: '#82ABD2', unlocks: '#E3AEBC' }
@@ -228,7 +235,7 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
 
   return <section className="intel-chart" aria-label={t('chart.market_history', { defaultValue: 'Price and personal activity history' })}>
     <div className="intel-chart-toolbar">
-      {loadCandles && <div className="intel-range-controls" aria-label={t('chart.time_range', { defaultValue: 'Chart time range' })}>{RANGES.map(r => <button key={r} type="button" aria-pressed={r === range} onClick={() => { setRange(r); setSelection(null) }}>{r}</button>)}</div>}
+      {loadCandles && <div className="intel-range-controls" aria-label={t('chart.time_range', { defaultValue: 'Chart time range' })}>{RANGES.map(r => <button key={r} type="button" aria-pressed={r === range} onClick={() => { setRange(r); setSelection(null) }}>{r === 'ALL' ? t('chart.range_all', { defaultValue: 'All' }) : r}</button>)}</div>}
       {rangeExtra}
       {persistence && !readOnly && <ChartWatchlistAdd key={`${persistence.userId}:${persistence.orgId}:${persistence.asset}`} context={persistence} plotRef={plotRef}/>}
       {!replay&&<button className="intel-text-link" type="button" disabled={stops.length<2} onClick={()=>setReplayTime(stops[Math.min(stops.length-1,Math.max(0,Math.floor(stops.length/3)))])}>Replay chart</button>}
