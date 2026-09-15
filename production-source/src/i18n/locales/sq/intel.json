@@ -1048,7 +1048,8 @@
         "next": "Para",
         "page": "Faqja {{page}}"
       },
-      "image_stamp": "Grafiku i tregut · {{date}}"
+      "image_stamp": "Grafiku i tregut · {{date}}",
+      "links_for_saved": "Lidhjet për versionin e ruajtur"
     },
     "size": {
       "taller": "Grafik më i lartë",

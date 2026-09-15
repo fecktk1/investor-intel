@@ -1048,7 +1048,8 @@
         "next": "Próximo",
         "page": "Página {{page}}"
       },
-      "image_stamp": "Gráfico de mercado · {{date}}"
+      "image_stamp": "Gráfico de mercado · {{date}}",
+      "links_for_saved": "Links da versão salva"
     },
     "size": {
       "taller": "Gráfico mais alto",

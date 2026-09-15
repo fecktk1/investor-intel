@@ -50,8 +50,10 @@ export default function ChartSharePanel({context,captureLayout,captureFrame=null
   }catch(e){if(current(id))setError(e.message)}
   finally{if(current(id))setBusy(false)}
  }
- if(snapshot)return <ChartShareControls key={snapshot.id} context={context} snapshot={snapshot} autoOpen/>
+ // Share stays after a version is saved, so the image and a fresh save are one
+ // press away; the saved version's links are managed beside it.
  return <><button type="button" ref={trigger} disabled={disabled} onClick={start}>{t('chart.share.open',{defaultValue:'Share'})}</button>
+ {snapshot&&<ChartShareControls key={snapshot.id} context={context} snapshot={snapshot} autoOpen triggerLabel={t('chart.share.links_for_saved',{defaultValue:'Links for the saved version'})}/>}
  {error&&!open&&<span role="alert">{error}</span>}
  {open&&preview&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby={heading} onCancel={e=>{e.preventDefault();close()}}>
   <div className="intel-investigation-analysis-heading"><h2 id={heading}>{t('chart.share.dialog_title',{defaultValue:'Share this chart'})}</h2><button type="button" onClick={close}>{t('common.close',{defaultValue:'Close'})}</button></div>

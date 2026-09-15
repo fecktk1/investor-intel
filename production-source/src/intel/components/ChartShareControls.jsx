@@ -5,7 +5,7 @@ import {chartShareUrl,chartShareShortUrl} from '../lib/chart-share-url'
 import ChartShareCard from './ChartShareCard'
 const AUDIENCES=[['owner','Only me'],['org','Current organization'],['unlisted','Anyone with the link'],['public','Public']]
 const fullUrl=share=>chartShareUrl(share,window.location.origin,import.meta.env.VITE_INTEL_CHART_LINK_PREVIEW==='true')
-function ChartShareControlsBody({context,snapshot,autoOpen=false}){
+function ChartShareControlsBody({context,snapshot,autoOpen=false,triggerLabel=null}){
  const {t}=useTranslation('intel',{useSuspense:false})
  const drawings=snapshot.state?.layout?.drawings||[]
  // Every saved drawing travels with the link by default: a reader is meant to

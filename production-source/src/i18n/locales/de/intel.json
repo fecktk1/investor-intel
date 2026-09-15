@@ -1048,7 +1048,8 @@
         "next": "Weiter",
         "page": "Seite {{page}}"
       },
-      "image_stamp": "Marktchart · {{date}}"
+      "image_stamp": "Marktchart · {{date}}",
+      "links_for_saved": "Links für die gespeicherte Version"
     },
     "size": {
       "taller": "Höherer Chart",

@@ -1048,7 +1048,8 @@
         "next": "Volgende",
         "page": "Pagina {{page}}"
       },
-      "image_stamp": "Marktgrafiek · {{date}}"
+      "image_stamp": "Marktgrafiek · {{date}}",
+      "links_for_saved": "Links voor de opgeslagen versie"
     },
     "size": {
       "taller": "Hogere grafiek",
