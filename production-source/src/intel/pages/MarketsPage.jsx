@@ -8,14 +8,15 @@ import { useSupabase } from '../../lib/useSupabase'
 import { CHAINS, detectAddressKind, assetRef } from '../lib/chains'
 import { entityHref, listWatchlist } from '../lib/watchlist-api'
 import { loadMarkets, loadDegenMarkets, locateToken, loadMarketMacro } from '../lib/markets-api'
-import { fmtPrice, fmtPct, fmtVol, timeAgo, pctClass } from '../lib/market-format'
+import { formatPrice, formatPct, formatUsd, timeAgo, pctClass } from '../lib/market-format'
 import { marketPanelHref } from '../lib/market-links'
 import AssetInspector from '../components/AssetInspector'
 import MarketMacroBar from '../components/MarketMacroBar'
-import MarketsTable, { MARKET_COLUMNS, marketRowKey } from '../components/MarketsTable'
+import MarketsTable, { MARKET_COLUMNS, DEFAULT_MARKET_COLUMNS, marketRowKey } from '../components/MarketsTable'
 import DisplayOptions, { orderedKeys } from '../components/DisplayOptions'
 import { useWorkspacePreference } from '../context/PersonalWorkspace'
 import { useScreenParams } from '../lib/useScreenParams'
+import { useColumnSort } from '../lib/useColumnSort'
 import MemecoinTable from '../components/MemecoinTable'
 import ChainHeatmap from '../components/ChainHeatmap'
 import MarketMoverCards from '../components/MarketMoverCards'
@@ -28,11 +29,36 @@ import { IntelMetricCard, IntelPageHeader, IntelPageShell, IntelTabs } from '../
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
 const SORTS = ['market_cap', 'volume', 'gainers', 'losers', 'change_1h', 'change_24h', 'change_7d', 'exchange_availability', 'arbitrage', 'unusual_volume', 'multi_exchange_strength', 'recently_updated']
 // Degen mode: multi-chain memecoin terminal.
-const DEGEN_SORTS = ['trending', 'volume', 'gainers', 'losers', 'liquidity', 'new', 'market_cap']
+// Mirrors DEGEN_SORT_KEYS in supabase/functions/_shared/memecoin/degen-query.ts.
+// The drawer offers every order the table headers can also produce, so the two
+// controls never disagree about what the screen is showing.
+const DEGEN_SORTS = ['trending', 'volume', 'gainers', 'losers', 'liquidity', 'new', 'market_cap', 'price', 'change_1h', 'change_24h', 'fdv', 'buys', 'sells', 'txns', 'risk', 'age']
 const DEGEN_BUCKETS = ['hot', 'new', 'pumpfun', 'migrated', 'trending', 'takeovers', 'established', 'high_volume', 'high_liquidity', 'high_risk', 'watchlist']
 const DEGEN_CHAINS = ['solana', 'ethereum', 'base', 'bnb']
 const PAGE_SIZE = 50
 const ScreenVerification=import.meta.env.DEV?lazy(()=>import('../dev/ScreenVerification')):null
+// Route-level split: the chart kit is only paid for by readers who open the
+// market context rail or the Degen screen.
+const MarketsCharts = lazy(() => import('../components/MarketsCharts'))
+// INTEGRATION POINTS. DegenCharts (Degen screen / intel-degen contract) and
+// AssetResolveResult (asset resolver) are owned by other work in flight. A bare
+// dynamic import of a file that does not exist yet fails at transform time, so
+// they are looked up through a build-time glob instead: absent, the screen
+// renders without the figure; present, it is code-split and mounted with no
+// further change here.
+const OPTIONAL_COMPONENTS = { ...import.meta.glob('../components/DegenCharts.jsx'), ...import.meta.glob('../components/AssetResolveResult.jsx') }
+const optionalComponent = name => lazy(async () => {
+  const load = OPTIONAL_COMPONENTS[`../components/${name}.jsx`]
+  if (!load) return { default: () => null }
+  try { const mod = await load(); return { default: mod?.default || (() => null) } } catch { return { default: () => null } }
+})
+const DegenCharts = optionalComponent('DegenCharts')
+const AssetResolveResult = optionalComponent('AssetResolveResult')
+// Returns markets-api.resolveAsset once that export exists, else null so the
+// caller keeps the behaviour it has today.
+const loadResolver = async () => {
+  try { const api = await import('../lib/markets-api'); return typeof api.resolveAsset === 'function' ? api.resolveAsset : null } catch { return null }
+}
 
 // Investor Intel — Markets terminal. Two modes: a CMC-style top-1000 markets
 // view (canonical market-cap universe + CEX/DEX enrichment) and a separate
@@ -60,14 +86,18 @@ export default function MarketsPage() {
   const [opening, setOpening] = useState(false)
   const [err, setErr] = useState(null)
   const [candidates, setCandidates] = useState(null)
+  const [resolution, setResolution] = useState(null)
   const [macro, setMacro] = useState(null)
-  const [params, setParams] = useScreenParams('m_', { provider: 'auto', sort: 'market_cap', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: PAGE_SIZE })
+  const [params, setParams] = useScreenParams('m_', { provider: 'auto', sort: 'market_cap', dir: 'desc', chain: '', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: PAGE_SIZE })
 
   const [degenState, setDegenState] = useState(null)
   const [degenFailure, setDegenError] = useState(null)
   const [degenRetry, setDegenRetry] = useState(0)
   const [degenLoading, setDegenLoading] = useState(true)
-  const [degenParams, setDegenParams] = useScreenParams('d_', { sort: 'trending', search: '', chain: '', bucket: '', riskMax: '', minLiquidity: '', page: 0, limit: PAGE_SIZE })
+  // d_dir and d_showExcluded are the Degen screen's half of the shared contract
+  // (see the intel-degen request body below): direction is explicit so a Degen
+  // link reproduces its order, and excluded rows stay a deliberate choice.
+  const [degenParams, setDegenParams] = useScreenParams('d_', { sort: 'trending', dir: 'desc', search: '', chain: '', bucket: '', riskMax: '', minLiquidity: '', showExcluded: false, page: 0, limit: PAGE_SIZE })
   const degenScope = `${ownerScope}:${JSON.stringify(degenParams)}`
   const degenData = degenState?.scope === degenScope ? degenState.data : null
   const degenError = degenFailure?.scope === degenScope ? degenFailure.message : null
@@ -77,7 +107,10 @@ export default function MarketsPage() {
   const [screenName, setScreenName] = useState('')
   const display = useWorkspacePreference('markets')
   const columnOrder = orderedKeys(MARKET_COLUMNS, display.value.columnOrder)
-  const columns = searchParams.has('columns') ? searchParams.get('columns').split(',').filter(Boolean) : columnOrder.filter(key => !Array.isArray(display.value.columns) || display.value.columns.includes(key))
+  // Without a saved preference the screen shows the default set, not every
+  // registered column: the supply/pairs/dominance columns are opt-in through
+  // Display options rather than a wider table for readers who never asked.
+  const columns = searchParams.has('columns') ? searchParams.get('columns').split(',').filter(Boolean) : columnOrder.filter(key => Array.isArray(display.value.columns) ? display.value.columns.includes(key) : DEFAULT_MARKET_COLUMNS.includes(key))
   const changeColumns = (order, visible) => {
     const next = new URLSearchParams(searchParams); next.set('columns', visible.join(',')); setSearchParams(next, { replace: true })
     display.save({ columnOrder: order, columns: visible }).catch(error => setErr(error.message))
@@ -126,11 +159,24 @@ export default function MarketsPage() {
     if (mode !== 'markets' || !contextOpen) return
     let alive = true
     setMacroLoading(true); setMacroError(null)
-    loadMarketMacro(supabase).then(m => { if (alive) setMacro(m) }).catch(() => { if (alive) setMacroError(true) }).finally(() => { if (alive) setMacroLoading(false) })
+    // The reported reason is retained, not flattened to a boolean: the charts
+    // and the macro bar both have to say why the read failed.
+    loadMarketMacro(supabase).then(m => { if (alive) setMacro(m) }).catch(error => { if (alive) setMacroError(error?.message || t('markets.macro_failed', { defaultValue: 'Global observations could not be read.' })) }).finally(() => { if (alive) setMacroLoading(false) })
     return () => { alive = false }
   }, [supabase, mode, contextOpen, contextRetry])
 
-  const {data:marketsData,pending:marketsLoading,error:marketError,refresh:refreshMarkets}=useMarketScreen({supabase,userId:user?.id,orgId:org?.id,params,enabled:mode==='markets'})
+  // Column order lives in the URL (m_sort / m_dir) so a shared or restored
+  // screen reproduces the exact order its reader was looking at. Reordering
+  // returns to page 1: page 7 of the previous order describes nothing.
+  const setSort = useCallback(({ sort, dir }) => setParams(p => ({ ...p, sort, dir, page: 0 })), [setParams])
+  // Rank reads naturally from 1 upward, so its first click is ascending; every other column starts descending.
+  const columnSort = useColumnSort({ sort: params.sort, dir: params.dir, setSort, defaultSort: 'market_cap', defaultDir: 'desc', initialDir: key => key === 'rank' ? 'asc' : 'desc' })
+
+  // The screen is read with the clamped order, never the raw URL text: an
+  // `m_dir=sideways` in a pasted link falls back to the default direction
+  // instead of reaching the server.
+  const screenParams = useMemo(() => ({ ...params, sort: columnSort.sort, dir: columnSort.dir }), [params, columnSort.sort, columnSort.dir])
+  const {data:marketsData,pending:marketsLoading,error:marketError,refresh:refreshMarkets}=useMarketScreen({supabase,userId:user?.id,orgId:org?.id,params:screenParams,enabled:mode==='markets'})
 
   // degen data
   const degenKey = JSON.stringify(degenParams)
@@ -140,7 +186,7 @@ export default function MarketsPage() {
     const handle = setTimeout(async () => {
       setDegenLoading(true); setDegenError(null)
       try {
-        const body = { sort: degenParams.sort, page: degenParams.page, limit: degenParams.limit }
+        const body = { sort: degenParams.sort, dir: degenParams.dir === 'asc' ? 'asc' : 'desc', showExcluded: !!degenParams.showExcluded, page: degenParams.page, limit: degenParams.limit }
         if (degenParams.search) body.search = degenParams.search
         if (degenParams.chain) body.chain = degenParams.chain
         if (degenParams.bucket) body.bucket = degenParams.bucket
@@ -156,6 +202,10 @@ export default function MarketsPage() {
 
   const setParam = useCallback((patch, keepPage = false) => setParams((p) => ({ ...p, ...patch, page: keepPage ? (patch.page ?? p.page) : 0 })), [setParams])
   const setDegenParam = useCallback((patch, keepPage = false) => setDegenParams((p) => ({ ...p, ...patch, page: keepPage ? (patch.page ?? p.page) : 0 })), [setDegenParams])
+  // The Degen table headers and the drawer select write the same two params, so
+  // d_dir is a control a reader can actually reach rather than a URL-only value.
+  const setDegenSort = useCallback(({ sort, dir }) => setDegenParams(p => ({ ...p, sort, dir, page: 0 })), [setDegenParams])
+  const degenSort = useColumnSort({ sort: degenParams.sort, dir: degenParams.dir, setSort: setDegenSort, defaultSort: 'trending', defaultDir: 'desc' })
 
   // Open the rich token detail page for a pasted address. Navigates to the synthetic
   // app-style `chain:address` ref (NOT resolveEntity/CAIP) — same as the Degen/markets
@@ -167,15 +217,27 @@ export default function MarketsPage() {
     e.preventDefault()
     const value = form.value.trim()
     if (!value) return
-    setErr(null); setCandidates(null)
+    setErr(null); setCandidates(null); setResolution(null)
     // Explicit chain selected → honor it (most explicit intent).
     if (form.chain) { goToAsset(form.chain, value); return }
     // Auto-detect from the address shape.
     const kind = detectAddressKind(value)
     if (kind === 'solana') { goToAsset('solana', value); return } // unambiguous mint
-    if (kind === 'evm') { // chain-ambiguous → resolve via DexScreener multichain search
+    if (kind === 'evm') { // chain-ambiguous → resolve the asset identity
       setOpening(true)
       try {
+        // INTEGRATION POINT: the shared asset resolver (markets-api.resolveAsset,
+        // written alongside this screen) replaces the DexScreener-only lookup.
+        // It is imported at call time and the existing locate path stays as the
+        // fallback, so the form keeps working while that export lands.
+        const resolve = await loadResolver()
+        if (resolve) {
+          const result = await resolve(supabase, value, form.chain || null)
+          if (result?.status === 'resolved' && result.identity?.route) { navigate(result.identity.route); return }
+          if (result?.status === 'ambiguous' && result.candidates?.length) { setResolution(result); return }
+          setErr(result?.reason || t('markets.locate_not_found', { defaultValue: "Couldn't find that token on any supported chain. Pick a chain and try again." }))
+          return
+        }
         const cands = await locateToken(supabase, value)
         if (!cands.length) { setErr(t('markets.locate_not_found', { defaultValue: "Couldn't find that token on any supported chain. Pick a chain and try again." })); return }
         // Auto-open a single match, or the top when it clearly dominates (≥5× runner-up liquidity); else let the user choose.
@@ -185,7 +247,7 @@ export default function MarketsPage() {
       return
     }
     setErr(t('markets.pick_chain', { defaultValue: 'Select a chain for this identifier, then try again.' }))
-  }, [form, supabase, t, goToAsset])
+  }, [form, supabase, t, goToAsset, navigate])
 
   const snap = marketsData?.snapshot || {}
   const rows = marketsData?.rows || []
@@ -241,10 +303,17 @@ export default function MarketsPage() {
             {/* search · sort · category · watchlist — one row, search flexes to fill */}
             <div className="intel-market-filter-toolbar">
               <input aria-label={t('markets.search', { defaultValue: 'Search name, symbol, contract…' })} className="input text-[12px]" placeholder={t('markets.search', { defaultValue: 'Search name, symbol, contract…' })} value={params.search} onChange={(e) => setParam({ search: e.target.value })} />
-              <details className="intel-market-filter-options"><summary>{t('markets.filter_and_sort', { defaultValue: 'Filters & sort' })}{(params.category || params.watchlistOnly || params.provider !== 'auto' || params.sort !== 'market_cap') ? ' · ' + t('markets.custom_screen', { defaultValue: 'Custom' }) : ''}</summary><div className="intel-market-filters">
+              <details className="intel-market-filter-options"><summary>{t('markets.filter_and_sort', { defaultValue: 'Filters & sort' })}{(params.category || params.chain || params.watchlistOnly || params.provider !== 'auto' || params.sort !== 'market_cap' || columnSort.dir !== 'desc') ? ' · ' + t('markets.custom_screen', { defaultValue: 'Custom' }) : ''}</summary><div className="intel-market-filters">
               <label className="flex items-center gap-2"><span>{t('markets.catalogue', {defaultValue:'Catalogue'})}</span><select className="select text-[12px] py-1" aria-label="Market catalogue" value={params.provider} onChange={e=>setParam({provider:e.target.value})}><option value="auto">{t('markets.cmcPreferred', {defaultValue:'CoinMarketCap preferred'})}</option><option value="coinmarketcap">CoinMarketCap</option><option value="coingecko">CoinGecko</option></select></label>
-              <select className="select text-[12px] py-1" value={params.sort} onChange={(e) => setParam({ sort: e.target.value })} title={t('markets.sortBy', { defaultValue: 'Sort by' })}>
+              {/* Picking an order here keeps the current direction — the header
+                  glyph is the one control that flips it, so the two never
+                  disagree about what the table is showing. */}
+              <select className="select text-[12px] py-1" aria-label={t('markets.sortBy', { defaultValue: 'Sort by' })} value={columnSort.sort} onChange={(e) => setParam({ sort: e.target.value })} title={t('markets.sortBy', { defaultValue: 'Sort by' })}>
                 {SORTS.map((s) => <option key={s} value={s}>{t(`markets.sort_${s}`, { defaultValue: s.replace(/_/g, ' ') })}</option>)}
+              </select>
+              <select className="select text-[12px] py-1" aria-label={t('markets.chain_filter', { defaultValue: 'Chain' })} value={params.chain} onChange={(e) => setParam({ chain: e.target.value })} title={t('markets.chain_filter', { defaultValue: 'Chain' })}>
+                <option value="">{t('markets.allChains', { defaultValue: 'All chains' })}</option>
+                {CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
               </select>
               <select className="select text-[12px] py-1" value={params.category} onChange={(e) => setParam({ category: e.target.value })} title={t('markets.category', { defaultValue: 'Category' })}>
                 <option value="">{t('markets.allCategories', { defaultValue: 'All categories' })}</option>
@@ -260,7 +329,7 @@ export default function MarketsPage() {
               <p className="py-6 text-[13px] text-[var(--fg-4)]">{marketError ? t('markets.screen_read_failed', { defaultValue: 'The market screen could not be loaded. Use Refresh to retry.' }) : t('markets.screen_no_matches', { defaultValue: 'No assets match this screen. Adjust or clear the filters.' })}</p>
             ) : (
               <>
-                <MarketsTable scrollScope={ownerScope} onInspect={row => setInspected({ scope: ownerScope, row })} sort={params.sort} onSort={sort => setParam({ sort })} rows={rows} columns={columns} selected={selected.map(marketRowKey)} onSelect={toggleSelection} pageOffset={params.page * params.limit} />
+                <MarketsTable scrollScope={ownerScope} onInspect={row => setInspected({ scope: ownerScope, row })} sort={columnSort.sort} dir={columnSort.dir} onSort={columnSort.toggle} snapshot={snap} rows={rows} columns={columns} selected={selected.map(marketRowKey)} onSelect={toggleSelection} pageOffset={params.page * params.limit} />
                 {maxPage > 0 && (
                   <div className="flex items-center justify-between text-[12px] text-[var(--fg-4)]">
                     <span>{t('markets.showing', { defaultValue: 'Showing' })} {params.page * params.limit + 1}–{Math.min(total, (params.page + 1) * params.limit)} {t('markets.of', { defaultValue: 'of' })} {total}</span>
@@ -274,6 +343,19 @@ export default function MarketsPage() {
             )}
           </section>
           {contextOpen && <div className="intel-expanded-context">
+          <Suspense fallback={<p role="status" className="py-6 text-sm text-[var(--fg-4)]">{t('markets.charts_loading', { defaultValue: 'Loading market figures…' })}</p>}>
+            <MarketsCharts
+              snapshot={snap}
+              macro={macro}
+              macroError={macroError}
+              macroLoading={macroLoading}
+              chains={marketsData?.chainHeatmap || []}
+              categories={marketsData?.availableCategories || []}
+              onChain={chain => setParam({ chain })}
+              onCategory={category => setParam({ category })}
+              onOpenAsset={href => navigate(href, { state: returnState })}
+            />
+          </Suspense>
           <RegimeBanner />
           <MarketMacroBar macro={macro} loading={macroLoading} error={macroError} onRetry={() => setContextRetry(value => value + 1)}/>
           <RankMovers />
@@ -289,8 +371,8 @@ export default function MarketsPage() {
                 <Stat label={t('markets.trackedAssets', { defaultValue: 'Tracked assets' })} value={snap.trackedAssets ?? '—'} />
                 <Stat label={t('markets.up24h', { defaultValue: 'Up (24h)' })} value={snap.up24h ?? '—'} cls="text-[var(--ok)]" />
                 <Stat label={t('markets.down24h', { defaultValue: 'Down (24h)' })} value={snap.down24h ?? '—'} cls="text-red-400" />
-                <Stat label={t('markets.trackedVolume', { defaultValue: 'Tracked 24h volume' })} value={fmtVol(snap.trackedVolumeQuote24h)} />
-                <Stat label={t('markets.trackedMarketCap', { defaultValue: 'Tracked market cap' })} value={fmtVol(snap.trackedMarketCap)} sub={`${snap.cexCoveragePct ?? '—'}% ${t('markets.exchangeAvailability', { defaultValue: 'on CEX' })}`} />
+                <Stat label={t('markets.trackedVolume', { defaultValue: 'Tracked 24h volume' })} value={formatUsd(snap.trackedVolumeQuote24h)} />
+                <Stat label={t('markets.trackedMarketCap', { defaultValue: 'Tracked market cap' })} value={formatUsd(snap.trackedMarketCap)} sub={`${snap.cexCoveragePct ?? '—'}% ${t('markets.exchangeAvailability', { defaultValue: 'on CEX' })}`} />
                 <Stat label={t('markets.strongestChain', { defaultValue: 'Strongest chain' })} value={snap.strongestChain || '—'} />
               </div>
             </section>
@@ -349,7 +431,7 @@ export default function MarketsPage() {
                           const href = marketPanelHref(l)
                           const content = <>
                             <span className="text-[var(--fg-2)] font-medium">{l.symbol}</span>
-                            <span className={`tabular-nums ${l.change24hPct == null ? 'text-[var(--fg-4)]' : pctClass(l.change24hPct)}`}>{fmtPct(l.change24hPct)}</span>
+                            <span className={`tabular-nums ${l.change24hPct == null ? 'text-[var(--fg-4)]' : pctClass(l.change24hPct)}`}>{formatPct(l.change24hPct)}</span>
                           </>
                           return href ? <Link key={marketRowKey(l)} to={href} state={returnState} className="inline-flex items-center gap-1 hover:text-[var(--accent)]">{content}</Link> : <span key={marketRowKey(l)} className="inline-flex items-center gap-1">{content}</span>
                         })}
@@ -373,9 +455,9 @@ export default function MarketsPage() {
                   <Link key={c.id} to={`/intel/asset/${encodeURIComponent(`native:${c.id}`)}`} state={returnState} className="py-2 block border-b border-[var(--border)] hover:bg-[var(--bg-2)] transition-colors">
                     <div className="flex items-center justify-between gap-2">
                       <span className="text-sm font-medium text-[var(--fg-1)] truncate">{c.label}</span>
-                      {p.change_24h != null && <span className={`text-[12px] font-semibold flex items-center gap-0.5 ${pctClass(p.change_24h)}`}>{p.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{fmtPct(p.change_24h)}</span>}
+                      {p.change_24h != null && <span className={`text-[12px] font-semibold flex items-center gap-0.5 ${pctClass(p.change_24h)}`}>{p.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{formatPct(p.change_24h)}</span>}
                     </div>
-                    <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{p.symbol}{p.price != null ? ` · ${fmtPrice(p.price)}` : ''}</div>
+                    <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{p.symbol}{p.price != null ? ` · ${formatPrice(p.price)}` : ''}</div>
                     <div className="text-[10px] text-[var(--fg-4)]">{p.source === 'coinmarketcap' ? 'CoinMarketCap' : 'CoinGecko'} · <time dateTime={p.as_of}>{new Date(p.as_of).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</time>{p.stale ? ' · '+t('market.stale', {defaultValue:'stale'}) : ''}</div>
                   </Link>
                 ))}
@@ -407,7 +489,7 @@ export default function MarketsPage() {
             </label>
             <label className="block flex-1 min-w-[220px]">
               <span className="text-[11px] text-[var(--fg-4)]">{t('markets.open_label', { defaultValue: 'Token address / mint' })}</span>
-              <input className="input w-full" placeholder={t('markets.open_ph', { defaultValue: 'Paste a contract address or mint…' })} value={form.value} onChange={(e) => { setForm((f) => ({ ...f, value: e.target.value })); if (candidates) setCandidates(null); if (err) setErr(null) }} />
+              <input className="input w-full" placeholder={t('markets.open_ph', { defaultValue: 'Paste a contract address or mint…' })} value={form.value} onChange={(e) => { setForm((f) => ({ ...f, value: e.target.value })); if (candidates) setCandidates(null); if (resolution) setResolution(null); if (err) setErr(null) }} />
             </label>
             <button type="submit" className="btn btn--primary" disabled={opening || !form.value.trim()}>
               {opening ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Search className="h-4 w-4" /> {t('markets.open', { defaultValue: 'Open chart' })}</>}
@@ -420,12 +502,15 @@ export default function MarketsPage() {
               <div className="flex flex-wrap gap-1.5">
                 {candidates.map((c) => (
                   <button key={c.chain} type="button" onClick={() => goToAsset(c.chain, form.value.trim())} className="chip text-[11px]">
-                    {(c.symbol || form.value.trim().slice(0, 6))} · {(CHAINS.find((x) => x.id === c.chain)?.label) || c.chain}{c.liquidityUsd ? ` · ${fmtVol(c.liquidityUsd)}` : ''}
+                    {(c.symbol || form.value.trim().slice(0, 6))} · {(CHAINS.find((x) => x.id === c.chain)?.label) || c.chain}{c.liquidityUsd ? ` · ${formatUsd(c.liquidityUsd)}` : ''}
                   </button>
                 ))}
               </div>
             </div>
           )}
+          {resolution && <Suspense fallback={<p role="status" className="text-[12px] text-[var(--fg-4)]">{t('markets.locate_resolving', { defaultValue: 'Reading the asset identity…' })}</p>}>
+            <AssetResolveResult result={resolution} onPick={route => { setResolution(null); navigate(route) }}/>
+          </Suspense>}
           {err && <div className="card--flat p-3 text-[13px] text-red-400">{err}</div>}
 
           {watchState?.scope === ownerScope && watchState.loading && <p role="status">{t('markets.watch_loading', { defaultValue: 'Loading watchlist…' })}</p>}
@@ -458,10 +543,18 @@ export default function MarketsPage() {
               <Stat label={t('degen.trackedMemecoins', { defaultValue: 'Memecoins' })} value={dsnap.trackedMemecoins ?? '—'} />
               <Stat label={t('degen.verified', { defaultValue: 'Verified' })} value={dsnap.verifiedCount ?? '—'} />
               <Stat label={t('degen.newLaunches', { defaultValue: 'New launches' })} value={dsnap.newLaunches ?? '—'} cls="text-sky-400" />
-              <Stat label={t('degen.totalVolume', { defaultValue: '24h volume' })} value={fmtVol(dsnap.totalVolume24h)} />
-              <Stat label={t('degen.topGainer', { defaultValue: 'Top gainer' })} value={dsnap.topGainerSymbol || '—'} sub={dsnap.topGainerChange != null ? fmtPct(dsnap.topGainerChange) : null} />
+              <Stat label={t('degen.totalVolume', { defaultValue: '24h volume' })} value={formatUsd(dsnap.totalVolume24h)} />
+              <Stat label={t('degen.topGainer', { defaultValue: 'Top gainer' })} value={dsnap.topGainerSymbol || '—'} sub={dsnap.topGainerChange != null ? formatPct(dsnap.topGainerChange) : null} />
             </div>
           )}
+
+          {/* INTEGRATION POINT: Degen figures. `data` is the whole intel-degen
+              response; onFilter receives a partial screen patch ({ chain },
+              { bucket }, { riskMax }…) and applies it to the same URL params
+              the tables below already read. */}
+          <Suspense fallback={<p role="status" className="py-6 text-sm text-[var(--fg-4)]">{t('markets.charts_loading', { defaultValue: 'Loading market figures…' })}</p>}>
+            <DegenCharts data={degenData} onFilter={patch => setDegenParam(patch)}/>
+          </Suspense>
 
           {/* bucket chips */}
           <div className="flex items-center gap-1.5 flex-wrap">
@@ -480,7 +573,7 @@ export default function MarketsPage() {
                   <option value="">{t('degen.allChains', { defaultValue: 'All chains' })}</option>
                   {DEGEN_CHAINS.map((c) => <option key={c} value={c}>{(CHAINS.find((x) => x.id === c)?.label) || c}</option>)}
                 </select>
-                <select aria-label="Sort memecoins" className="select text-[12px] py-1" value={degenParams.sort} onChange={(e) => setDegenParam({ sort: e.target.value })}>
+                <select aria-label="Sort memecoins" className="select text-[12px] py-1" value={degenSort.sort} onChange={(e) => setDegenParam({ sort: e.target.value })}>
                   {DEGEN_SORTS.map((s) => <option key={s} value={s}>{t(`degen.sort_${s}`, { defaultValue: s.replace(/_/g, ' ') })}</option>)}
                 </select>
                 <label className="text-xs">{t('degen.minimum_liquidity', { defaultValue: 'Minimum liquidity · USD' })}<input type="number" min="0" step="1000" className="input" value={degenParams.minLiquidity} onChange={event => setDegenParam({ minLiquidity: event.target.value })}/></label>
@@ -497,7 +590,7 @@ export default function MarketsPage() {
               <p role="status" className="py-8 text-sm text-[var(--fg-4)]">{t('markets.loading', { defaultValue: 'Loading market observations…' })}</p>
             ) : (
               <>
-                {!degenError && <MemecoinTable rows={drows} pageOffset={degenParams.page * degenParams.limit} />}
+                {!degenError && <MemecoinTable rows={drows} sort={degenSort.sort} dir={degenSort.dir} onSort={degenSort.toggle} pageOffset={degenParams.page * degenParams.limit} />}
                 {dMaxPage > 0 && (
                   <div className="flex items-center justify-between text-[12px] text-[var(--fg-4)]">
                     <span>{t('markets.showing', { defaultValue: 'Showing' })} {degenParams.page * degenParams.limit + 1}–{Math.min(dtotal, (degenParams.page + 1) * degenParams.limit)} {t('markets.of', { defaultValue: 'of' })} {dtotal}</span>

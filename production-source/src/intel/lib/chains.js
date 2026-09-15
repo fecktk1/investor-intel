@@ -144,6 +144,72 @@ export function detectAddressKind(value) {
   return null
 }
 
+// ── Universal identifier detection (mirrors the server resolver's namespace rules) ──
+// `detectAddressKind` above stays the two-family helper the wallet/paste flows use.
+// `detectIdentifierKind` is the wider vocabulary the universal resolver speaks: it
+// names the namespace a pasted string belongs to so the resolver ladder knows which
+// providers can possibly answer. It never guesses a chain — only a namespace family.
+//
+// The regexes and their order MUST stay identical to
+// supabase/functions/_shared/intel/asset-identifier.ts (classify()). The client
+// uses this only to decide whether a typed query is worth one resolution — the
+// server still detects the identifier itself and owns the chain candidates — so
+// a drift here costs a wasted call or a missed one, never a wrong identity.
+//
+// Order matters: a Tron account (T + 33 base58) and a classic XRPL account
+// (r + 24–34 base58) both fall inside the Solana 32–44 base58 window, so the
+// specific namespaces are tested before Solana.
+const BASE58 = '[1-9A-HJ-NP-Za-km-z]'
+export const MAX_IDENTIFIER_LENGTH = 200
+// Whitespace, quotes, brackets and shell/SQL punctuation belong to no supported
+// identifier — and are what an injection probe looks like. Rejecting them here
+// is why an invalid query costs zero provider calls.
+const UNSAFE_RE = /[\s<>"'`;()|&=%*[\]{}]/
+export const IDENTIFIER_PATTERNS = [
+  // CoinMarketCap ids are identities in their own right (no chain).
+  ['cmc_id', /^cmc:\d{1,9}$/i],
+  ['cmc_id', /^\d{1,9}$/],
+  // Hyperliquid spot index (@107) or a native pair against USDC.
+  ['hyperliquid', /^@\d{1,6}$/],
+  ['hyperliquid', /^[A-Za-z0-9]{2,12}\/USDC$/],
+  // Cosmos-style denoms: IBC hashes, token-factory denoms, Injective peggy assets.
+  ['cosmos', /^ibc\/[0-9A-Fa-f]{64}$/],
+  ['cosmos', /^factory\/[A-Za-z0-9]{6,90}\/[A-Za-z0-9/:._-]{1,64}$/],
+  ['cosmos', /^peggy0x[0-9a-fA-F]{40}$/],
+  // Move coin types (`0x…::module::Name`) — shared by Sui and Aptos.
+  ['move', /^0x[0-9a-fA-F]{1,64}::[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]*$/],
+  ['evm', EVM_ADDRESS_RE],
+  // TON: user-friendly EQ/UQ base64url (48 chars) or raw `0:` / `-1:` + 64 hex.
+  ['ton', /^[EU]Q[A-Za-z0-9_-]{46}$/],
+  ['ton', /^(?:-1|0):[0-9a-fA-F]{64}$/],
+  ['tron', new RegExp(`^T${BASE58}{33}$`)],
+  // XRPL: `<CURRENCY>.<r-address>` issued asset, then the classic account id.
+  ['xrpl', new RegExp(`^(?:[A-Za-z0-9]{3}|[0-9A-Fa-f]{40})\\.r${BASE58}{24,34}$`)],
+  ['xrpl', new RegExp(`^r${BASE58}{24,34}$`)],
+  // Stellar: `CODE-G…` asset form, then the issuer account (G + 55 base32).
+  ['stellar', /^[A-Za-z0-9]{1,12}-G[A-Z2-7]{55}$/],
+  ['stellar', /^G[A-Z2-7]{55}$/],
+  // NEAR: named account (`wrap.near`) or an implicit 64-hex account id.
+  ['near', /^(?:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.)?near$/],
+  ['near', /^[0-9a-f]{64}$/],
+  // Cardano policy id, optionally `.assetName`.
+  ['cardano', /^[0-9a-f]{56}(?:\.[0-9a-f]{2,64})?$/],
+  ['solana', SOLANA_ADDRESS_RE],
+]
+
+// Returns the namespace name, or null when the string is not an identifier at all
+// (a plain ticker, a project name, a URL, a malformed address) — the caller then
+// keeps the catalogue search path and never spends a resolution on it.
+export function detectIdentifierKind(value) {
+  const v = typeof value === 'string' ? value.trim() : ''
+  if (!v || v.length > MAX_IDENTIFIER_LENGTH) return null
+  if (UNSAFE_RE.test(v)) return null
+  for (let i = 0; i < v.length; i++) if (v.charCodeAt(i) < 32) return null
+  if (/:\/\//.test(v) || /^www\./i.test(v)) return null
+  for (const [kind, pattern] of IDENTIFIER_PATTERNS) if (pattern.test(v)) return kind
+  return null
+}
+
 // Canonical token-address form: EVM lowercased (stable storage/dedupe, matches the
 // entity resolver + birdeye-client); Solana and others left as-is (case-significant).
 export function normalizeAddressForChain(chainId, addr) {

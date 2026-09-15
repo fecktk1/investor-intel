@@ -38,6 +38,7 @@ export function mapCmcListing(c: any): CanonicalAsset | null {
     symbol: symbol.toUpperCase(), name: c?.name ?? null, normalizedSymbol: normSymbol(symbol), primaryChain: null,
     marketCapRank: num(c?.cmc_rank), currentPrice: num(q?.price), marketCap: num(q?.market_cap),
     fdv: num(q?.fully_diluted_market_cap), circulatingSupply: num(c?.circulating_supply), totalSupply: num(c?.total_supply), maxSupply: num(c?.max_supply),
+    numMarketPairs: num(c?.num_market_pairs),
     volume24h: num(q?.volume_24h),
     change1hPct: num(q?.percent_change_1h), change24hPct: num(q?.percent_change_24h), change7dPct: num(q?.percent_change_7d),
     categories: null, platforms: c?.platform?.name && c?.platform?.token_address ? { [String(c.platform.name).toLowerCase()]: String(c.platform.token_address) } : null,

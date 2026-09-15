@@ -23,6 +23,7 @@ export interface CanonicalAsset {
   circulatingSupply: number | null
   totalSupply: number | null
   maxSupply: number | null
+  numMarketPairs?: number | null    // CoinMarketCap listings only; CoinGecko leaves it null
   volume24h: number | null
   change1hPct: number | null
   change24hPct: number | null

@@ -19,6 +19,8 @@ import { marketChain, marketCanonicalIdentity, marketIdentityChoices, verifiedNa
 import {readNativeChainPerformance} from '../_shared/intel/chain-performance-read.ts'
 import { marketScreenResponse } from '../_shared/intel/markets-screen.ts'
 import {resolveMarketAsset} from '../_shared/intel/market-asset-resolver.ts'
+import {contractCandles} from '../_shared/intel/contract-market-asset.ts'
+import {marketCoverage,type MarketIdentityKind} from '../_shared/intel/market-coverage.ts'
 import { resolveCmcAsset } from '../_shared/intel/cmc-asset-identity.ts'
 import {assetMarketRead,marketCmcIdentity,chooseMarketCandles} from '../_shared/intel/market-asset-source.ts'
 import type {MarketAssetsContext} from '../_shared/market-assets/types.ts'
@@ -161,6 +163,12 @@ async function fetchCandles(admin: any, sym: string, timeframe = '7D'): Promise<
 // Never use a same-symbol market as a substitute price history.
 async function assetCandles(admin: any, canonical: any, verified: boolean, timeframe: string, interval='auto',context:MarketAssetsContext={}) {
  return chooseMarketCandles(canonical,id=>loadCmcChart(admin,id,timeframe,interval,Date.now(),undefined,context),async()=>{
+  // A contract identity's only genuine history is its own pool. Try it BEFORE
+  // the CEX/CoinGecko ladder — a same-ticker market is never a substitute.
+  if (canonical?.source_provider === 'contract') {
+    const pool = await contractCandles(canonical, timeframe, interval, { supabase: admin, jobName: 'intel-markets' })
+    if (pool.candles.length || !verified) return pool
+  }
   if (verified) {
     const result = await fetchCandles(admin, canonical.normalized_symbol, timeframe)
     if (result.candles.length) return result
@@ -218,7 +226,8 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   const cmcId=marketCmcIdentity(resolved.data)
   const cmc=cmcId&&!opts.candlesOnly?await resolveCmcAsset(admin,cmcId,undefined,context):null
   const quote=assetMarketRead(resolved.data,cmc?.data)
-  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason:cmc?.error||null})
+  const quoteReason=cmc?.error||resolved.data.quote_reason||null
+  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason})
   sym=String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
   const [identityProfile,identityMapping,claimants]=await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol',sym).maybeSingle(),
@@ -288,7 +297,8 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // degrades to a 'missing' status; on-chain may make a budgeted live Birdeye call.
   const ecoChain = quote.chain
   const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
-  const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : null
+  // A contract identity always knows its own address, even with no cached pair.
+  const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : canonical?.contract?.address ? String(canonical.contract.address) : null
   const [ecosystemNarratives, catalysts, onchain, unlocks] = await Promise.all([
     assembleEcosystemNarrativeState(admin, { chain: ecoChain, symbol: sym }),
     assembleCatalystNewsState(admin, { symbol: sym, chain: ecoChain }),
@@ -302,7 +312,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     assembleTokenUnlockState(admin, { symbol: sym, nowMs: Date.now() }),
   ])
 
-  return json({
+  const payload = {
     detail: true, symbol: sym, ...quote,
     // Canonical identity → lets the detail page load the rich CoinGecko profile.
     providerId: canonical?.provider_id ?? null, sourceProvider: canonical?.source_provider ?? null, primaryChain: canonical?.primary_chain ?? null,
@@ -310,7 +320,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     profile: prof ? { liquidityScore: prof.liquidity_score, retailRelevanceScore: prof.retail_relevance_score, marketQualityScore: prof.market_quality_score, trendScore: prof.trend_score, bestGlobalPair: prof.best_global_pair, bestUsRetailPair: prof.best_us_retail_pair } : null,
     ...marketCanonicalIdentity(canonical),
     identityChoices: marketIdentityChoices(canonical),
-    sourceFreshness:quote.sourceFreshness||freshness(quote.asOf,false),quoteReason:cmc?.error||null,
+    sourceFreshness:quote.sourceFreshness||freshness(quote.asOf,false),quoteReason,
     cexCoverage:cexVerified&&providers.length?'available':'unverified',
     depthQuotes:positionDepthQuotes(canonical,cexVerified,bookR.data||[],tickR.data||[]),
     spread: cexVerified && usableSpread(sprR.data) ? sprR.data : null, orderbook, rollups, providers, dex,
@@ -320,5 +330,26 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     chartState: 'sourceState' in chart ? chart.sourceState : null,
     chartReason: 'sourceReason' in chart ? chart.sourceReason : null,
     chartProvenance: 'provenance' in chart ? chart.provenance : null,
-  })
+    // The on-chain workspace for a pasted contract — present ONLY for a
+    // contract identity, so catalogue responses are unchanged.
+    ...(canonical?.contract ? { contract: canonical.contract } : {}),
+  }
+  // Every identity reports the SAME section list: what is present, and why the
+  // rest is not. Sections are never dropped for a less-covered asset.
+  const identity = detailIdentity(canonical, quote.chain)
+  return json({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }) })
+}
+
+/** Exact provider identity for the page — a contract is one chain + one address. */
+// deno-lint-ignore no-explicit-any
+function detailIdentity(asset: any, quoteChain: string | null): { kind: MarketIdentityKind; provider: string | null; providerId: string | null; chain: string | null; address: string | null } {
+  const provider = asset?.source_provider ? String(asset.source_provider) : null
+  const kind: MarketIdentityKind = provider === 'contract' ? 'contract' : provider === 'coinmarketcap' ? 'cmc' : 'coingecko'
+  const chain = asset?.contract?.chain ? String(asset.contract.chain) : quoteChain || asset?.primary_chain || null
+  let address: string | null = asset?.contract?.address ? String(asset.contract.address) : null
+  if (!address) {
+    const entries = Object.entries(asset?.platforms || {}).filter(([platform, value]) => typeof value === 'string' && value && (!chain || marketChain(platform) === chain))
+    if (entries.length === 1) address = String(entries[0][1])
+  }
+  return { kind, provider, providerId: asset?.provider_id != null ? String(asset.provider_id) : null, chain, address }
 }

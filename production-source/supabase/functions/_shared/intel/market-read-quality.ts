@@ -5,6 +5,29 @@ export function marketChain(platform:string):string {
   if(CHAIN_PROVIDERS[key])return key
   return Object.entries(CHAIN_PROVIDERS).find(([,p])=>p.coingeckoPlatform===key)?.[0]||key
 }
+// Inverse of marketChain(): the platform keys a market_assets.platforms object
+// may carry for one app chain. Catalogue rows are written with the CoinGecko
+// asset-platform id (coingecko-provider) or the CoinMarketCap platform slug
+// (coinmarketcap-provider), so a contract lookup has to try both. Only
+// filter-safe keys ([a-z0-9._-]) belong here: multi-word CMC platform *names*
+// cannot be expressed in a PostgREST or() filter and are matched in memory.
+const CMC_PLATFORM_KEYS:Record<string,string[]>={
+  ethereum:['ethereum'],bnb:['bnb','binance-coin'],polygon:['polygon','polygon-ecosystem-token'],
+  avalanche:['avalanche'],arbitrum:['arbitrum'],base:['base'],optimism:['optimism'],solana:['solana'],
+  sui:['sui'],aptos:['aptos'],tron:['tron','tron20'],ton:['toncoin'],near:['near-protocol'],
+  cardano:['cardano'],stellar:['stellar'],xrpl:['xrp'],injective:['injective','injective-protocol'],
+  celo:['celo'],gnosis:['gnosis'],zksync:['zksync','zksync-era'],linea:['linea'],scroll:['scroll'],
+  mantle:['mantle'],blast:['blast'],sonic:['sonic'],opbnb:['opbnb'],metis:['metis'],
+  moonbeam:['moonbeam'],moonriver:['moonriver'],hyperliquid:['hyperliquid'],sei:['sei','sei-network'],
+  taiko:['taiko'],xdc:['xdc-network'],
+}
+/** Every platform key that could hold a contract for this app chain. */
+export function marketPlatformSlugs(chainId:string):string[] {
+  const id=String(chainId||'').trim().toLowerCase(); if(!id) return []
+  const keys=[id,CHAIN_PROVIDERS[id]?.coingeckoPlatform||'',...(CMC_PLATFORM_KEYS[id]||[])]
+  return [...new Set(keys.filter(k=>k&&/^[a-z0-9._-]+$/.test(k)))]
+}
+
 export function usableSpread(row:any,now=Date.now()):boolean {
   if(!row)return false
   const observed=Date.parse(row.as_of||''),age=now-observed

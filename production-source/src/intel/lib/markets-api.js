@@ -69,7 +69,11 @@ export async function loadRankMovers(supabase, { days = 7, limit = 6 } = {}) {
 }
 
 // Degen (memecoin) terminal list. Reads memecoin_latest_tokens via intel-degen
-// (cache-only). Params: { page, limit, sort, search, chain, bucket, riskMax, minLiquidity }.
+// (cache-only). Params: { page, limit, sort, dir, search, chain, bucket, riskMax,
+// minLiquidity, showExcluded }. `dir` and `showExcluded` are passed through
+// untouched: the server owns sort direction and the excluded-rows view, and an
+// unknown `sort` is now a 400 (`invalid_sort`) rather than a silent re-order,
+// so nothing here may substitute a default.
 export async function loadDegenMarkets(supabase, orgId, params = {}) {
   const { data, error } = await supabase.functions.invoke('intel-degen', { body: { orgId, ...params } })
   if (error) throw new Error(error.message || 'degen_failed')
@@ -140,6 +144,44 @@ export async function locateToken(supabase, address) {
     if (error || data?.error) return []
     return Array.isArray(data?.candidates) ? data.candidates : []
   } catch { return [] }
+}
+
+// Universal asset resolution. Takes ANY identifier a reader can paste — a
+// contract address on any supported namespace, a CoinMarketCap id, a Hyperliquid
+// pair — and asks the intel-asset-resolve ladder (catalogue → entities →
+// memecoin → CMC metadata/DEX → DexScreener → GeckoTerminal → Birdeye → RPC)
+// which asset it is. The ladder's provenance is part of the contract: every step
+// reports hit/miss/skipped/error so a failure can always be explained.
+//
+// Never throws and never returns an empty object: a transport failure, a rate
+// limit (HTTP 429) or a malformed response all degrade to an 'unresolved' result
+// carrying a t-able reason code, so the caller renders a reason instead of a
+// blank space.
+export async function resolveAsset(supabase, query, chain = null, { orgId, signal } = {}) {
+  const unresolved = reason => ({ status: 'unresolved', query: String(query ?? ''), detected: [], candidates: [], provenance: [], reason })
+  // The function answers 400 for 'invalid' and 429 for 'rate_limited' and still
+  // sends the whole result, so a non-2xx body is a resolution — not a transport
+  // failure. Reading it is what keeps "this is not an identifier" distinct from
+  // "the resolver did not answer". 'rate_limited' becomes an unresolved result
+  // whose reason names the limit, so every caller handles four statuses.
+  const normalize = payload => {
+    if (!payload || typeof payload.status !== 'string') return null
+    const base = { ...payload, query: payload.query ?? String(query ?? ''), detected: Array.isArray(payload.detected) ? payload.detected : [], candidates: Array.isArray(payload.candidates) ? payload.candidates : [], provenance: Array.isArray(payload.provenance) ? payload.provenance : [] }
+    if (base.status === 'rate_limited') return { ...base, status: 'unresolved', reason: base.reason || 'rate_limited' }
+    return ['resolved', 'ambiguous', 'unresolved', 'invalid'].includes(base.status) ? base : { ...base, status: 'unresolved', reason: base.reason || 'resolver_unavailable' }
+  }
+  try {
+    const { data, error } = await supabase.functions.invoke('intel-asset-resolve', {
+      body: { query, ...(chain ? { chain } : {}), ...(orgId ? { orgId } : {}) },
+      ...(signal ? { signal } : {}),
+    })
+    if (error) {
+      const details = await error.context?.json?.().catch(() => null)
+      return normalize(details) || unresolved(details?.error || error.message || 'resolver_unavailable')
+    }
+    if (data?.error) return unresolved(data.error)
+    return normalize(data) || unresolved('resolver_unavailable')
+  } catch { return unresolved('resolver_unavailable') }
 }
 
 // Global cached token/project profile (M5). Flexible identifiers; returns the

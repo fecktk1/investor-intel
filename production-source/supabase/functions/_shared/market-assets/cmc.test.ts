@@ -27,6 +27,10 @@ Deno.test('CMC v3 quotes normalize USD arrays and preserve the provider observat
   assert.equal(cmcRows('quotes',{data:[row]}).rows[0].quote.price,100)
   assert.equal(mapCmcListing(row)?.asOf,Date.parse('2026-09-09T11:59:00Z'))
   assert.equal(mapCmcListing({...row,last_updated:null,quote:[]}),null)
+  // Listings already carry the tradeable-pair count; nothing else supplies it.
+  assert.equal(mapCmcListing({...row,num_market_pairs:412})?.numMarketPairs,412)
+  assert.equal(mapCmcListing(row)?.numMarketPairs,null)
+  assert.equal(mapCmcListing({...row,num_market_pairs:'not a number'})?.numMarketPairs,null)
   assert.equal(cmcObservedAt({data:[row],status:{timestamp:'2026-09-09T13:00:00Z'}}),'2026-09-09T11:59:00.000Z')
 })
 Deno.test('CMC v5 nested rows, totals and issuer identity remain distinct',()=>{

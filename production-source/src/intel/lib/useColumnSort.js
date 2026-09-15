@@ -24,7 +24,10 @@ function cycleSteps(cycle) {
   return steps.length ? [...new Set(steps)] : SORT_CYCLE
 }
 
-export function useColumnSort({ sort = null, dir = null, setSort, defaultSort = null, defaultDir = 'desc', cycle = SORT_CYCLE } = {}) {
+// `initialDir(key)` lets a caller start a freshly picked column in the direction
+// that reads naturally for it (rank 1 first, newest first); the cycle then
+// continues from that step. Without it a new column starts at the first step.
+export function useColumnSort({ sort = null, dir = null, setSort, defaultSort = null, defaultDir = 'desc', cycle = SORT_CYCLE, initialDir } = {}) {
   const steps = useMemo(() => cycleSteps(cycle), [Array.isArray(cycle) ? cycle.join('|') : String(cycle)])
   const activeSort = sort || defaultSort || null
   const fallbackDir = DIRECTIONS.has(defaultDir) ? defaultDir : steps[0]
@@ -34,10 +37,14 @@ export function useColumnSort({ sort = null, dir = null, setSort, defaultSort = 
 
   const toggle = useCallback(key => {
     if (!key || typeof setSort !== 'function') return
-    if (key !== activeSort) { setSort({ sort: key, dir: steps[0] }); return }
+    if (key !== activeSort) {
+      const preferred = typeof initialDir === 'function' ? initialDir(key) : null
+      setSort({ sort: key, dir: steps.includes(preferred) ? preferred : steps[0] })
+      return
+    }
     const index = steps.indexOf(activeDir)
     setSort({ sort: key, dir: steps[(index + 1) % steps.length] })
-  }, [activeSort, activeDir, setSort, steps])
+  }, [activeSort, activeDir, setSort, steps, initialDir])
 
   // 'none' is the correct aria-sort for a column that is not the current sort;
   // omitting the attribute would leave assistive technology guessing.

@@ -27,6 +27,7 @@ export function marketScreenResponse(data: any) {
       price: a.current_price, change1hPct: a.change_1h_pct, change24hPct: a.change_24h_pct, change7dPct: a.change_7d_pct,
       volumeQuote24h: a.volume_24h, marketCap: a.market_cap, marketCapIsEstimated: false, fdv: a.fdv,
       circulatingSupply: a.circulating_supply, totalSupply: a.total_supply, maxSupply: a.max_supply,
+      numMarketPairs: a.num_market_pairs ?? null,
       categories: a.categories || [], platforms, cex, dex: a.dex || null,
       enrichmentConfidence: a.enrichment_confidence, ...marketCanonicalIdentity(a),
       cexCoverage: cex && Number(cex.availableCount) > 0 ? 'available' : 'unverified',
@@ -44,6 +45,8 @@ export function marketScreenResponse(data: any) {
   }
   return {
     catalog: data.catalog || null, snapshot, rows: (data.records || []).map(row), total: data.total, page: data.page, limit: data.limit,
+    // The database resolved the effective direction (named sorts keep their own).
+    sort: data.sort ?? null, dir: data.dir ?? null,
     marketCapPanel: { topByMarketCap: (data.topByMarketCap || []).map(row),
       unavailableCount: snapshot.marketCapUnavailableCount,
       estimatedCount: 0, coveragePct: snapshot.marketCapCoveragePct },

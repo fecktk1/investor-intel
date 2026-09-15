@@ -41,6 +41,7 @@ import AssetThesisModule from '../components/thesis/AssetThesisModule'
 import AssetYearInReview from '../components/AssetYearInReview'
 import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
 import TokenRiskBadge from '../components/TokenRiskBadge'
+import MarketCoverageRing from '../components/MarketCoverageRing'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
@@ -220,6 +221,10 @@ export default function MarketAssetPage() {
         </div>
         {sig && d.price == null && <MarketSignalBadge direction={sig.direction} />}
       </div>
+
+      {/* What this identity can feed, and why the rest cannot. Detail payloads
+          from before universal resolution carry no coverage: render nothing. */}
+      {d.coverage && <MarketCoverageRing coverage={d.coverage} identity={d.identity} />}
 
       <AssetSectionNav sections={[
         { id: 'asset-chart', key: 'asset.chart_position', label: 'Chart & position' },

@@ -44,7 +44,7 @@ export default function IntelModeShell({ children }) {
   const [expandedGroup, setExpandedGroup] = useState(null)
   const menuRef = useRef(null)
   const menuButtonRef = useRef(null)
-  const searchAssets = useCallback((query, signal) => searchIntelAssets(supabase, org?.id, query, signal), [supabase, org?.id])
+  const searchAssets = useCallback((query, signal) => searchIntelAssets(supabase, org?.id, query, signal, t), [supabase, org?.id, t])
   const closeNavigation = useCallback(() => setOpen(false), [])
   useEffect(() => { setUtilitiesOpen(false); setOpen(false) }, [org?.id, user?.id])
   useEffect(() => {
