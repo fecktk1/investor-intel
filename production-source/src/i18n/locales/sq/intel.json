@@ -918,7 +918,8 @@
       "error_ratio_blank": "Fut një numër për çdo raport tërheqjeje.",
       "error_url": "Ngjit adresën e një postimi publik në x.com, për shembull https://x.com/emri/status/1234567890.",
       "error_limit": "Një grafik mbështet deri në 200 vizatime. Hiq një para se të shtosh një tjetër.",
-      "error_text": "Fut tekstin e shënimit."
+      "error_text": "Fut tekstin e shënimit.",
+      "more": "Më shumë"
     },
     "indicators": {
       "open": "Tregues",

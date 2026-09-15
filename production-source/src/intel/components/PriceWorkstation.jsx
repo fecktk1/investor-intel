@@ -375,6 +375,8 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   <div className="intel-crosshair-legend" aria-live="off"><time dateTime={current?new Date(current.t).toISOString():undefined}>{current?barTime(current.t,timezone):'No observations'}</time>{[['O',current?.o],['H',current?.h],['L',current?.l],['C',current?.c]].map(([label,v])=><span key={label}>{label} <b>{price(v)}</b></span>)}</div>
 
+  {!replay&&drawings.toolbar}
+
   <div className="intel-workstation-canvas" style={{height:totalHeight}} onPointerMoveCapture={e=>{if(e.buttons)refreshAfterGesture()}} onPointerUpCapture={refreshAfterGesture} onWheelCapture={refreshAfterGesture}>
 
    <div ref={host} style={{height:totalHeight}} role="img" aria-label={`${mode==='line'?'Price':mode==='candles'?'Candlestick':'OHLC'} chart, ${bars.length} observations. Use chart navigation controls or read price data below.`}/>
@@ -392,7 +394,6 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
    </svg>
 
    {!replay&&drawings.overlay}
-   {!replay&&drawings.toolbar}
 
   </div>
 

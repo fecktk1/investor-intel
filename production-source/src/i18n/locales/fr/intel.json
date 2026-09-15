@@ -918,7 +918,8 @@
       "error_ratio_blank": "Saisissez un nombre pour chaque ratio de retracement.",
       "error_url": "Collez l’adresse d’une publication publique sur x.com, par exemple https://x.com/nom/status/1234567890.",
       "error_limit": "Un graphique accepte jusqu’à 200 dessins. Supprimez-en un avant d’en ajouter un autre.",
-      "error_text": "Saisissez le texte de l’annotation."
+      "error_text": "Saisissez le texte de l’annotation.",
+      "more": "Plus"
     },
     "indicators": {
       "open": "Indicateurs",
