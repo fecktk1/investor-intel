@@ -7,6 +7,34 @@
 
 export type MarketAssetsProviderId = 'coingecko' | 'coinmarketcap'
 
+/** One contract deployment exactly as the provider lists it. `chain` is the app
+ * chain id when the platform maps to one; an unmapped platform keeps chain null
+ * and its provider-reported name, never a guess. */
+export interface AssetDeployment {
+  platformSlug: string | null
+  platformName: string | null
+  chain: string | null
+  address: string
+}
+
+/** Provider metadata facts recorded verbatim (CMC /v2/cryptocurrency/info).
+ * Absent fields stay null; a valid zero stays a zero; nothing is inferred. */
+export interface AssetFacts {
+  notice: string | null
+  noticeHash: string | null              // SHA-256 hex of the trimmed notice
+  selfReportedCirculatingSupply: number | null
+  selfReportedMarketCap: number | null
+  selfReportedTags: string[] | null
+  infiniteSupply: boolean | null
+  dateAdded: string | null
+  dateLaunched: string | null
+  category: string | null                // 'coin' | 'token' as reported
+  tagGroups: { tag: string; group: string | null }[]
+  deployments: AssetDeployment[]
+  urls: Record<string, string[]> | null
+  factsAt: string | null                 // metadata fetch time (daily clock)
+}
+
 /** One canonical asset (a row in `market_assets`), provider-normalized. */
 export interface CanonicalAsset {
   sourceProvider: MarketAssetsProviderId
@@ -29,7 +57,9 @@ export interface CanonicalAsset {
   change24hPct: number | null
   change7dPct: number | null
   categories: string[] | null
-  platforms: Record<string, string> | null   // { chain: contract_address }
+  platforms: Record<string, string> | null   // { chain: contract_address } — one primary, kept for compatibility
+  facts?: AssetFacts | null                  // CoinMarketCap metadata pass only; CoinGecko leaves it null
+  factsAt?: string | null                    // same clock as facts.factsAt, as a column
   metadataFetchedAt?: string | null
   imageUrl: string | null
   imageSource: string | null

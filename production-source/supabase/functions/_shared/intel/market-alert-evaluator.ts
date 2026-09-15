@@ -4,7 +4,7 @@ import {readMarketAlertEvidence,marketAlertFailure} from './market-alert-evidenc
  * membership, entitlement, activation and revision while committing the event. */
 export async function evaluateMarketAlerts(db:any,onFired:(rule:any,evidence:any,eventId:string)=>Promise<void>,read=readMarketAlertEvidence){
  const {data:rules,error}=await db.from('intel_alert_rules').select('*, entity:entities(*), org:orgs!inner(product_mode)')
-  .eq('is_active',true).eq('org.product_mode','intel').in('trigger_type',['price_move','volume_spike','liquidity_drop'])
+  .eq('is_active',true).eq('org.product_mode','intel').in('trigger_type',['price_move','volume_spike','liquidity_drop','metadata_notice'])
   .order('last_evaluation_attempt_at',{ascending:true,nullsFirst:true}).order('id').limit(400)
  if(error||!Array.isArray(rules))return {checked:0,fired:0,failed:1,unavailable:0,rules:[],reason:'Rule loading failed.'}
  let checked=0,fired=0,failed=0,unavailable=0

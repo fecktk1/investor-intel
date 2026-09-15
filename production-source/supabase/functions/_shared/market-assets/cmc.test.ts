@@ -4,7 +4,7 @@ import { cmcParams, cmcRows, cmcRequestBody, estimateCmcCredits, cmcObservedAt }
 import { requestCmc, cmcPlan, cmcCreditCeiling } from './cmc-transport.ts'
 import { planCmcRefresh, refreshCmcDemand } from './cmc-refresh-planner.ts'
 import { assembleTokenUnlockState } from '../intel/market-enrichment.ts'
-import { mapCmcListing } from './coinmarketcap-provider.ts'
+import { cmcAssetFacts, cmcDeployments, fetchCoinmarketcapTopAssets, mapCmcListing, sha256Hex } from './coinmarketcap-provider.ts'
 import { marketCanonicalIdentity, marketIdentityChoices, marketChain, usableSpread } from '../intel/market-read-quality.ts'
 import { researchParams, requireIntelAccess, researchSnapshot } from '../intel/research-service.ts'
 import { cmcAssetRow, resolveCmcAsset } from '../intel/cmc-asset-identity.ts'
@@ -351,4 +351,66 @@ Deno.test('known native provider IDs remain verified when a second provider cata
  assert.equal(hasVerifiedCexIdentity({source_provider:'coinmarketcap',provider_id:'1',normalized_symbol:'BTC'},null),true);
  assert.equal(hasVerifiedCexIdentity({source_provider:'coinmarketcap',provider_id:'999999',normalized_symbol:'BTC'},null),false);
  assert.equal(hasVerifiedCexIdentity({source_provider:'coinmarketcap',provider_id:'1',normalized_symbol:'NOTBTC'},null),false);
+})
+
+// /v2/cryptocurrency/info facts: recorded verbatim, never inferred.
+Deno.test('metadata facts keep the notice, self-reported supply, dates, tags, URLs and every deployment',async()=>{
+ const info={notice:'  Trading is suspended.  ',self_reported_circulating_supply:1000,self_reported_market_cap:2000,self_reported_tags:['gaming'],
+  infinite_supply:false,date_added:'2021-05-01T00:00:00.000Z',date_launched:'2021-04-20T00:00:00.000Z',category:'token',
+  tags:['defi','yield-farming'],'tag-names':['DeFi','Yield farming'],'tag-groups':['SECTOR','CATEGORY'],
+  urls:{website:['https://example.com'],technical_doc:['https://example.com/wp.pdf'],twitter:['https://x.com/example'],chat:['not a url']},
+  contract_address:[
+   {contract_address:'0x'+'1'.repeat(40),platform:{name:'Ethereum',coin:{id:'1027',name:'Ethereum',symbol:'ETH',slug:'ethereum'}}},
+   {contract_address:'0x'+'2'.repeat(40),platform:{name:'BNB Smart Chain (BEP20)',coin:{id:'1839',name:'BNB',symbol:'BNB',slug:'bnb'}}},
+   {contract_address:'TokenMintAddr11111111111111111111111111111',platform:{name:'Solana',coin:{id:'5426',name:'Solana',symbol:'SOL',slug:'solana'}}},
+   {contract_address:'0x'+'3'.repeat(40),platform:{name:'Some Unlisted Network',coin:{id:'9',name:'X',symbol:'X',slug:'some-unlisted-network'}}},
+   {contract_address:'   ',platform:{name:'Ethereum',coin:{slug:'ethereum'}}}]}
+ const facts=await cmcAssetFacts(info,'2026-09-14T06:00:00Z')
+ assert.equal(facts.notice,'Trading is suspended.')
+ assert.equal(facts.noticeHash,await sha256Hex('Trading is suspended.'))
+ assert.match(facts.noticeHash!,/^[0-9a-f]{64}$/)
+ assert.equal(facts.selfReportedCirculatingSupply,1000);assert.equal(facts.selfReportedMarketCap,2000)
+ assert.deepEqual(facts.selfReportedTags,['gaming']);assert.equal(facts.infiniteSupply,false)
+ assert.equal(facts.dateAdded,'2021-05-01T00:00:00.000Z');assert.equal(facts.dateLaunched,'2021-04-20T00:00:00.000Z')
+ assert.equal(facts.category,'token');assert.equal(facts.factsAt,'2026-09-14T06:00:00Z')
+ assert.deepEqual(facts.tagGroups,[{tag:'defi',group:'SECTOR'},{tag:'yield-farming',group:'CATEGORY'}])
+ assert.deepEqual(facts.urls,{website:['https://example.com'],technical_doc:['https://example.com/wp.pdf'],twitter:['https://x.com/example']})
+ assert.equal(facts.deployments.length,4,'an empty address is not a deployment')
+ assert.deepEqual(facts.deployments.map(d=>d.chain),['ethereum','bnb','solana',null])
+ assert.equal(facts.deployments[3].platformName,'Some Unlisted Network','an unmapped platform keeps its reported name')
+ assert.equal(facts.deployments[1].platformSlug,'bnb')
+})
+Deno.test('absent metadata fields stay null and a valid zero stays a zero',async()=>{
+ const empty=await cmcAssetFacts({},null)
+ assert.deepEqual(empty,{notice:null,noticeHash:null,selfReportedCirculatingSupply:null,selfReportedMarketCap:null,selfReportedTags:null,
+  infiniteSupply:null,dateAdded:null,dateLaunched:null,category:null,tagGroups:[],deployments:[],urls:null,factsAt:null})
+ const zero=await cmcAssetFacts({self_reported_circulating_supply:0,infinite_supply:true,date_added:'not a date'},'2026-09-14T06:00:00Z')
+ assert.equal(zero.selfReportedCirculatingSupply,0);assert.equal(zero.infiniteSupply,true)
+ assert.equal(zero.dateAdded,null,'an unparseable date is not a date')
+ assert.deepEqual(cmcDeployments({contract_address:'not-an-array'}),[])
+})
+Deno.test('the catalogue metadata pass records facts and keeps the last good ones when a row is missing',async()=>{
+ const item=(id:number)=>({id,name:'Asset '+id,symbol:'T'+id,cmc_rank:id,last_updated:new Date().toISOString(),quote:{USD:{price:id,market_cap:id*100}}})
+ const info=(id:string)=>({id:Number(id),logo:'https://example.com/'+id+'.png',tags:['defi'],'tag-groups':['SECTOR'],notice:'Notice for '+id,
+  platform:{slug:'ethereum',token_address:'0x'+'9'.repeat(40)},contract_address:[{contract_address:'0x'+'1'.repeat(40),platform:{name:'Ethereum',coin:{slug:'ethereum'}}}]})
+ const response=(payload:any):any=>({payload,state:'fresh',reason:null,provenance:{fetchedAt:'2026-09-14T06:00:00Z'}})
+ const rows=await fetchCoinmarketcapTopAssets(2,{kind:'job'},async(name:string,p:any)=>response({data:name==='listings'
+  ?Array.from({length:p.limit},(_,i)=>item(p.start+i))
+  :Object.fromEntries(String(p.id).split(',').filter(id=>id==='1').map(id=>[id,info(id)]))}))
+ assert.equal(rows?.[0].facts?.notice,'Notice for 1')
+ assert.equal(rows?.[0].factsAt,'2026-09-14T06:00:00Z')
+ assert.deepEqual(rows?.[0].facts?.deployments,[{platformSlug:'ethereum',platformName:'Ethereum',chain:'ethereum',address:'0x'+'1'.repeat(40)}])
+ assert.deepEqual(rows?.[0].platforms,{ethereum:'0x'+'9'.repeat(40)},'the single primary platform is unchanged')
+ assert.equal(rows?.[1].facts,undefined,'an asset the metadata response omitted gains no invented facts')
+ const kept={provider_id:'1',image_url:'https://example.com/1.png',image_source:'coinmarketcap',
+  image_last_checked_at:new Date(Date.now()-60000).toISOString(),categories:['defi'],platforms:{}}
+ let selected=''
+ const db={from:()=>({select:(columns:string)=>{selected=columns;return {eq:()=>({limit:()=>({data:[kept]})})}}})}
+ const reused=await fetchCoinmarketcapTopAssets(1,{supabase:db},async()=>response({data:[item(1)]}))
+ // Fresh cached metadata means no metadata call and no facts in the payload:
+ // the stored facts survive through the catalogue write's coalesce, and the
+ // five-minute refresh never reads or resends every asset's metadata.
+ assert.equal(reused?.[0].facts,undefined,'a skipped metadata pass carries no facts')
+ assert.equal(reused?.[0].factsAt,undefined)
+ assert.equal(/\bfacts\b/.test(selected),false,'the prior-row read does not load facts')
 })

@@ -24,8 +24,15 @@
 // are known even when a cheaper source already answered.
 //
 // Demand is recorded once per resolved asset. Who searched is never stored.
+//
+// A resolved asset is then indexed: the first successful resolution by anyone
+// creates the shared market_assets record and puts the asset on the demand
+// cadence (see on-demand-index.ts). That step is recorded as a tenth provenance
+// entry, `index`, which exists only in the server result — the nine ladder steps
+// are the ladder.
 
 import { CHAIN_PROVIDERS, CHAINS, getChain } from '../chains.ts'
+import { indexResolvedAsset as indexResolvedAssetLive } from './on-demand-index.ts'
 import { normalizeEntity } from '../entity-resolver.ts'
 import { marketChain, marketPlatformSlugs } from './market-read-quality.ts'
 import { CMC_DEX_NETWORKS } from '../market-assets/cmc-dex.ts'
@@ -43,6 +50,8 @@ export const MAX_QUERY_LENGTH = MAX_IDENTIFIER_LENGTH
 export type ResolveStep =
   | 'catalogue' | 'entities' | 'memecoin' | 'cmc_metadata' | 'cmc_dex'
   | 'dexscreener' | 'geckoterminal' | 'birdeye' | 'rpc'
+  // Not a ladder step: the record creation that follows a resolved identity.
+  | 'index'
 
 export type StepOutcome = 'hit' | 'miss' | 'skipped' | 'error'
 
@@ -85,6 +94,9 @@ export type ResolveResult = {
   provenance: ProvenanceEntry[]
   reason: string | null
   demandRecorded: boolean
+  /** `inserted` is true only when this resolution created the shared record;
+   *  `demanded` is true when the quote snapshot was put on the demand cadence. */
+  indexed: { inserted: boolean; demanded: boolean }
 }
 
 export type ResolverDeps = {
@@ -95,6 +107,8 @@ export type ResolverDeps = {
   getTokenMetadata: typeof getTokenMetadataLive
   /** Single JSON-RPC POST. Injected so tests never reach a public endpoint. */
   rpcCall: (url: string, body: unknown, timeoutMs: number) => Promise<unknown>
+  /** Record creation + quote demand for a resolved identity. */
+  indexAsset: typeof indexResolvedAssetLive
   now: () => number
 }
 
@@ -277,6 +291,7 @@ export async function resolveAsset(
     getTokenInfo: getTokenInfoLive,
     getTokenMetadata: getTokenMetadataLive,
     rpcCall: defaultRpcCall,
+    indexAsset: indexResolvedAssetLive,
     now: () => Date.now(),
     ...(input.deps || {}),
   }
@@ -287,14 +302,14 @@ export async function resolveAsset(
   if (detection.invalid || !detection.candidates.length) {
     return {
       status: 'invalid', query: rawQuery, kind: detection.kind, identity: null, candidates: [],
-      provenance: [], reason: detection.invalid || 'unrecognized_identifier', demandRecorded: false,
+      provenance: [], reason: detection.invalid || 'unrecognized_identifier', demandRecorded: false, indexed: NOT_INDEXED,
     }
   }
 
   if (rateLimited(input.userId, deps.now())) {
     return {
       status: 'rate_limited', query: rawQuery, kind: detection.kind, identity: null, candidates: [],
-      provenance: [], reason: 'rate_limited', demandRecorded: false,
+      provenance: [], reason: 'rate_limited', demandRecorded: false, indexed: NOT_INDEXED,
     }
   }
 
@@ -340,7 +355,7 @@ export async function resolveAsset(
     }
   }
 
-  return await finish(admin, state, rawQuery)
+  return await finish(admin, state, rawQuery, deps, input)
 }
 
 function cmcListable(state: State): boolean {
@@ -728,14 +743,16 @@ function degenContext(input: ResolveInput) {
   return { supabase: input.ctx?.supabase, kind: 'request' as const, caller: 'intel-asset-resolve', jobName: 'intel-asset-resolve', maxCalls: 3 }
 }
 
-// ── Result assembly + demand ─────────────────────────────────────────────────
+// ── Result assembly + demand + indexing ──────────────────────────────────────
+
+const NOT_INDEXED = { inserted: false, demanded: false }
 
 // deno-lint-ignore no-explicit-any
-async function finish(admin: any, state: State, query: string): Promise<ResolveResult> {
+async function finish(admin: any, state: State, query: string, deps: ResolverDeps, input: ResolveInput): Promise<ResolveResult> {
   const base = { query, kind: state.detection.kind, provenance: state.provenance }
 
   if (state.ambiguous?.length) {
-    return { ...base, status: 'ambiguous', identity: null, candidates: state.ambiguous, reason: 'chain_selection_required', demandRecorded: false }
+    return { ...base, status: 'ambiguous', identity: null, candidates: state.ambiguous, reason: 'chain_selection_required', demandRecorded: false, indexed: NOT_INDEXED }
   }
 
   const deployments = [...state.deployments.values()].slice(0, 64)
@@ -763,12 +780,30 @@ async function finish(admin: any, state: State, query: string): Promise<ResolveR
   const answered = state.provenance.some((p) => p.outcome === 'hit')
   const identified = !!state.cmcId || (!!chain && !!address)
   if (!answered || !identified) {
-    return { ...base, status: 'unresolved', identity, candidates: [], reason: 'no_source_answered', demandRecorded: false }
+    return { ...base, status: 'unresolved', identity, candidates: [], reason: 'no_source_answered', demandRecorded: false, indexed: NOT_INDEXED }
   }
 
   const demandKey = identity.kind === 'cmc' ? `cmc:${identity.providerId}` : `${chain}:${address}`
   const demandRecorded = await recordDemand(admin, demandKey, identity)
-  return { ...base, status: 'resolved', identity, candidates: [], reason: null, demandRecorded }
+
+  // The record every user gets. It never changes the resolution: a failure is a
+  // provenance entry, and the identity above is returned either way.
+  const started = deps.now()
+  const indexed = await deps.indexAsset(admin, identity, {
+    logoUrl: identity.logoUrl, orgId: input.orgId || null, userId: input.userId || null,
+  }).catch((e: unknown) => ({ indexed: false, demanded: false, reasons: [`index_failed:${message(e)}`] }))
+  const failed = indexed.reasons.some((r) => /^(index_failed|no_database|cache_unavailable|demand_stamp_failed|demand_failed)/.test(r))
+  state.provenance.push({
+    step: 'index',
+    outcome: indexed.indexed ? 'hit' : failed ? 'error' : indexed.reasons.includes('identity_incomplete') ? 'skipped' : 'miss',
+    ms: Math.max(0, deps.now() - started),
+    ...(indexed.reasons.length ? { detail: indexed.reasons.join(',').slice(0, 140) } : {}),
+  })
+
+  return {
+    ...base, status: 'resolved', identity, candidates: [], reason: null, demandRecorded,
+    indexed: { inserted: indexed.indexed, demanded: indexed.demanded },
+  }
 }
 
 // deno-lint-ignore no-explicit-any

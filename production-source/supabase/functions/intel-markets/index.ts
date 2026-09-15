@@ -19,7 +19,9 @@ import { marketChain, marketCanonicalIdentity, marketIdentityChoices, verifiedNa
 import {readNativeChainPerformance} from '../_shared/intel/chain-performance-read.ts'
 import { marketScreenResponse } from '../_shared/intel/markets-screen.ts'
 import {resolveMarketAsset} from '../_shared/intel/market-asset-resolver.ts'
-import {contractCandles} from '../_shared/intel/contract-market-asset.ts'
+import {contractCandles,parseContractProviderId} from '../_shared/intel/contract-market-asset.ts'
+import {loadAssetHistory,historyPlan,unavailableHistory} from '../_shared/intel/asset-history.ts'
+import {realizedVolatility,maxDrawdown,distanceFromHigh,timeUnderWaterDays} from '../_shared/intel/risk-metrics.ts'
 import {marketCoverage,type MarketIdentityKind} from '../_shared/intel/market-coverage.ts'
 import { resolveCmcAsset } from '../_shared/intel/cmc-asset-identity.ts'
 import {assetMarketRead,marketCmcIdentity,chooseMarketCandles} from '../_shared/intel/market-asset-source.ts'
@@ -97,6 +99,17 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
     const actor = await measured('access',()=>requireIntelAccess(req,clientFactory,admin,orgId))
     const verifiedUserId=actor.userId
     if (!verifiedUserId) return finish(json({ error: 'unauthorized' }, 401))
+
+    // HISTORY mode: on-demand price history + derived risk for ONE asset. Same
+    // access check as detail; it is a read, so it is dispatched before it.
+    if (body.history === true) {
+      mode='history'
+      return await finish(measured('history',()=>marketHistory(admin, String(body.symbol || '').toUpperCase().replace(/^\$/, ''), {
+        sourceProvider:typeof body.sourceProvider==='string'?body.sourceProvider:undefined,
+        providerId:body.providerId != null ? String(body.providerId) : undefined,
+        range: typeof body.range==='string'?body.range:'90d',
+      })))
+    }
 
     if ((typeof body.symbol === 'string' && body.symbol.trim()) || (typeof body.sourceProvider === 'string' && body.providerId != null)) {
       mode='detail'
@@ -338,6 +351,39 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // rest is not. Sections are never dropped for a less-covered asset.
   const identity = detailIdentity(canonical, quote.chain)
   return json({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }) })
+}
+
+// ─── HISTORY mode (on-demand history + derived risk) ─────────────────────────
+// One range is one provider sampling, charged to the shared credit budget. A
+// pasted contract has no CoinMarketCap listing: it is answered from its own
+// identity, with no provider call and no metrics invented from nothing.
+const NO_RISK_METRICS = { volatility30d: null, maxDrawdown: null, distanceFromHigh: null, timeUnderWaterDays: null }
+// deno-lint-ignore no-explicit-any
+async function marketHistory(admin: any, sym: string, opts: { range?: string; sourceProvider?: string; providerId?: string } = {}): Promise<Response> {
+  const range = opts.range || '90d'
+  if (!historyPlan(range)) return json({ error: 'invalid_history_range' }, 400)
+  if (opts.sourceProvider === 'contract') {
+    const parsed = opts.providerId ? parseContractProviderId(opts.providerId) : null
+    if (!parsed) return json({ error: 'invalid_provider' }, 400)
+    return json({ history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS,
+      identity: { kind: 'contract' as const, provider: 'contract', providerId: `${parsed.chain}:${parsed.address}`, chain: parsed.chain, address: parsed.address } })
+  }
+  const resolved = await resolveMarketAsset(admin, sym, opts.sourceProvider, opts.providerId)
+  if (resolved.ambiguous) return json({ error: 'ambiguous_asset', symbol: sym }, 409)
+  if (resolved.error) return json({ error: 'identity_unavailable' }, 503)
+  if (!resolved.data) return json({ error: 'asset_not_found', symbol: sym }, 404)
+  const identity = detailIdentity(resolved.data, null)
+  const cmcId = marketCmcIdentity(resolved.data)
+  if (!cmcId) return json({ history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS, identity })
+  const history = await loadAssetHistory(admin, { cmcId, range, ctx: { caller: 'market-history' } })
+  const now = Date.now()
+  const metrics = history.points.length ? {
+    volatility30d: realizedVolatility(history.points),
+    maxDrawdown: maxDrawdown(history.points),
+    distanceFromHigh: distanceFromHigh(history.points, now),
+    timeUnderWaterDays: timeUnderWaterDays(history.points),
+  } : NO_RISK_METRICS
+  return json({ history, metrics, identity })
 }
 
 /** Exact provider identity for the page — a contract is one chain + one address. */

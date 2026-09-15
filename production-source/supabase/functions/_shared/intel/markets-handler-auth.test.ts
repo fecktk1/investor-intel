@@ -130,6 +130,83 @@ Deno.test('Markets detail for a CoinMarketCap identity keeps its response shape 
   assertEquals(body.price,3000);assertEquals(body.symbol,'ETH');assertEquals(body.canonicalAssetKey,'eip155:1:native')
  } finally { restore() }
 }))
+// ── HISTORY mode: on-demand history + derived risk ───────────────────────────
+// One range is one provider sampling. A pasted contract has no CoinMarketCap
+// listing, so it is answered from its own identity without touching a provider.
+const historyRequest=(body:Record<string,unknown>)=>new Request('https://fixture.test/intel-markets',{method:'POST',headers:{Authorization:'Bearer fixture-user','Content-Type':'application/json'},body:JSON.stringify({orgId:'org',history:true,...body})})
+const NO_RISK={volatility30d:null,maxDrawdown:null,distanceFromHigh:null,timeUnderWaterDays:null}
+Deno.test('Markets history for a pasted contract is unavailable with no provider call and no market reads',()=>withEnv(async()=>{
+ const f=detailFixture({memecoin_latest_tokens:[memecoinRow]}),restore=f.stubFetch()
+ try {
+  const r=await handleMarkets(historyRequest({sourceProvider:'contract',providerId:`solana:${CONTRACT_ADDRESS}`,range:'90d'}),f.factory,f.chains)
+  assertEquals(r.status,200)
+  const body=await r.json()
+  assertEquals(Object.keys(body).sort(),['history','identity','metrics'])
+  assertEquals(body.history,{points:[],interval:'daily',source:'coinmarketcap',observedAt:null,fetchedAt:null,state:'unavailable',reason:'no_coinmarketcap_listing',credits:0})
+  assertEquals(body.metrics,NO_RISK)
+  assertEquals(body.identity,{kind:'contract',provider:'contract',providerId:`solana:${CONTRACT_ADDRESS}`,chain:'solana',address:CONTRACT_ADDRESS})
+  assertEquals(f.fetched,[])
+  assertEquals(f.seen.filter((t)=>!['org_members','profiles','rpc:can_access_intel'].includes(t)),[])
+  assertMatch(r.headers.get('Server-Timing')||'',/history;dur=/)
+ } finally { restore() }
+}))
+Deno.test('Markets history rejects an unsupported range before any identity or provider read',()=>withEnv(async()=>{
+ const f=detailFixture({}),restore=f.stubFetch()
+ try {
+  const r=await handleMarkets(historyRequest({sourceProvider:'coinmarketcap',providerId:'1027',range:'5y'}),f.factory,f.chains)
+  assertEquals(r.status,400);assertEquals(await r.json(),{error:'invalid_history_range'})
+  assertEquals(f.fetched,[]);assertEquals(f.seen.includes('market_assets'),false)
+ } finally { restore() }
+}))
+// A CoinMarketCap identity spends one request for the whole range: no paging
+// ladder, no retry, and no second call for the derived measures.
+function cmcHistoryFixture(points:{t:number;price:number}[]){
+ const asset={source_provider:'coinmarketcap',provider_id:'1027',symbol:'ETH',normalized_symbol:'ETH',name:'Ethereum',primary_chain:'ethereum',platforms:{},current_price:points.at(-1)?.price??null,as_of:new Date(points.at(-1)?.t??Date.now()).toISOString()}
+ const tables:Record<string,Record<string,unknown>[]>={org_members:[{org_id:'org'}],profiles:[{is_super_admin:false}],market_assets:[asset]}
+ const seen:string[]=[],fetched:string[]=[]
+ const table=(name:string)=>{const rows=tables[name]||[];const q:any={}
+  q.select=()=>q
+  for(const method of ['eq','in','order','limit','range','update','insert','upsert','not','neq','filter'])q[method]=()=>q
+  q.maybeSingle=()=>Promise.resolve({data:rows[0]??null,error:null});q.single=q.maybeSingle
+  q.then=(resolve:any,reject:any)=>Promise.resolve({data:rows,count:rows.length,error:null}).then(resolve,reject)
+  return q}
+ const db={auth:{getUser:()=>Promise.resolve({data:{user:{id:'verified-user'}},error:null})},
+  from:(name:string)=>{seen.push(name);return table(name)},
+  rpc:(name:string)=>{seen.push(`rpc:${name}`)
+   const data=name==='can_access_intel'?true:name==='cmc_request_reserve'?{allowed:true,reservation_id:'res-1'}:name==='cmc_account_sync_claim'?{allowed:false}:{}
+   return Promise.resolve({data,error:null})}}
+ const body={status:{error_code:0,credit_count:1},data:{'1027':{id:1027,name:'Ethereum',symbol:'ETH',quotes:points.map(p=>({timestamp:new Date(p.t).toISOString(),quote:{USD:{price:p.price,volume_24h:1e9,market_cap:3.6e11,timestamp:new Date(p.t).toISOString()}}}))}}}
+ return {factory:()=>db,chains:()=>Promise.resolve({rows:[],unavailable:false}),seen,fetched,
+  stubFetch(){const original=globalThis.fetch;globalThis.fetch=((input:any)=>{fetched.push(String(input?.url||input));return Promise.resolve(new Response(JSON.stringify(body),{status:200,headers:{'Content-Type':'application/json'}}))}) as typeof fetch;return()=>{globalThis.fetch=original}}}
+}
+async function withCmcEnv(fn:()=>Promise<void>){
+ const keys={SUPABASE_URL:'https://fixture.test',SUPABASE_ANON_KEY:'fixture-anon',COINMARKETCAP_API_KEY:'fixture-cmc-key',CMC_ENABLED:'true',CMC_VERIFIED_BASELINE_PLAN:'basic',CMC_ACCESS_PROFILE:'baseline'}
+ const before=Object.fromEntries(Object.keys(keys).map(k=>[k,Deno.env.get(k)]))
+ try{for(const[k,v]of Object.entries(keys))Deno.env.set(k,v);await fn()}finally{for(const[k,v]of Object.entries(before))if(v===undefined)Deno.env.delete(k);else Deno.env.set(k,v)}
+}
+Deno.test('Markets history for a CoinMarketCap identity spends exactly one provider request for the range',()=>withCmcEnv(async()=>{
+ const day=86400000,end=Math.floor(Date.now()/day)*day
+ const points=[{t:end-3*day,price:100},{t:end-2*day,price:140},{t:end-day,price:70}]
+ const f=cmcHistoryFixture(points),restore=f.stubFetch()
+ try {
+  const r=await handleMarkets(historyRequest({sourceProvider:'coinmarketcap',providerId:'1027',range:'90d'}),f.factory,f.chains)
+  assertEquals(r.status,200)
+  const body=await r.json()
+  assertEquals(Object.keys(body).sort(),['history','identity','metrics'])
+  const historical=f.fetched.filter((u)=>u.includes('/v3/cryptocurrency/quotes/historical'))
+  assertEquals(historical.length,1)
+  assert(historical[0].includes('id=1027')&&historical[0].includes('interval=daily')&&historical[0].includes('count=90'))
+  assertEquals(f.fetched.length,1)
+  assertEquals(body.history.state,'fresh');assertEquals(body.history.interval,'daily');assertEquals(body.history.credits,1)
+  assertEquals(body.history.points.map((p:any)=>p.price),[100,140,70])
+  assertEquals(body.history.observedAt,new Date(end-day).toISOString())
+  assertEquals(body.identity,{kind:'cmc',provider:'coinmarketcap',providerId:'1027',chain:'ethereum',address:null})
+  assertEquals(body.metrics.maxDrawdown.pct,-50)
+  assertEquals(body.metrics.volatility30d.samples,2)
+  assertEquals(body.metrics.distanceFromHigh.high,140)
+  assertEquals(typeof body.metrics.timeUnderWaterDays,'number')
+ } finally { restore() }
+}))
 Deno.test('Markets detail validation keeps its status and is included in total timing',()=>withEnv(async()=>{
  const f=fixture(),r=await handleMarkets(new Request('https://fixture.test/intel-markets',{method:'POST',headers:{Authorization:'Bearer fixture-user','Content-Type':'application/json'},body:JSON.stringify({orgId:'org',sourceProvider:'coinmarketcap',providerId:'1027',timeframe:'unsupported'})}),f.factory,f.chains)
  assertEquals(r.status,400);assertEquals(await r.json(),{error:'invalid_chart_range'})

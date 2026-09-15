@@ -72,6 +72,11 @@ function spyDeps(overrides: Partial<ResolverDeps> = {}) {
     // deno-lint-ignore no-explicit-any
     getTokenMetadata: ((c: string) => { calls.push(`getTokenMetadata:${c}`); return Promise.resolve(null) }) as any,
     rpcCall: ((url: string) => { calls.push(`rpc:${url}`); return Promise.resolve({}) }),
+    // deno-lint-ignore no-explicit-any
+    indexAsset: ((_admin: unknown, identity: any) => {
+      calls.push(`index:${identity?.provider}:${identity?.providerId}`)
+      return Promise.resolve({ indexed: true, demanded: identity?.kind === 'cmc', reasons: [] })
+    }) as any,
     ...overrides,
   }
   return { calls, deps }
@@ -112,7 +117,7 @@ Deno.test('a catalogued contract resolves without a single provider call', async
   eq(step(result, 'catalogue')?.outcome, 'hit')
   // Step 4 always runs once for a CMC-listable namespace, but only to confirm
   // the canonical id — with the id already known it asks by id, not by address.
-  eq(calls, ['cmc:metadata'])
+  eq(calls, ['cmc:metadata', 'index:coinmarketcap:825'])
   eq(step(result, 'dexscreener')?.outcome, 'skipped')
   eq(step(result, 'rpc')?.outcome, 'skipped')
 })
@@ -302,6 +307,73 @@ Deno.test('demand is recorded once per resolution with the contract key', async 
   eq(admin.rpcCalls[0].params, { p_asset_key: `base:${USDC_BASE}`, p_provider: 'contract', p_provider_id: `base:${USDC_BASE}` })
   // Nothing about who searched is ever passed.
   eq(Object.keys(admin.rpcCalls[0].params).some((k) => /user|org|actor/i.test(k)), false)
+})
+
+Deno.test('a resolved asset is indexed, and the index is a tenth provenance entry', async () => {
+  reset()
+  const admin = fakeAdmin({
+    memecoin_latest_tokens: [{ chain: 'base', token_address: USDC_BASE, symbol: 'DEGEN', name: 'Degen', liquidity_usd: 50_000 }],
+  })
+  const seen: unknown[] = []
+  const { deps } = spyDeps({
+    // deno-lint-ignore no-explicit-any
+    indexAsset: ((_admin: unknown, identity: unknown, options: unknown) => {
+      seen.push({ identity, options })
+      return Promise.resolve({ indexed: true, demanded: false, reasons: [] })
+    }) as any,
+  })
+  const result = await resolveAsset(admin, { query: USDC_BASE, chain: 'base', orgId: 'org-1', userId: 'u13', deps })
+
+  eq(result.status, 'resolved')
+  eq(result.indexed, { inserted: true, demanded: false })
+  // The ladder is still nine steps; `index` is appended after them.
+  eq(result.provenance.length, 10)
+  eq(result.provenance[9].step, 'index')
+  eq(result.provenance[9].outcome, 'hit')
+  eq(seen.length, 1)
+  // The org and user reach the indexer only so the worker can recheck that
+  // member's access before it refreshes; the demand ledger stays anonymous.
+  eq((seen[0] as { options: Record<string, unknown> }).options.orgId, 'org-1')
+  eq((seen[0] as { options: Record<string, unknown> }).options.userId, 'u13')
+})
+
+Deno.test('an index that already has the asset, or fails outright, never changes the resolution', async () => {
+  reset()
+  const admin = fakeAdmin({
+    memecoin_latest_tokens: [{ chain: 'base', token_address: USDC_BASE, symbol: 'DEGEN', name: 'Degen', liquidity_usd: 50_000 }],
+  })
+  const existing = await resolveAsset(admin, {
+    query: USDC_BASE, chain: 'base', userId: 'u14',
+    // deno-lint-ignore no-explicit-any
+    deps: spyDeps({ indexAsset: (() => Promise.resolve({ indexed: false, demanded: true, reasons: ['already_indexed'] })) as any }).deps,
+  })
+  eq(existing.status, 'resolved')
+  eq(existing.indexed, { inserted: false, demanded: true })
+  eq(step(existing, 'index')?.outcome, 'miss')
+  eq(step(existing, 'index')?.detail, 'already_indexed')
+
+  reset()
+  const broken = await resolveAsset(admin, {
+    query: USDC_BASE, chain: 'base', userId: 'u15',
+    // deno-lint-ignore no-explicit-any
+    deps: spyDeps({ indexAsset: (() => Promise.reject(new Error('postgrest_down'))) as any }).deps,
+  })
+  eq(broken.status, 'resolved')
+  eq(broken.identity?.symbol, 'DEGEN')
+  eq(broken.indexed, { inserted: false, demanded: false })
+  eq(step(broken, 'index')?.outcome, 'error')
+  eq(step(broken, 'index')?.detail, 'index_failed:postgrest_down')
+})
+
+Deno.test('nothing is indexed when nothing was resolved', async () => {
+  reset()
+  const admin = fakeAdmin()
+  const { calls, deps } = spyDeps()
+  const unresolved = await resolveAsset(admin, { query: USDC_BASE, chain: 'base', userId: 'u16', deps })
+  eq(unresolved.status, 'unresolved')
+  eq(unresolved.indexed, { inserted: false, demanded: false })
+  eq(unresolved.provenance.some((p) => p.step === 'index'), false)
+  eq(calls.some((c) => c.startsWith('index:')), false)
 })
 
 Deno.test('an org entity answers without any provider call but never invents a market', async () => {
