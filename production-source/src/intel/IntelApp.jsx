@@ -1,44 +1,65 @@
 import React from 'react'
+import { deferredRoute } from '../lib/deferred-route'
 import { Routes, Route, Navigate } from 'react-router'
 import { useProfile } from '../lib/profile-context'
+import {useSupabase} from '../lib/useSupabase'
+import IntelProfileGate from './components/IntelProfileGate'
 import { IntelProvider } from './context/IntelContext'
+import { PortfolioSelectionProvider } from './lib/PortfolioSelectionContext'
+import { PersonalWorkspaceProvider } from './context/PersonalWorkspace'
+import { WatchlistSelectionProvider } from './context/WatchlistSelection'
+import { ResearchThreadsProvider } from './context/ResearchThreads'
+import { DashboardCacheProvider } from './context/DashboardCache'
+import { DisplayCurrencyProvider } from './lib/display-currency'
+import './workspace.css'
 import IntelModeShell from './components/IntelModeShell'
-import IntelStubPage from './pages/IntelStubPage'
-import IntelOnboardingPage from './pages/IntelOnboardingPage'
-import WatchlistPage from './pages/WatchlistPage'
-import AssetBreakdownPage from './pages/AssetBreakdownPage'
-import ExplainPage from './pages/ExplainPage'
-import ComparePage from './pages/ComparePage'
-import MarketPulsePage from './pages/MarketPulsePage'
-import MarketsPage from './pages/MarketsPage'
-import MarketAssetPage from './pages/MarketAssetPage'
-import PortfolioPage from './pages/PortfolioPage'
-import PortfolioAssetPage from './pages/PortfolioAssetPage'
-import NarrativeRadarPage from './pages/NarrativeRadarPage'
-import NarrativeDetailPage from './pages/NarrativeDetailPage'
-import AnalyzeInputPage from './pages/AnalyzeInputPage'
-import ExecutionPage from './pages/ExecutionPage'
-import DefiPage from './pages/DefiPage'
-import MacroPage from './pages/MacroPage'
-import BriefsPage from './pages/BriefsPage'
-import AlertsPage from './pages/AlertsPage'
-import ThesisPage from './pages/ThesisPage'
-import ThesisJournalLayout from './pages/ThesisJournalLayout'
-import ThesisDashboardPage from './pages/ThesisDashboardPage'
-import ThesisListPage from './pages/ThesisListPage'
-import ThesisBuilderPage from './pages/ThesisBuilderPage'
-import ThesisDetailPage from './pages/ThesisDetailPage'
-import TradeJournalPage from './pages/TradeJournalPage'
-import ReviewsPage from './pages/ReviewsPage'
-import ThesisAnalyticsPage from './pages/ThesisAnalyticsPage'
-import ThesisSettingsPage from './pages/ThesisSettingsPage'
+const IntelStubPage = React.lazy(() => import('./pages/IntelStubPage'))
+const IntelOnboardingPage = React.lazy(() => import('./pages/IntelOnboardingPage'))
+const WatchlistPage = React.lazy(() => import('./pages/WatchlistPage'))
+const AssetBreakdownPage = deferredRoute(() => import('./pages/AssetBreakdownPage'), <div className="intel-route-loading" role="status">Loading research…</div>)
+const ExplainPage = React.lazy(() => import('./pages/ExplainPage'))
+const ComparePage = React.lazy(() => import('./pages/ComparePage'))
+const MarketPulsePage = React.lazy(() => import('./pages/MarketPulsePage'))
+const MarketResearchPage = React.lazy(() => import('./pages/MarketResearchPage'))
+const InvestigationPage = React.lazy(() => import('./pages/InvestigationPage'))
+const ChartSnapshotPage = React.lazy(() => import('./pages/ChartSnapshotPage'))
+const MarketsPage = React.lazy(() => import('./pages/MarketsPage'))
+const MarketStructurePage = React.lazy(() => import('./pages/MarketStructurePage'))
+const CategoriesPage = React.lazy(() => import('./pages/CategoriesPage'))
+const AirdropsPage = React.lazy(() => import('./pages/AirdropsPage'))
+const ListingsPage = React.lazy(() => import('./pages/ListingsPage'))
+const GraduationPage = React.lazy(() => import('./pages/GraduationPage'))
+const MarketAssetPage = deferredRoute(() => import('./pages/MarketAssetPage'), <div className="intel-route-loading" role="status">Loading research…</div>)
+const PortfolioPage = React.lazy(() => import('./pages/PortfolioPage'))
+const PortfolioAssetPage = React.lazy(() => import('./pages/PortfolioAssetPage'))
+const NarrativeRadarPage = React.lazy(() => import('./pages/NarrativeRadarPage'))
+const NarrativeDetailPage = React.lazy(() => import('./pages/NarrativeDetailPage'))
+const AnalyzeInputPage = React.lazy(() => import('./pages/AnalyzeInputPage'))
+const ExecutionPage = React.lazy(() => import('./pages/ExecutionPage'))
+const DefiPage = React.lazy(() => import('./pages/DefiPage'))
+const MacroPage = React.lazy(() => import('./pages/MacroPage'))
+const RegimePage = React.lazy(() => import('./pages/RegimePage'))
+const BriefsPage = React.lazy(() => import('./pages/BriefsPage'))
+const AlertsPage = React.lazy(() => import('./pages/AlertsPage'))
+const ThesisPage = React.lazy(() => import('./pages/ThesisPage'))
+const ThesisJournalLayout = React.lazy(() => import('./pages/ThesisJournalLayout'))
+const ThesisDashboardPage = React.lazy(() => import('./pages/ThesisDashboardPage'))
+const ThesisListPage = React.lazy(() => import('./pages/ThesisListPage'))
+const ThesisBuilderPage = React.lazy(() => import('./pages/ThesisBuilderPage'))
+const ThesisDetailPage = React.lazy(() => import('./pages/ThesisDetailPage'))
+const TradeJournalPage = React.lazy(() => import('./pages/TradeJournalPage'))
+const ReviewsPage = React.lazy(() => import('./pages/ReviewsPage'))
+const ThesisAnalyticsPage = React.lazy(() => import('./pages/ThesisAnalyticsPage'))
+const ThesisSettingsPage = React.lazy(() => import('./pages/ThesisSettingsPage'))
 import { THESIS_JOURNAL_ENABLED } from './lib/flags'
-import SavedResearchPage from './pages/SavedResearchPage'
-import IntelSettingsPage from './pages/IntelSettingsPage'
-import CommentKingPage from './pages/CommentKingPage'
-import NewsPage from './pages/NewsPage'
-import SupportInboxPage from '../pages/SupportInboxPage'
-import SupportTicketPage from '../pages/SupportTicketPage'
+const SavedResearchPage = React.lazy(() => import('./pages/SavedResearchPage'))
+const IntelSettingsPage = React.lazy(() => import('./pages/IntelSettingsPage'))
+const CommentKingPage = React.lazy(() => import('./pages/CommentKingPage'))
+const NewsPage = React.lazy(() => import('./pages/NewsPage'))
+const ChartLabPage = React.lazy(() => import('./pages/ChartLabPage'))
+const DataBudgetPage = React.lazy(() => import('./pages/DataBudgetPage'))
+const SupportInboxPage = React.lazy(() => import('../pages/SupportInboxPage'))
+const SupportTicketPage = React.lazy(() => import('../pages/SupportTicketPage'))
 
 // Investor Intel mode root. Mounted at /intel/* inside RequireAuth +
 // RequireIntelMode (see src/App.jsx) and lazy-loaded so content-only users
@@ -48,29 +69,46 @@ import SupportTicketPage from '../pages/SupportTicketPage'
 // NOTE: nav labels live in src/intel/intelNav.js; page copy in the `intel`
 // i18n namespace (src/i18n/locales/<lng>/intel.json).
 export default function IntelApp() {
-  const { org, profileLoading } = useProfile()
-
-  if (profileLoading) {
-    return (
-      <div className="min-h-screen flex items-center justify-center bg-black">
-        <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-[var(--accent)]" />
-      </div>
-    )
-  }
+  const { org, profile, profileLoading } = useProfile(),{user}=useSupabase()
 
   // A brand-new trial workspace must complete onboarding before the app opens.
   if (org && org.onboarding_completed === false) {
-    return <IntelOnboardingPage />
+    return <React.Suspense fallback={<p role="status">Loading workspace…</p>}><IntelOnboardingPage /></React.Suspense>
   }
 
   return (
-    <IntelProvider>
+    <IntelProfileGate loading={profileLoading} user={user} profile={profile} org={org}><IntelProvider>
+      {/* One FX read an hour for the whole mode: money columns render in the
+          reader's chosen currency, converted from the stored USD at display
+          time. Outermost of the data providers so every route shares one rate. */}
+      <DisplayCurrencyProvider>
+      <DashboardCacheProvider><PersonalWorkspaceProvider><ResearchThreadsProvider><WatchlistSelectionProvider><PortfolioSelectionProvider>
       <IntelModeShell>
+        <React.Suspense fallback={<div className="intel-route-loading" role="status">Loading research…</div>}>
         <Routes>
           <Route index element={<MarketPulsePage />} />
           <Route path="markets" element={<MarketsPage />} />
+          {/* CMC capture figures (rank map, RWA universe, index constituents,
+              liquidation heat). Distinct from /intel/market-structure, which is
+              the exchange market-research workspace. */}
+          <Route path="structure" element={<MarketStructurePage />} />
+          {/* CMC category list (a second breadth source) and the recorded
+              airdrop calendar. Both read the same capture service. */}
+          <Route path="categories" element={<CategoriesPage />} />
+          <Route path="airdrops" element={<AirdropsPage />} />
+          {/* The daily new-listing due-diligence cohort and the hourly meme
+              launch-stage lifecycle. Both read the same capture service. */}
+          <Route path="listings" element={<ListingsPage />} />
+          <Route path="graduation" element={<GraduationPage />} />
+          <Route path="rwa" element={<MarketResearchPage workspace="rwa" />} />
+          <Route path="market-structure" element={<MarketResearchPage workspace="structure" />} />
+          <Route path="discovery" element={<MarketResearchPage workspace="discovery" />} />
+          <Route path="market-context" element={<MarketResearchPage workspace="context" />} />
+          <Route path="investigate" element={<InvestigationPage />} />
+          <Route path="chart-snapshots/:id" element={<ChartSnapshotPage />} />
           <Route path="markets/:symbol" element={<MarketAssetPage />} />
           <Route path="macro" element={<MacroPage />} />
+          <Route path="regime" element={<RegimePage />} />
           <Route path="watchlist" element={<WatchlistPage />} />
           <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="portfolio/:portfolioId/asset/:assetKey" element={<PortfolioAssetPage />} />
@@ -114,6 +152,13 @@ export default function IntelApp() {
 
           <Route path="comment-king" element={<CommentKingPage />} />
 
+          {/* Internal chart kit gallery; the page itself gates on super admin. */}
+          <Route path="lab/charts" element={<ChartLabPage />} />
+
+          {/* Provider plan, schedule cost and capture depth; the page itself
+              gates on super admin and the edge function answers 403 as well. */}
+          <Route path="admin/data-budget" element={<DataBudgetPage />} />
+
           <Route path="research" element={<SavedResearchPage />} />
           <Route path="settings" element={<IntelSettingsPage />} />
           <Route path="support" element={<SupportInboxPage basePath="/intel/support" />} />
@@ -121,7 +166,10 @@ export default function IntelApp() {
 
           <Route path="*" element={<Navigate to="/intel" replace />} />
         </Routes>
+      </React.Suspense>
       </IntelModeShell>
-    </IntelProvider>
+      </PortfolioSelectionProvider></WatchlistSelectionProvider></ResearchThreadsProvider></PersonalWorkspaceProvider></DashboardCacheProvider>
+      </DisplayCurrencyProvider>
+    </IntelProvider></IntelProfileGate>
   )
 }

@@ -27,16 +27,17 @@ export async function removeSource(supabase, id) {
   const { error } = await supabase.from('tracked_sources').delete().eq('id', id); if (error) throw error
 }
 
-export async function listNews(supabase, orgId, { entityId = null, limit = 50, search = null, since = null, until = null } = {}) {
-  const broad = !!(search || since || until)
-  let q = supabase.from('news_items').select('*, entity:entities(display_symbol, canonical_ref_key)').eq('org_id', orgId)
+export async function listNews(supabase, orgId, { entityId = null, limit = 50, search = null, since = null, until = null, signal = null, page = 0, paginated = false } = {}) {
+  const { size, from } = newsPageBounds(page, limit)
+  let q = supabase.from('news_items').select('*, entity:entities(display_symbol, canonical_ref_key)', paginated ? { count: 'exact' } : {}).eq('org_id', orgId)
   if (entityId) q = q.eq('entity_id', entityId)
   if (search) { const s = sanitizeTerm(search); if (s) q = q.or(`title.ilike.%${s}%,summary.ilike.%${s}%`) }
   if (since) q = q.gte('created_at', since)
   if (until) q = q.lte('created_at', endOfDay(until))
-  q = q.order('published_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }).limit(broad ? 200 : limit)
-  const { data, error } = await q
-  if (error) throw error; return data || []
+  if (signal) q = q.eq('sentiment', signal === 'caution' ? 'mixed' : signal)
+  q = q.order('published_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }).order('id').range(from, from + size - 1)
+  const { data, error, count } = await q
+  if (error) throw error; return paginated ? { rows: data || [], count: count || 0 } : data || []
 }
 
 export async function refreshNews(supabase, orgId, entityId = null) {
@@ -100,13 +101,13 @@ export async function pageGlobalNews(supabase, { chains = null, search = null, s
     .from('intel_global_news')
     .select('id, title, url, summary, source_name, sentiment, published_at, created_at, chains, entity_symbol, source_quality, authority_level, news_category', { count: 'exact' })
   if (search) { const s = sanitizeTerm(search); if (s) q = q.or(`title.ilike.%${s}%,summary.ilike.%${s}%,source_name.ilike.%${s}%`) }
-  else if (chains && chains.length) q = q.or(`chains.ov.{${chains.join(',')}},chains.eq.{}`)
+  else if (newsChains(chains).length) q = q.or(`chains.ov.{${newsChains(chains).join(',')}},chains.eq.{}`)
   if (since) q = q.gte('created_at', since)
   if (until) q = q.lte('created_at', endOfDay(until))
   if (signal) q = q.eq('sentiment', signal === 'caution' ? 'mixed' : signal)
   if (category) q = q.eq('news_category', category)
-  const from = Math.max(0, page) * pageSize
-  q = q.order('created_at', { ascending: false }).range(from, from + pageSize - 1)
+  const { from, size } = newsPageBounds(page, pageSize)
+  q = q.order('created_at', { ascending: false }).order('id').range(from, from + size - 1)
   const { data, error, count } = await q
   if (error) throw error
   return { rows: (data || []).map((r) => ({ ...r, curated: true })), count: count || 0 }
@@ -116,24 +117,35 @@ export async function pageGlobalNews(supabase, { chains = null, search = null, s
 // clusters scored for importance/credibility, each with what-happened,
 // why-it-matters, bull/bear, source quality and a verification flag.
 // Authenticated read (RLS: auth.uid() IS NOT NULL); ranked by final_score.
-export async function listCuratedNews(supabase, { chains = null, limit = 12, search = null, since = null, until = null } = {}) {
+export function newsPageBounds(page, limit) {
+  const size = Math.min(100, Math.max(1, Math.floor(Number(limit) || 20)))
+  return { size, from: Math.min(100000, Math.max(0, Math.floor(Number(page) || 0))) * size }
+}
+const newsChains = chains => Array.isArray(chains) ? chains.filter(c => /^[a-z0-9-]+$/.test(c)).slice(0, 50) : []
+export async function listCuratedNews(supabase, { chains = null, limit = 12, search = null, since = null, until = null, signal = null, category = null, page = 0, paginated = false } = {}) {
   const broad = !!(search || since || until)
+  const { size, from } = newsPageBounds(page, limit)
   let q = supabase
     .from('intel_curated_news')
-    .select('id, cluster_hash, title, cleaned_title, summary, why_it_matters, what_happened, crypto_impact, watch_next, bull_case, bear_case, signal, signal_bias, confidence, news_category, source_quality_score, needs_confirmation, final_score, source_count, source_categories, supporting_sources, source_type, narratives, tokens, sectors, chains, primary_url, published_at, created_at')
+    .select('id, cluster_hash, title, cleaned_title, summary, why_it_matters, what_happened, crypto_impact, watch_next, bull_case, bear_case, signal, signal_bias, confidence, news_category, source_quality_score, needs_confirmation, final_score, source_count, source_categories, supporting_sources, source_type, narratives, tokens, sectors, chains, primary_url, published_at, created_at', paginated ? { count: 'exact' } : {})
     .eq('should_surface', true)
   if (search) { const s = sanitizeTerm(search); if (s) q = q.or(`title.ilike.%${s}%,cleaned_title.ilike.%${s}%,summary.ilike.%${s}%,why_it_matters.ilike.%${s}%,what_happened.ilike.%${s}%`) }
   if (since) q = q.gte('created_at', since)
   if (until) q = q.lte('created_at', endOfDay(until))
+  if (newsChains(chains).length) q = q.or(`chains.ov.{${newsChains(chains).join(',')}},chains.eq.{},chains.is.null`)
+  if (signal) {
+    if (!['bullish','bearish','caution','neutral'].includes(signal)) throw new Error('invalid_news_signal')
+    const values = signal === 'caution' ? 'caution,mixed' : signal
+    q = q.or(`signal.in.(${values}),and(signal.is.null,signal_bias.in.(${values}))`)
+  }
+  if (category) q = q.eq('news_category', category)
   // Browse: ranked by importance (final_score). Search/date: chronological so the
   // full history is reachable, newest first.
   q = broad
-    ? q.order('published_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false }).limit(200)
-    : q.order('final_score', { ascending: false, nullsFirst: false }).limit(80)
-  const { data, error } = await q
+    ? q.order('published_at', { ascending: false, nullsFirst: false }).order('created_at', { ascending: false })
+    : q.gte('published_at', new Date(Date.now() - 7 * 86400000).toISOString()).lte('published_at', new Date().toISOString()).order('final_score', { ascending: false, nullsFirst: false })
+  const { data, error, count } = await q.order('id').range(from, from + size - 1)
   if (error) throw error
-  let rows = data || []
-  if (chains && chains.length) rows = rows.filter((r) => !r.chains?.length || r.chains.some((c) => chains.includes(c)))
-  return rows.slice(0, broad ? 200 : limit)
+  return paginated ? { rows: data || [], count: count || 0 } : data || []
 }
 

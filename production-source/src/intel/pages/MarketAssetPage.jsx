@@ -1,30 +1,77 @@
+import {useContractChartEvidence} from '../lib/useContractChartEvidence'
+import { useScreenParams } from '../lib/useScreenParams'
+import { mergeLinkedAssetMarkers } from '../lib/chart-history'
 import React, { useEffect, useState, useCallback } from 'react'
-import { useParams, Link, useLocation } from 'react-router'
+import { useParams, Link, useLocation, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, TrendingUp, TrendingDown, Sparkles, Activity } from 'lucide-react'
+import { ArrowLeft, TrendingUp, TrendingDown, Activity } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
-import { loadMarketDetail, loadTokenProfile, loadMarketCandles } from '../lib/markets-api'
-import { thesisMarkersForSymbol } from '../lib/thesis-api'
+import { useMarketDetailCache } from '../context/MarketDetailCache'
+import { loadMarketDetail, loadMarketCandleSnapshot, loadMarkets } from '../lib/markets-api'
+// PriceWorkstation.jsx stays untouched (plan rule); the k-line source name is
+// mapped here, before the chart source reaches it.
+import { chartProviderLabel } from '../lib/chart-source-label'
+import { useTokenProfile } from '../lib/useTokenProfile'
+import { marketIdentityParams,marketNativeChain } from '../lib/asset-identity'
+import { useAssetThesisHistory } from '../lib/useAssetThesisHistory'
+import { useLiveHistoryEnd } from '../lib/useLiveHistoryEnd'
+import { intelReadError } from '../lib/read-error'
+import { useAssetPortfolioContext } from '../lib/useAssetPortfolioContext'
+import { useMarketPortfolioIdentity } from '../lib/useMarketPortfolioIdentity'
+import {useMarketQuote} from '../lib/useMarketQuote'
+import TokenAvatar from '../components/TokenAvatar'
+import AssetPortfolioPosition from '../components/AssetPortfolioPosition'
 import { fmtPrice, fmtPct, fmtVol, fmtNum, pctClass, bucketConfidence } from '../lib/market-format'
+import { useDisplayCurrency } from '../lib/display-currency'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import ConfidenceChip from '../components/ConfidenceChip'
 import ProviderCoveragePill from '../components/ProviderCoveragePill'
-import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
-import OrderbookDepthCard from '../components/OrderbookDepthCard'
-import MarketMemorySummary from '../components/MarketMemorySummary'
-import TokenChart from '../components/TokenChart'
-import ProfilePanel from '../components/ProfilePanel'
+import TokenChart, { CHART_RANGE_MS, candleIntervals, candleIntervalLabel } from '../components/TokenChart'
 import { useArtifact } from '../lib/useArtifact'
-import ArtifactView from '../components/ArtifactView'
+import AssetSectionNav from '../components/AssetSectionNav'
+import AssetVenueWorkspace from '../components/DeferredAssetVenueWorkspace'
 import IntelDisclaimer from '../components/IntelDisclaimer'
-import AssetThesisModule from '../components/thesis/AssetThesisModule'
-import AssetYearInReview from '../components/AssetYearInReview'
-import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
+import { deferredPanel } from '../components/deferred-panel'
+// Everything below the chart, the position and the market context. Each one
+// reads through its own hooks after it mounts, so nothing here is first
+// content, and each one dragged a sizeable closure — the artifact reader, the
+// contract research workspace, the thesis workspace — in front of this page's
+// first authorized asset read. The section headings stay in AssetSectionNav so
+// the jump links are unchanged whether or not the code has arrived yet.
+const AssetAnalystBrief = deferredPanel(() => import('../components/AssetAnalystBrief'), { label: 'Research for this asset' })
+const ContractResearchWorkspace = deferredPanel(() => import('../components/ContractResearchWorkspace'), { label: 'Contract research' })
+const AssetThesisModule = deferredPanel(() => import('../components/thesis/AssetThesisModule'), { label: 'Your theses for this asset' })
+const AssetYearInReview = deferredPanel(() => import('../components/AssetYearInReview'), { label: 'The year in review' })
+const BookCalendar = deferredPanel(() => import('../components/BookCalendar'), { label: 'The asset calendar' })
+const LiveTape = deferredPanel(() => import('../components/LiveTape'), { label: 'The live on-chain tape' })
+const MarketMemorySummary = deferredPanel(() => import('../components/MarketMemorySummary'), { label: 'Market context' })
+const AssetNewsPanel = deferredPanel(() => import('../components/AssetNewsPanel'), { label: 'News for this asset' })
+const CrossExchangeSpreadCard = deferredPanel(() => import('../components/CrossExchangeSpreadCard'), { label: 'The cross-exchange spread' })
+const OrderbookDepthCard = deferredPanel(() => import('../components/OrderbookDepthCard'), { label: 'Order book depth' })
+const OnchainActivityCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.OnchainActivityCard })), { label: 'On-chain activity' })
+const EcosystemNarrativesCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.EcosystemNarrativesCard })), { label: 'Ecosystem narratives' })
+const CatalystsNewsCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.CatalystsNewsCard })), { label: 'Earlier coverage' })
+const UpcomingUnlocksCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.UpcomingUnlocksCard })), { label: 'Upcoming unlocks' })
+// The five figures between the hero and the chart are the shared chart kit's
+// only callers on this route. Each already reads through its own hook after it
+// mounts and renders nothing until that read returns, so deferring their code
+// changes when the kit downloads, not when a figure appears.
+const MarketCoverageRing = deferredPanel(() => import('../components/MarketCoverageRing'), { label: 'Identity coverage' })
+const AssetProvenance = deferredPanel(() => import('../components/AssetProvenance'), { label: 'Identity provenance' })
+const AssetHistoryFigure = deferredPanel(() => import('../components/AssetHistoryFigure'), { label: 'Price history' })
+const AssetFactsPanel = deferredPanel(() => import('../components/AssetFactsPanel'), { label: 'Asset facts' })
+const AttentionPersistence = deferredPanel(() => import('../components/AttentionPersistence'), { label: 'Attention persistence' })
+// The project profile's own read stays in the page (the analyst question and
+// the avatar fallback both use it); only the panel that draws it is deferred.
+const ProfilePanel = deferredPanel(() => import('../components/ProfilePanel'), { label: 'The project profile' })
+const ContractChartEvidenceStatus = deferredPanel(() => import('../components/ContractChartEvidenceStatus'), { label: 'Contract chart evidence' })
 import TokenRiskBadge from '../components/TokenRiskBadge'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
-const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
+// `coinmarketcap_kline` is the contract k-line aggregate, not the listed-asset
+// OHLCV series: it is named as such so the two are never read as one source.
+const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin', coinmarketcap_kline: 'CoinMarketCap k-line' }
 const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 'bg-amber-400', neutral: 'bg-[var(--fg-5)]' }
 
 // Exchange-asset detail — opens for ANY asset on the Markets page (not just the
@@ -33,44 +80,72 @@ const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 
 // spread, RAG memory, and an optional analyst brief.
 export default function MarketAssetPage() {
   const { symbol } = useParams()
-  const sym = String(symbol || '').toUpperCase()
+  const routeSymbol = String(symbol || '').toUpperCase()
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
-  const { supabase } = useSupabase()
+  const { supabase, user } = useSupabase()
+  // Hero money in the reader's currency. Every figure below is still stored in
+  // USD; only the rendering changes. The venue rows further down stay in USD
+  // for now — see docs/investor-intel/display-currency.md.
+  const money = useDisplayCurrency()
+  const detailCache = useMarketDetailCache()
   const location = useLocation()
-  const [d, setD] = useState(null)
+  const navigate = useNavigate()
+  const [detail, setD] = useState(null)
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState(null)
-  const [profile, setProfile] = useState(null)
-  const [profileState, setProfileState] = useState(null)
-  const [thesisMarkers, setThesisMarkers] = useState([])
-  const analysis = useArtifact()
-  const backTo = location.state?.from || '/intel/markets'
+  const [retry, setRetry] = useState(0)
+  const [candidates, setCandidates] = useState([])
+  const query = new URLSearchParams(location.search)
+  const providerId = query.get('id'), sourceProvider = query.get('provider')
+  const identity = providerId && sourceProvider ? { sourceProvider, providerId } : {}
+  const detailScope = JSON.stringify([user?.id, org?.id, routeSymbol, sourceProvider, providerId])
+  const initialDetail = detail?.scope === detailScope ? detail.data : null
+  const projectProfile = useTokenProfile({supabase,orgId:org?.id,userId:user?.id,ident:initialDetail?.providerId?{sourceProvider:initialDetail.sourceProvider,providerId:String(initialDetail.providerId)}:null})
+  const { profile } = projectProfile
+  const liveQuote=useMarketQuote({supabase,orgId:org?.id,userId:user?.id,detail:initialDetail})
+  const d=initialDetail?{...initialDetail,...liveQuote.quote,chain:marketNativeChain(initialDetail.sourceProvider,initialDetail.providerId)||initialDetail.chain}:null
+  const [chartOptions,setChartOptions]=useScreenParams('chart_', {range:'7D',interval:'auto'})
+  // Sub-hour widths exist only for a contract identity; a saved '5M' on any other
+  // asset falls back to automatic rather than being sent and refused.
+  const candleIntervalChoices=candleIntervals(d?.sourceProvider)
+  const candleInterval=candleIntervalChoices.includes(chartOptions.interval)?chartOptions.interval:'auto'
+  const setCandleInterval=interval=>setChartOptions(previous=>({...previous,interval}))
+  const sym = String(d?.symbol || routeSymbol).toUpperCase()
+  const marketKey = d?.sourceProvider && d?.providerId != null ? `market:${d.sourceProvider}:${d.providerId}` : null
+  const network = useMarketPortfolioIdentity({ identityChoices: d?.identityChoices, defaultKey: d?.canonicalAssetKey, marketKey, explicitKey: query.get('network') })
+  const historyTo = useLiveHistoryEnd(org?.id)
+  const historyRange=Object.hasOwn(CHART_RANGE_MS,chartOptions.range)?chartOptions.range:'7D'
+  const setHistoryRange=range=>setChartOptions(previous=>({...previous,range}))
+  // A market-only asset has a valid research workspace. A network match that is
+  // still pending or failed does not: do not open temporary private workspaces.
+  const canonicalKey = network.canonicalAssetKey || (!network.choices.length && !network.invalidExplicit ? marketKey : null)
+  const chartPending = !canonicalKey && network.loading
+  const selectedNetwork=network.choices.find(choice=>choice.canonicalAssetKey===canonicalKey)
+  const riskAddress=canonicalKey?.startsWith('eip155:')&&/^0x[0-9a-f]{40}$/i.test(canonicalKey.split(':')[2]||'')?canonicalKey.split(':')[2]:canonicalKey?.startsWith('solana:')&&!canonicalKey.includes(':native:')?canonicalKey.slice(7):null
+  const historyFrom = historyTo - CHART_RANGE_MS[historyRange]
+  const position = useAssetPortfolioContext({ canonicalAssetKey: network.canonicalAssetKey, from: historyFrom, to: historyTo })
+  const research = useAssetThesisHistory({ canonicalKey, from: historyFrom, to: historyTo })
+  const publicEvidence=useContractChartEvidence({canonicalKey,from:historyFrom,to:historyTo,portfolioId:position.portfolioId})
+  // The live lane. Its own marker kind and layer, so a streamed event is never
+  // merged into the retained public history it sits beside.
+  const [tapeMarkers,setTapeMarkers]=useState([])
+  const analysis = useArtifact(`${detailScope}:${canonicalKey || ''}`)
+  const backTo = typeof location.state?.from === 'string' && /^\/intel(?:[/?]|$)/.test(location.state.from) ? location.state.from : '/intel/markets'
 
   useEffect(() => {
-    if (!org?.id || !sym) return
+    if (!org?.id || !routeSymbol) return
     let alive = true
-    setLoading(true); setError(null)
+    setLoading(true); setError(null); setD(null); setCandidates([])
     ;(async () => {
       try {
-        const r = await loadMarketDetail(supabase, org.id, sym); if (!alive) return; setD(r)
-        // Rich project profile from the canonical CoinGecko id (description,
-        // website, socials, explorer, github, docs…). Falls back to symbol.
-        const ident = r?.providerId ? { sourceProvider: r.sourceProvider || 'coingecko', providerId: r.providerId } : { symbol: sym }
-        try { const pr = await loadTokenProfile(supabase, ident); if (alive && pr) { setProfile(pr.profile); setProfileState(pr.state) } } catch { /* */ }
-      } catch (e) { if (alive) setError(e.message) }
+        const load = () => loadMarketDetail(supabase, org.id, routeSymbol, identity)
+        const r = await (detailCache ? detailCache.read(identity, load, { force: retry > 0 }) : load()); if (!alive) return; setD({ scope: detailScope, data: r }); setLoading(false)
+      } catch (e) { if (alive) setError(e.message); if (alive && e.code === 'ambiguous_asset') { const matches = await loadMarkets(supabase, org.id, { search: routeSymbol, limit: 50 }).catch(() => null); if (alive) setCandidates((matches?.rows || []).filter(row => String(row.symbol).toUpperCase() === routeSymbol)) } }
       finally { if (alive) setLoading(false) }
     })()
     return () => { alive = false }
-  }, [org?.id, supabase, sym])
-
-  // Per-user thesis chart markers (RLS-scoped — never shown on another user's chart).
-  useEffect(() => {
-    if (!org?.id || !sym) return
-    let alive = true
-    thesisMarkersForSymbol(supabase, org.id, sym).then((m) => { if (alive) setThesisMarkers(m) }).catch(() => {})
-    return () => { alive = false }
-  }, [org?.id, supabase, sym])
+  }, [org?.id, user?.id, supabase, routeSymbol, sourceProvider, providerId, detailScope, retry, detailCache])
 
   const sig = d?.signal
   const explain = useCallback((force = false) => {
@@ -83,7 +158,7 @@ export default function MarketAssetPage() {
       sourceProvider: d.sourceProvider || null,
       primaryChain,
       chain: primaryChain,
-      canonicalKey: d.sourceProvider && d.providerId ? `market:${d.sourceProvider}:${d.providerId}` : null,
+      canonicalKey,
     }
     const generationExtra = {
       title: `${sym} market read`,
@@ -131,65 +206,139 @@ export default function MarketAssetPage() {
       extra: generationExtra,
       context: generationContext,
     })
-  }, [d, sig, sym, analysis, profile])
+  }, [d, sig, sym, analysis, profile, canonicalKey])
 
-  if (loading && !d) return <div className="card p-10 grid place-items-center"><div className="animate-spin rounded-full h-7 w-7 border-b-2 border-[var(--accent)]" /></div>
+  if (loading && !d) return <p role="status" className="py-10 text-sm text-[var(--fg-4)]">{t('asset.loading', { defaultValue: 'Loading asset observations…' })}</p>
   if (error || !d) return (
     <div className="space-y-3">
       <Link to={backTo} className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
-      <div className="card p-8 text-center text-[13px] text-[var(--fg-4)]">{t('markets.assetNotFound', { defaultValue: 'No exchange market data for this asset yet.' })}</div>
+      {(!error || candidates.length > 0) && <p className="py-8 text-sm text-[var(--fg-4)]">{candidates.length ? t('markets.choose_identity', { defaultValue: 'This symbol identifies more than one asset. Choose the asset you want to investigate.' }) : t('markets.assetNotFound', { defaultValue: 'No exchange market data for this asset yet.' })}</p>}
+      {error && !candidates.length && <p role="alert">{t('asset.read_failed', { defaultValue: 'The asset read could not be completed.' })} <button className="underline" onClick={() => setRetry(value => value + 1)}>{t('common.retry', { defaultValue: 'Retry' })}</button></p>}
+      {candidates.map(row => <Link className="block border-b border-[var(--border-default)] py-4" key={`${row.sourceProvider}:${row.providerId}`} to={`/intel/markets/${encodeURIComponent(row.symbol)}${marketIdentityParams(row)}`}>{row.displayName || row.symbol} · {row.chain || row.sourceProvider} · {row.providerId}</Link>)}
     </div>
   )
 
   const cap = d.marketCap
   const r1h = d.rollups?.['1h']?.price_change_pct
   const stats = [
-    [t('markets.priceLabel', { defaultValue: 'Price' }), fmtPrice(d.price)],
+    [t('markets.priceLabel', { defaultValue: 'Price' }), money.formatMoneyPrice(d.price)],
     ['1h', fmtPct(r1h), pctClass(r1h)],
     ['24h', fmtPct(d.change24h), pctClass(d.change24h)],
     ['7d', fmtPct(d.change7d), pctClass(d.change7d)],
-    [t('markets.volLabel', { defaultValue: '24h volume' }), fmtVol(d.volume24h)],
-    [t('markets.marketCap', { defaultValue: 'Market cap' }), cap?.market_cap != null ? fmtVol(cap.market_cap) : t('markets.marketCapUnavailable', { defaultValue: 'N/A' })],
-    ['FDV', cap?.fdv != null ? fmtVol(cap.fdv) : '—'],
+    [t('markets.volLabel', { defaultValue: '24h volume' }), money.formatMoney(d.volume24h)],
+    [t('markets.marketCap', { defaultValue: 'Market cap' }), cap?.market_cap != null ? money.formatMoney(cap.market_cap) : t('markets.marketCapUnavailable', { defaultValue: 'N/A' })],
+    ['FDV', cap?.fdv != null ? money.formatMoney(cap.fdv) : '—'],
     [t('markets.supply', { defaultValue: 'Circ. supply' }), cap?.circulating_supply != null ? fmtNum(cap.circulating_supply) : '—'],
   ]
 
   return (
-    <IntelPageShell>
+    <IntelPageShell className="intel-asset-desk">
       <Link to={backTo} className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
 
       {/* Header */}
-      <div className="flex items-start justify-between gap-3 flex-wrap">
+      <div className="intel-dossier-heading">
         <div>
           <div className="eyebrow">{d.chain || t('market.source', { defaultValue: 'Exchange' })}</div>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-3 flex-wrap">
+            <TokenAvatar src={d.imageUrl||profile?.image_url} symbol={sym} name={d.displayName} size="lg"/>
             <h1 className="page-title">{d.displayName || sym}</h1>
+            {marketKey && <Link className="intel-text-link text-sm" to={`/intel/investigate?${new URLSearchParams({asset:marketKey,...(network.canonicalAssetKey?{network:network.canonicalAssetKey}:{})})}`}>{t('investigation.open',{defaultValue:'Open connected research'})}</Link>}
             {d.price != null && (
               <div className="flex items-baseline gap-2">
-                <span className="text-xl font-semibold text-[var(--fg-1)]">{fmtPrice(d.price)}</span>
+                <span className="text-xl font-semibold text-[var(--fg-1)]">{money.formatMoneyPrice(d.price)}</span>
                 {d.change24h != null && <span className={`text-sm font-semibold flex items-center gap-0.5 ${pctClass(d.change24h)}`}>{d.change24h >= 0 ? <TrendingUp className="h-4 w-4" /> : <TrendingDown className="h-4 w-4" />}{fmtPct(d.change24h)}</span>}
+                {sig && <MarketSignalBadge direction={sig.direction} />}
               </div>
             )}
-            <TokenRiskBadge symbol={sym} chain={d.chain || d.primaryChain} />
+            {riskAddress&&selectedNetwork?.chain&&<TokenRiskBadge key={canonicalKey} symbol={sym} chain={selectedNetwork.chain} address={riskAddress} />}
           </div>
           {d.bestPair && <p className="page-sub font-mono text-[12px]">{PROVIDER_LABELS[d.bestProvider] || d.bestProvider} · {d.bestPair}</p>}
+          {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'?` · ${d.sourceFreshness}`:''}</p>}
+          {liveQuote.error&&<p role="status" className="intel-event-meta">{liveQuote.error}</p>}
+          {/* Money above is converted from the stored USD at display time. When
+              the reader asked for a currency the hourly capture cannot supply,
+              the figures stay in dollars and say so rather than misprice. */}
+          {money.fallback
+            ? <p className="intel-event-meta" data-display-currency={money.currency}>{t('markets.currency_fallback', { currency: money.currency, defaultValue: 'Rates unavailable — money figures shown in USD.' })}</p>
+            : money.currency !== 'USD' && <p className="intel-event-meta" data-display-currency={money.currency}>{t('markets.currency_note', { currency: money.currency, defaultValue: 'Money figures in {{currency}}, converted from USD at display time.' })}</p>}
         </div>
-        {sig && <MarketSignalBadge direction={sig.direction} />}
+        {sig && d.price == null && <MarketSignalBadge direction={sig.direction} />}
       </div>
 
-      <IntelHeroRead
+      <AssetSectionNav sections={[
+        { id: 'asset-chart', key: 'asset.chart_position', label: 'Chart & position' },
+        { id: 'asset-research', key: 'asset.context', label: 'Market context' },
+        { id: 'asset-venue-evidence', key: 'asset.venueEvidence', label: 'Venues & positioning' },
+        ...(d.providers?.length ? [{ id: 'asset-exchanges', key: 'asset.venues', label: 'Venues' }] : []),
+        { id: 'asset-news', key: 'asset.news', label: 'News' },
+        { id: 'asset-brief', key: 'asset.research', label: 'Research' },
+        { id: 'asset-theses', key: 'asset.theses', label: 'Your theses' },
+      ]}/>
+      <section id="asset-chart" aria-label={t('asset.workspace', { defaultValue: 'Price, position and research' })}>
+        {network.choices.length > 0 && <div className="flex items-start justify-between gap-4 flex-wrap border-t border-[var(--border-default)] py-4">
+          <label className="flex items-center gap-3 text-xs text-[var(--fg-4)]">
+            {t('asset.position_network', { defaultValue: 'Position network' })}
+            <select aria-label={t('asset.position_network', { defaultValue: 'Position network' })} className="select rounded-none max-w-full text-[var(--fg-1)]" value={network.canonicalAssetKey || ''} onChange={event => {
+              if (!network.selectNetwork(event.target.value)) return
+              const next = new URLSearchParams(location.search); next.set('network', event.target.value)
+              navigate({ pathname: location.pathname, search: `?${next}` }, { replace: true, state: location.state })
+            }}>
+              {!network.canonicalAssetKey && <option value="">{network.loading ? 'Matching your portfolio…' : 'Choose network'}</option>}
+              {network.choices.map(choice => <option key={choice.canonicalAssetKey} value={choice.canonicalAssetKey}>{choice.label || choice.chain} · {choice.canonicalAssetKey}</option>)}
+            </select>
+          </label>
+          <p className="text-xs text-[var(--fg-4)] max-w-lg">{t('asset.network_scope', { defaultValue: 'Position and research markers follow this network. The price chart shows the asset’s market-wide price.' })}</p>
+          {network.invalidExplicit && <p role="status" className="text-sm text-[var(--fg-4)]">{t('asset.invalid_network', { defaultValue: 'This network is not a verified representation of this asset. Choose a listed network.' })}</p>}
+          {network.error && <p role="status" className="text-sm text-[var(--fg-4)]">{t('asset.network_unavailable', { defaultValue: 'Your portfolio network match is unavailable.' })} <button onClick={network.retry} className="underline underline-offset-4">{t('common.retry', { defaultValue: 'Retry' })}</button></p>}
+        </div>}
+        {chartPending ? <div role="status" className="min-h-[420px] flex items-center justify-center text-sm text-[var(--fg-4)]">{t('asset.matching_chart_network', { defaultValue: 'Matching your portfolio network…' })}</div> : <TokenChart key={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} assetKey={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} candles={d.candles} persistence={canonicalKey ? {supabase,userId:user?.id,orgId:org?.id,asset:canonicalKey} : null} readOnly={!canonicalKey}
+          requestKey={candleInterval}
+          rangeExtra={<label className="intel-event-meta">Candle interval <select aria-label="Candle interval" value={candleInterval} onChange={e=>setCandleInterval(e.target.value)}>{candleIntervalChoices.map(choice=><option key={choice} value={choice}>{candleIntervalLabel(choice,d.sourceProvider)}</option>)}</select>{d.sourceProvider==='contract'&&<span> Sub-hour candles come only from the CoinMarketCap k-line aggregate for this contract.</span>}</label>}
+          markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers,...tapeMarkers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles defaultRange={historyRange} onRangeChange={setHistoryRange}
+          historyLoading={research.loading || position.loading || research.loadingMore || position.loadingMore}
+          historyError={research.error || (position.error && intelReadError(position.error, 'Your portfolio activity is temporarily unavailable. Please retry from Your position.'))} historyHasMore={!!(research.nextCursor || position.nextCursor)}
+          onLoadMoreHistory={() => { if (research.nextCursor) research.loadMore(); if (position.nextCursor) position.loadMore() }}
+          priceCoverage={{ chartSource:d.chartSource&&d.chartSource.provider==='coinmarketcap_kline'?{...d.chartSource,provider:chartProviderLabel(d.chartSource.provider)}:d.chartSource,capture:d.captureProof?{proof:d.captureProof,bars:d.candles}:null, coverage: d.chartCoverage, state: d.chartState, provenance: d.chartProvenance }}
+          loadCandles={tf => loadMarketCandleSnapshot(supabase, org.id, sym, tf, { sourceProvider: d.sourceProvider, providerId: d.providerId,interval:candleInterval })} />}
+        {network.choices.length ? <AssetPortfolioPosition context={{ ...position, loading: position.loading || network.loading, error: position.error || network.error, invalidPortfolio: position.invalidPortfolio || network.invalidExplicit, refresh: network.error ? network.retry : position.refresh }}/> : <p className="intel-event-meta py-4">{t('asset.position_identity_required', { defaultValue: 'A verified network identity is not available for this market asset yet. Your market research remains available below.' })}</p>}
+      </section>
+
+      <div id="asset-research"><IntelHeroRead
         eyebrow={t('markets.assetDossier', { defaultValue: 'Asset dossier' })}
-        title={t('markets.assetDossierRead', { defaultValue: 'Start with the signal, then verify depth, exchange confirmation, narratives, catalysts, and thesis drift.' })}
+        title={t('asset.research_heading', { defaultValue: 'Market context' })}
         meta={(
           <>
             <span>{d.providers?.length || 0} {t('markets.exchangeFeeds', { defaultValue: 'exchange feeds' })}</span>
             <span>·</span>
-            <span>{d.catalysts?.curated_news?.length || 0} {t('markets.catalystStories', { defaultValue: 'catalyst stories' })}</span>
+            <span>{d.catalysts?.status === 'error' ? t('markets.catalystUnavailable', { defaultValue: 'Catalyst coverage unavailable' }) : <>{d.catalysts?.curated_news?.length ?? 0} {t('markets.catalystStories', { defaultValue: 'catalyst stories' })}{d.catalysts?.status === 'partial' ? ` · ${t('common.partial', { defaultValue: 'partial' })}` : ''}</>}</span>
             <span>·</span>
             <span>{sig?.confidence != null ? `${Math.round(sig.confidence)} ${t('markets.confidenceScore', { defaultValue: 'confidence' })}` : t('markets.confidencePending', { defaultValue: 'confidence pending' })}</span>
           </>
         )}
-      />
+      /></div>
+
+      {/* The five reads below each size themselves only once their own read
+          returns. They sit under the chart and the research heading so a late
+          read grows into space no one is looking at, instead of pushing the
+          chart down the page after first paint. */}
+
+      {/* What this identity can feed, and why the rest cannot. Detail payloads
+          from before universal resolution carry no coverage: render nothing. */}
+      {d.coverage && <MarketCoverageRing coverage={d.coverage} identity={d.identity} />}
+
+      {/* How the platform knows what this asset IS — every rung of the resolver
+          ladder, with its timing. It reads nothing unless this page's identity
+          is a contract or a CoinMarketCap id, because a resolution is a paid
+          question and an exchange market is not one it can be asked. */}
+      <AssetProvenance sourceProvider={d.sourceProvider} providerId={d.providerId} canonicalKey={canonicalKey} />
+
+      {/* Price history is read on request only — one range is one provider
+          sampling charged against the shared budget — so this figure fetches
+          nothing until the reader chooses a range. The facts panel below it
+          reads rows the daily passes already wrote and costs nothing. */}
+      <AssetHistoryFigure sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
+      <AssetFactsPanel sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
+      <AttentionPersistence sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
 
       {/* Market signal + WHY (the point of this page) */}
       {sig && (
@@ -210,8 +359,8 @@ export default function MarketAssetPage() {
 
           {/* WHY — explainable factors */}
           {sig.factors?.length > 0 && (
-            <div className="space-y-1.5 pt-1">
-              <div className="text-[10px] uppercase tracking-wide text-[var(--fg-5)]">{t('markets.whyThisRead', { defaultValue: 'Why this read' })}</div>
+            <details className="intel-evidence-expand space-y-1.5 pt-1">
+              <summary>{t('markets.whyThisRead', { defaultValue: 'Why this read' })} · {sig.factors.length}</summary>
               <ul className="space-y-1">
                 {sig.factors.map((f, i) => (
                   <li key={i} className="flex items-start gap-2 text-[12px] text-[var(--fg-2)]">
@@ -220,7 +369,7 @@ export default function MarketAssetPage() {
                   </li>
                 ))}
               </ul>
-            </div>
+            </details>
           )}
 
           {(sig.confirmingProviders?.length > 0 || sig.conflictingProviders?.length > 0) && (
@@ -233,14 +382,9 @@ export default function MarketAssetPage() {
       )}
 
       {/* Rich, globally-cached project profile (description, links, socials, explorer, github…) */}
-      <ProfilePanel profile={profile} state={profileState} />
+      <ProfilePanel {...projectProfile} />
 
-      {/* Chart */}
-      <div className="space-y-2">
-        <div className="eyebrow">{t('breakdown.chart', { defaultValue: 'Price chart' })}</div>
-        <TokenChart candles={d.candles} markers={thesisMarkers} showDensityToggles defaultRange="7D"
-          loadCandles={(tf) => loadMarketCandles(supabase, org.id, sym, tf)} />
-      </div>
+
 
       {/* Metrics */}
       <div className="grid gap-2 grid-cols-2 sm:grid-cols-4 lg:grid-cols-8">
@@ -251,7 +395,7 @@ export default function MarketAssetPage() {
 
       {/* Per-exchange reads */}
       {d.providers?.length > 0 && (
-        <section className="space-y-2">
+        <section id="asset-exchanges" className="space-y-2">
           <div className="eyebrow">{t('markets.byExchange', { defaultValue: 'By exchange' })}</div>
           <div className="space-y-1.5">
             {d.providers.map((p) => (
@@ -283,6 +427,8 @@ export default function MarketAssetPage() {
       )}
 
       <OrderbookDepthCard orderbook={d.orderbook} />
+      {canonicalKey&&<AssetVenueWorkspace canonicalKey={canonicalKey}/>}
+      <><ContractChartEvidenceStatus evidence={publicEvidence}/><LiveTape canonicalKey={canonicalKey} onMarkers={setTapeMarkers}/><ContractResearchWorkspace canonicalKey={canonicalKey} onEvidence={publicEvidence.acceptEvidence}/></>
 
       {d.memorySummary && (
         <section className="space-y-1">
@@ -295,19 +441,15 @@ export default function MarketAssetPage() {
           public on-chain activity, ecosystem narratives, and curated catalysts. */}
       <OnchainActivityCard onchain={d.onchain} />
       <EcosystemNarrativesCard data={d.ecosystemNarratives} />
-      <CatalystsNewsCard data={d.catalysts} />
+      <AssetNewsPanel identity={{ key: marketKey || `asset:${d.displayName}:${d.chain}`, name: d.displayName, symbol: sym, chain: d.primaryChain || d.chain, native: /:native(?::|$)/.test(d.canonicalAssetKey || '') }} />
+      {d.catalysts?.status === 'available' && <details className="py-3 text-sm"><summary className="cursor-pointer text-[var(--fg-4)]">{t('asset_news.earlier', { defaultValue: 'Earlier coverage & notable events' })}</summary><CatalystsNewsCard data={d.catalysts} historical /></details>}
       <UpcomingUnlocksCard data={d.unlocks} />
+      {canonicalKey && <BookCalendar key={canonicalKey} asset={canonicalKey} chartLane/>}
 
       {/* AI deep-dive (grounded in the exchange data above) */}
-      <section className="space-y-2">
-        <div className="flex items-center justify-between">
-          <div className="eyebrow">{t('markets.aiExplain', { defaultValue: 'Analyst brief' })}</div>
-          {!analysis.result && <button onClick={explain} disabled={analysis.loading} className="btn btn--primary btn--sm disabled:opacity-50">{analysis.loading ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" /> : <><Sparkles className="h-4 w-4" /> {t('markets.explainWhy', { defaultValue: 'Open brief' })}</>}</button>}
-        </div>
-        {analysis.result && <ArtifactView result={analysis.result} loading={analysis.loading} onRefresh={explain ? () => explain(true) : undefined} />}
-      </section>
+      <section id="asset-brief">{canonicalKey && <AssetAnalystBrief analysis={analysis} onOpen={explain} />}</section>
 
-      <AssetThesisModule symbol={symbol} chain={d.chain || d.primaryChain} />
+      <section id="asset-theses">{canonicalKey && <AssetThesisModule symbol={sym} chain={network.choices.find(choice => choice.canonicalAssetKey === network.canonicalAssetKey)?.chain || d.chain || d.primaryChain} canonicalAssetKey={canonicalKey} sourceProvider={d.sourceProvider} providerId={d.providerId} />}</section>
 
       <AssetYearInReview symbol={sym} />
 

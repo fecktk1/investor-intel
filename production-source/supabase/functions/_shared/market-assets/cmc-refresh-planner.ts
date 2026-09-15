@@ -1,5 +1,5 @@
 import { CMC_CAPABILITIES } from './cmc-capabilities.ts'
-import { cmcPlan, refreshCmcSnapshot,loadCmcOperatingSettings } from './cmc-transport.ts'
+import { cmcPlan, refreshCmcSnapshot,loadCmcOperatingSettings,requestCmc } from './cmc-transport.ts'
 import {cmcDemandPolicy,connectedDemandEnabled} from './cmc-demand-policy.ts'
 
 /** A small shared due set, no per-wallet/per-user/provider fan-out. */
@@ -39,4 +39,51 @@ export async function refreshCmcDemand(db:any,now=Date.now()) {
     if(result.state==='fresh')refreshed++
   }
   return refreshed?'processed' as const:'idle' as const
+}
+
+// ── The on-demand lane ───────────────────────────────────────────────────────
+// Assets someone searched for stay in use for 24 hours (market_asset_demand),
+// and that ledger is an aggregate: asset keys, counters and a window, never a
+// searcher. This lane keeps their quotes warm for one credit per pass — the
+// quotes endpoint bills 250 ids per credit, and every in-use asset shares a
+// single batched request. The foreground demand lane above handles the rows a
+// user is actively looking at; this one covers assets nothing is viewing right
+// now but that are still in their in-use window.
+//
+// Pacing has two parts: `provider_schedule_policy` (coinmarketcap/quotes,
+// 300 seconds by default) gates how often the lane may run in a worker process,
+// and the quote snapshot's own expiry is what makes a repeat call necessary at
+// all — an id a live snapshot already covers is never re-requested.
+//
+// Stage 4's worker release calls this next to refreshCmcDemand(); worker/ is
+// untouched here.
+export const ON_DEMAND_QUOTE_IDS=50
+let onDemandRunAt=0
+export function __resetOnDemandLaneForTests(){onDemandRunAt=0}
+export async function refreshOnDemandQuotes(db:any,now=Date.now(),request:typeof requestCmc=requestCmc) {
+  const policy=await db.from('provider_schedule_policy').select('cadence_seconds,enabled')
+    .eq('provider','coinmarketcap').eq('feature','quotes').maybeSingle()
+  if(policy?.error)return 'error' as const
+  if(policy?.data?.enabled===false)return 'idle' as const
+  const cadence=Math.max(60,Number(policy?.data?.cadence_seconds)||300)
+  if(now-onDemandRunAt<cadence*1000)return 'idle' as const
+
+  const demand=await db.from('market_asset_demand').select('provider_id,last_demanded_at')
+    .eq('provider','coinmarketcap').gt('in_use_until',new Date(now).toISOString())
+    .order('last_demanded_at',{ascending:false}).limit(ON_DEMAND_QUOTE_IDS)
+  if(demand.error||!Array.isArray(demand.data))return 'error' as const
+  const ids=[...new Set<string>(demand.data.map((row:any)=>String(row?.provider_id??'')))].filter(id=>/^[1-9][0-9]{0,9}$/.test(id)).slice(0,ON_DEMAND_QUOTE_IDS)
+  if(!ids.length)return 'idle' as const
+
+  // A quote snapshot that has not expired already answers for its whole batch.
+  const cache=await db.from('market_data_response_cache').select('request_params,expires_at')
+    .eq('provider','coinmarketcap').eq('capability','quotes').gt('expires_at',new Date(now).toISOString()).limit(40)
+  if(cache.error)return 'error' as const
+  const covered=new Set((cache.data||[]).flatMap((row:any)=>String(row?.request_params?.id??'').split(',')))
+  const due=ids.filter(id=>!covered.has(id))
+  onDemandRunAt=now
+  if(!due.length)return 'idle' as const
+
+  const result=await request('quotes',{id:due.join(',')},{supabase:db,kind:'job',maxCalls:1,caller:'intel-on-demand-refresh'})
+  return result?.state==='fresh'?'processed' as const:'idle' as const
 }

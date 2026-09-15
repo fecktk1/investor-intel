@@ -1,4 +1,6 @@
-import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import { useScreenParams } from '../lib/useScreenParams'
+import NarrativeBookOverlap from '../components/NarrativeBookOverlap'
+import React, { useEffect, useMemo, useState, useCallback, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router'
 import { Radar, RefreshCw, Plus, Info } from 'lucide-react'
@@ -22,31 +24,34 @@ import { emitTutorialSignal } from '../../help/signals'
 // immediately sees which narratives are heating up / cooling / early / crowded /
 // bullish / high-risk — no manual input. Custom (manual) narratives are demoted to
 // an advanced tab that maps to a global narrative first.
-export default function NarrativeRadarPage() {
+export default function NarrativeRadarPage() { const {org}=useProfile(),{user}=useSupabase(); return <NarrativeWorkspace key={`${user?.id}:${org?.id}`}/> }
+function NarrativeWorkspace() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
-  const { supabase } = useSupabase()
+  const { supabase, user } = useSupabase()
   const navigate = useNavigate()
 
   const [data, setData] = useState({ narratives: [], summary: {}, count: 0 })
   const [loading, setLoading] = useState(true)
   const [refreshing, setRefreshing] = useState(false)
   const [err, setErr] = useState(null)
-  const [tab, setTab] = useState('all')
-  const [chain, setChain] = useState('')
-  const [category, setCategory] = useState('')
+  const [filters,setFilters]=useScreenParams('narrative_', {tab:'all',chain:'',category:''})
+  const {tab,chain,category}=filters
+  const setTab=tab=>setFilters(previous=>({...previous,tab})),setChain=chain=>setFilters(previous=>({...previous,chain})),setCategory=category=>setFilters(previous=>({...previous,category}))
+  const request=useRef(0)
   const [followBusy, setFollowBusy] = useState(null)
   const [followErr, setFollowErr] = useState(null)
 
   const load = useCallback(async (soft = false) => {
     if (!org?.id) return
+    const current=++request.current
     soft ? setRefreshing(true) : setLoading(true); setErr(null)
-    try { setData(await loadNarratives(supabase, org.id)) }
-    catch (e) { setErr(e.message) }
-    finally { setLoading(false); setRefreshing(false) }
+    try { const result=await loadNarratives(supabase, org.id);if(current===request.current)setData(result) }
+    catch (e) { if(current===request.current)setErr(e.message) }
+    finally { if(current===request.current){setLoading(false);setRefreshing(false)} }
   }, [org?.id, supabase])
-  useEffect(() => { load() }, [load])
-  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'narratives') }, [org?.id, supabase])
+  useEffect(() => { load(); return()=>{request.current++} }, [load])
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'narratives', '', { orgId: org.id, userId: user?.id }) }, [org?.id, user?.id, supabase])
 
   const onOpen = useCallback((slug) => navigate(`/intel/narratives/${slug}`), [navigate])
   const onFollow = useCallback(async (slug, next) => {
@@ -84,7 +89,7 @@ export default function NarrativeRadarPage() {
       && (!chain || (n.related_chains || n.chains || []).includes(chain))
       && (!category || n.parent_category === category))
   }, [data.narratives, tab, chain, category])
-  const totalCount = data.count || data.narratives.length
+  const totalCount = data.count ?? data.narratives.length
   const followedCount = data.narratives.filter((n) => n.is_followed).length
 
   return (
@@ -104,9 +109,9 @@ export default function NarrativeRadarPage() {
       <IntelHeroRead
         eyebrow={t('narratives.radar_read', { defaultValue: 'Narrative read' })}
         title={totalCount
-          ? t('narratives.radar_title', { defaultValue: `${filtered.length.toLocaleString()} narratives in view` })
+          ? t('narratives.radar_title', { n: filtered.length.toLocaleString(), defaultValue: '{{n}} narratives in view' })
           : t('narratives.radar_title_empty', { defaultValue: 'Automatic discovery is ready for the next refresh' })}
-        body={t('narratives.radar_body', { defaultValue: 'Start with the stage tabs, then narrow by category or chain. Personalized labels remain on cards when a narrative touches your watchlist, portfolio, or followed interests.' })}
+        body={t('narratives.radar_body', { defaultValue: 'Start with the stage tabs, then narrow by category or chain. Personalized labels remain with each narrative when a narrative touches your watchlist, portfolio, or followed interests.' })}
         meta={[
           { label: t('narratives.total', { defaultValue: 'Tracked' }), value: totalCount.toLocaleString() },
           { label: t('narratives.filtered', { defaultValue: 'Visible' }), value: filtered.length.toLocaleString() },
@@ -126,7 +131,7 @@ export default function NarrativeRadarPage() {
         </button>
       </div>
 
-      {tab !== 'custom' && <NarrativeSummaryRow summary={data.summary} onPick={setTab} />}
+      {tab !== 'custom' && <NarrativeSummaryRow summary={data.summary} narratives={loading && !data.count ? undefined : data.narratives} onPick={setTab} />}
 
       {/* tabs */}
       <div className="flex items-start gap-3 flex-wrap">
@@ -138,11 +143,11 @@ export default function NarrativeRadarPage() {
         />
         {tab !== 'custom' && (chains.length > 0 || categories.length > 0) && (
           <div className="flex items-center gap-1.5 ml-auto">
-            <select value={category} onChange={(e) => setCategory(e.target.value)} className="input input--sm text-[11px]">
+            <select aria-label="Narrative category" value={category} onChange={(e) => setCategory(e.target.value)} className="input input--sm text-[11px]">
               <option value="">{t('narratives.all_categories', { defaultValue: 'All categories' })}</option>
               {categories.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
-            <select value={chain} onChange={(e) => setChain(e.target.value)} className="input input--sm text-[11px]">
+            <select aria-label="Narrative chain" value={chain} onChange={(e) => setChain(e.target.value)} className="input input--sm text-[11px]">
               <option value="">{t('narratives.all_chains', { defaultValue: 'All chains' })}</option>
               {chains.map((c) => <option key={c} value={c}>{c}</option>)}
             </select>
@@ -152,15 +157,16 @@ export default function NarrativeRadarPage() {
 
       {err && <div className="card--flat p-3 text-[13px] text-amber-400 flex items-center gap-2"><Info className="h-4 w-4" /> {t('narratives.degraded', { defaultValue: 'Some data is unavailable right now — showing what we have.' })}</div>}
       <IntelErrorNotice error={followErr} />
+      <NarrativeBookOverlap/>
 
       {tab === 'custom' ? (
         <CustomNarratives onOpen={onOpen} />
       ) : loading ? (
-        <div className="grid sm:grid-cols-2 gap-3">{Array.from({ length: 6 }).map((_, i) => <IntelSkeleton key={i} className="h-44" />)}</div>
-      ) : filtered.length === 0 ? (
+        <div className="space-y-0">{Array.from({ length: 6 }).map((_, i) => <IntelSkeleton key={i} className="h-44" />)}</div>
+      ) : filtered.length === 0 && err ? <p role="alert">Narrative coverage could not be loaded. <button className="intel-text-link" onClick={()=>load()}>Retry</button></p> : filtered.length === 0 ? (
         <IntelEmptyState title={t('narratives.none_in_filter', { defaultValue: 'No narratives match this filter right now. Try another tab.' })} />
       ) : (
-        <div className="grid sm:grid-cols-2 gap-3">
+        <div className="space-y-0">
           {/* First card's follow button carries the tutorial anchor. */}
           {filtered.map((n, i) => <NarrativeCard key={n.slug} n={n} onOpen={onOpen} onFollow={onFollow} busy={followBusy === n.slug} followAnchor={i === 0 ? 'intel-narratives.follow-button' : undefined} />)}
         </div>
@@ -183,8 +189,14 @@ function CustomNarratives({ onOpen }) {
   const [busy, setBusy] = useState(false)
   const [note, setNote] = useState(null)
 
-  const load = useCallback(async () => { if (org?.id) setList(await listCustomNarratives(supabase, org.id)) }, [org?.id, supabase])
-  useEffect(() => { load() }, [load])
+  const request = useRef(0)
+  const load = useCallback(async () => {
+    if (!org?.id) return
+    const current = ++request.current
+    const next = await listCustomNarratives(supabase, org.id)
+    if (current === request.current) setList(next)
+  }, [org?.id, supabase])
+  useEffect(() => { load(); return () => { request.current++ } }, [load])
 
   const add = useCallback(async (e) => {
     e.preventDefault()

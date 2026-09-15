@@ -8,3 +8,52 @@ Deno.test('two owners share a bounded public read but commit separate authorized
 Deno.test('native assets are evaluated without a contract address; failures are persisted',async()=>{for(const reason of ['alert_fresh_source_unavailable','secret upstream failure']){const db=database([rule]);const result=await evaluateMarketAlerts(db,async()=>{},async()=>{throw Error(reason)});eq(result.checked,1);eq(result.unavailable+(result.failed>0?1:0),1);const state=db.calls.find(c=>c[0]==='intel_record_alert_evaluation')[1].p_state;eq(JSON.stringify(state).includes('secret'),false)}})
 Deno.test('rule loading and atomic writes fail visibly, without fake empty success',async()=>{eq((await evaluateMarketAlerts(database([],{readError:{}}),async()=>{})).failed,1);const r=await evaluateMarketAlerts(database([rule],{writeError:{}}),async()=>{},async()=>evidence);eq(r.failed,1);eq(r.fired,0)})
 Deno.test('repeated source advances scheduling but preserves receipt; changed rules are not overwritten',async()=>{for(const state of ['same_observation','changed']){const db=database([rule],{state});await evaluateMarketAlerts(db,async()=>{},async()=>evidence);eq(db.calls.some(c=>c[0]==='update'),state==='same_observation');eq(db.calls.some(c=>c[0]==='intel_record_alert_evaluation'),false)}})
+Deno.test('metadata notice rules are loaded and committed beside the existing market triggers',async()=>{
+ const noticeRule={...rule,id:'notice',trigger_type:'metadata_notice',entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ const db=database([noticeRule],{state:'fired'})
+ const notice:any={metric:'metadata_notice',unit:'notice',overview:{noticePresent:true},observation:{id:'cmc-metadata-notice:1027:'+'b'.repeat(64),subject:'market:coinmarketcap:1027',provider:'coinmarketcap',sourceRef:'coinmarketcap:/v2/cryptocurrency/info',value:1,unit:'notice',periodSeconds:null,observedAt:'2026-09-14T06:00:00Z',recordedAt:'2026-09-14T06:00:00Z',expiresAt:'2026-09-16T06:00:00Z',sampleAt:'2026-09-14T06:00:00Z',clockBasis:'provider_observation',metadata:{noticeHash:'b'.repeat(64),excerpt:'Trading suspended.'},coverage:'fixture'}}
+ let fired=0;const r=await evaluateMarketAlerts(db,async()=>{fired++},async()=>notice)
+ eq(r.checked,1);eq(r.fired,1);eq(fired,1)
+ eq(db.calls.find(c=>c[0]==='in')?.[2],['price_move','volume_spike','liquidity_drop','metadata_notice','liquidation_cascade','attention_entry','listing_flag_change'])
+ eq(db.calls.find(c=>c[0]==='intel_record_market_alert')[1].p_observation.value,1)
+ eq(db.calls.find(c=>c[0]==='intel_record_market_alert')[1].p_observation.unit,'notice')
+})
+Deno.test('capture-backed triggers are loaded and their source selectors are part of the read key',async()=>{
+ const cascade={...rule,id:'cascade',trigger_type:'liquidation_cascade',config:{multiple:3,window:'1h'},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ const attention={...rule,id:'attention',trigger_type:'attention_entry',config:{list:'trending',hours:3},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ // Same asset, same trigger, DIFFERENT window: two reads, never one shared answer.
+ const db=database([cascade,{...cascade,id:'cascade-4h',config:{multiple:3,window:'4h'}},attention],{state:'fired'})
+ const seen:string[]=[]
+ const r=await evaluateMarketAlerts(db,async()=>{},async(_db:any,loaded:any)=>{
+  seen.push(`${loaded.trigger_type}:${loaded.config?.window??loaded.config?.list}`)
+  return {...evidence,observation:{...evidence.observation,id:'obs:'+seen.length}}
+ })
+ eq(r.checked,3);eq(r.fired,3)
+ eq(seen,['liquidation_cascade:1h','liquidation_cascade:4h','attention_entry:trending'])
+ eq(db.calls.filter(c=>c[0]==='intel_record_market_alert').length,3)
+})
+Deno.test('listing flag-change rules are loaded and committed beside the existing market triggers',async()=>{
+ const flagRule={...rule,id:'flags',trigger_type:'listing_flag_change',config:{threshold_pct:1,condition:'legacy_level',repeat:'rearm',direction:'either'},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ const db=database([flagRule],{state:'fired'})
+ const before='a'.repeat(64),after='b'.repeat(64)
+ const flags:any={metric:'listing_flag_change',unit:'flags',overview:{changed:true},observation:{id:`cmc-new-listing-flags:1027:2026-09-15:${before}:${after}`,subject:'market:coinmarketcap:1027',provider:'coinmarketcap',sourceRef:'intel_new_listing_snapshots:coinmarketcap:1027',metric:'listing_flag_change',value:1,unit:'flags',periodSeconds:null,observedAt:'2026-09-15T06:10:00Z',recordedAt:'2026-09-15T06:10:00Z',expiresAt:'2026-09-17T06:10:00Z',sampleAt:'2026-09-15T06:10:00Z',clockBasis:'provider_observation',metadata:{securityHash:after,previousSecurityHash:before},coverage:'fixture'}}
+ let fired=0;const r=await evaluateMarketAlerts(db,async()=>{fired++},async()=>flags)
+ eq(r.checked,1);eq(r.fired,1);eq(fired,1)
+ eq(db.calls.find(c=>c[0]==='in')?.[2],['price_move','volume_spike','liquidity_drop','metadata_notice','liquidation_cascade','attention_entry','listing_flag_change'])
+ const recorded=db.calls.find(c=>c[0]==='intel_record_market_alert')[1]
+ eq(recorded.p_observation.value,1);eq(recorded.p_observation.unit,'flags');eq(recorded.p_observation.periodSeconds,null)
+ // Both hashes are in the id, so the SAME change read again is the same
+ // observation and the database, not the evaluator, refuses the second firing.
+ eq(recorded.p_observation.id.endsWith(`${before}:${after}`),true)
+})
+Deno.test('a flag-change rule shares one read with another rule on the same asset, and its failures are persisted',async()=>{
+ const flagRule={...rule,id:'flags',trigger_type:'listing_flag_change',config:{threshold_pct:1},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ const db=database([flagRule,{...flagRule,id:'flags-two'}],{state:'fired'})
+ let reads=0
+ const r=await evaluateMarketAlerts(db,async()=>{},async()=>{reads++;return evidence})
+ eq(reads,1,'two rules on the same asset and trigger are one read');eq(r.fired,2)
+ const broken=database([flagRule])
+ const failedRun=await evaluateMarketAlerts(broken,async()=>{},async()=>{throw Error('alert_source_coverage_unavailable')})
+ eq(failedRun.unavailable,1);eq(failedRun.fired,0)
+ eq(broken.calls.some(c=>c[0]==='intel_record_alert_evaluation'),true,'an unavailable source is recorded, never a silent success')
+})

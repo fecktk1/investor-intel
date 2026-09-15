@@ -6,7 +6,7 @@ import { loadAssetYearInReview } from '../lib/markets-api'
 
 // Long-memory drilldown: "what drove this asset over the last year" — built
 // deterministically from rollups + event memory (migrations 224-230). Renders
-// nothing until the memory layer has data (new deploys start empty and fill in).
+// memory only after an explicit expansion, with empty and failed reads distinct.
 // Research context only — historical coverage, not advice.
 
 const EVENT_LABEL = {
@@ -18,33 +18,45 @@ const EVENT_LABEL = {
 
 export default function AssetYearInReview({ symbol }) {
   const { org } = useProfile()
-  const { supabase } = useSupabase()
-  const [data, setData] = useState(null)
-  const [open, setOpen] = useState(false)
+  const { supabase, user } = useSupabase()
+  const scope = `${user?.id || ''}:${org?.id || ''}:${symbol || ''}`
+  const [result, setResult] = useState(null)
+  const [openScope, setOpenScope] = useState(null)
+  const [retry, setRetry] = useState(0)
+  const open = openScope === scope
+  const current = result?.scope === scope ? result : null
+  const data = current?.data
+
+  useEffect(() => { setOpenScope(null); setResult(null) }, [scope])
 
   useEffect(() => {
     let alive = true
-    if (!org?.id || !symbol) return
-    loadAssetYearInReview(supabase, symbol).then((d) => { if (alive) setData(d) }).catch(() => { if (alive) setData(null) })
+    if (!open || !org?.id || !symbol) return
+    setResult({ scope, loading: true })
+    loadAssetYearInReview(supabase, symbol)
+      .then(data => { if (alive) setResult({ scope, data }) })
+      .catch(() => { if (alive) setResult({ scope, error: true }) })
     return () => { alive = false }
-  }, [org?.id, supabase, symbol])
+  }, [open, scope, org?.id, supabase, symbol, retry])
 
   const monthly = data?.monthly || []
   const events = data?.events || []
   const narratives = data?.top_narratives || []
-  if (!monthly.length && !events.length) return null
 
   const maxSrc = Math.max(1, ...monthly.map((m) => m.source_count || 0))
 
   return (
     <section className="card p-4 space-y-3">
-      <button onClick={() => setOpen((o) => !o)} className="flex items-center justify-between w-full">
+      <button aria-expanded={open} onClick={() => setOpenScope(open ? null : scope)} className="flex items-center justify-between w-full">
         <div className="eyebrow flex items-center gap-1.5"><History className="h-3.5 w-3.5" /> What drove {String(symbol).toUpperCase()} over the last year</div>
         <span className="text-[12px] text-[var(--accent)]">{open ? 'Hide' : 'Show'}</span>
       </button>
 
       {open && (
         <div className="space-y-3">
+          {(!current || current.loading) && <p role="status">Loading historical coverage…</p>}
+          {current?.error && <p role="alert">Historical coverage could not be loaded. <button onClick={() => setRetry(value => value + 1)}>Retry historical coverage</button></p>}
+          {current && !current.loading && !current.error && !monthly.length && !events.length && <p>No historical coverage is recorded for this asset yet.</p>}
           {/* Monthly coverage + signal mix (deterministic rollups) */}
           {monthly.length > 0 && (
             <div className="space-y-1">

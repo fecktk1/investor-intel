@@ -109,19 +109,20 @@ export function EcosystemNarrativesCard({ data }) {
 }
 
 // ── Recent catalysts & curated news ──────────────────────────────────────────
-export function CatalystsNewsCard({ data }) {
+export function CatalystsNewsCard({ data, historical = false }) {
   const { t } = useTranslation('intel', { useSuspense: false })
-  if (!data || data.status !== 'available') return null
+  if (!data) return null
   const news = (data.curated_news || []).filter((n) => n.title).slice(0, 4)
   const events = (data.catalysts || []).filter((e) => e.title).slice(0, 4)
-  if (!news.length && !events.length) return null
+  if (!news.length && !events.length && !['error', 'partial'].includes(data.status)) return null
   return (
     <section className="card p-4 space-y-3">
       <div className="flex items-center gap-2">
         <Newspaper className="h-3.5 w-3.5 text-[var(--accent)]" />
-        <span className="text-[13px] font-semibold text-[var(--fg-1)]">{t('markets.catalystsNews', { defaultValue: 'Recent catalysts & news' })}</span>
+        <span className="text-[13px] font-semibold text-[var(--fg-1)]">{historical ? t('asset_news.saved_coverage', { defaultValue: 'Recorded coverage & notable events' }) : t('markets.catalystsNews', { defaultValue: 'Recent catalysts & news' })}</span>
       </div>
 
+      {['error', 'partial'].includes(data.status) && <p role="alert">{t('markets.catalystReadFailed', { defaultValue: 'Some catalyst sources could not be loaded. Event coverage is incomplete.' })}</p>}
       {news.length > 0 && (
         <ul className="space-y-2">
           {news.map((n, i) => (
@@ -132,6 +133,7 @@ export function CatalystsNewsCard({ data }) {
                   ? <a href={n.url} target="_blank" rel="noreferrer" className="text-[12px] text-[var(--fg-1)] hover:text-[var(--accent)] flex items-center gap-1">{n.title}<ExternalLink className="h-3 w-3 opacity-60" /></a>
                   : <span className="text-[12px] text-[var(--fg-1)]">{n.title}</span>}
               </div>
+              {n.published_at && <time dateTime={n.published_at} className="block text-[11px] text-[var(--fg-4)]">{new Date(n.published_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</time>}
               {n.why_it_matters && <p className="text-[11px] text-[var(--fg-4)] leading-snug pl-3.5">{n.why_it_matters}</p>}
             </li>
           ))}
@@ -168,7 +170,7 @@ export function UpcomingUnlocksCard({ data }) {
   const upcoming = (data && data.status === 'available' && Array.isArray(data.upcoming)) ? data.upcoming : []
   if (!upcoming.length) return null
   const next = data.next_unlock || upcoming[0]
-  const pctSupply = (v) => (v == null || v <= 0 || v > 100) ? null : `~${Number(v).toFixed(Number(v) < 1 ? 2 : 1)}%`
+  const pctSupply = v => v == null || !Number.isFinite(Number(v)) ? null : `${Number(v).toLocaleString()} (unit unspecified)`
   return (
     <section className={`card p-4 space-y-3 ${data.material ? 'border border-amber-400/30' : ''}`}>
       <div className="flex items-center gap-2">
@@ -198,7 +200,7 @@ export function UpcomingUnlocksCard({ data }) {
           ))}
         </ul>
       )}
-      <p className="text-[10px] text-[var(--fg-5)] leading-snug">{t('markets.unlocksNote', { defaultValue: 'Scheduled emissions/unlocks (DeFiLlama). Supply % is approximate. Forward dilution context — not advice.' })}</p>
+      <p className="text-[10px] text-[var(--fg-5)] leading-snug">Stored symbol schedule · asset match and supply units are unverified. Use the book calendar for verified identity and source versions.</p>
     </section>
   )
 }

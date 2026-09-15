@@ -1,4 +1,4 @@
-import React from 'react'
+import React,{useState} from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { LayoutDashboard, NotebookPen, LineChart, CalendarCheck, BarChart3, Settings, Plus } from 'lucide-react'
@@ -17,10 +17,12 @@ const SUB_NAV = [
 
 export default function ThesisJournalLayout() {
   const { t } = useTranslation('intel', { useSuspense: false })
+  const [menuOpen,setMenuOpen]=useState(false)
   return (
     <div className="space-y-4">
-      <div className="flex items-center justify-between gap-3 flex-wrap">
-        <nav className="flex items-center gap-1 flex-wrap">
+      <div className="intel-journal-toolbar flex items-center justify-between gap-3 flex-wrap">
+        <button className="intel-journal-menu-toggle" aria-expanded={menuOpen} aria-controls="journal-destinations" onClick={()=>setMenuOpen(open=>!open)}>{t('journal.title',{defaultValue:'Thesis Journal'})} ▾</button>
+        <nav id="journal-destinations" aria-label="Thesis Journal" data-open={menuOpen} className="intel-journal-nav">
           {SUB_NAV.map((it) => {
             const Icon = it.icon
             return (
@@ -28,8 +30,9 @@ export default function ThesisJournalLayout() {
                 key={it.to}
                 to={it.to}
                 end={it.end}
+                onClick={()=>setMenuOpen(false)}
                 className={({ isActive }) =>
-                  `chip text-[12px] flex items-center gap-1.5 ${isActive ? 'chip--active bg-[var(--accent)] text-black' : 'text-[var(--fg-3)]'}`}
+                  `text-[12px] flex items-center gap-1.5 ${isActive ? 'text-[var(--accent)] underline underline-offset-4' : 'text-[var(--fg-3)]'}`}
               >
                 <Icon className="h-3.5 w-3.5" /> {t(it.key, { defaultValue: it.label })}
               </NavLink>

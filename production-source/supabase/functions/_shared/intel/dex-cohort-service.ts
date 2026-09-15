@@ -1,6 +1,6 @@
 import {requestCmc} from '../market-assets/cmc-transport.ts'
 import {cmcParams,cmcRows,CMC_CAPABILITIES} from '../market-assets/cmc-capabilities.ts'
-import {cmcDexIdentity,isDexDiscovery,validateCmcDexResponse,CMC_DEX_NETWORKS} from '../market-assets/cmc-dex.ts'
+import {cmcDexRowIdentity,cmcDexInteger,isDexDiscovery,validateCmcDexResponse,CMC_DEX_NETWORKS} from '../market-assets/cmc-dex.ts'
 import {cmcPolicyEnvironment,loadCmcOperatingSettings} from '../market-assets/cmc-operating-settings.ts'
 import {cmcHistoryPolicy} from './investigation-normalize.ts'
 import {marketSourceReference} from './market-source-reference.ts'
@@ -9,12 +9,40 @@ import {digest,stableJson,finite} from './investigation-evidence.ts'
 const uuid=(v:unknown)=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)
 async function read(query:any){const {data,error}=await query;if(error)throw Error('dex_cohort_storage_unavailable');return data}
 const labels:Record<string,string>={dexTrending:'Trending contracts',dexNew:'New contracts',dexMeme:'Meme discovery',dexGainers:'Gainers and losers'}
-export function dexCohortMembers(capability:string,payload:any,params:Record<string,string>,capturedAt:string,fetchedAt:string){
+/** The verified platform a cohort is ABOUT. For a leaderboard capability the
+ * provider itself was pinned (`platformIds` is a request field), so the pin comes
+ * from the params it was asked with. /v1/dex/meme/list takes no platform filter —
+ * its body is {protocol, exclusive, limit} — so the pin is OURS, supplied by the
+ * caller and applied to the answer, never sent upstream. */
+export function dexCohortPin(capability:string,params:Record<string,string>,pinnedPlatformId?:unknown):number{
+ const pin=cmcDexInteger(capability==='dexMeme'?pinnedPlatformId:params.platformIds)
+ if(pin==null||!CMC_DEX_NETWORKS.some(n=>n.platformId===pin))throw Error('invalid_dex_cohort_platform')
+ return pin
+}
+/**
+ * Members of one discovery response, for ONE verified platform.
+ *
+ * CORRECTED 2026-09-15 for dexMeme. A leaderboard answer was pinned in the
+ * request, so a row naming another platform is a MALFORMED answer and still
+ * fails closed. A meme board was not pinned: it legitimately spans every chain
+ * the provider indexes, so a row on another platform (or on a chain we do not
+ * verify) is simply not ours — it is dropped and COUNTED, never repaired into an
+ * identity and never attributed to the pinned chain. An empty result for the
+ * pinned platform is likewise an honest empty, reported by the caller; only a
+ * leaderboard, whose emptiness would mean the provider ignored its own filter,
+ * still throws.
+ */
+export function dexCohortMembers(capability:string,payload:any,params:Record<string,string>,capturedAt:string,fetchedAt:string,pinnedPlatformId?:unknown){
  if(!isDexDiscovery(capability)||!validateCmcDexResponse(capability,payload,params))throw Error('invalid_dex_cohort_source')
+ const pin=dexCohortPin(capability,params,pinnedPlatformId)
  const members=new Map<string,any>()
- for(const row of cmcRows(capability,payload).rows){
-  const identity=cmcDexIdentity(row.canonicalKey)
-  if(!identity||String(identity.platformId)!==params.platformIds)throw Error('invalid_dex_cohort_identity')
+ let dropped=0
+ for(const row of cmcRows(capability,payload,params).rows){
+  const identity=cmcDexRowIdentity(row.canonicalKey,pin)
+  if(!identity){
+   if(capability!=='dexMeme')throw Error('invalid_dex_cohort_identity')
+   dropped+=1;continue
+  }
   const observed=row.quote?.last_updated,validTime=Number.isFinite(Date.parse(observed))&&Date.parse(observed)<=Date.parse(fetchedAt)
   const price=finite(row.p),cap=finite(row.mcap)
   const member={subject:identity.subject,name:String(row.name||row.symbol||identity.subject).slice(0,160),symbol:typeof row.symbol==='string'?row.symbol.slice(0,40):null,
@@ -29,8 +57,8 @@ export function dexCohortMembers(capability:string,payload:any,params:Record<str
    previous.stages=[...new Set([...previous.stages,...member.stages])]
   }else members.set(identity.subject,member)
  }
- if(!members.size||members.size>75)throw Error('dex_cohort_empty_or_oversized')
- return [...members.values()]
+ if(members.size>75||(!members.size&&capability!=='dexMeme'))throw Error('dex_cohort_empty_or_oversized')
+ return {members:[...members.values()],dropped}
 }
 /** Capture exactly the response the user reviewed. This path never refreshes
  * a provider, invents a discovery date, or accepts browser-supplied members. */
@@ -41,11 +69,19 @@ export async function dexCohortService(db:any,input:any,actor:{userId:string;org
  if(operation==='read'&&(!uuid(input.cohortId)||['capability','parameters','payloadHash','retrievedAt'].some(k=>input[k]!=null)))throw Error('invalid_dex_cohort_request')
  const at=input.at==null?now:Number(input.at)
  if(!Number.isFinite(at)||at<0||at>now||operation==='capture'&&input.at!=null)throw Error('invalid_dex_cohort_time')
- let params:Record<string,string>={},key=''
+ let params:Record<string,string>={},key='',pin=0
  if(operation==='capture'){
   if(input.cohortId!=null||!isDexDiscovery(input.capability)||typeof input.payloadHash!=='string'||!/^[a-f0-9]{64}$/.test(input.payloadHash)||typeof input.retrievedAt!=='string'||!Number.isFinite(Date.parse(input.retrievedAt))||Date.parse(input.retrievedAt)>now)throw Error('invalid_dex_cohort_request')
-  params=cmcParams(input.capability,input.parameters||{})
-  key=`dex:${input.capability}:${await digest(stableJson({params,payloadHash:input.payloadHash,retrievedAt:input.retrievedAt}))}`
+  // dexMeme accepts no platform filter, so `platformIds` on a meme request is
+  // OUR pin on the answer: it is taken out before the params are built and never
+  // reaches the provider. It still enters the cohort key, so two platforms
+  // reviewed from the same board keep two cohorts rather than colliding on one.
+  const requested={...(input.parameters||{})}
+  const pinned=input.capability==='dexMeme'?requested.platformIds:undefined
+  if(input.capability==='dexMeme')delete requested.platformIds
+  params=cmcParams(input.capability,requested)
+  pin=dexCohortPin(input.capability,params,pinned)
+  key=`dex:${input.capability}:${await digest(stableJson({params:{...params,platformIds:String(pin)},payloadHash:input.payloadHash,retrievedAt:input.retrievedAt}))}`
  }
  const settings=await loadCmcOperatingSettings(db),env=cmcPolicyEnvironment(settings,key=>Deno.env.get(key),now)
  const policy=cmcHistoryPolicy(now,new Date(now).toISOString(),env)
@@ -57,10 +93,15 @@ export async function dexCohortService(db:any,input:any,actor:{userId:string;org
   if(source.state!=='fresh'||!source.payload) return {state:source.state,reason:source.reason||'Refresh the discovery source before capturing its original membership.',cohort:null,quotes:null}
   const reference=await marketSourceReference(input.capability,params,source.payload,source.provenance)
   if(reference.payloadHash!==input.payloadHash||reference.retrievedAt!==input.retrievedAt)throw Error('dex_cohort_source_changed')
-  const capturedAt=new Date(now).toISOString(),members=dexCohortMembers(input.capability,source.payload,params,capturedAt,reference.retrievedAt)
+  const capturedAt=new Date(now).toISOString()
+  const {members,dropped}=dexCohortMembers(input.capability,source.payload,params,capturedAt,reference.retrievedAt,pin)
+  // An empty board for the pinned platform is an ANSWER, reported as one. It is
+  // not a 503 and not a stored cohort of nothing; `droppedRows` says whether the
+  // board was empty outright or only empty of this platform.
+  if(!members.length)return {state:'empty',reason:'provider_reported_empty',cohort:null,quotes:null,droppedRows:dropped}
   const retention=cmcHistoryPolicy(Date.parse(reference.retrievedAt),source.provenance.expiresAt!,env)
   if(Date.parse(retention.retainUntil)<=now)throw Error('dex_cohort_source_expired')
-  const network=CMC_DEX_NETWORKS.find(n=>String(n.platformId)===params.platformIds)!
+  const network=CMC_DEX_NETWORKS.find(n=>n.platformId===pin)!
   await read(db.from('intel_market_cohorts').upsert({cohort_key:key,kind:'dex_discovery',name:`${labels[input.capability]} · ${network.label}`,provider:'coinmarketcap',source_ref:CMC_CAPABILITIES[input.capability].path,
    source_reference:reference,created_at:capturedAt,retain_until:retention.retainUntil,members},{onConflict:'cohort_key',ignoreDuplicates:true}))
   cohort=await read(db.from('intel_market_cohorts').select('*').eq('cohort_key',key).gt('retain_until',new Date(now).toISOString()).single())

@@ -2,14 +2,23 @@ import { DatabaseSync } from 'node:sqlite'
 import { createHash } from 'node:crypto'
 import { CMC_CAPABILITIES, cmcParams, cmcRows, cmcObservedAt, planAllows, estimateCmcCredits } from './cmc-capabilities.ts'
 import { fixtureData } from '../src/fixtures.mjs'
+import { createKeylessClient, KEYLESS_CAVEAT } from './keyless.mjs'
 const ALLOWED=new Set(['quotes','metadata','history','ohlcv','rwaList','rwaInfo','rwaQuotes','issuers','issuer','derivativeExchanges','derivativePairs','liquidations'])
 export function createResearchService({filename=':memory:',mode='fixture',key='',plan='basic',creditLimit=20,fetcher=fetch,now=()=>Date.now()}={}) {
   const db=new DatabaseSync(filename)
   db.exec('PRAGMA journal_mode=WAL;PRAGMA busy_timeout=1000;CREATE TABLE IF NOT EXISTS budget(period TEXT PRIMARY KEY,used REAL NOT NULL DEFAULT 0,reserved REAL NOT NULL DEFAULT 0);CREATE TABLE IF NOT EXISTS cache(key TEXT PRIMARY KEY,payload TEXT,expires REAL NOT NULL DEFAULT 0,observed TEXT,fetched TEXT);')
+  // Keyless mode never reads or sends a key, so the configured one is discarded
+  // here rather than merely left unused further down.
+  const keylessMode=mode==='keyless'
+  if(keylessMode)key=''
+  const keyless=keylessMode?createKeylessClient({fetcher,now}):null
   let account=null,verifiedAt=0,lastCall=0,live=false
-  const state=()=>({mode:mode==='live'?'live':'fixture',keyConfigured:!!key,verifiedPlan:plan,localCreditLimit:creditLimit})
+  const state=()=>({mode:keylessMode?'keyless':mode==='live'?'live':'fixture',keyConfigured:!!key,verifiedPlan:plan,localCreditLimit:creditLimit,keyless:keyless?{...keyless.stats(),caveat:KEYLESS_CAVEAT}:null})
   const unavailable=(capability,reason)=>({version:1,capability,state:'unavailable',fixture:false,data:{rows:[],total:null,hasMore:false},reason,provenance:{provider:'coinmarketcap',observedAt:null,fetchedAt:null,expiresAt:null,sourceUrl:'https://coinmarketcap.com/api/documentation/pro-api-reference/endpoint-overview'}})
   async function read(capability,input={}) {
+    // The keyless demo has its own route table, bounds, cache and ceilings, and
+    // never reaches the keyed transport, the SQLite cache or the credit ledger.
+    if(keylessMode)return keyless.read(capability,input)
     if(!ALLOWED.has(capability))throw Error('unsupported_capability')
     const params=cmcParams(capability,input),spec=CMC_CAPABILITIES[capability]
     if(Number(params.limit||params.count||0)>100)throw Error('maximum_rows_100')

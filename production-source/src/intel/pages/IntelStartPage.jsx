@@ -7,6 +7,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { startIntelTrial } from '../lib/intel-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import { intelReturnPath } from '../lib/intel-return-path'
 
 const PAID_PLANS = ['starter', 'pro', 'elite']
 
@@ -28,7 +29,7 @@ export default function IntelStartPage() {
 
   const plan = PAID_PLANS.includes(searchParams.get('plan')) ? searchParams.get('plan') : null
   // Post-switch landing: checkout for paid intent, the workspace itself otherwise.
-  const dest = plan ? `/intel/upgrade?plan=${plan}` : null
+  const dest = plan ? `/intel/upgrade?plan=${plan}` : intelReturnPath(searchParams.get('next'))
 
   const existingIntel = (memberships || []).find((m) => m.org?.product_mode === 'intel')?.org
 

@@ -1,11 +1,13 @@
 import React, { useState, useEffect, useCallback } from 'react'
-import { Link } from 'react-router'
+import { Link, useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2, ExternalLink, Briefcase, Check } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { CHAINS, getChain } from '../lib/chains'
-import { listWatchlist, addWatchlistItem, removeWatchlistItem, setHolding, entityHref } from '../lib/watchlist-api'
+import { listWatchlist, addWatchlistItem, removeWatchlistItem, setHolding, entityHref, reorderWatchlist, pinWatchlistItem } from '../lib/watchlist-api'
+import { useWatchlistSelection } from '../context/WatchlistSelection'
+import WatchlistManager from '../components/WatchlistManager'
 import { emitTutorialSignal } from '../../help/signals'
 import { ensureDefaultPortfolio, addTransaction } from '../lib/portfolio-api'
 import { loadMarketContextBySymbols } from '../lib/markets-api'
@@ -33,6 +35,13 @@ function HoldingEditor({ item, onSave }) {
 }
 
 export default function WatchlistPage() {
+  const [params, setParams] = useSearchParams(), selection = useWatchlistSelection(params.get('list'))
+  const { org } = useProfile(), { user } = useSupabase()
+  const choose = async id => { await selection.select(id); setParams(previous => { const next = new URLSearchParams(previous); id ? next.set('list', id) : next.delete('list'); return next }) }
+  return <><WatchlistManager state={selection} onSelect={choose}/>{selection.invalidList ? <p role="alert">This watchlist is unavailable in the current workspace. Choose an available list.</p> : <WatchlistPageBody key={`${user?.id}:${org?.id}:${selection.selected?.id || ''}`} selection={selection}/>}</>
+}
+
+function WatchlistPageBody({ selection }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase, user } = useSupabase()
@@ -46,13 +55,13 @@ export default function WatchlistPage() {
   const load = useCallback(async () => {
     if (!org?.id) return
     setLoading(true); setError(null)
-    try { setItems(await listWatchlist(supabase, org.id)) }
+    try { setItems(await listWatchlist(supabase, org.id, selection.selected?.id)) }
     catch (e) { setError(e.message) }
     finally { setLoading(false) }
-  }, [org?.id, supabase])
+  }, [org?.id, supabase, selection.selected?.id])
 
   useEffect(() => { load() }, [load])
-  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'watchlist') }, [org?.id, supabase])
+  useEffect(() => () => { if (org?.id) markSurfaceSeen(supabase, 'watchlist', '', { orgId: org.id, userId: user?.id }) }, [org?.id, user?.id, supabase])
 
   // Hydrate exchange market context for tracked symbols (cached tables; no live calls).
   useEffect(() => {
@@ -72,32 +81,47 @@ export default function WatchlistPage() {
         : form.itemType === 'narrative' ? 'narrative'
         : form.itemType === 'protocol' ? 'protocol' : 'asset'
       const added = await addWatchlistItem(supabase, org.id, user?.id, {
-        kind, chain: form.chain, value: form.value.trim(), itemType: form.itemType, label: form.label.trim() || null,
+        kind, chain: form.chain, value: form.value.trim(), itemType: form.itemType, label: form.label.trim() || null, listId: selection.selected?.id,
       })
       // Tutorial receipt: the created row id (a duplicate returns the old row,
       // whose created_at predates the run, so verification correctly fails it).
       emitTutorialSignal('watchlist.item-added', added ? { item_id: added.id } : {})
       setForm((f) => ({ ...f, value: '', label: '' }))
       await load()
+      await selection.reload()
     } catch (e) {
       // Raw message on purpose — IntelErrorNotice maps intel_limit_reached:*
       // to friendly copy + the /intel/upgrade link.
       setError(e.message || '')
     }
     finally { setAdding(false) }
-  }, [form, org?.id, supabase, user?.id, load])
+  }, [form, org?.id, supabase, user?.id, load, selection])
 
   const onRemove = useCallback(async (id) => {
-    try { await removeWatchlistItem(supabase, id); setItems((p) => p.filter((i) => i.id !== id)) }
+    try { await removeWatchlistItem(supabase, id); setItems((p) => p.filter((i) => i.id !== id)); await selection.reload() }
     catch (e) { setError(e.message) }
-  }, [supabase])
+  }, [supabase, selection])
 
   const saveHolding = useCallback(async (id, patch) => {
     try {
       await setHolding(supabase, id, patch)
       setItems((p) => p.map((i) => i.id === id ? { ...i, holding_amount: patch.amount, cost_basis_usd: patch.costBasis } : i))
+      await selection.reload()
     } catch (e) { setError(e.message) }
-  }, [supabase])
+  }, [supabase, selection])
+
+  const [ordering, setOrdering] = useState(false)
+  const pin = async item => {
+    setOrdering(true); setError(null)
+    try { await pinWatchlistItem(supabase, org.id, selection.selected, item.id, !item.is_pinned); await load(); await selection.reload() }
+    catch (e) { setError(e.message) } finally { setOrdering(false) }
+  }
+  const move = async (index, offset) => {
+    const next = [...items]; [next[index], next[index + offset]] = [next[index + offset], next[index]]
+    setOrdering(true); setError(null)
+    try { await reorderWatchlist(supabase, org.id, selection.selected, next.map(item => item.id)); setItems(next); await selection.reload() }
+    catch (e) { setError(e.message) } finally { setOrdering(false) }
+  }
 
   // One-way, opt-in bridge: promote a watchlist holding estimate into the real
   // Portfolio (creates a manual transaction). No auto-sync; never double-counted.
@@ -172,17 +196,18 @@ export default function WatchlistPage() {
 
       {loading ? (
         <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
-      ) : items.length === 0 ? (
+      ) : error && items.length === 0 ? null : items.length === 0 ? (
         <div className="card p-8 text-center text-[var(--fg-3)] text-sm">{t('watchlist.empty', { defaultValue: 'Nothing tracked yet. Add a token, wallet or narrative above.' })}</div>
       ) : (
         <div className="space-y-2">
-          {items.map((it) => {
+          {items.map((it, index) => {
             const e = it.entity || {}
             const chain = e.chain_namespace ? getChain(CHAINS.find((c) => c.namespace === e.chain_namespace && c.caip2Ref === e.chain_id)?.id) : null
             const name = it.label || e.display_symbol || e.asset_id || e.canonical_ref_key
             return (
-              <div key={it.id} className="card p-3 flex items-center gap-3">
-                <span className="chip chip--accent text-[10px] uppercase">{t(`watchlist.types.${it.item_type}`, { defaultValue: it.item_type })}</span>
+              <div key={it.id} className="intel-watchlist-row border-b border-[var(--border-default)] py-3 flex items-center gap-3 flex-wrap">
+                <div className="flex gap-1"><button className="btn btn--quiet btn--sm" aria-label={`Move ${name} up`} disabled={ordering || index === 0 || !!items[index-1]?.is_pinned !== !!it.is_pinned} onClick={() => move(index, -1)}>↑</button><button className="btn btn--quiet btn--sm" aria-label={`Move ${name} down`} disabled={ordering || index === items.length - 1 || !!items[index+1]?.is_pinned !== !!it.is_pinned} onClick={() => move(index, 1)}>↓</button><button className="intel-text-link" aria-label={`${it.is_pinned ? 'Unpin' : 'Pin'} ${name}`} disabled={ordering} onClick={() => pin(it)}>{it.is_pinned ? 'Unpin' : 'Pin'}</button></div>
+                <span className="text-[10px] uppercase text-[var(--fg-4)]">{t(`watchlist.types.${it.item_type}`, { defaultValue: it.item_type })}</span>
                 <Link to={entityHref(e, it.item_type)} className="flex-1 min-w-0">
                   <div className="text-sm text-[var(--fg-1)] truncate flex items-center gap-1.5">{name} <ExternalLink className="h-3 w-3 text-[var(--fg-5)]" /></div>
                   <div className="text-[11px] text-[var(--fg-4)] truncate font-mono">{e.canonical_ref_key}</div>

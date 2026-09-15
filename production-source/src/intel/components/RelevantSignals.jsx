@@ -41,35 +41,24 @@ function rowToCard(r) {
   }
 }
 
-export default function RelevantSignals({ subjectType = null, title = 'Signals relevant to you', personalOnly = true, limit = 5, seeAllHref = '/intel' }) {
+export default function RelevantSignals({ subjectType = null, title = 'Signals relevant to you', personalOnly = true, limit = 5, seeAllHref = '/intel',portfolioId=null }) {
   const { t } = useTranslation('intel', { useSuspense: false })
-  const { org } = useProfile()
-  const { supabase } = useSupabase()
-  const [rows, setRows] = useState(null)
-
-  useEffect(() => {
-    let alive = true
-    if (!org?.id) return
-    loadSignalFeed(supabase, org.id, { subjectType, limit: 24 })
-      .then((data) => { if (alive) setRows(data) })
-      .catch(() => { if (alive) setRows([]) })
-    return () => { alive = false }
-  }, [org?.id, supabase, subjectType])
-
-  if (!rows) return null
-  const cards = rows.map(rowToCard).filter((c) => !personalOnly || (c.reasons || []).length > 0).slice(0, limit)
-  if (!cards.length) return null
-
-  return (
-    <section className="space-y-2">
-      <div className="intel-section-header">
-        <div>
-          <div className="eyebrow flex items-center gap-1.5"><Radar className="h-3.5 w-3.5" /> {title}</div>
-          <div className="intel-section-sub">{t('signals.personalized_sub', { defaultValue: 'Personalized from your watchlist, holdings, followed narratives, chains, and topics.' })}</div>
-        </div>
-        <Link to={seeAllHref} className="btn btn--quiet btn--sm">All <ArrowRight className="h-3 w-3" /></Link>
-      </div>
-      <div className="space-y-2">{cards.map((c) => <SignalCard key={c.id} s={c} />)}</div>
-    </section>
-  )
+  const { org } = useProfile(),{supabase,user}=useSupabase()
+  const owner=JSON.stringify([org?.id,user?.id,portfolioId]),[selection,setSelection]=useState(null),mode=portfolioId?(selection?.owner===owner?selection.mode:'portfolio'):'all'
+  const scope=JSON.stringify([owner,subjectType,mode]),[state,setState]=useState(null),[retry,setRetry]=useState(0)
+  useEffect(()=>{
+    let alive=true
+    if(!org?.id||!user?.id)return
+    setState({scope,loading:true})
+    loadSignalFeed(supabase,org.id,{subjectType,limit:24,portfolioId:mode==='portfolio'?portfolioId:null}).then(rows=>{if(alive)setState({scope,rows})},error=>{if(alive)setState({scope,error:error.message})})
+    return()=>{alive=false}
+  },[org?.id,user?.id,supabase,scope,retry]) // eslint-disable-line react-hooks/exhaustive-deps
+  if(!org?.id||!user?.id)return null
+  const current=state?.scope===scope?state:null,cards=(current?.rows||[]).map(rowToCard).filter(c=>!personalOnly||(c.reasons||[]).length>0).slice(0,limit)
+  return <section className="intel-relevant-signals" aria-label="Relevant signals">
+    <div className="intel-section-header"><h2>{mode==='portfolio'?'Signals for this portfolio':title}</h2><Link to={seeAllHref} className="btn btn--quiet btn--sm">All <ArrowRight className="h-3 w-3"/></Link></div>
+    {portfolioId&&<div className="intel-underlined-nav" role="group" aria-label="Signal relevance"><button aria-pressed={mode==='portfolio'} onClick={()=>setSelection({owner,mode:'portfolio'})}>This portfolio</button><button aria-pressed={mode==='all'} onClick={()=>setSelection({owner,mode:'all'})}>All interests</button></div>}
+    <p className="intel-section-sub">{mode==='portfolio'?'Matched to current holdings in the selected portfolio. Market-wide asset news may apply across networks.':t('signals.personalized_sub',{defaultValue:'Personalized from your watchlist, holdings, followed narratives, chains, and topics.'})}</p>
+    {!current||current.loading?<p role="status">Loading signals…</p>:current.error?<p role="alert">{current.error} <button className="btn" onClick={()=>setRetry(n=>n+1)}>Retry signals</button></p>:!cards.length?<p className="intel-section-sub">{mode==='portfolio'?'No current signals match this portfolio. All interests remains available.':'No current signals match your interests.'}</p>:<div className="intel-signal-rows">{cards.map(c=><details key={scope+':'+c.id}><summary><span>{c.asset_symbol?c.asset_symbol:c.name}</span><span>{({bullish:'Leans bullish',bearish:'Leans bearish',mixed:'Mixed',neutral:'Neutral'})[c.direction]||c.direction||'Unclear'}</span></summary><SignalCard s={c}/></details>)}</div>}
+  </section>
 }

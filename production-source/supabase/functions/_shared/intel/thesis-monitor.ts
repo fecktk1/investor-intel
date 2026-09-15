@@ -8,6 +8,7 @@
 import { getOrAssembleAssetEvidencePack, type AssetEvidenceSubject } from './asset-evidence-pack.ts'
 import { readThesisContextRows } from './thesis-monitor-context.ts'
 import {evaluateThesisConditions} from './thesis-conditions.ts'
+import {loadThesisConditionSources} from './thesis-condition-sources.ts'
 import { cardsFromAssetPack, classifyEventForThesis, computeThesisStatus, scoreThesisQuality } from './thesis-evidence.ts'
 
 // deno-lint-ignore no-explicit-any
@@ -52,13 +53,16 @@ export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: bo
   if(baseRes.error)throw new Error('thesis_context_unavailable')
   const activatedRules=rules.filter((r:Any)=>r.status==='active'&&r.alert_rule_id)
   if(activatedRules.length>50)throw Error('thesis_condition_limit')
-  let conditions=activatedRules.length?evaluateThesisConditions(activatedRules,pack,thesis.subject_canonical_key,Date.now()):[]
+  // The regime capture and a cached history window live outside the asset pack.
+  // They are read (never fetched) only when an activated rule names them.
+  const sources=activatedRules.length?await loadThesisConditionSources(admin,thesis.subject_canonical_key,activatedRules,Date.now()):{observations:[],reasons:{}}
+  let conditions=activatedRules.length?evaluateThesisConditions(activatedRules,pack,thesis.subject_canonical_key,Date.now(),sources):[]
   // A long-lived narrative pack must not hide newer stored quotes. Refresh the
   // shared assembly once only when an activated condition lacks usable facts.
   // This is a database assembly with live provider enrichment still disabled.
   if(packRes.cached&&conditions.some(condition=>condition.met==null)){
     packRes=await (opts.readPack||getOrAssembleAssetEvidencePack)(admin,subject,{force:true,staleMinutes:1,allowLiveEnrichment:false})
-    pack=packRes.pack||{};conditions=evaluateThesisConditions(activatedRules,pack,thesis.subject_canonical_key,Date.now())
+    pack=packRes.pack||{};conditions=evaluateThesisConditions(activatedRules,pack,thesis.subject_canonical_key,Date.now(),sources)
   }
   const cards=cardsFromAssetPack(pack,thesis.stance||null)
   for(const condition of conditions){

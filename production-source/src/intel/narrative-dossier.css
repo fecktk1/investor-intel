@@ -1,0 +1,22 @@
+.intel-narrative-dossier { min-width: 0; }
+.intel-root .intel-narrative-dossier > :not([hidden]) ~ :not([hidden]) { margin-top: .65rem; }
+.intel-narrative-dossier .page-sub { max-width: 75ch; margin-bottom: 0; }
+.intel-narrative-summary { display: flex; gap: 1.6rem; flex-wrap: wrap; margin-bottom: 0; }
+.intel-narrative-summary > div { display: flex; align-items: baseline; gap: .5rem; }
+.intel-narrative-summary dt { color: var(--fg-3); font-size: .75rem; }
+.intel-narrative-summary dd { margin: 0; font-family: 'Geist Mono', monospace; font-size: .9rem; font-weight: 500; }
+.intel-narrative-dossier .intel-analysis-caption { margin: .4rem 0 .6rem; line-height: 1.5; }
+.intel-narrative-dossier .intel-narrative-section { border-bottom: 1px solid var(--border-default); }
+.intel-narrative-dossier .intel-narrative-note { padding-left: 0; padding-right: 0; }
+.intel-root .intel-narrative-dossier .intel-evidence-table th,
+.intel-root .intel-narrative-dossier .intel-evidence-table td { padding: .5rem .65rem; vertical-align: middle; }
+.intel-narrative-members table { min-width: 760px; }
+.intel-narrative-number { font-family: 'Geist Mono', monospace; font-variant-numeric: tabular-nums; }
+.intel-narrative-number small { font-family: 'Inter', sans-serif; }
+.intel-narrative-members small { font-size: .68rem; color: var(--fg-4); line-height: 1.4; }
+.intel-narrative-dossier summary { cursor: pointer; padding: .5rem 0; }
+.intel-narrative-dossier details > :not(summary) { margin-top: .65rem; }
+.intel-narrative-dossier .rounded-full { border-radius: 0; }
+.intel-narrative-dossier :is(section,details,div)[id] { scroll-margin-top: 5rem; }
+.intel-narrative-dossier :is(a,button,input,summary,[tabindex]):focus-visible { outline: 2px solid var(--accent); outline-offset: 3px; }
+@media(max-width:640px) { .intel-narrative-summary { column-gap: 1.1rem; row-gap: .35rem; } }

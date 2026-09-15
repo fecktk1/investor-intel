@@ -95,29 +95,24 @@ export function IntelMetricCard({ label, value, sub, tone = 'default', icon: Ico
         : tone === 'info'
           ? 'text-[var(--signal-blue)]'
           : 'text-[var(--fg-1)]'
-  return (
-    <div className={cx('intel-metric-card', className)}>
-      <div className="flex items-center justify-between gap-2">
-        <div className="intel-metric-label">{label}</div>
-        {Icon && <Icon className="h-3.5 w-3.5 text-[var(--fg-5)]" />}
-      </div>
-      <div className={cx('intel-metric-value', toneClass)}>{value}</div>
-      {sub && <div className="intel-metric-sub">{sub}</div>}
-    </div>
-  )
+  return <dl className={cx('intel-fact', className)}>
+    <dt>{label}</dt>
+    <dd className={toneClass}>{value}</dd>
+    {sub && <dd className="intel-fact-note">{sub}</dd>}
+  </dl>
 }
 
 export function IntelDataPill({ children, tone = 'default', className = '', title }) {
   const toneClass = tone === 'accent'
-    ? 'intel-data-pill--accent'
+    ? 'intel-status--accent'
     : tone === 'ok'
-      ? 'intel-data-pill--ok'
+      ? 'intel-status--ok'
       : tone === 'err'
-        ? 'intel-data-pill--err'
+        ? 'intel-status--err'
         : tone === 'info'
-          ? 'intel-data-pill--info'
+          ? 'intel-status--info'
           : ''
-  return <span title={title} className={cx('chip intel-data-pill', toneClass, className)}>{children}</span>
+  return <span title={title} className={cx('intel-status', toneClass, className)}>{children}</span>
 }
 
 export function IntelStatusBadge({ label, tone = 'default', className = '', title }) {
@@ -139,6 +134,16 @@ export function IntelTabs({ items, value, onChange, getLabel, className = '' }) 
             type="button"
             role="tab"
             aria-selected={active}
+            tabIndex={active ? 0 : -1}
+            onKeyDown={e => {
+              const index = items.indexOf(item)
+              const target = e.key === 'ArrowRight' ? (index + 1) % items.length : e.key === 'ArrowLeft' ? (index - 1 + items.length) % items.length : e.key === 'Home' ? 0 : e.key === 'End' ? items.length - 1 : null
+              if (target == null) return
+              e.preventDefault()
+              const next = items[target]
+              onChange?.(next.value !== undefined ? next.value : next.key)
+              e.currentTarget.parentElement.querySelectorAll('[role="tab"]')[target]?.focus()
+            }}
             className="intel-tab"
             onClick={() => onChange?.(itemValue)}
           >

@@ -1,15 +1,14 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { Compass, Waves, AlertTriangle } from 'lucide-react'
+import { formatUsd } from '../lib/market-format'
 
+// Unreadable values must stay null (not an em dash) so the strip can tell a
+// missing fact from a zero one and hide the row entirely.
 const fmtUsd = (n) => {
-  const v = Number(n); if (!Number.isFinite(v) || v === 0) return null
-  const a = Math.abs(v)
-  if (a >= 1e12) return `$${(v / 1e12).toFixed(2)}T`
-  if (a >= 1e9) return `$${(v / 1e9).toFixed(2)}B`
-  if (a >= 1e6) return `$${(v / 1e6).toFixed(1)}M`
-  if (a >= 1e3) return `$${(v / 1e3).toFixed(1)}K`
-  return `$${v.toFixed(0)}`
+  if(n==null||n===''||typeof n==='boolean')return null
+  const v = Number(n); if (!Number.isFinite(v)) return null
+  return formatUsd(v)
 }
 
 // "Today's picture" — a compact deterministic strip from the dashboard's already
@@ -26,11 +25,12 @@ export default function TodaysPicture({ grounding }) {
   const mcapChg = macro && macro.market_cap_change_24h_pct != null ? Number(macro.market_cap_change_24h_pct) : null
   const flows = (grounding.flow_highlights || []).filter((f) => f && f.usd_value != null).slice(0, 3)
   const cov = grounding.data_coverage || null
-  const warn = cov?.should_show_warning ? (cov.material_gaps || [])[0] : null
+  const warn = (cov?.material_gaps || [])[0] || null
   const newsCount = (grounding.news_that_matters || []).length
-  if (!totalMcap && btcDom == null && !flows.length && !warn) return null
+  const failures=Object.keys(grounding.read_states||{}).filter(k=>grounding.read_states[k].state==='error')
+  if (!totalMcap && btcDom == null && !flows.length && !warn && !failures.length) return null
   return (
-    <section className="card p-3 space-y-2">
+    <section className="border-y border-[var(--border-default)] py-4 space-y-2">
       <div className="eyebrow flex items-center gap-1.5"><Compass className="h-3.5 w-3.5" /> {t('pulse.todays_picture', { defaultValue: "Today's picture" })}</div>
       <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 text-[12px]">
         {totalMcap && (
@@ -47,6 +47,10 @@ export default function TodaysPicture({ grounding }) {
           </span>
         ))}
       </div>
+      {macro?.as_of&&Number.isFinite(Date.parse(macro.as_of))&&<p className="text-xs text-[var(--fg-4)]">{t('pulse.macro_observed',{defaultValue:'Macro observed'})} <time dateTime={macro.as_of}>{new Date(macro.as_of).toLocaleString(undefined,{timeZoneName:'short'})}</time></p>}
+      {failures.includes('flows')&&<p role="alert" className="text-xs">{t('pulse.flows_read_failed',{defaultValue:'Transfer highlights could not be read. This does not mean there were no transfers.'})}</p>}
+      {failures.includes('news')&&<p role="alert" className="text-xs">{t('pulse.picture_news_failed',{defaultValue:'Recent story context could not be read.'})}</p>}
+      {!!flows.length&&<details className="text-xs"><summary>{t('pulse.flow_source_times',{defaultValue:'Transfer source times'})}</summary>{flows.map((f,i)=><p key={i}>{f.symbol||f.chain} · {f.observed_at&&Number.isFinite(Date.parse(f.observed_at))?<time dateTime={f.observed_at}>{new Date(f.observed_at).toLocaleString(undefined,{timeZoneName:'short'})}</time>:t('pulse.time_unavailable',{defaultValue:'Observation time unavailable'})}</p>)}</details>}
       {warn && <div className="text-[11px] text-amber-400 inline-flex items-center gap-1"><AlertTriangle className="h-3 w-3" />{warn}</div>}
     </section>
   )

@@ -19,13 +19,18 @@ import { marketChain, marketCanonicalIdentity, marketIdentityChoices, verifiedNa
 import {readNativeChainPerformance} from '../_shared/intel/chain-performance-read.ts'
 import { marketScreenResponse } from '../_shared/intel/markets-screen.ts'
 import {resolveMarketAsset} from '../_shared/intel/market-asset-resolver.ts'
+import {parseContractProviderId} from '../_shared/intel/contract-market-asset.ts'
+import {loadAssetHistory,historyPlan,unavailableHistory} from '../_shared/intel/asset-history.ts'
+import {realizedVolatility,maxDrawdown,distanceFromHigh,timeUnderWaterDays} from '../_shared/intel/risk-metrics.ts'
+import {marketCoverage,type MarketIdentityKind} from '../_shared/intel/market-coverage.ts'
 import { resolveCmcAsset } from '../_shared/intel/cmc-asset-identity.ts'
 import {assetMarketRead,marketCmcIdentity,chooseMarketCandles} from '../_shared/intel/market-asset-source.ts'
 import type {MarketAssetsContext} from '../_shared/market-assets/types.ts'
 import { fetchCoingeckoOhlc } from '../_shared/market-assets/coingecko-provider.ts'
 import { getChain } from '../_shared/chains.ts'
 import {positionDepthQuotes} from '../_shared/intel/position-depth.ts'
-import {loadCmcChart,CHART_WINDOWS} from '../_shared/intel/cmc-chart.ts'
+import {loadCmcChart,CHART_WINDOWS,CHART_INTERVALS,isSubHourInterval} from '../_shared/intel/cmc-chart.ts'
+import {contractCandleLadder} from '../_shared/intel/cmc-kline-chart.ts'
 import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
 import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
@@ -96,6 +101,17 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
     const verifiedUserId=actor.userId
     if (!verifiedUserId) return finish(json({ error: 'unauthorized' }, 401))
 
+    // HISTORY mode: on-demand price history + derived risk for ONE asset. Same
+    // access check as detail; it is a read, so it is dispatched before it.
+    if (body.history === true) {
+      mode='history'
+      return await finish(measured('history',()=>marketHistory(admin, String(body.symbol || '').toUpperCase().replace(/^\$/, ''), {
+        sourceProvider:typeof body.sourceProvider==='string'?body.sourceProvider:undefined,
+        providerId:body.providerId != null ? String(body.providerId) : undefined,
+        range: typeof body.range==='string'?body.range:'90d',
+      })))
+    }
+
     if ((typeof body.symbol === 'string' && body.symbol.trim()) || (typeof body.sourceProvider === 'string' && body.providerId != null)) {
       mode='detail'
       return await finish(measured('detail',()=>marketDetail(admin, String(body.symbol || '').toUpperCase().replace(/^\$/, ''), {
@@ -161,6 +177,14 @@ async function fetchCandles(admin: any, sym: string, timeframe = '7D'): Promise<
 // Never use a same-symbol market as a substitute price history.
 async function assetCandles(admin: any, canonical: any, verified: boolean, timeframe: string, interval='auto',context:MarketAssetsContext={}) {
  return chooseMarketCandles(canonical,id=>loadCmcChart(admin,id,timeframe,interval,Date.now(),undefined,context),async()=>{
+  // A contract identity's only genuine history is its own on-chain trading. Try
+  // it BEFORE the CEX/CoinGecko ladder — a same-ticker market is never a
+  // substitute. Inside that rung the CoinMarketCap k-line aggregate (every pool
+  // on a verified CMC DEX chain) comes before the single GeckoTerminal pool.
+  if (canonical?.source_provider === 'contract') {
+    const pool = await contractCandleLadder(admin, canonical, timeframe, interval, context)
+    if (pool.candles.length || !verified) return pool
+  }
   if (verified) {
     const result = await fetchCandles(admin, canonical.normalized_symbol, timeframe)
     if (result.candles.length) return result
@@ -209,16 +233,27 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
 // deno-lint-ignore no-explicit-any
 async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; interval?:string; candlesOnly?: boolean; quotesOnly?:boolean; sourceProvider?:string; providerId?:string;orgId?:string|null;userId?:string } = {}): Promise<Response> {
   const timeframe = opts.timeframe || '7D'
-  if(!CHART_WINDOWS[timeframe]||!['auto','1H','4H','1D','1W'].includes(opts.interval||'auto'))return json({error:'invalid_chart_range'},400)
+  const interval = opts.interval || 'auto'
+  // The four sub-hour intervals exist ONLY for the CoinMarketCap k-line source,
+  // which is keyed by a contract address. A CMC-listed or CoinGecko asset asking
+  // for one is not a range we can sample, so it still answers invalid_chart_range
+  // rather than being quietly served hourly bars under a one-minute label. The
+  // first test is on the REQUESTED provider (a contract identity is always
+  // addressed as `provider=contract`), the second on the RESOLVED row, so a
+  // request that resolves to something else cannot slip through.
+  if(!CHART_WINDOWS[timeframe]||(interval!=='auto'&&!CHART_INTERVALS[interval]))return json({error:'invalid_chart_range'},400)
+  if(isSubHourInterval(interval)&&opts.sourceProvider!=='contract')return json({error:'invalid_chart_range'},400)
   const resolved=await resolveMarketAsset(admin,sym,opts.sourceProvider,opts.providerId)
   if(resolved.ambiguous)return json({error:'ambiguous_asset',symbol:sym},409)
   if(resolved.error)return json({error:'identity_unavailable'},503)
   if(!resolved.data)return json({error:'asset_not_found',symbol:sym},404)
+  if(isSubHourInterval(interval)&&resolved.data.source_provider!=='contract')return json({error:'invalid_chart_range'},400)
   const context={supabase:admin,orgId:opts.orgId,userId:opts.userId,kind:'request' as const,waitForFresh:opts.quotesOnly===true}
   const cmcId=marketCmcIdentity(resolved.data)
   const cmc=cmcId&&!opts.candlesOnly?await resolveCmcAsset(admin,cmcId,undefined,context):null
   const quote=assetMarketRead(resolved.data,cmc?.data)
-  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason:cmc?.error||null})
+  const quoteReason=cmc?.error||resolved.data.quote_reason||null
+  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason})
   sym=String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
   const [identityProfile,identityMapping,claimants]=await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol',sym).maybeSingle(),
@@ -229,7 +264,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   const cexVerified=hasVerifiedCexIdentity(resolved.data,identityMapping.data) && (identityMatch.confidence==='high'||!!verifiedNativeMarketSymbol(resolved.data))
   // Lightweight path for chart timeframe cycling — candles only, no full assembly.
   if (opts.candlesOnly) {
-    const c = await assetCandles(admin, resolved.data, cexVerified, timeframe,opts.interval,context)
+    const c = await assetCandles(admin, resolved.data, cexVerified, timeframe,interval,context)
     return json({ ...c, timeframe,chartAsset:marketCanonicalIdentity(resolved.data).canonicalAssetKey||`market:${resolved.data.source_provider}:${resolved.data.provider_id}` })
   }
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR, maR] = await Promise.all([
@@ -239,7 +274,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     admin.from('exchange_latest_cross_market_spreads').select('*').eq('normalized_symbol', sym).maybeSingle(),
     admin.from('exchange_market_rollups').select('*').eq('normalized_symbol', sym),
     admin.from('exchange_latest_tickers').select('*').eq('normalized_symbol', sym),
-    admin.from('exchange_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).eq('scope', 'provider').order('as_of', { ascending: false }).limit(24),
+    admin.from('exchange_latest_provider_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(24),
     admin.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8),
     admin.from('exchange_market_memory').select('summary, why_it_matters, memory_type, as_of').eq('normalized_symbol', sym).eq('is_active', true).order('as_of', { ascending: false }).limit(1),
     Promise.resolve(resolved),
@@ -275,7 +310,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // deno-lint-ignore no-explicit-any
   const rollups: Record<string, any> = {}
   for (const r of (rollR.data || [])) rollups[r.timeframe] = r
-  const chart = await assetCandles(admin, canonical, cexVerified, timeframe,opts.interval,context)
+  const chart = await assetCandles(admin, canonical, cexVerified, timeframe,interval,context)
   const { candles, bestPair, bestProvider } = chart
   const prof = profR.data, sig = sigR.data
   const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null
@@ -288,7 +323,8 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // degrades to a 'missing' status; on-chain may make a budgeted live Birdeye call.
   const ecoChain = quote.chain
   const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
-  const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : null
+  // A contract identity always knows its own address, even with no cached pair.
+  const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : canonical?.contract?.address ? String(canonical.contract.address) : null
   const [ecosystemNarratives, catalysts, onchain, unlocks] = await Promise.all([
     assembleEcosystemNarrativeState(admin, { chain: ecoChain, symbol: sym }),
     assembleCatalystNewsState(admin, { symbol: sym, chain: ecoChain }),
@@ -302,7 +338,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     assembleTokenUnlockState(admin, { symbol: sym, nowMs: Date.now() }),
   ])
 
-  return json({
+  const payload = {
     detail: true, symbol: sym, ...quote,
     // Canonical identity → lets the detail page load the rich CoinGecko profile.
     providerId: canonical?.provider_id ?? null, sourceProvider: canonical?.source_provider ?? null, primaryChain: canonical?.primary_chain ?? null,
@@ -310,7 +346,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     profile: prof ? { liquidityScore: prof.liquidity_score, retailRelevanceScore: prof.retail_relevance_score, marketQualityScore: prof.market_quality_score, trendScore: prof.trend_score, bestGlobalPair: prof.best_global_pair, bestUsRetailPair: prof.best_us_retail_pair } : null,
     ...marketCanonicalIdentity(canonical),
     identityChoices: marketIdentityChoices(canonical),
-    sourceFreshness:quote.sourceFreshness||freshness(quote.asOf,false),quoteReason:cmc?.error||null,
+    sourceFreshness:quote.sourceFreshness||freshness(quote.asOf,false),quoteReason,
     cexCoverage:cexVerified&&providers.length?'available':'unverified',
     depthQuotes:positionDepthQuotes(canonical,cexVerified,bookR.data||[],tickR.data||[]),
     spread: cexVerified && usableSpread(sprR.data) ? sprR.data : null, orderbook, rollups, providers, dex,
@@ -320,5 +356,59 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     chartState: 'sourceState' in chart ? chart.sourceState : null,
     chartReason: 'sourceReason' in chart ? chart.sourceReason : null,
     chartProvenance: 'provenance' in chart ? chart.provenance : null,
-  })
+    // The on-chain workspace for a pasted contract — present ONLY for a
+    // contract identity, so catalogue responses are unchanged.
+    ...(canonical?.contract ? { contract: canonical.contract } : {}),
+  }
+  // Every identity reports the SAME section list: what is present, and why the
+  // rest is not. Sections are never dropped for a less-covered asset.
+  const identity = detailIdentity(canonical, quote.chain)
+  return json({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }) })
+}
+
+// ─── HISTORY mode (on-demand history + derived risk) ─────────────────────────
+// One range is one provider sampling, charged to the shared credit budget. A
+// pasted contract has no CoinMarketCap listing: it is answered from its own
+// identity, with no provider call and no metrics invented from nothing.
+const NO_RISK_METRICS = { volatility30d: null, maxDrawdown: null, distanceFromHigh: null, timeUnderWaterDays: null }
+// deno-lint-ignore no-explicit-any
+async function marketHistory(admin: any, sym: string, opts: { range?: string; sourceProvider?: string; providerId?: string } = {}): Promise<Response> {
+  const range = opts.range || '90d'
+  if (!historyPlan(range)) return json({ error: 'invalid_history_range' }, 400)
+  if (opts.sourceProvider === 'contract') {
+    const parsed = opts.providerId ? parseContractProviderId(opts.providerId) : null
+    if (!parsed) return json({ error: 'invalid_provider' }, 400)
+    return json({ history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS,
+      identity: { kind: 'contract' as const, provider: 'contract', providerId: `${parsed.chain}:${parsed.address}`, chain: parsed.chain, address: parsed.address } })
+  }
+  const resolved = await resolveMarketAsset(admin, sym, opts.sourceProvider, opts.providerId)
+  if (resolved.ambiguous) return json({ error: 'ambiguous_asset', symbol: sym }, 409)
+  if (resolved.error) return json({ error: 'identity_unavailable' }, 503)
+  if (!resolved.data) return json({ error: 'asset_not_found', symbol: sym }, 404)
+  const identity = detailIdentity(resolved.data, null)
+  const cmcId = marketCmcIdentity(resolved.data)
+  if (!cmcId) return json({ history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS, identity })
+  const history = await loadAssetHistory(admin, { cmcId, range, ctx: { caller: 'market-history' } })
+  const now = Date.now()
+  const metrics = history.points.length ? {
+    volatility30d: realizedVolatility(history.points),
+    maxDrawdown: maxDrawdown(history.points),
+    distanceFromHigh: distanceFromHigh(history.points, now),
+    timeUnderWaterDays: timeUnderWaterDays(history.points),
+  } : NO_RISK_METRICS
+  return json({ history, metrics, identity })
+}
+
+/** Exact provider identity for the page — a contract is one chain + one address. */
+// deno-lint-ignore no-explicit-any
+function detailIdentity(asset: any, quoteChain: string | null): { kind: MarketIdentityKind; provider: string | null; providerId: string | null; chain: string | null; address: string | null } {
+  const provider = asset?.source_provider ? String(asset.source_provider) : null
+  const kind: MarketIdentityKind = provider === 'contract' ? 'contract' : provider === 'coinmarketcap' ? 'cmc' : 'coingecko'
+  const chain = asset?.contract?.chain ? String(asset.contract.chain) : quoteChain || asset?.primary_chain || null
+  let address: string | null = asset?.contract?.address ? String(asset.contract.address) : null
+  if (!address) {
+    const entries = Object.entries(asset?.platforms || {}).filter(([platform, value]) => typeof value === 'string' && value && (!chain || marketChain(platform) === chain))
+    if (entries.length === 1) address = String(entries[0][1])
+  }
+  return { kind, provider, providerId: asset?.provider_id != null ? String(asset.provider_id) : null, chain, address }
 }

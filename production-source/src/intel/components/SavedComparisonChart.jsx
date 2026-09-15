@@ -1,0 +1,9 @@
+import React,{useState,useMemo} from 'react'
+import MultiTokenChart from './MultiTokenChart'
+export default function SavedComparisonChart({state,onObservationChange}){
+ const [view,setView]=useState({...state.layout.comparison,range:state.layout.range,timezone:state.layout.timezone})
+ const series=useMemo(()=>state.layout.comparison.assets.map(a=>{const saved=state.comparisonSeries?.find(s=>s.asset===a.asset);return {...a,candles:saved?.bars||[],chartSource:saved?.source,error:saved?.bars?.length?null:'Saved prices are unavailable. The original source fingerprint remains.'}}),[state.layout.comparison.assets,state.comparisonSeries])
+ return <><MultiTokenChart series={series} view={view} onViewChange={setView} asOf={state.capturedAt} onObservationChange={onObservationChange} actions={<button type="button" onClick={()=>setView({...state.layout.comparison,range:state.layout.range,timezone:state.layout.timezone})}>Restore saved view</button>}/>
+  <details className="intel-chart-readings"><summary>Original comparison captures</summary><div className="intel-compare-readings" tabIndex={0} role="region" aria-label="Saved comparison source evidence"><table><thead><tr><th>Asset</th><th>Captured</th><th>Original observations</th><th>Source fingerprint</th></tr></thead><tbody>{state.comparisonSeries?.map(s=><tr key={s.asset}><th scope="row">{state.layout.comparison.assets.find(a=>a.asset===s.asset)?.label}<small>{s.asset}</small></th><td>{new Date(s.capturedAt).toLocaleString()}<small>{s.source.provider==='coinmarketcap'?<a href="https://coinmarketcap.com/" rel="noopener noreferrer" target="_blank">Data provided by CoinMarketCap.com</a>:s.source.provider} · {s.source.currency}</small></td><td>{s.barCount}<small>{s.bars?.length?'Saved prices available':'Source reference only'}</small></td><td className="break-all">{s.sourceHash}</td></tr>)}</tbody></table></div></details>
+ </>
+}

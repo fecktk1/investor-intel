@@ -289,20 +289,29 @@ export async function produceSignalState(admin: DB, opts: { now?: number } = {})
   // ── snapshot-history trends (severity windows) — momentum/decay/streak the
   // single-cron prev-delta can't express. One batched read per ~200 keys, hits
   // iss_snap_key_time. No providers, no new tables. Severity is the stored basis.
-  const sevenAgo = new Date(now - 7 * 86_400_000).toISOString()
+  // A table read here returned at most the API row limit, oldest first, so windows used
+  // truncated history. intel_signal_trend_history returns, per key, the latest snapshot at
+  // or before each window cutoff plus the most recent points, as one JSON value. A failed
+  // chunk leaves those trends unknown.
   const allKeys = [...acc.keys()]
   const histChunks: string[][] = []
   for (let i = 0; i < allKeys.length; i += 200) histChunks.push(allKeys.slice(i, i + 200))
-  const histResults = await Promise.all(histChunks.map(async (chunk) => {
-    try {
-      const r = await admin.from('intel_signal_snapshots')
-        .select('signal_key, snapshot_at, severity, direction')
-        .gte('snapshot_at', sevenAgo).in('signal_key', chunk).order('snapshot_at', { ascending: true })
-      return (r?.data || []) as Any[]
-    } catch { return [] as Any[] }
-  }))
   const histById = new Map<string, Any[]>()
-  for (const rows of histResults) for (const r of rows) { const a = histById.get(r.signal_key) || []; a.push(r); histById.set(r.signal_key, a) }
+  const readHistory = async (chunk: string[]) => {
+    try {
+      // 24 recent points cover the 8-point slope and 12 hours of streak; the window anchors come separately.
+      const { data, error } = await admin.rpc('intel_signal_trend_history', { p_keys: chunk, p_now: nowIso, p_recent: 24 })
+      if (error || !data || typeof data !== 'object') return
+      for (const [key, points] of Object.entries(data as Record<string, Any[]>)) {
+        if (!Array.isArray(points)) continue
+        histById.set(key, points
+          .filter((p: Any) => Array.isArray(p) && Number.isFinite(Number(p[0])))
+          .map((p: Any) => ({ snapshot_at: new Date(Number(p[0])).toISOString(), severity: p[1], direction: p[2] ?? null })))
+      }
+    } catch { /* trends read as unknown when history is unavailable */ }
+  }
+  // Four chunks at a time: each call reads about 200 keys of snapshot history.
+  for (let i = 0; i < histChunks.length; i += 4) await Promise.all(histChunks.slice(i, i + 4).map(readHistory))
 
   // ── finalize: deltas vs prior, cache_key, write ───────────
   const snapRows: Any[] = []

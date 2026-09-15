@@ -1,6 +1,6 @@
 import { logProviderCall } from '../provider-budget.ts'
 import type { MarketAssetsContext } from './types.ts'
-import { CMC_CAPABILITIES, CMC_FEATURE_CAPS, cmcParams, cmcObservedAt, estimateCmcCredits, planAllows } from './cmc-capabilities.ts'
+import { CMC_CAPABILITIES, CMC_DEX_SCHEMA_VALIDATED, CMC_FEATURE_CAPS, cmcParams, cmcObservedAt, cmcRequestBody, estimateCmcCredits, planAllows } from './cmc-capabilities.ts'
 import { normalizeCmcInvestigation } from '../intel/investigation-normalize.ts'
 import {retainMarketSourceVersions} from '../intel/market-source-versions.ts'
 import {readBoundedText,RequestBodyError} from '../intel/bounded-request.ts'
@@ -152,12 +152,14 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
         reservation=claim.reservation_id
         if(ctx)ctx._calls=(ctx._calls??0)+1
         const query=new URLSearchParams(params)
-          if(!name.startsWith('dex')&&!['map','metadata','exchangeInfo','exchangeAssets','categories','rwaMap','rwaInfo','issuers','issuer','fearGreed','fearGreedHistory','altcoinSeason','altcoinSeasonHistory','cmc100','cmc20','cmc100History','cmc20History','content','community'].includes(name)) query.set('convert','USD')
+          // Maps, block statistics and price-conversion either reject convert or
+          // carry the caller's own reviewed conversion target; never overwrite it.
+          if(!name.startsWith('dex')&&!['map','metadata','exchangeInfo','exchangeAssets','exchangeMap','fiatMap','blockchainStats','priceConversion','categories','rwaMap','rwaInfo','issuers','issuer','fearGreed','fearGreedHistory','altcoinSeason','altcoinSeasonHistory','cmc100','cmc20','cmc100History','cmc20History','content','community'].includes(name)) query.set('convert','USD')
         // Only the reviewed registry can select POST. Canonical scalar params
         // are shared-cache keys; never accept arbitrary URLs or request bodies.
         const post=spec.method==='POST'
         const res=await fetch(`${BASE}${spec.path}${post?'':`?${query}`}`,{method:post?'POST':'GET',headers:{'X-CMC_PRO_API_KEY':key,Accept:'application/json',...(post?{'Content-Type':'application/json'}:{})},
-          ...(post?{body:JSON.stringify({...params,pageSize:Number(params.pageSize)})}:{}),signal:AbortSignal.timeout(8000),redirect:'error'})
+          ...(post?{body:JSON.stringify(cmcRequestBody(name,params))}:{}),signal:AbortSignal.timeout(8000),redirect:'error'})
         status=res.status
         let raw:string
         try{raw=await readBoundedText(res,2_000_000)}catch(error){throw new Error(error instanceof RequestBodyError&&error.status===413?'response_too_large':'malformed_response')}
@@ -171,7 +173,17 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
           return cached?{...cached,reason}:empty(name,reason)
         }
         if(body?.data==null && !Array.isArray(body)) throw new Error('malformed_response')
-        if(name.startsWith('dex')&&!validateCmcDexResponse(name,body,params))throw new Error('malformed_response')
+        // Only the reviewed DEX schemas have an exact-identity validator. A newly
+        // registered path without one is not silently declared malformed.
+        if(CMC_DEX_SCHEMA_VALIDATED.has(name)&&!validateCmcDexResponse(name,body,params)){
+          // A rejection here is the only moment the real provider shape is still in
+          // hand: nothing is cached, so the evidence is otherwise lost. Log a bounded
+          // sample so the next capture is diagnosable from the function logs. A DEX
+          // response body is public market data; the key travels in a request header
+          // and never appears here.
+          console.warn(JSON.stringify({cmc_malformed:name,sample:JSON.stringify(body).slice(0,800)}))
+          throw new Error('malformed_response')
+        }
         const ttl=name==='quotes'?quoteRefreshSeconds(params):spec.ttl
         const fetchedAt=new Date().toISOString(),observedAt=cmcObservedAt(body,name),expiresAt=new Date(Date.now()+ttl*1000).toISOString()
         const {error}=await db.from('market_data_response_cache').update({response_json:body,status_code:200,negative_cache:false,error_kind:null,

@@ -1,5 +1,5 @@
-import React from 'react'
-import { Navigate } from 'react-router'
+import React, { useRef } from 'react'
+import { Navigate, useLocation } from 'react-router'
 import { useProfile } from '../../lib/profile-context'
 import { workspaceModeGateDecision } from '../../lib/active-org'
 import { pendingSessionIdentityOrgId } from '../../lib/session-identity-guard'
@@ -10,6 +10,9 @@ import { pendingSessionIdentityOrgId } from '../../lib/session-identity-guard'
 // so a content org can also be granted Intel by plan/override.
 export default function RequireIntelMode({ children }) {
   const { productMode, profileLoading } = useProfile()
+  const location=useLocation()
+  const entered = useRef(false)
+  if (!profileLoading && productMode === 'intel') entered.current = true
   const gateDecision = workspaceModeGateDecision({
     pendingOrgId: pendingSessionIdentityOrgId(),
     productMode,
@@ -25,9 +28,13 @@ export default function RequireIntelMode({ children }) {
   }
 
   if (gateDecision === 'redirect') {
+    // A session update can reach several open tabs. Once this tab has entered
+    // Intel, a changed active workspace is a choice to follow, not permission
+    // for IntelStartPage to change the account's organization back again.
+    if (entered.current) return <Navigate to="/dashboard" replace />
     // Not in an Intel workspace yet — send them to the trial-start entry, which
     // either switches into an existing Intel workspace or offers the free trial.
-    return <Navigate to="/intel/start" replace />
+    return <Navigate to={`/intel/start?next=${encodeURIComponent(location.pathname+location.search+location.hash)}`} replace />
   }
 
   return children

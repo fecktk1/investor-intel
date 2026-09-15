@@ -22,6 +22,32 @@ class WorkstationBoundary extends React.Component {
 
 const RANGES = ['1H', '12H', '24H', '3D', '7D', '1M', '3M', '6M', '1Y']
 export const CHART_RANGE_MS = { '1H': 3600000, '12H': 43200000, '24H': 86400000, '3D': 259200000, '7D': 604800000, '1M': 2592000000, '3M': 7776000000, '6M': 15552000000, '1Y': 31536000000 }
+
+// Candle INTERVAL vocabulary, mirroring CHART_INTERVALS in
+// supabase/functions/_shared/intel/cmc-chart.ts.
+//
+// '1M' HERE IS ONE MINUTE. '1M' in CHART_RANGE_MS above is ONE MONTH. The two
+// maps describe different things and are never interchangeable: reading a range
+// key out of the interval map (or the reverse) is a bug, not a fallback.
+export const CANDLE_INTERVAL_MS = { '1M': 60000, '5M': 300000, '15M': 900000, '30M': 1800000, '1H': 3600000, '4H': 14400000, '1D': 86400000, '1W': 604800000 }
+// The four sub-hour widths are served ONLY by the CoinMarketCap k-line aggregate,
+// which is keyed by a contract address. `intel-markets` answers
+// `invalid_chart_range` for every other identity, so they are offered only where
+// they can actually be sampled rather than being offered and then refused.
+export const SUB_HOUR_INTERVALS = ['1M', '5M', '15M', '30M']
+export const CANDLE_INTERVAL_LABELS = { auto: 'Automatic', '1M': '1 minute', '5M': '5 minutes', '15M': '15 minutes', '30M': '30 minutes', '1H': '1 hour', '4H': '4 hours', '1D': '1 day', '1W': '1 week' }
+/** The intervals an identity may ask for. A contract adds the four sub-hour
+ * widths; everything else keeps the hourly-and-wider vocabulary it always had. */
+export const candleIntervals = sourceProvider => (sourceProvider === 'contract'
+  ? ['auto', ...Object.keys(CANDLE_INTERVAL_MS)]
+  : ['auto', ...Object.keys(CANDLE_INTERVAL_MS).filter(key => !SUB_HOUR_INTERVALS.includes(key))])
+/** What "Automatic" actually does, said in the control rather than left implicit:
+ * for a contract the k-line planner picks a MINUTE width on a short window
+ * (≤ 1H → 1 minute, ≤ 12H → 5 minutes, ≤ 24H → 15 minutes), then hourly and
+ * daily. Every other identity is sampled hourly at its shortest. */
+export const candleIntervalLabel = (interval, sourceProvider) => (interval === 'auto' && sourceProvider === 'contract'
+  ? 'Automatic (minute candles on short ranges)'
+  : CANDLE_INTERVAL_LABELS[interval] || interval)
 const LAYERS = [['thesis', 'Thesis'], ['trade', 'Journal trades'], ['portfolio', 'Portfolio'], ['rules', 'Rules'], ['news', 'News'], ['partnerships', 'Partnerships'], ['unlocks', 'Unlocks']]
 const COLORS = { thesis: '#DFA647', trade: '#B4A0DC', portfolio: '#6CC6A2', news: '#A7AFBC', partnerships: '#82ABD2', unlocks: '#E3AEBC' }
 const textLabel = key => key.replaceAll('_', ' ')
@@ -206,7 +232,7 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
       {rangeExtra}
       {persistence && !readOnly && <ChartWatchlistAdd key={`${persistence.userId}:${persistence.orgId}:${persistence.asset}`} context={persistence} plotRef={plotRef}/>}
       {!replay&&<button className="intel-text-link" type="button" disabled={stops.length<2} onClick={()=>setReplayTime(stops[Math.min(stops.length-1,Math.max(0,Math.floor(stops.length/3)))])}>Replay chart</button>}
-      {showDensityToggles && markers.length > 0 && <ResponsiveChartTools label={t('chart.layers', { defaultValue: 'Layers' })}><fieldset className="intel-layer-controls"><legend className="sr-only">{t('chart.layers', { defaultValue: 'Chart layers' })}</legend>{layers.map(([group, label]) => <label key={group}><input type="checkbox" checked={!hiddenGroups.has(group)} onChange={() => setHiddenGroups(s => { const next = new Set(s); next.has(group) ? next.delete(group) : next.add(group); return next })}/>{t(`chart.marker_${group}`, { defaultValue: label })}</label>)}</fieldset></ResponsiveChartTools>}
+      {showDensityToggles && markers.length > 0 && <ResponsiveChartTools label={t('chart.layers', { defaultValue: 'Layers' })}><fieldset className="intel-layer-controls"><legend className="sr-only">{t('chart.layers_title', { defaultValue: 'Chart layers' })}</legend>{layers.map(([group, label]) => <label key={group}><input type="checkbox" checked={!hiddenGroups.has(group)} onChange={() => setHiddenGroups(s => { const next = new Set(s); next.has(group) ? next.delete(group) : next.add(group); return next })}/>{t(`chart.marker_${group}`, { defaultValue: label })}</label>)}</fieldset></ResponsiveChartTools>}
     </div>
     {replay&&<ChartReplayControls stops={stops} at={replayAt} onTime={setReplayTime} knownOnly={knownOnly} onKnownOnly={value=>{setKnownOnly(value);setSelection(null)}} onExit={()=>{setReplayAt(null);setSelection(null);onReplayChange?.(null);onCursorChange?.(null)}} gaps={replayResult}/>}
     {(tfLoading || loading) && <p role="status" className="intel-event-meta">{t('chart.loading', { defaultValue: 'Loading price history…' })}</p>}

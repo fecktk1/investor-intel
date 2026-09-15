@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 const STATUSES = ['active', 'strengthening', 'weakening', 'confirmed', 'partially_confirmed', 'invalidated', 'closed']
@@ -10,10 +10,14 @@ export default function ReviewComposer({ thesis, onSubmit, busy }) {
   const [note, setNote] = useState('')
   const [newStatus, setNewStatus] = useState('')
   const [newConv, setNewConv] = useState('')
+  const pendingOperation = useRef(null)
 
-  const submit = () => {
+  const submit = async () => {
     if (!note.trim() && !newStatus && !newConv) return
-    onSubmit({
+    const signature = JSON.stringify([note, newStatus, newConv])
+    if (pendingOperation.current?.signature !== signature) pendingOperation.current = { signature, id: crypto.randomUUID() }
+    const saved = await onSubmit({
+      idempotency_key: pendingOperation.current.id,
       review_kind: 'manual',
       note: note.trim() || null,
       prev_status: thesis?.status || null,
@@ -21,6 +25,8 @@ export default function ReviewComposer({ thesis, onSubmit, busy }) {
       prev_conviction: thesis?.conviction ?? null,
       new_conviction: newConv === '' ? null : Number(newConv) / 5,
     })
+    if (saved === false) return
+    pendingOperation.current = null
     setNote(''); setNewStatus(''); setNewConv('')
   }
 

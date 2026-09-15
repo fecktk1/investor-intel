@@ -28,19 +28,19 @@ export default function NarrativeCard({ n, onOpen, onFollow, busy, followAnchor 
   const labels = mergeLabels(n, 2)   // derived clarity + per-user relevance, capped on the card
 
   return (
-    <div className="card p-4 space-y-3">
+    <div className="border-b border-[var(--border-default)] py-4 space-y-3">
       {/* header */}
       <div className="flex items-start gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 flex-wrap">
             <button onClick={() => onOpen(n.slug)} className="text-[15px] font-semibold text-[var(--fg-1)] hover:text-[var(--accent)] truncate text-left">{n.name}</button>
-            <span className="chip text-[10px]">{n.parent_category}</span>
-            <span className={`chip text-[10px] ${isDynamic ? 'chip--info' : 'text-[var(--fg-4)]'}`}>{isDynamic ? 'Dynamic' : 'Seeded'}</span>
+            <span className="text-[10px]">{n.parent_category}</span>
+            <span className={`text-[10px] ${isDynamic ? 'text-[var(--fg-3)]' : 'text-[var(--fg-4)]'}`}>{isDynamic ? 'Dynamic' : 'Seeded'}</span>
             {n.is_followed && <Star className="h-3.5 w-3.5 text-amber-400 fill-amber-400" />}
           </div>
           <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-            <span className={`chip text-[10px] uppercase ${stage.cls}`}>{stage.label}</span>
-            <span className={`chip text-[10px] ${sig.cls}`}>{sig.label}</span>
+            <span className={`text-[10px] uppercase ${stage.cls}`}>{stage.label}</span>
+            <span className={`text-[10px] ${sig.cls}`}>{sig.label}</span>
             <span className={`inline-flex items-center gap-1 text-[10px] ${mkt.text}`} title="Market confirmation">
               <span className={`h-2 w-2 rounded-full ${mkt.dot}`} /> mkt
             </span>
@@ -56,7 +56,7 @@ export default function NarrativeCard({ n, onOpen, onFollow, busy, followAnchor 
           </div>
           {labels.length > 0 && (
             <div className="flex items-center gap-1.5 flex-wrap mt-1.5">
-              {labels.map((l) => { const m = clarityMeta(l.key); return <span key={l.key} className={`chip text-[10px] ${m.cls}`} title={m.why}>{m.label}</span> })}
+              {labels.map((l) => { const m = clarityMeta(l.key); return <span key={l.key} className={`text-[10px] ${m.cls}`} title={m.why}>{m.label}</span> })}
             </div>
           )}
         </div>

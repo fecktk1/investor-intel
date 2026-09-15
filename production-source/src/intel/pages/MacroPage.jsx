@@ -39,21 +39,34 @@ export default function MacroPage() {
   const [calendar, setCalendar] = useState([])
   const [news, setNews] = useState([])
   const [loading, setLoading] = useState(true)
+  const [errors, setErrors] = useState({})
+  const [attempt, setAttempt] = useState(0)
 
   useEffect(() => {
     let alive = true
     ;(async () => {
       setLoading(true)
-      const [ind, cal, nw] = await Promise.all([
-        loadMacroIndicators(supabase).catch(() => []),
-        loadMacroCalendar(supabase, { days: 21 }).catch(() => []),
-        loadMacroNews(supabase, { limit: 40 }).catch(() => []),
+      setErrors({})
+      const results = await Promise.allSettled([
+        loadMacroIndicators(supabase),
+        loadMacroCalendar(supabase, { days: 21 }),
+        loadMacroNews(supabase, { limit: 40 }),
       ])
       if (!alive) return
-      setIndicators(ind); setCalendar(cal); setNews(nw); setLoading(false)
+      const failures = {}
+      const values = results.map((result, i) => {
+        if (result.status === 'fulfilled' && Array.isArray(result.value)) return result.value
+        failures[['indicators', 'calendar', 'news'][i]] = true
+        return []
+      })
+      setIndicators(values[0]); setCalendar(values[1]); setNews(values[2]); setErrors(failures); setLoading(false)
     })()
     return () => { alive = false }
-  }, [supabase])
+  }, [supabase, attempt])
+  const count = (key, value) => loading ? t('common.loading', { defaultValue: 'Loading…' }) : errors[key]
+    ? t('common.unavailable', { defaultValue: 'Unavailable' }) : value.toLocaleString()
+  const readError = (key, fallback) => <div role="alert"><p>{t(`macro.${key}_failed`, { defaultValue: fallback })}</p>
+    <button type="button" onClick={() => setAttempt(n => n + 1)}>{t('common.retry', { defaultValue: 'Retry' })}</button></div>
   const calendarGroups = useMemo(() => {
     const defs = [
       { key: 'today', label: t('macro.today', { defaultValue: 'Today' }), items: [] },
@@ -68,7 +81,7 @@ export default function MacroPage() {
   const highImportanceCount = calendar.filter((e) => e.importance === 'high').length
 
   return (
-    <IntelPageShell>
+    <IntelPageShell className="intel-macro-page">
       <IntelPageHeader
         icon={Landmark}
         eyebrow={t('brand.name', { defaultValue: 'Investor Intel' })}
@@ -81,10 +94,10 @@ export default function MacroPage() {
         title={t('macro.read_title', { defaultValue: 'Indicators, scheduled events, and macro headlines in one review path' })}
         body={t('macro.read_body', { defaultValue: 'Scan the current data first, then review upcoming economic events grouped by timing, and finish with corroborated macro headlines. Explain actions remain available on each item for education-only context.' })}
         meta={[
-          { label: t('macro.data', { defaultValue: 'Economic data' }), value: indicators.length.toLocaleString() },
-          { label: t('macro.calendar', { defaultValue: 'Economic calendar' }), value: calendar.length.toLocaleString() },
-          { label: t('macro.high_importance', { defaultValue: 'High importance' }), value: highImportanceCount.toLocaleString() },
-          { label: t('macro.news', { defaultValue: 'Big macro news' }), value: news.length.toLocaleString() },
+          { label: t('macro.data', { defaultValue: 'Economic data' }), value: count('indicators', indicators.length) },
+          { label: t('macro.calendar', { defaultValue: 'Economic calendar' }), value: count('calendar', calendar.length) },
+          { label: t('macro.high_importance', { defaultValue: 'High importance' }), value: count('calendar', highImportanceCount) },
+          { label: t('macro.news', { defaultValue: 'Big macro news' }), value: count('news', news.length) },
         ]}
       />
 
@@ -94,14 +107,15 @@ export default function MacroPage() {
         <p className="page-sub">{t('macro.sub', { defaultValue: 'The big picture: market-moving news, key economic data and what’s coming up.' })}</p>
       </div>
 
-      {loading && <IntelSkeleton className="h-40" />}
+      <div className="intel-macro-results" aria-busy={loading}>
+      {loading && <div role="status"><p>{t('macro.loading', { defaultValue: 'Loading macro sources…' })}</p><IntelSkeleton className="h-40" /></div>}
 
       {!loading && (
         <>
           {/* Economic data */}
           <section className="space-y-2">
             <div className="eyebrow flex items-center gap-1.5"><TrendingUp className="h-3.5 w-3.5" /> {t('macro.data', { defaultValue: 'Economic data' })}</div>
-            {indicators.length === 0 ? (
+            {errors.indicators ? readError('indicators', 'Economic indicators could not be loaded. Coverage is unknown.') : indicators.length === 0 ? (
               <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.no_data', { defaultValue: 'Economic indicators will appear here once the daily macro refresh has run.' })}</div>
             ) : (
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -112,9 +126,9 @@ export default function MacroPage() {
                       {trendIcon(m.trend)}
                     </div>
                     <div className="text-lg font-semibold text-[var(--fg-1)] mt-1">{m.value}{m.unit ? <span className="text-[12px] text-[var(--fg-4)] ml-0.5">{m.unit}</span> : null}</div>
-                    {m.change && String(m.change).trim() && String(m.change).trim() !== '—' && <div className={`text-[11px] mt-0.5 ${/up|ris|gain|pos/i.test(String(m.trend || '')) ? 'text-emerald-400' : /down|fall|drop|neg/i.test(String(m.trend || '')) ? 'text-red-400' : 'text-[var(--fg-4)]'}`}>{m.change}</div>}
+                    {m.change != null && String(m.change).trim() && String(m.change).trim() !== '—' && <div className={`text-[11px] mt-0.5 ${/up|ris|gain|pos/i.test(String(m.trend || '')) ? 'text-emerald-400' : /down|fall|drop|neg/i.test(String(m.trend || '')) ? 'text-red-400' : 'text-[var(--fg-4)]'}`}>{m.change}</div>}
                     {(m.as_of || m.period) && <div className="text-[10px] text-[var(--fg-5)] mt-0.5">{m.period || m.as_of}</div>}
-                    <WhyImportant topic={`${m.label}${m.value ? ` is currently ${m.value}${m.unit || ''}` : ''}`} context="A macroeconomic indicator." />
+                    <WhyImportant topic={`${m.label}${m.value != null ? ` is currently ${m.value}${m.unit || ''}` : ''}`} context="A macroeconomic indicator." />
                   </div>
                 ))}
               </div>
@@ -124,8 +138,8 @@ export default function MacroPage() {
           {/* Economic calendar */}
           <section className="space-y-2">
             <div className="eyebrow flex items-center gap-1.5"><CalendarClock className="h-3.5 w-3.5" /> {t('macro.calendar', { defaultValue: 'Economic calendar' })}</div>
-            {calendar.length === 0 ? (
-              <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.no_calendar', { defaultValue: 'Upcoming economic events will appear here once the daily macro refresh has run.' })}</div>
+            {errors.calendar ? readError('calendar', 'The calendar could not be loaded. Upcoming event coverage is unknown.') : calendar.length === 0 ? (
+              <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.calendar_empty', { defaultValue: 'No upcoming events in the loaded calendar. Coverage may be incomplete.' })}</div>
             ) : (
               <div className="space-y-4">
                 {calendarGroups.map((group) => (
@@ -145,8 +159,8 @@ export default function MacroPage() {
                         </div>
                         <div className="text-[11px] text-[var(--fg-4)] mt-0.5">
                           {fmtWhen(e.scheduled_at)}
-                          {e.forecast ? ` · ${t('macro.forecast', { defaultValue: 'forecast' })} ${e.forecast}` : ''}
-                          {e.previous ? ` · ${t('macro.previous', { defaultValue: 'prev' })} ${e.previous}` : ''}
+                          {e.forecast != null ? ` · ${t('macro.forecast', { defaultValue: 'forecast' })} ${e.forecast}` : ''}
+                          {e.previous != null ? ` · ${t('macro.previous', { defaultValue: 'prev' })} ${e.previous}` : ''}
                         </div>
                       </div>
                       <div className="text-[11px] text-[var(--fg-4)] whitespace-nowrap">{fmtDay(e.scheduled_at)}</div>
@@ -163,7 +177,7 @@ export default function MacroPage() {
           {/* Big macro news */}
           <section className="space-y-2">
             <div className="eyebrow flex items-center gap-1.5"><Newspaper className="h-3.5 w-3.5" /> {t('macro.news', { defaultValue: 'Big macro news' })}</div>
-            {news.length === 0 ? (
+            {errors.news ? readError('news', 'Macro news could not be loaded. Headline coverage is unknown.') : news.length === 0 ? (
               <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('macro.no_news', { defaultValue: 'High-signal macro headlines will appear here as sources are crawled.' })}</div>
             ) : (
               <div className="space-y-2">
@@ -187,6 +201,7 @@ export default function MacroPage() {
         </>
       )}
 
+      </div>
       <IntelDisclaimer variant="block" />
     </IntelPageShell>
   )

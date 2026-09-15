@@ -1,5 +1,15 @@
 import { marketCanonicalIdentity } from './market-read-quality.ts'
 
+// Sort keys `intel_markets_screen_for_user` accepts. The database is the
+// authority — it rejects anything else with 22023 — so this list exists to be
+// asserted against, not to filter: a key that is here but not in the migration's
+// CASE is a contract drift the tests catch before a reader does.
+export const MARKET_SCREEN_SORTS = [
+  'market_cap', 'volume', 'price', 'fdv', 'rank', 'circulating_supply', 'max_supply', 'market_pairs',
+  'change_1h', 'change_24h', 'change_7d', 'gainers', 'losers', 'drawdown',
+  'exchange_availability', 'arbitrage', 'recently_updated', 'unusual_volume', 'multi_exchange_strength',
+] as const
+
 export function screenFreshness(asOf: string | null, providerDegraded = false): 'fresh' | 'stale' | 'degraded' | 'unavailable' {
   if (!asOf || !Number.isFinite(Date.parse(asOf))) return 'unavailable'
   const age = Date.now() - Date.parse(asOf)
@@ -19,10 +29,19 @@ export function marketScreenResponse(data: any) {
       sourceProvider: a.source_provider, providerId: a.provider_id, symbol: a.symbol, displayName: a.name,
       normalizedSymbol: a.normalized_symbol, chain: a.primary_chain,
       contract: a.primary_chain ? platforms[a.primary_chain] || null : null,
-      rank: a.market_cap_rank, imageUrl: a.image_url, imageFallbackType: a.image_fallback_type,
+      rank: a.market_cap_rank,
+      // Prefer our own mirrored copy (market-asset-logo-verify); the provider URL
+      // stays alongside it as the client-side second chance before initials.
+      imageUrl: a.cached_image_url ?? a.image_url, imageSourceUrl: a.image_url,
+      imageFallbackType: a.image_fallback_type, imageVerifiedAt: a.image_verified_at ?? null,
       price: a.current_price, change1hPct: a.change_1h_pct, change24hPct: a.change_24h_pct, change7dPct: a.change_7d_pct,
       volumeQuote24h: a.volume_24h, marketCap: a.market_cap, marketCapIsEstimated: false, fdv: a.fdv,
       circulatingSupply: a.circulating_supply, totalSupply: a.total_supply, maxSupply: a.max_supply,
+      numMarketPairs: a.num_market_pairs ?? null,
+      // Distance from the high of the RECORDED window, never an all-time high:
+      // the window travels with the reading so the surface can name it.
+      drawdownPct: a.drawdown_pct ?? null, recordedHighPrice: a.recorded_high_price ?? null,
+      recordedHighDate: a.recorded_high_date ?? null, recordedWindowDays: a.recorded_window_days ?? null,
       categories: a.categories || [], platforms, cex, dex: a.dex || null,
       enrichmentConfidence: a.enrichment_confidence, ...marketCanonicalIdentity(a),
       cexCoverage: cex && Number(cex.availableCount) > 0 ? 'available' : 'unverified',
@@ -40,6 +59,8 @@ export function marketScreenResponse(data: any) {
   }
   return {
     catalog: data.catalog || null, snapshot, rows: (data.records || []).map(row), total: data.total, page: data.page, limit: data.limit,
+    // The database resolved the effective direction (named sorts keep their own).
+    sort: data.sort ?? null, dir: data.dir ?? null,
     marketCapPanel: { topByMarketCap: (data.topByMarketCap || []).map(row),
       unavailableCount: snapshot.marketCapUnavailableCount,
       estimatedCount: 0, coveragePct: snapshot.marketCapCoveragePct },

@@ -16,6 +16,32 @@ Open http://127.0.0.1:5187. The API binds only http://127.0.0.1:8788. Fixture mo
 
 For a build check: `npm.cmd run build`. The local API is not an Internet-ready hosted service; keep it on loopback. A public deployment requires separate authentication, authorization, licensing and hosting review.
 
+## Keyless demo mode (judge-replayable, opt-in)
+
+A third mode runs the demonstration against CoinMarketCap's keyless public API, so a judge can replay it with real data and no account at all:
+
+```powershell
+Copy-Item .env.example .env
+# Edit .env locally: CMC_MODE=keyless
+npm.cmd run dev
+```
+
+**Caveat, verbatim: keyless commercial terms are unstated; keep it to the demo until reviewed.** Do not run this mode inside a product, a hosted service or anything a customer can reach. It lives only in this extraction; the parent application has no code path to it.
+
+**To turn it off, one line in `.env`: `CMC_MODE=fixture`** — which is also the unconfigured default, so deleting `.env` turns it off too.
+
+No key is read or sent in this mode. `CMC_API_KEY` is discarded before the service starts, `/api/status` reports `keyConfigured: false`, and each keyless request carries exactly one header (`Accept`). The base is `https://pro-api.coinmarketcap.com/public-api` and the request never leaves that prefix.
+
+Every keyless answer is labelled `source: "coinmarketcap_keyless"` with `retrievedAt`, and a successful one also carries the provider's own `observedAt`. Each route caches for 30 seconds in memory (nothing keyless touches the SQLite file). The process allows 60 keyless requests a minute and 600 for the whole run; past either ceiling the route answers `keyless_budget_exhausted`. A keyless route **never** substitutes fixture data: a refusal, an exhausted budget or an absent endpoint is reported as itself.
+
+| Journey | Keyless routes used | What is not keyless |
+| --- | --- | --- |
+| Asset notebook | `/v3/cryptocurrency/quotes/latest`, `/v2/cryptocurrency/info`, `/v1/k-line/candles` | `/v2/cryptocurrency/ohlcv/historical` and `/v3/cryptocurrency/quotes/historical` — the chart uses k-line candles for the WETH contract instead, which is a DEX aggregate across every Ethereum pool, not the CMC reference price of ETH |
+| Real-world assets | none | the whole `/v5/real-world-assets/*` family; the route answers `keyless_unavailable` and the RWA demonstration stays in fixture mode |
+| Market structure | `/v3/cryptocurrency/listings/latest`, `/v1/cryptocurrency/categories`, `/v1/global-metrics/quotes/latest`, `/v3/fear-and-greed/latest`, `/v1/altcoin-season-index/latest`, `/v3/index/cmc100-latest`, `/v3/index/cmc20-latest`, `/v1/dex/token`, `/v1/dex/security/detail`, `/v1/dex/holders/count` | the derivatives family (`/v5/exchange/derivatives/*`, `/v5/cryptocurrency/derivatives/*`, `/v5/derivatives/liquidations/*`); those routes answer `keyless_unavailable` |
+
+Honest failure codes: `keyless_unavailable` (the subset does not publish that endpoint), `keyless_budget_exhausted` (a local ceiling), `keyless_rate_limited` (the shared IP pool refused the request) and `keyless_provider_unavailable` (anything else). **Every keyless probe from the development network on 2026-09-15 returned HTTP 429 with error code 1022, "You've reached the limit for anonymous access."** The mode's mapping is therefore unit-tested against the documented response shapes and has not been confirmed against a live keyless response; `docs/investor-intel/keyless-demo-mode.md` in the private parent checkout records the probe log. A judge on a different network may fare better, which is exactly what the mode is for — and if they do not, the failure is shown, not hidden.
+
 ## Bring your own CMC key
 
 The demo makes real calls only after you explicitly enable live mode on the local server:
@@ -60,7 +86,7 @@ References: [official endpoint chooser](https://coinmarketcap.com/api/documentat
 
 ## Tests and limitations
 
-`npm test` currently runs 11 checks covering OHLCV shape, exact close timestamps, absent volume, fixture mode making zero calls, invalid/oversized requests are blocked, reserve/reconcile tracks actual credits, cache hits avoid new calls, account failure stops calls, and the credit ceiling survives reopening the database. `npm run build` checks the standalone browser bundle. Local HTTP smoke tests cover all three fixture workflows. Browser verification of the production application is separate.
+`npm test` currently runs 21 checks covering OHLCV shape, exact close timestamps, absent volume, fixture mode making zero calls, invalid/oversized requests are blocked, reserve/reconcile tracks actual credits, cache hits avoid new calls, account failure stops calls, and the credit ceiling survives reopening the database. Ten of them cover the keyless mode: the labelled payload and its credential-free request, path parity with the keyed catalog, `keyless_unavailable` for every route the subset omits, keyless mode discarding a configured key, k-line candle mapping and its derived close time, k-line parameter refusals, the 30-second per-route cache, the per-minute and per-run ceilings, and the four honest failure payloads. `npm run build` checks the standalone browser bundle. Local HTTP smoke tests cover all three fixture workflows. Browser verification of the production application is separate.
 
 This extraction does not implement production RLS, paid subscriptions, wallet import, portfolio accounting/PnL, real thesis persistence, alert delivery, full CMC account administration, on-chain claims or public hosting. A CMC daily history is a provider history, not the execution history of a trade. The sample manual ledger has no brokerage or chain connection. Exact original notes are preserved locally on append; clearing browser storage clears local demo records.
 
@@ -70,7 +96,7 @@ The pre-event private product had a narrow v1 CMC listing/global adapter, raw v2
 
 Before public submission, the owner must confirm reuse rights/license for the selected source files, organizer eligibility for extending a pre-existing integration, endpoint entitlement and CMC commercial scope. No open-source license grant or publication is implied by this private preparation. The event page requests public source and a working demonstration; owner approval and organizer confirmation remain separate actions. Nothing was registered, posted, published or submitted by this package script.
 
-From the private parent checkout, `node scripts/package-investor-intel-demo.mjs` produces a new source-only folder under `artifacts/` with an explicit SHA-256 manifest. It copies only the listed example files, the explicitly reviewed chart modules (including the two analysis workers), the shared stylesheet and capability catalog, the renderer license/notice, and three explicitly listed licensed font files with their notice. The current package contains 72 allowlisted source/asset files, including its pinned dependency lock and both required CMC catalog modules. Dependency-closure guards cover browser, server and test imports and stop packaging if an unreviewed relative import is added. The package regression executes the emitted server tests as well as the browser build. It never recursively copies the TCF repository, node_modules, `.env`, `.local`, database files or production configuration.
+From the private parent checkout, `node scripts/package-investor-intel-demo.mjs` produces a new source-only folder under `artifacts/` with an explicit SHA-256 manifest. It copies only the listed example files, the explicitly reviewed chart modules (including the two analysis workers), the shared stylesheet and capability catalog, the renderer license/notice, and three explicitly listed licensed font files with their notice. The current package contains 74 allowlisted source/asset files, including its pinned dependency lock, both required CMC catalog modules and the keyless demo client with its tests. Dependency-closure guards cover browser, server and test imports and stop packaging if an unreviewed relative import is added. The package regression executes the emitted server tests as well as the browser build. It never recursively copies the TCF repository, node_modules, `.env`, `.local`, database files or production configuration.
 
 The sample position is computed from successful local ETH movements. Its ledger shows recorded quantity and source, with a stable native-asset key. Market value is explicitly illustrative; missing execution evidence leaves cost basis and P&L unavailable. Barlow Condensed, Inter and Geist Mono are bundled locally with their font notice, so fixture viewing needs no font CDN.
 

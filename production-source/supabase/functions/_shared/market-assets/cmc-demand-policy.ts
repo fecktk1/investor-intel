@@ -9,6 +9,9 @@ const floors:Record<string,number>={
  dexToken:600,dexPools:900,dexLiquidityEvents:600,dexSwaps:600,
  dexHolderCount:3600,dexHolderHistory:86400,dexSecurity:86400,
  dexTrending:900,dexNew:900,dexMeme:900,dexGainers:900,
+ // Short-TTL DEX price/candle reads keep the existing DEX cadence floors so a
+ // connected view cannot poll them faster than the reviewed contract reads.
+ dexCandles:900,dexPriceBatch:600,
  globalHistory:3600,cmc100History:3600,cmc20History:3600,
 }
 export function connectedDemandEnabled(settings:CmcOperatingSettings,env:(key:string)=>string|undefined){

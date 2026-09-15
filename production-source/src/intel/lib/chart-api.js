@@ -1,9 +1,11 @@
 // Investor Intel — token chart client.
-export async function loadTokenChart(supabase, orgId, { entityId = null, ref = null, timeframe = '1D' } = {}) {
-  const { data, error } = await supabase.functions.invoke('intel-token-chart', { body: { orgId, entityId, ref, timeframe } })
+import {chartSeriesResponse} from '../../../supabase/functions/_shared/intel/chart-series-contract'
+export async function loadTokenChart(supabase, orgId, { entityId = null, ref = null, timeframe = '1D', range = null } = {}) {
+  const { data, error } = await supabase.functions.invoke('intel-token-chart', { body: { orgId, entityId, ref, timeframe, ...(range?{range}:{}) } })
   if (error) throw new Error(error.message || 'chart_failed')
   if (data?.error) throw new Error(data.error)
-  return data
+  const series=chartSeriesResponse(data)
+  return {...data,candles:series.candles,capture:data?.captureProof?{proof:data.captureProof,bars:series.candles}:null,chartSource:data?.chartSource||{...series.source,servedAt:null},coverage:data?.coverage||series.coverage}
 }
 
 export async function loadWalletPortfolio(supabase, orgId, { entityId = null, ref = null } = {}) {

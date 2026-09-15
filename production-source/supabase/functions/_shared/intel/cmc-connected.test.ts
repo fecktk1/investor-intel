@@ -11,11 +11,13 @@ const observation=(metric:string,value=0)=>({id:`cmc:${metric}`,subject,provider
 function database(failMetric?:string){const reads:any[]=[];return {reads,from(table:string){if(table==='provider_quota_budgets'){const q:any={select:()=>q,eq:()=>q,maybeSingle:()=>Promise.resolve({data:{config:{CMC_ALLOW_AI_PROCESSING:'true',CMC_ALLOW_HISTORICAL_RETENTION:'true',CMC_SOURCE_POLICY_EXPIRES_AT:'2026-09-30T00:00:00Z'}}})};return q};const r:any={table,filters:[]};reads.push(r);const q:any={};for(const method of ['select','eq','gte','lte','gt','order'])q[method]=(...args:any[])=>{r.filters.push([method,...args]);return q};q.limit=(limit:number)=>{r.limit=limit;const metric=r.filters.find((f:any)=>f[1]==='metric')?.[2];return Promise.resolve(metric===failMetric?{error:Error('failed'),data:null}:{data:[{observation:observation(metric)},{observation:{...observation(metric),id:'wrong',subject:'native:bitcoin'}},{observation:{...observation(metric),id:'denied',aiAllowed:false}},{observation:{...observation(metric),id:'future',recordedAt:new Date(now+1).toISOString()}}],error:null})};return q}}}
 Deno.test('connected CMC evidence keeps independent metric bounds, exact identity, zero and per-record authorization',async()=>{
  const db=database(),r=await readCmcContractEvidence(db,subject,now)
- eq(r.status,'available');eq(r.observations.length,4);assert(r.observations.every(o=>o.value===0&&o.subject===subject&&o.aiAllowed));eq(db.reads.map(r=>r.limit),[3,63,101,101])
+ // Five metrics since the holder-tag lane (proposal 20) added `holder_tag_count`, bounded at the eight tags ONE capture
+ // writes. Every metric still gets its own read, so a busy tape cannot crowd out another metric's citation.
+ eq(r.status,'available');eq(r.observations.length,5);assert(r.observations.every(o=>o.value===0&&o.subject===subject&&o.aiAllowed));eq(db.reads.map(r=>r.limit),[3,63,101,101,17])
  const native=database();eq((await readCmcContractEvidence(native,'native:bitcoin',now)).status,'unsupported');eq(native.reads.length,0)
 })
 Deno.test('connected CMC evidence failures remain partial/error, never absent coverage',async()=>{
- const r=await readCmcContractEvidence(database('holder_count'),subject,now);eq(r.status,'partial');eq(r.sources.find(s=>s.metric==='holder_count')?.status,'error');eq(r.observations.length,3)
+ const r=await readCmcContractEvidence(database('holder_count'),subject,now);eq(r.status,'partial');eq(r.sources.find(s=>s.metric==='holder_count')?.status,'error');eq(r.observations.length,4)
 })
 Deno.test('daily CMC holder evidence reaches a thesis condition without relaxing fast venue freshness or losing its source',()=>{
  const holder=observation('holder_count'),rule={id:'h',metric:'holder_count',threshold:0,threshold_unit:'accounts',time_window:'24h',comparator:'gte',source_metric:'contract:coinmarketcap:holder_count'}

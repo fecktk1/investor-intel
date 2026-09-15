@@ -1,26 +1,34 @@
-import React, { useCallback, useEffect, useMemo, useState } from 'react'
-import { useParams, useSearchParams, Link } from 'react-router'
+import ThesisEvidenceRecord from '../components/thesis/ThesisEvidenceRecord'
+import ThesisBaselineEvidence from '../components/thesis/ThesisBaselineEvidence'
+import ThesisEvaluationPreview from '../components/thesis/ThesisEvaluationPreview'
+import ThesisAuthoredDraft from '../components/thesis/ThesisAuthoredDraft'
+import ThesisInvalidation from '../components/thesis/ThesisInvalidation'
+import ThesisPortfolioWorkspace from '../components/thesis/ThesisPortfolioWorkspace'
+import ThesisConditions from '../components/thesis/ThesisConditions'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useParams, useSearchParams, useLocation, Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Archive, RefreshCw } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import {
-  getThesis, getThesisDelta, listTrades, createReview, setThesisStatus, resolveEngineStatus, evaluateThesisNow,
+  getThesis, updateThesis, getThesisDelta, getAssetThesisMarkers, listTrades, createReview, setThesisStatus, resolveEngineStatus, evaluateThesisNow, previewThesisEvaluation,
 } from '../lib/thesis-api'
-import { loadMarketDetail, loadMarketCandles } from '../lib/markets-api'
+import { loadThesisChart } from '../lib/thesis-chart'
+import { thesisAssetLabel } from '../lib/thesis-identity'
+import { useLiveHistoryEnd } from '../lib/useLiveHistoryEnd'
 import ThesisStatusBadge from '../components/thesis/ThesisStatusBadge'
 import ThesisQualityScore from '../components/thesis/ThesisQualityScore'
 import ThesisDeltaCard from '../components/thesis/ThesisDeltaCard'
 import EngineSuggestionBanner from '../components/thesis/EngineSuggestionBanner'
 import ReviewComposer from '../components/thesis/ReviewComposer'
-import TokenChart from '../components/TokenChart'
+import { CHART_RANGE_MS } from '../components/TokenChart'
 import IntelErrorNotice from '../components/IntelErrorNotice'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 
 const TABS = ['overview', 'evidence', 'chart', 'portfolio', 'trades', 'reviews', 'alerts']
-const STANCE_CLS = { bullish: 'text-[var(--ok)]', bearish: 'text-red-400', neutral: 'text-[var(--fg-3)]' }
-const ts = (d) => d ? Date.parse(d) : null
 const fmtDate = (d) => d ? new Date(d).toLocaleDateString() : '—'
+const ThesisFacts=({items})=><dl className="intel-thesis-facts text-[12px]">{items.map(([label,value])=><div key={label}><dt className="text-[11px] text-[var(--fg-4)]">{label}</dt><dd>{value}</dd></div>)}</dl>
 
 export default function ThesisDetailPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
@@ -28,123 +36,167 @@ export default function ThesisDetailPage() {
   const { org } = useProfile()
   const { supabase, user } = useSupabase()
   const [sp, setSp] = useSearchParams()
+  const location=useLocation(),returnState=location.state?.journalReturn
+  const journalReturn=returnState?.orgId===org?.id&&returnState?.userId===user?.id&&typeof returnState?.url==='string'&&returnState.url.length<=3000&&/^\/intel\/theses\/list(?:\?[^#]*)?$/.test(returnState.url)?returnState.url:'/intel/theses/list'
   const tab = TABS.includes(sp.get('tab')) ? sp.get('tab') : 'overview'
 
   const [th, setTh] = useState(null)
+  const [loadedScope,setLoadedScope]=useState(null)
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState(null)
   const [delta, setDelta] = useState({ loading: true, data: null })
   const [trades, setTrades] = useState([])
-  const [candles, setCandles] = useState({ loading: false, data: null })
   const [busy, setBusy] = useState(false)
+  const [actionError, setActionError] = useState(null)
+  const [activity, setActivity] = useState({ markers: [], nextCursor: null, loading: true, error: null })
+  const activityRequest = useRef(0)
+  const thesisRequest = useRef(0)
+  const [chartWindow, setChartWindow] = useState(() => ({ range: '7D', to: Date.now() }))
+  const liveHistoryTo=useLiveHistoryEnd(org?.id)
+  useEffect(()=>setChartWindow(previous=>({...previous,to:liveHistoryTo})),[liveHistoryTo])
+  const chartFrom = chartWindow.to - CHART_RANGE_MS[chartWindow.range]
+  const activityScope = `${org?.id}:${user?.id}:${id}:${chartFrom}:${chartWindow.to}`
+  const onChartRange = useCallback(range => setChartWindow(previous => previous.range === range ? previous : { range, to: Date.now() }), [])
+  const [allActivityOpen, setAllActivityOpen] = useState(false)
+  const [allActivity, setAllActivity] = useState({ scope: null, markers: [], nextCursor: null, loading: false, error: null })
+  const allRequest = useRef(0)
+  const ownerScope = `${org?.id}:${user?.id}:${id}`
+  const activeOwnerScope=useRef(ownerScope);activeOwnerScope.current=ownerScope
 
   const load = useCallback(async () => {
-    if (!org?.id || !id) return
+    if (!org?.id || !id || activeOwnerScope.current!==ownerScope) return
+    const request = ++thesisRequest.current
     setLoading(true); setErr(null)
-    try { setTh(await getThesis(supabase, org.id, id)) }
-    catch (e) { setErr(e.message) }
-    finally { setLoading(false) }
-  }, [org?.id, id, supabase])
-  useEffect(() => { load() }, [load])
+    try { const result = await getThesis(supabase, org.id, id); if (request === thesisRequest.current&&activeOwnerScope.current===ownerScope) {setTh(result);setLoadedScope(ownerScope)} }
+    catch (e) { if (request === thesisRequest.current) setErr(e.message) }
+    finally { if (request === thesisRequest.current) setLoading(false) }
+  }, [org?.id, user?.id, id, supabase, ownerScope])
+  useEffect(() => { setTh(null); load(); return () => { thesisRequest.current++ } }, [load])
+
+  const loadActivity = useCallback(async (cursor = null) => {
+    if (!org?.id || !id || tab !== 'chart') return
+    const request = ++activityRequest.current
+    setActivity((s) => ({ ...s, loading: true, error: null }))
+    try {
+      const result = await getAssetThesisMarkers(supabase, org.id, { thesisId: id, cursor, from: chartFrom, to: chartWindow.to })
+      if (request !== activityRequest.current) return
+      setActivity((s) => ({ ...result, scope: activityScope, markers: cursor && s.scope === activityScope ? [...new Map([...s.markers, ...result.markers].map((m) => [m.id, m])).values()] : result.markers, loading: false, error: null }))
+    } catch (e) { if (request === activityRequest.current) setActivity((s) => ({ ...s, loading: false, error: e.message })) }
+  }, [org?.id, id, supabase, activityScope, chartFrom, chartWindow.to, tab])
+  const loadAllActivity = useCallback(async (cursor = null) => {
+    if (!org?.id || !id || !allActivityOpen) return
+    const seq = ++allRequest.current
+    setAllActivity(s => ({ ...s, loading: true, error: null }))
+    try {
+      const result = await getAssetThesisMarkers(supabase, org.id, { thesisId: id, cursor })
+      if (allRequest.current !== seq) return
+      setAllActivity(s => ({ ...result, scope: ownerScope, markers: cursor && s.scope === ownerScope ? [...new Map([...s.markers, ...result.markers].map(m => [m.id, m])).values()] : result.markers, loading: false, error: null }))
+    } catch (e) { if (allRequest.current === seq) setAllActivity(s => ({ ...s, loading: false, error: e.message })) }
+  }, [org?.id, id, supabase, ownerScope, allActivityOpen])
+  useEffect(() => { loadAllActivity(); return () => { allRequest.current++ } }, [loadAllActivity])
+  useEffect(() => {
+    setActivity({ markers: [], nextCursor: null, loading: true, error: null })
+    loadActivity()
+    const refresh = (event) => {
+      if (event.detail?.orgId === org?.id && (!event.detail?.thesisId || event.detail.thesisId === id)) { setChartWindow(previous => ({ ...previous, to: Date.now() })); loadAllActivity() }
+    }
+    window.addEventListener('intel:thesis-activity-changed', refresh)
+    return () => { activityRequest.current++; window.removeEventListener('intel:thesis-activity-changed', refresh) }
+  }, [loadActivity, loadAllActivity, org?.id, id])
 
   // delta + trades (best-effort; degrade gracefully if backend not deployed)
   useEffect(() => {
     if (!org?.id || !id) return
+    setDelta({loading:true,data:null});setTrades([]);setBusy(false);setActionError(null)
     let alive = true
-    getThesisDelta(supabase, org.id, id).then((d) => alive && setDelta({ loading: false, data: d })).catch(() => alive && setDelta({ loading: false, data: null }))
+    getThesisDelta(supabase, org.id, id).then((d) => alive && setDelta({ loading: false, data: d })).catch((error) => alive && setDelta({ loading: false, data: null, error: error.message || 'Read failed' }))
     listTrades(supabase, org.id, { thesisId: id }).then((r) => alive && setTrades(r)).catch(() => {})
     return () => { alive = false }
-  }, [org?.id, id, supabase])
+  }, [org?.id, user?.id, id, supabase])
 
-  // lazy candles for chart tab
-  useEffect(() => {
-    if (tab !== 'chart' || candles.data || candles.loading || !th?.entity_id) return
-    const sym = th.subject_canonical_key?.split(':').pop() || null
-    if (!sym) return
-    setCandles({ loading: true, data: null })
-    loadMarketDetail(supabase, org.id, sym).then((d) => setCandles({ loading: false, data: d?.candles || [] })).catch(() => setCandles({ loading: false, data: [] }))
-  }, [tab, th, candles.data, candles.loading, supabase, org?.id])
+  const loadChart = useCallback((range) => loadThesisChart(supabase, org?.id, th, range, chartWindow.to), [supabase, org?.id, th, chartWindow.to])
 
-  const markers = useMemo(() => {
-    if (!th) return []
-    const m = []
-    if (th.created_at) m.push({ t: ts(th.created_at), type: 'thesis', label: 'Thesis' })
-    for (const r of th.reviews || []) m.push({ t: ts(r.created_at), type: 'review', label: 'Review' })
-    for (const r of th.rules || []) if (r.status === 'triggered' && r.triggered_at) m.push({ t: ts(r.triggered_at), type: r.rule_kind === 'invalidation' ? 'invalidate' : 'confirm', label: r.rule_kind })
-    for (const tr of trades) {
-      if (tr.opened_at) m.push({ t: ts(tr.opened_at), type: 'entry', label: 'Entry' })
-      if (tr.closed_at) m.push({ t: ts(tr.closed_at), type: 'exit', label: 'Exit' })
-    }
-    return m.filter((x) => x.t)
-  }, [th, trades])
+  const markers = activity.scope === activityScope ? activity.markers : []
 
   const keyLevels = useMemo(() => (th?.scenarios || []).filter((s) => s.price_target != null).map((s) => ({ price: s.price_target, label: s.kind })), [th])
 
   const onReview = useCallback(async (review) => {
-    setBusy(true)
+    setBusy(true); setActionError(null)
     try {
       await createReview(supabase, org.id, user?.id, id, review)
-      if (review.new_status) await setThesisStatus(supabase, id, review.new_status)
-      else if (review.new_conviction != null) await setThesisStatus(supabase, id, th.status, { conviction: review.new_conviction })
       await load()
-    } catch (e) { setErr(e.message) } finally { setBusy(false) }
-  }, [supabase, org?.id, user?.id, id, th, load])
+      return true
+    } catch (e) { if(activeOwnerScope.current===ownerScope)setActionError(e.message); return false } finally { if(activeOwnerScope.current===ownerScope)setBusy(false) }
+  }, [supabase, org?.id, user?.id, id, load,ownerScope])
 
   const onResolve = useCallback(async (decision) => {
     setBusy(true)
     try { await resolveEngineStatus(supabase, org.id, id, decision); await load() }
-    catch (e) { setErr(e.message) } finally { setBusy(false) }
-  }, [supabase, org?.id, id, load])
+    catch (e) { if(activeOwnerScope.current===ownerScope)setActionError(e.message) } finally { if(activeOwnerScope.current===ownerScope)setBusy(false) }
+  }, [supabase, org?.id, id, load,ownerScope])
 
-  if (loading) return <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
-  if (err) return <div className="space-y-3"><Link to="/intel/theses/list" className="text-[12px] text-[var(--fg-4)] inline-flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('journal.nav.theses', { defaultValue: 'Theses' })}</Link><IntelErrorNotice error={err} /></div>
-  if (!th) return null
+  const onStatus=async status=>{
+    setBusy(true);setActionError(null)
+    try{await setThesisStatus(supabase,id,status);if(activeOwnerScope.current===ownerScope)await load()}
+    catch(error){if(activeOwnerScope.current===ownerScope)setActionError(error.message)}
+    finally{if(activeOwnerScope.current===ownerScope)setBusy(false)}
+  }
 
-  const sym = th.subject_canonical_key?.split(':').pop()
+  if (loading) return <section className="intel-thesis-loading" aria-busy="true" role="status"><p>Loading thesis and its recorded evidence…</p></section>
+  if (err) return <div className="space-y-3"><Link to={journalReturn} className="text-[12px] text-[var(--fg-4)] inline-flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('journal.nav.theses', { defaultValue: 'Theses' })}</Link><IntelErrorNotice error={err} /></div>
+  if (loadedScope!==ownerScope || !th || th.id !== id || th.org_id !== org?.id || (th.user_id !== user?.id && th.visibility !== 'org')) return null
+
+  const sym = thesisAssetLabel(th)
+  const isOwner=th.user_id===user?.id
+  const facts=[
+    [t('journal.f.stance',{defaultValue:'Stance'}),th.stance||'—'],
+    [t('journal.f.conviction_short',{defaultValue:'Conviction'}),th.conviction!=null?`${Math.round(th.conviction*5)}/5`:'—'],
+    [t('journal.f.horizon_short',{defaultValue:'Horizon'}),th.time_horizon||'—'],
+    [t('journal.created',{defaultValue:'Created'}),fmtDate(th.created_at)],
+    [t('journal.last_reviewed',{defaultValue:'Last reviewed'}),fmtDate(th.last_reviewed_at||th.reviews?.[0]?.created_at)],
+    [t('journal.next_review',{defaultValue:'Next review'}),fmtDate(th.next_review_at)],
+  ]
 
   return (
-    <div className="space-y-4">
-      <Link to="/intel/theses/list" className="text-[12px] text-[var(--fg-4)] inline-flex items-center gap-1 hover:text-[var(--accent)]"><ArrowLeft className="h-3.5 w-3.5" /> {t('journal.nav.theses', { defaultValue: 'Theses' })}</Link>
+    <div className="intel-thesis-workspace space-y-3">
+      {actionError && <IntelErrorNotice error={actionError} />}
+      <Link to={journalReturn} className="text-[12px] text-[var(--fg-4)] inline-flex items-center gap-1 hover:text-[var(--accent)]"><ArrowLeft className="h-3.5 w-3.5" /> {t('journal.nav.theses', { defaultValue: 'Theses' })}</Link>
 
       {/* header */}
-      <div className="card p-4 space-y-3">
+      <header className="intel-thesis-heading border-b border-[var(--border-default)] pb-3 space-y-3">
         <div className="flex items-start justify-between gap-3 flex-wrap">
           <div>
             <div className="eyebrow">{sym || th.thesis_type}</div>
             <h1 className="page-title">{th.title}</h1>
+            {(th.entity?.canonical_ref_key||th.subject_canonical_key) && <Link className="intel-text-link text-sm" to={`/intel/investigate?${new URLSearchParams({asset:th.entity?.canonical_ref_key||th.subject_canonical_key,thesis:th.id,lens:'replay'})}`}>{t('investigation.replay',{defaultValue:'Replay this decision with its evidence'})}</Link>}
           </div>
           <div className="flex items-center gap-1.5">
             <ThesisStatusBadge status={th.status} />
-            <button onClick={async () => { setBusy(true); try { await evaluateThesisNow(supabase, org.id, id); await load() } catch (e) { setErr(e.message) } finally { setBusy(false) } }} disabled={busy} className="btn btn--quiet btn--sm disabled:opacity-50" title={t('journal.reevaluate', { defaultValue: 'Re-evaluate now' })}><RefreshCw className="h-3.5 w-3.5" /></button>
-            {!['closed', 'archived'].includes(th.status) && (
-              <button onClick={() => setThesisStatus(supabase, id, 'archived').then(load)} className="btn btn--quiet btn--sm" title={t('journal.archive', { defaultValue: 'Archive' })}><Archive className="h-3.5 w-3.5" /></button>
-            )}
+            {isOwner&&<button onClick={async () => { setBusy(true); try { await evaluateThesisNow(supabase, org.id, id); await load() } catch (e) { setActionError(e.message) } finally { setBusy(false) } }} disabled={busy} className="btn btn--quiet btn--sm disabled:opacity-50" title={t('journal.reevaluate', { defaultValue: 'Re-evaluate now' })}><RefreshCw className="h-3.5 w-3.5" /></button>}
+            {isOwner&&(th.status==='archived'?<button disabled={busy} onClick={()=>onStatus('active')} className="btn btn--quiet btn--sm">{t('journal.restore_active',{defaultValue:'Restore as active'})}</button>:
+              <button disabled={busy} onClick={()=>onStatus('archived')} className="btn btn--quiet btn--sm" aria-label={t('journal.archive', { defaultValue: 'Archive' })}><Archive className="h-3.5 w-3.5" /></button>)}
           </div>
         </div>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-[12px]">
-          <div><div className="text-[11px] text-[var(--fg-4)]">{t('journal.f.stance', { defaultValue: 'Stance' })}</div><div className={STANCE_CLS[th.stance] || ''}>{th.stance || '—'}</div></div>
-          <div><div className="text-[11px] text-[var(--fg-4)]">{t('journal.f.conviction', { defaultValue: 'Conviction' })}</div><div>{th.conviction != null ? `${Math.round(th.conviction * 5)}/5` : '—'}</div></div>
-          <div><div className="text-[11px] text-[var(--fg-4)]">{t('journal.f.horizon', { defaultValue: 'Horizon' })}</div><div>{th.time_horizon || '—'}</div></div>
-          <div><div className="text-[11px] text-[var(--fg-4)]">{t('journal.created', { defaultValue: 'Created' })}</div><div>{fmtDate(th.created_at)}</div></div>
-          <div><div className="text-[11px] text-[var(--fg-4)]">{t('journal.last_reviewed', { defaultValue: 'Last reviewed' })}</div><div>{fmtDate(th.last_reviewed_at || (th.reviews?.[0]?.created_at))}</div></div>
-          <div><div className="text-[11px] text-[var(--fg-4)]">{t('journal.next_review', { defaultValue: 'Next review' })}</div><div>{fmtDate(th.next_review_at)}</div></div>
-        </div>
+        <div className={tab==='chart'?'hidden sm:block':''}><ThesisFacts items={facts}/></div>
+        {tab==='chart'&&<details className="sm:hidden text-sm"><summary className="cursor-pointer py-1">{facts[0][1]} · {facts[1][1]} · {t('journal.decision_details',{defaultValue:'Decision details'})}</summary><div className="pt-3"><ThesisFacts items={facts}/></div></details>}
         {typeof th.quality_score === 'number' && <ThesisQualityScore quality={{ score: th.quality_score, missing: th.quality_missing }} compact />}
-      </div>
+      </header>
 
-      <EngineSuggestionBanner thesis={th} onResolve={onResolve} busy={busy} />
+      {isOwner&&<EngineSuggestionBanner thesis={th} onResolve={onResolve} busy={busy} />}
 
       {/* tabs */}
-      <div className="flex items-center gap-1.5 flex-wrap">
+      <nav aria-label="Thesis sections" className="intel-thesis-tabs">
         {TABS.map((x) => (
-          <button key={x} onClick={() => setSp(x === 'overview' ? {} : { tab: x })}
-            className={`chip text-[11px] ${tab === x ? 'bg-[var(--accent)] text-black' : 'text-[var(--fg-4)]'}`}>{t(`journal.tab.${x}`, { defaultValue: x })}</button>
+          <button key={x} onClick={() => setSp(x === 'overview' ? {} : { tab: x },{state:location.state})}
+            aria-current={tab===x?'page':undefined} className="intel-thesis-tab">{t(`journal.tab.${x}`, { defaultValue: x })}</button>
         ))}
-      </div>
+      </nav>
 
       {tab === 'overview' && (
         <div className="space-y-3">
-          <ThesisDeltaCard delta={delta.data} loading={delta.loading} />
+          <ThesisDeltaCard delta={delta.data} loading={delta.loading} error={delta.error} />
+          <ThesisInvalidation thesis={th} editable={isOwner} onSave={async patch => { await updateThesis(supabase, id, patch); await load() }}/>
+          <ThesisAuthoredDraft thesis={th} editable={th.user_id === user?.id} onSave={async patch => { await updateThesis(supabase, id, patch); await load() }}/>
           {th.bull_thesis && <div className="card p-4"><div className="eyebrow text-[var(--ok)]">{t('journal.scenario.bull', { defaultValue: 'Bull case' })}</div><p className="text-[13px] text-[var(--fg-2)] mt-1">{th.bull_thesis}</p></div>}
           {th.neutral_thesis && <div className="card p-4"><div className="eyebrow">{t('journal.scenario.base', { defaultValue: 'Base case' })}</div><p className="text-[13px] text-[var(--fg-2)] mt-1">{th.neutral_thesis}</p></div>}
           {th.bear_thesis && <div className="card p-4"><div className="eyebrow text-red-400">{t('journal.scenario.bear', { defaultValue: 'Bear case' })}</div><p className="text-[13px] text-[var(--fg-2)] mt-1">{th.bear_thesis}</p></div>}
@@ -153,35 +205,33 @@ export default function ThesisDetailPage() {
 
       {tab === 'evidence' && (
         <div className="space-y-2">
-          {(th.evidence || []).length === 0 ? <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('journal.no_evidence', { defaultValue: 'No evidence attached yet.' })}</div> : (th.evidence || []).map((e) => {
-            const snap = e.event_snapshot || {}
-            return (
-              <div key={e.id} className="card p-3 space-y-1">
-                <div className="flex items-center justify-between gap-2">
-                  <div className="text-[13px] text-[var(--fg-1)]">{snap.title || e.event_type}</div>
-                  {e.user_label && <span className="chip text-[10px]">{e.user_label}</span>}
-                </div>
-                {snap.summary && <p className="text-[12px] text-[var(--fg-3)]">{snap.summary}</p>}
-                <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-[var(--fg-5)]">
-                  {e.impact && <span className={`chip ${e.impact === 'supports' || e.impact === 'confirms' ? 'chip--ok' : e.impact === 'weakens' || e.impact === 'invalidates' ? 'chip--err' : ''}`}>{e.impact}</span>}
-                  <span>{e.event_type}</span>{e.is_baseline && <span className="chip chip--info">baseline</span>}
-                </div>
-              </div>
-            )
-          })}
+          <ThesisBaselineEvidence key={ownerScope} supabase={supabase} orgId={org.id} thesisId={id}/>
+          {isOwner && <ThesisEvaluationPreview key={ownerScope} onPreview={() => previewThesisEvaluation(supabase, org.id, id)} />}
+          {(th.evidence || []).length === 0 ? <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('journal.no_evidence', { defaultValue: 'No evidence attached yet.' })}</div> : (th.evidence || []).map(e => <ThesisEvidenceRecord key={e.id} evidence={e} />)}
         </div>
       )}
 
       {tab === 'chart' && (
-        <TokenChart candles={candles.data} loading={candles.loading} markers={markers} keyLevels={keyLevels} showDensityToggles
-          defaultRange="7D" loadCandles={sym ? (tf) => loadMarketCandles(supabase, org.id, sym, tf) : null} />
+        <div className="space-y-3">
+        <ThesisPortfolioWorkspace thesis={th} from={chartFrom} to={chartWindow.to} chartProps={{markers,keyLevels,showDensityToggles:true,assetKey:`${org.id}:${user?.id}:${id}:${th.subject_canonical_key || th.entity_id}`,
+          persistence:{supabase,userId:user?.id,orgId:org?.id,asset:th.subject_canonical_key||th.entity?.canonical_ref_key},defaultRange:'7D',loadCandles:loadChart,historyLoading:activity.loading,historyError:activity.error,
+          onRangeChange:onChartRange,timeWindow:{from:chartFrom,to:chartWindow.to},historyHasMore:!!activity.nextCursor,onLoadMoreHistory:()=>loadActivity(activity.nextCursor)}}/>
+        <details open={allActivityOpen} onToggle={event => setAllActivityOpen(event.currentTarget.open)}>
+          <summary className="cursor-pointer text-sm py-3">All thesis activity</summary>
+          {allActivity.error && <p role="alert" className="text-sm text-red-400">{allActivity.error} <button onClick={() => loadAllActivity()}>Retry</button></p>}
+          {allActivity.scope === ownerScope && allActivity.markers.map(event => <article key={event.id} className="border-b border-[var(--border-default)] py-3 text-sm space-y-1">
+            <p><b>{event.label}</b> <time className="text-[var(--fg-4)]" dateTime={event.occurredAt}>{new Date(event.t).toLocaleString()}</time></p>
+            {Object.entries(event.textSnapshot || {}).filter(([, value]) => typeof value === 'string' && value.trim()).map(([key, value]) => <p key={key} className="whitespace-pre-wrap"><span className="text-[var(--fg-4)]">{key.replaceAll('_', ' ')}: </span>{value}</p>)}
+            {event.historicalCompleteness !== 'complete' && <p className="text-[var(--fg-4)]">Historical wording was not recorded at this time.</p>}
+          </article>)}
+          {allActivity.loading && <p role="status" className="text-sm">Loading activity…</p>}
+          {allActivity.scope === ownerScope && allActivity.nextCursor && <button className="btn btn--quiet btn--sm" disabled={allActivity.loading} onClick={() => loadAllActivity(allActivity.nextCursor)}>Load older activity</button>}
+        </details>
+        </div>
       )}
 
       {tab === 'portfolio' && (
-        <div className="card p-4 text-[13px] text-[var(--fg-3)] space-y-2">
-          {th.portfolio_id ? <div>{t('journal.linked_portfolio', { defaultValue: 'Linked to a portfolio position.' })}</div> : <div className="text-[var(--fg-4)]">{t('journal.no_portfolio', { defaultValue: 'Not linked to a portfolio holding.' })}</div>}
-          {th.baseline?.portfolio_snapshot && Object.keys(th.baseline.portfolio_snapshot).length > 0 && <pre className="text-[11px] text-[var(--fg-4)] overflow-auto">{JSON.stringify(th.baseline.portfolio_snapshot, null, 2).slice(0, 600)}</pre>}
-        </div>
+        <ThesisPortfolioWorkspace thesis={th} from={chartFrom} to={chartWindow.to}/>
       )}
 
       {tab === 'trades' && (
@@ -198,7 +248,7 @@ export default function ThesisDetailPage() {
 
       {tab === 'reviews' && (
         <div className="space-y-3">
-          <ReviewComposer thesis={th} onSubmit={onReview} busy={busy} />
+          {isOwner&&<ReviewComposer thesis={th} onSubmit={onReview} busy={busy} />}
           {(th.reviews || []).map((r) => (
             <div key={r.id} className="card p-3 space-y-1">
               <div className="flex items-center justify-between text-[11px] text-[var(--fg-4)]">
@@ -212,17 +262,7 @@ export default function ThesisDetailPage() {
       )}
 
       {tab === 'alerts' && (
-        <div className="space-y-2">
-          {(th.rules || []).length === 0 ? <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('journal.no_rules', { defaultValue: 'No confirmation or invalidation rules.' })}</div> : (th.rules || []).map((r) => (
-            <div key={r.id} className="card p-3 flex items-center justify-between gap-2 text-[12px]">
-              <div className="flex items-center gap-2">
-                <span className={`chip text-[10px] ${r.rule_kind === 'invalidation' ? 'chip--err' : 'chip--ok'}`}>{r.rule_kind}</span>
-                <span className="text-[var(--fg-2)]">{r.description}</span>
-              </div>
-              <span className="chip text-[10px] text-[var(--fg-4)]">{r.status}{r.alert_rule_id ? ' · alert' : ''}</span>
-            </div>
-          ))}
-        </div>
+        <ThesisConditions supabase={supabase} userId={user?.id} thesis={th} editable={isOwner} onChanged={load}/>
       )}
 
       <IntelDisclaimer variant="block" />

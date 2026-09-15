@@ -26,5 +26,6 @@ export async function loadMacroCalendar(supabase, { days = 21 } = {}) {
     .order('scheduled_at', { ascending: true })
     .limit(60)
   if (error) throw error
-  return data || []
+  if (!Array.isArray(data)) throw new Error('calendar_read_invalid')
+  return data
 }

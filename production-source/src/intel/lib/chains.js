@@ -74,6 +74,9 @@ export const CHAINS = [
   { id: 'near',        namespace: 'near',    caip2Ref: 'mainnet',     label: 'NEAR',        nativeSymbol: 'NEAR', tier: 'specialized', chainFamily: 'other', evmChainId: null, nativeDecimals: 24, startingSupportLevel: 'coming_soon', explorerTx: 'https://nearblocks.io/txns/', explorerAddress: 'https://nearblocks.io/address/' },
   { id: 'ton',         namespace: 'ton',     caip2Ref: 'mainnet',     label: 'TON',         nativeSymbol: 'TON',  tier: 'specialized', chainFamily: 'other', evmChainId: null, nativeDecimals: 9, startingSupportLevel: 'coming_soon', explorerTx: 'https://tonviewer.com/transaction/', explorerAddress: 'https://tonviewer.com/' },
   { id: 'xrpl',        namespace: 'xrpl',    caip2Ref: 'mainnet',     label: 'XRP Ledger',  nativeSymbol: 'XRP',  tier: 'specialized', chainFamily: 'other', evmChainId: null, nativeDecimals: 6, startingSupportLevel: 'coming_soon', explorerTx: 'https://livenet.xrpl.org/transactions/', explorerAddress: 'https://livenet.xrpl.org/accounts/' },
+  // Cardano identifies a native asset by its minting policy id, optionally with
+  // the hex asset name (`<policy>.<assetName>`) — there is no contract address.
+  { id: 'cardano',     namespace: 'cardano', caip2Ref: 'mainnet',     label: 'Cardano',     nativeSymbol: 'ADA',  tier: 'specialized', chainFamily: 'other', evmChainId: null, nativeDecimals: 6, startingSupportLevel: 'coming_soon', explorerTx: 'https://cardanoscan.io/transaction/', explorerAddress: 'https://cardanoscan.io/address/' },
   { id: 'zcash',       namespace: 'zcash',   caip2Ref: 'mainnet',     label: 'Zcash',       nativeSymbol: 'ZEC',  tier: 'specialized', privacyLimited: true, chainFamily: 'other', evmChainId: null, nativeDecimals: 8, startingSupportLevel: 'coming_soon', explorerTx: 'https://blockchair.com/zcash/transaction/', explorerAddress: 'https://blockchair.com/zcash/address/' },
   { id: 'taiko',       namespace: 'eip155',  caip2Ref: '167000',      label: 'Taiko',       nativeSymbol: 'ETH',  tier: 'specialized', chainFamily: 'evm', evmChainId: 167000, nativeDecimals: 18, startingSupportLevel: 'coming_soon', explorerTx: 'https://taikoscan.io/tx/', explorerAddress: 'https://taikoscan.io/address/' },
   { id: 'xdc',         namespace: 'eip155',  caip2Ref: '50',          label: 'XDC',         nativeSymbol: 'XDC',  tier: 'specialized', chainFamily: 'evm', evmChainId: 50, nativeDecimals: 18, startingSupportLevel: 'coming_soon', explorerTx: 'https://xdcscan.com/tx/', explorerAddress: 'https://xdcscan.com/address/' },
@@ -116,12 +119,13 @@ export function getChain(id) {
 // Reverse-map an entity's CAIP namespace + reference to our app chain id (mirrors
 // the server chainIdFor in supabase/functions/_shared/chains.ts). EVM chains share
 // the 'eip155' namespace, so caip2Ref disambiguates (Base vs Ethereum); the
-// namespace-only fallback guarantees a non-null id for any registered namespace.
+// unknown or absent references stay unresolved instead of selecting a network.
 export function chainIdFor(ns, ref) {
-  if (!ns) return null
+  if (!ns || !ref) return null
   const exact = CHAINS.find((c) => c.namespace === ns && c.caip2Ref === ref)
   if (exact) return exact.id
-  return CHAINS.find((c) => c.namespace === ns)?.id || null
+  if (ns === 'eip155' && /^[1-9]\d*$/.test(ref)) return CHAINS.find((c) => c.evmChainId === Number(ref))?.id || null
+  return null
 }
 
 export function isEvmFamily(chainId) {
@@ -140,6 +144,72 @@ export function detectAddressKind(value) {
   const v = String(value || '').trim()
   if (EVM_ADDRESS_RE.test(v)) return 'evm'
   if (SOLANA_ADDRESS_RE.test(v)) return 'solana'
+  return null
+}
+
+// ── Universal identifier detection (mirrors the server resolver's namespace rules) ──
+// `detectAddressKind` above stays the two-family helper the wallet/paste flows use.
+// `detectIdentifierKind` is the wider vocabulary the universal resolver speaks: it
+// names the namespace a pasted string belongs to so the resolver ladder knows which
+// providers can possibly answer. It never guesses a chain — only a namespace family.
+//
+// The regexes and their order MUST stay identical to
+// supabase/functions/_shared/intel/asset-identifier.ts (classify()). The client
+// uses this only to decide whether a typed query is worth one resolution — the
+// server still detects the identifier itself and owns the chain candidates — so
+// a drift here costs a wasted call or a missed one, never a wrong identity.
+//
+// Order matters: a Tron account (T + 33 base58) and a classic XRPL account
+// (r + 24–34 base58) both fall inside the Solana 32–44 base58 window, so the
+// specific namespaces are tested before Solana.
+const BASE58 = '[1-9A-HJ-NP-Za-km-z]'
+export const MAX_IDENTIFIER_LENGTH = 200
+// Whitespace, quotes, brackets and shell/SQL punctuation belong to no supported
+// identifier — and are what an injection probe looks like. Rejecting them here
+// is why an invalid query costs zero provider calls.
+const UNSAFE_RE = /[\s<>"'`;()|&=%*[\]{}]/
+export const IDENTIFIER_PATTERNS = [
+  // CoinMarketCap ids are identities in their own right (no chain).
+  ['cmc_id', /^cmc:\d{1,9}$/i],
+  ['cmc_id', /^\d{1,9}$/],
+  // Hyperliquid spot index (@107) or a native pair against USDC.
+  ['hyperliquid', /^@\d{1,6}$/],
+  ['hyperliquid', /^[A-Za-z0-9]{2,12}\/USDC$/],
+  // Cosmos-style denoms: IBC hashes, token-factory denoms, Injective peggy assets.
+  ['cosmos', /^ibc\/[0-9A-Fa-f]{64}$/],
+  ['cosmos', /^factory\/[A-Za-z0-9]{6,90}\/[A-Za-z0-9/:._-]{1,64}$/],
+  ['cosmos', /^peggy0x[0-9a-fA-F]{40}$/],
+  // Move coin types (`0x…::module::Name`) — shared by Sui and Aptos.
+  ['move', /^0x[0-9a-fA-F]{1,64}::[A-Za-z_][A-Za-z0-9_]*::[A-Za-z_][A-Za-z0-9_]*$/],
+  ['evm', EVM_ADDRESS_RE],
+  // TON: user-friendly EQ/UQ base64url (48 chars) or raw `0:` / `-1:` + 64 hex.
+  ['ton', /^[EU]Q[A-Za-z0-9_-]{46}$/],
+  ['ton', /^(?:-1|0):[0-9a-fA-F]{64}$/],
+  ['tron', new RegExp(`^T${BASE58}{33}$`)],
+  // XRPL: `<CURRENCY>.<r-address>` issued asset, then the classic account id.
+  ['xrpl', new RegExp(`^(?:[A-Za-z0-9]{3}|[0-9A-Fa-f]{40})\\.r${BASE58}{24,34}$`)],
+  ['xrpl', new RegExp(`^r${BASE58}{24,34}$`)],
+  // Stellar: `CODE-G…` asset form, then the issuer account (G + 55 base32).
+  ['stellar', /^[A-Za-z0-9]{1,12}-G[A-Z2-7]{55}$/],
+  ['stellar', /^G[A-Z2-7]{55}$/],
+  // NEAR: named account (`wrap.near`) or an implicit 64-hex account id.
+  ['near', /^(?:[a-z0-9](?:[a-z0-9._-]*[a-z0-9])?\.)?near$/],
+  ['near', /^[0-9a-f]{64}$/],
+  // Cardano policy id, optionally `.assetName`.
+  ['cardano', /^[0-9a-f]{56}(?:\.[0-9a-f]{2,64})?$/],
+  ['solana', SOLANA_ADDRESS_RE],
+]
+
+// Returns the namespace name, or null when the string is not an identifier at all
+// (a plain ticker, a project name, a URL, a malformed address) — the caller then
+// keeps the catalogue search path and never spends a resolution on it.
+export function detectIdentifierKind(value) {
+  const v = typeof value === 'string' ? value.trim() : ''
+  if (!v || v.length > MAX_IDENTIFIER_LENGTH) return null
+  if (UNSAFE_RE.test(v)) return null
+  for (let i = 0; i < v.length; i++) if (v.charCodeAt(i) < 32) return null
+  if (/:\/\//.test(v) || /^www\./i.test(v)) return null
+  for (const [kind, pattern] of IDENTIFIER_PATTERNS) if (pattern.test(v)) return kind
   return null
 }
 

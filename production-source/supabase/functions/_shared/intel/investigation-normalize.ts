@@ -39,8 +39,21 @@ export async function normalizeCmcInvestigation(name:string,body:any,params:Reco
   }
   if(name.startsWith('dex'))for(const r of dexEvidenceRows(name,body,params)){
     const population=`cmc:dex:${r.metadata.chain}:${r.metadata.contract}`
-    const universe=['dexLiquidityEvents','dexSwaps'].includes(name)?`${population}:event:${r.metadata.transaction}:${r.metadata.logIndex}`:name==='dexHolderHistory'?`${population}:interval:${r.metadata.intervalStart}:${r.metadata.intervalEnd}`:population
-    await add(r.subject,r.metric,r.value,r.unit,r.observed,r.metadata,universe,r.periodSeconds)
+    const universe=['dexLiquidityEvents','dexSwaps'].includes(name)?`${population}:event:${r.metadata.transaction}:${r.metadata.logIndex}`:
+      name==='dexHolderHistory'?`${population}:interval:${r.metadata.intervalStart}:${r.metadata.intervalEnd}`:
+      // One capture of the tag board is one universe per tag: a tag row is a share
+      // of the same classification pass, not an independent measurement.
+      name==='dexHolderTags'?`${population}:tag:${r.metadata.tag}`:population
+    // /v1/dex/holders/tag_count publishes NO clock (see cmc-dex-evidence.ts), so
+    // `dexEvidenceRows` hands these rows over with `observed: null` and `add()`
+    // would drop them. The only honest clock available is the one this refresh
+    // already has: `fetchedAt`, the time WE retrieved the response. It is stamped
+    // here and labelled in the metadata, so a reader is never shown our capture
+    // time in a field that claims to be a provider observation time. No other
+    // capability may take this branch: every one of them reports its own clock.
+    const stamped=name==='dexHolderTags'&&r.observed==null
+    await add(r.subject,r.metric,r.value,r.unit,stamped?fetchedAt:r.observed,
+      stamped?{...r.metadata,timeMeaning:'capture time, not provider time'}:r.metadata,universe,r.periodSeconds)
   }
   for(const [index,row] of rows.entries()) {
     const q=row.quote??{}, subject=cmcSubject(row.crypto_id??row.id)
