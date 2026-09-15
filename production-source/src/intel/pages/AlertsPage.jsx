@@ -22,11 +22,11 @@ import AlertSourceReceipt,{alertValueLabel} from '../components/AlertSourceRecei
 import AlertRuleHistory from '../components/AlertRuleHistory'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
 
-const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift', 'unlock', 'supply_shock', 'metadata_migration', 'metadata_notice', 'liquidation_cascade', 'attention_entry']
+const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift', 'unlock', 'supply_shock', 'metadata_migration', 'metadata_notice', 'liquidation_cascade', 'attention_entry', 'listing_flag_change']
 
 // Triggers whose English name is not simply their key with the underscores
 // taken out.
-const TRIGGER_LABELS = { metadata_notice: 'Listing notice', liquidation_cascade: 'Liquidation cascade', attention_entry: 'Attention entry' }
+const TRIGGER_LABELS = { metadata_notice: 'Listing notice', liquidation_cascade: 'Liquidation cascade', attention_entry: 'Attention entry', listing_flag_change: 'Listing flag change' }
 
 // A listing notice is present or it is not, so its rule carries no reader
 // threshold and no comparator choice: threshold_pct is fixed at 1, the
@@ -34,6 +34,16 @@ const TRIGGER_LABELS = { metadata_notice: 'Listing notice', liquidation_cascade:
 // re-arms after its cooldown. Built here — not in marketAlertConfig — because
 // it is not a market trigger and must never pick up the market fields.
 export const METADATA_NOTICE_CONFIG = { threshold_pct: 1, condition: 'legacy_level', repeat: 'rearm', direction: 'either' }
+
+// CMC plan proposal 21. The flag set recorded for a contract either differs
+// between the two newest daily captures or it does not, so the rule is shaped
+// exactly like the listing notice: no reader threshold, no comparator choice,
+// threshold_pct fixed at 1 (the evaluator compares `value >= 1` and would
+// silently evaluate the wrong number if this ever drifted), a level match at the
+// daily capture clock, re-arming after cooldown. Built here — not in
+// marketAlertConfig — because it is not a market trigger and must never pick up
+// the market fields.
+export const LISTING_FLAG_CHANGE_CONFIG = { threshold_pct: 1, condition: 'legacy_level', repeat: 'rearm', direction: 'either' }
 
 // CMC plan proposals 13 and 23. Both are capture-clock rules evaluated by
 // intel-alerts-eval against a recorded series, so both fix the same three
@@ -149,7 +159,7 @@ function ScopedAlertsPage() {
       } else {
         const ent = await resolveEntity(supabase, org.id, { kind: form.trigger === 'wallet_activity' ? 'wallet' : 'asset', chain: form.chain, value: form.value.trim() })
         entityId = ent.id
-        config = form.trigger === 'liquidity_drop' ? { min_liquidity_usd: threshold } : form.trigger === 'wallet_activity' ? { min_usd: threshold } : form.trigger === 'unlock' ? {window_days:threshold} : form.trigger === 'metadata_migration' ? {} : form.trigger === 'metadata_notice' ? { ...METADATA_NOTICE_CONFIG } : form.trigger === 'liquidation_cascade' ? liquidationCascadeConfig(form) : form.trigger === 'attention_entry' ? attentionEntryConfig(form) : { threshold_pct: threshold }
+        config = form.trigger === 'liquidity_drop' ? { min_liquidity_usd: threshold } : form.trigger === 'wallet_activity' ? { min_usd: threshold } : form.trigger === 'unlock' ? {window_days:threshold} : form.trigger === 'metadata_migration' ? {} : form.trigger === 'metadata_notice' ? { ...METADATA_NOTICE_CONFIG } : form.trigger === 'listing_flag_change' ? { ...LISTING_FLAG_CHANGE_CONFIG } : form.trigger === 'liquidation_cascade' ? liquidationCascadeConfig(form) : form.trigger === 'attention_entry' ? attentionEntryConfig(form) : { threshold_pct: threshold }
       }
       config={...config,title:form.title,note:form.note,visibility:'private',...(MARKET_TRIGGERS.includes(form.trigger)?marketAlertConfig(form):{})}
       if(form.trigger==='unlock'&&threshold>90)throw Error('Choose an unlock window from zero to 90 days.')
@@ -186,8 +196,8 @@ function ScopedAlertsPage() {
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.trigger', { defaultValue: 'Trigger' })}</span>
           <select className="select" data-tutorial="intel-alerts.trigger-select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: TRIGGER_LABELS[tr] || tr.replace(/_/g, ' ') })}</option>)}</select>
         </label>
-        <label className="block w-28"><span className="text-[11px] text-[var(--fg-4)]">{form.trigger === 'liquidity_drop' ? 'Liquidity below $' : form.trigger === 'wallet_activity' ? 'Transfer above $' : form.trigger === 'narrative_heat' ? 'Momentum points' : form.trigger==='unlock' ? 'Days ahead' : form.trigger==='metadata_migration' ? 'All material changes' : form.trigger==='metadata_notice' ? t('alerts.notice_threshold_label', { defaultValue: 'Any notice present' }) : form.trigger==='liquidation_cascade' ? t('alerts.cascade_threshold_label', { defaultValue: 'Set by the multiple' }) : form.trigger==='attention_entry' ? t('alerts.attention_threshold_label', { defaultValue: 'Set by the hours' }) : '%'}</span>
-          <input className="input w-full" type="number" min="0" step="any" required disabled={form.trigger==='metadata_migration'||form.trigger==='metadata_notice'||form.trigger==='liquidation_cascade'||form.trigger==='attention_entry'} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
+        <label className="block w-28"><span className="text-[11px] text-[var(--fg-4)]">{form.trigger === 'liquidity_drop' ? 'Liquidity below $' : form.trigger === 'wallet_activity' ? 'Transfer above $' : form.trigger === 'narrative_heat' ? 'Momentum points' : form.trigger==='unlock' ? 'Days ahead' : form.trigger==='metadata_migration' ? 'All material changes' : form.trigger==='metadata_notice' ? t('alerts.notice_threshold_label', { defaultValue: 'Any notice present' }) : form.trigger==='liquidation_cascade' ? t('alerts.cascade_threshold_label', { defaultValue: 'Set by the multiple' }) : form.trigger==='attention_entry' ? t('alerts.attention_threshold_label', { defaultValue: 'Set by the hours' }) : form.trigger==='listing_flag_change' ? t('alerts.flag_change_threshold_label', { defaultValue: 'Any flag change' }) : '%'}</span>
+          <input className="input w-full" type="number" min="0" step="any" required disabled={form.trigger==='metadata_migration'||form.trigger==='metadata_notice'||form.trigger==='liquidation_cascade'||form.trigger==='attention_entry'||form.trigger==='listing_flag_change'} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
         </label>
         {form.trigger==='liquidation_cascade'&&<>
           <label className="block w-32"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.cascade_multiple_label', { defaultValue: 'Times the 7-day average' })}</span>
@@ -216,6 +226,7 @@ function ScopedAlertsPage() {
         {form.trigger==='metadata_notice'&&<p className="intel-analysis-caption w-full" data-testid="metadata-notice-explanation">{t('alerts.notice_explanation', { defaultValue: 'Fires when a CoinMarketCap listing notice is present for this asset. It is evaluated at the daily metadata clock, not on your schedule, and the wording of the notice is not interpreted: the rule reports only that a notice exists, so read the notice itself before acting. There is no threshold and no direction to choose — the rule re-arms after its cooldown.' })}</p>}
         {form.trigger==='liquidation_cascade'&&<p className="intel-analysis-caption w-full" data-testid="liquidation-cascade-explanation">{t('alerts.cascade_explanation', { defaultValue: 'Fires when the newest five-minute liquidation capture for this asset reports a total for the chosen window at or above your multiple of the same window’s seven-day average. The comparison is a ratio against this asset’s OWN recent average, not a percentage of anything and not a measure of positions at risk: the figures are provider-reported aggregates across the venues it covers, so a provider that adds or drops a venue moves the ratio on its own. There is no direction to choose — the rule matches a level at the capture clock and re-arms after its cooldown.' })}</p>}
         {form.trigger==='attention_entry'&&<p className="intel-analysis-caption w-full" data-testid="attention-entry-explanation">{t('alerts.attention_explanation', { defaultValue: 'Fires when this asset has been in the chosen attention list for that many consecutive hourly captures. It reads the provider’s own published list, so it says where readers are being pointed and nothing else: attention is not a valuation, not a flow, and not a forecast, and an asset can leave the list between captures without the rule ever seeing it. There is no direction to choose — the rule matches a level at the hourly capture clock and re-arms after its cooldown.' })}</p>}
+        {form.trigger==='listing_flag_change'&&<p className="intel-analysis-caption w-full" data-testid="listing-flag-change-explanation">{t('alerts.flag_change_explanation', { defaultValue: 'Fires when the security flags the provider recorded for this asset’s contract differ between the two newest daily captures. It is evaluated at the daily listing capture clock, not on your schedule, and it compares the flag SET, not its meaning: a changed flag set is not a safety verdict, and an unchanged one is not a clearance. A first inspection is a baseline and losing coverage is not a change, so a single capture never fires. There is no threshold and no direction to choose — the rule re-arms after its cooldown.' })}</p>}
         <details className="w-full"><summary>Condition, original note and activation</summary>
           <label>Alert name<input maxLength={120} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/></label>
           {MARKET_TRIGGERS.includes(form.trigger)&&<MarketAlertFields form={form} setForm={setForm} trigger={form.trigger} disabled={busy}/>}

@@ -28,6 +28,7 @@ import { localDateTimeValue } from '../lib/portfolio-markers'
 import PortfolioNameDialog from '../components/PortfolioNameDialog'
 import PortfolioResearchPanel from '../components/PortfolioResearchPanel'
 import PortfolioHoldingsSection,{PortfolioPageControls} from '../components/PortfolioHoldingsSection'
+import PortfolioIdentityCoverage from '../components/PortfolioIdentityCoverage'
 import PortfolioActivitySection from '../components/PortfolioActivitySection'
 import PortfolioActivityLegs from '../components/PortfolioActivityLegs'
 import {portfolioActivityRoute} from '../lib/portfolio-activity-route'
@@ -501,6 +502,11 @@ export default function PortfolioPage() {
             <PortfolioPerformanceChart series={snapshots} compare={benchmarks} loading={false} hasEarlier={hasEarlierSnapshots} loadingEarlier={loadingEarlierSnapshots} onLoadEarlier={loadEarlierSnapshots} />
           </React.Suspense>
           <React.Suspense fallback={null}><PortfolioHistoricalPerformance key={activeScope} supabase={supabase} orgId={org.id} portfolioId={activeId}/></React.Suspense>
+
+          {/* Which holdings carry a contract identity a provider can price, and
+              the on-demand run that asks. Coverage is rows only; a run spends
+              provider credits and is started by hand. */}
+          <PortfolioIdentityCoverage key={activeScope} portfolioId={activeId} />
 
           <PortfolioHoldingsSection supabase={supabase} orgId={org?.id} userId={user?.id} portfolioId={activeId} open={workspace?.open} closed={workspace?.closed} hideDust={hideDust} dustCount={workspace?.summary?.dustCount??dustHiddenCount} onToggleDust={onToggleDust} Table={HoldingsTable} t={t}/>
 

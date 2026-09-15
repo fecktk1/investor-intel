@@ -35,6 +35,21 @@ function contractGroupRows(result, query, t) {
     }]
   }
 
+  // The chain named the asset and no market source prices it. It is a real,
+  // indexed, searchable asset, so it keeps its route and its identity — and it
+  // carries its own label, because opening it and finding every price empty
+  // without having been told why is the thing this status exists to prevent.
+  if (result.status === 'identity_only' && result.identity) {
+    const identity = result.identity
+    const label = t('resolve.identity_only_label', { defaultValue: 'Identity only' })
+    return [{
+      to: identity.route || contractRoute(identity.symbol, identity.chain, identity.address),
+      label: `${identity.symbol || query} · ${identity.name || ''}`,
+      description: `${label} · ${[identity.chain, identity.address || identity.providerId].filter(Boolean).join(' · ')} · ${t('resolve.identity_only_short', { defaultValue: 'the chain answered; no market source prices it' })} · ${via}`,
+      group,
+    }]
+  }
+
   // The same address on several chains. Liquidity is what tells them apart, so
   // it is part of the row rather than something the reader has to open each to see.
   if (result.status === 'ambiguous') {

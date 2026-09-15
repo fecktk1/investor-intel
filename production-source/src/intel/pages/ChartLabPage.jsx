@@ -3,7 +3,7 @@ import { Navigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { useProfile } from '../../lib/profile-context'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
-import { RadialGauge, RadialBars, Sunburst, PolarClock, Ribbon, Bump, HeatStrip, StackedShare, Sparkline, LineArea } from '../charts'
+import { RadialGauge, RadialBars, Sunburst, PolarClock, Ribbon, Bump, HeatStrip, StackedShare, Sparkline, LineArea, Histogram } from '../charts'
 
 const DAY = 86400000
 const WEEK = DAY * 7
@@ -118,6 +118,23 @@ const LINE_POINTS = LINE_PRICES.map((price, i) => ({
 const LINE_SPANS = [{ from: T0 + DAY * 6, to: T0 + DAY * 21, tone: 'red', label: 'Deepest decline: -25.7%' }]
 const LINE_MARKS = [{ t: T0 + DAY * 34, tone: 'green', label: 'Back at the previous peak' }]
 
+// Realized gains for one cohort: five loss bins, five gain bins, no bin crossing
+// zero, and a measured range nobody landed in (-180 to -60) kept as an empty bar
+// rather than dropped. The widest gain bin is one magnitude, so its two edges are
+// the same number and it is named by that single edge.
+const HISTOGRAM = [
+  { from: -4200, to: -1400, count: 3, tone: 'red' },
+  { from: -1400, to: -520, count: 6, tone: 'red' },
+  { from: -520, to: -180, count: 4, tone: 'red' },
+  { from: -180, to: -60, count: 0, tone: 'red' },
+  { from: -60, to: -12, count: 2, tone: 'red' },
+  { from: 15, to: 90, count: 5, tone: 'green' },
+  { from: 90, to: 340, count: 9, tone: 'green' },
+  { from: 340, to: 1250, count: 7, tone: 'green' },
+  { from: 1250, to: 4800, count: 0, tone: 'green' },
+  { from: 9600, to: 9600, count: 1, tone: 'green' },
+]
+
 const SPARKS = [
   { key: 'BTC', label: 'BTC', tone: 'accent', values: [64100, 64980, 63120, 65340, 66800, 66210, 68040] },
   { key: 'ETH', label: 'ETH', tone: 'blue', values: [3120, 3080, 3190, 3240, 3160, 3210, 3305] },
@@ -142,6 +159,7 @@ const SAMPLES = {
     share: SHARE_SERIES,
     sparks: SPARKS,
     line: LINE_POINTS,
+    histogram: HISTOGRAM,
   },
   zero: {
     gaugeValue: 0,
@@ -154,6 +172,9 @@ const SAMPLES = {
     share: SHARE_SERIES.map(s => ({ ...s, points: s.points.map(p => ({ ...p, value: 0 })) })),
     sparks: SPARKS.map(s => ({ ...s, values: s.values.map(() => 0) })),
     line: LINE_POINTS.map(p => ({ ...p, value: 0, secondary: 0 })),
+    // Every bin measured, nobody in any of them: ten zero-height bars on their
+    // own edges, never a blank plot.
+    histogram: HISTOGRAM.map(b => ({ ...b, count: 0 })),
   },
 }
 
@@ -279,6 +300,13 @@ export default function ChartLabPage() {
         secondaryLabel={t('lab.charts_linearea_secondary', { defaultValue: 'Volume' })}
         formatValue={usd} formatSecondary={usd} formatTime={day}
         state={state} reason={reason} onSelect={pick('Span or mark')}
+      />
+
+      <Histogram
+        title={t('lab.charts_histogram_title', { defaultValue: 'Realized gains by size' })}
+        description={t('lab.charts_histogram_sub', { defaultValue: 'Addresses by the size of the realized gain reported for them. Losses and gains are binned separately so no bin crosses zero, and a measured range nobody landed in stays as an empty bar.' })}
+        bins={data.histogram} formatValue={usd} formatCount={v => `${Number(v || 0).toFixed(0)}`}
+        state={state} reason={reason} onSelect={pick('Bin')}
       />
 
       <figure className="intel-chart intel-chart-kit">

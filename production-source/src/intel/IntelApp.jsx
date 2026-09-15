@@ -27,6 +27,8 @@ const MarketsPage = React.lazy(() => import('./pages/MarketsPage'))
 const MarketStructurePage = React.lazy(() => import('./pages/MarketStructurePage'))
 const CategoriesPage = React.lazy(() => import('./pages/CategoriesPage'))
 const AirdropsPage = React.lazy(() => import('./pages/AirdropsPage'))
+const ListingsPage = React.lazy(() => import('./pages/ListingsPage'))
+const GraduationPage = React.lazy(() => import('./pages/GraduationPage'))
 const MarketAssetPage = deferredRoute(() => import('./pages/MarketAssetPage'), <div className="intel-route-loading" role="status">Loading research…</div>)
 const PortfolioPage = React.lazy(() => import('./pages/PortfolioPage'))
 const PortfolioAssetPage = React.lazy(() => import('./pages/PortfolioAssetPage'))
@@ -94,6 +96,10 @@ export default function IntelApp() {
               airdrop calendar. Both read the same capture service. */}
           <Route path="categories" element={<CategoriesPage />} />
           <Route path="airdrops" element={<AirdropsPage />} />
+          {/* The daily new-listing due-diligence cohort and the hourly meme
+              launch-stage lifecycle. Both read the same capture service. */}
+          <Route path="listings" element={<ListingsPage />} />
+          <Route path="graduation" element={<GraduationPage />} />
           <Route path="rwa" element={<MarketResearchPage workspace="rwa" />} />
           <Route path="market-structure" element={<MarketResearchPage workspace="structure" />} />
           <Route path="discovery" element={<MarketResearchPage workspace="discovery" />} />

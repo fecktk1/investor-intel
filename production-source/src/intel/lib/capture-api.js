@@ -26,6 +26,10 @@ export const CAPTURE_VIEWS = [
   'exchange_reserves', 'venue_share',
   'categories', 'category_disagreement', 'airdrops', 'network_stats',
   'fx',
+  // Stage 4 lanes: the daily new-listing due-diligence cohort
+  // (capture-listings-read.ts, LISTING_CAPTURE_VIEWS) and the hourly meme
+  // launch-stage lifecycle (capture-meme-read.ts, MEME_CAPTURE_VIEWS).
+  'new_listings', 'meme_graduation',
 ]
 
 let rememberedClient = null

@@ -1,5 +1,6 @@
 import {useContractChartEvidence} from '../lib/useContractChartEvidence'
 import ContractChartEvidenceStatus from '../components/ContractChartEvidenceStatus'
+import LiveTape from '../components/LiveTape'
 import { useScreenParams } from '../lib/useScreenParams'
 import BookCalendar from '../components/BookCalendar'
 import { mergeLinkedAssetMarkers } from '../lib/chart-history'
@@ -11,6 +12,9 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { useMarketDetailCache } from '../context/MarketDetailCache'
 import { loadMarketDetail, loadMarketCandleSnapshot, loadMarkets } from '../lib/markets-api'
+// PriceWorkstation.jsx stays untouched (plan rule); the k-line source name is
+// mapped here, before the chart source reaches it.
+import { chartProviderLabel } from '../lib/chart-source-label'
 import { useTokenProfile } from '../lib/useTokenProfile'
 import { marketIdentityParams,marketNativeChain } from '../lib/asset-identity'
 import { useAssetThesisHistory } from '../lib/useAssetThesisHistory'
@@ -30,7 +34,7 @@ import ProviderCoveragePill from '../components/ProviderCoveragePill'
 import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
 import OrderbookDepthCard from '../components/OrderbookDepthCard'
 import MarketMemorySummary from '../components/MarketMemorySummary'
-import TokenChart, { CHART_RANGE_MS } from '../components/TokenChart'
+import TokenChart, { CHART_RANGE_MS, candleIntervals, candleIntervalLabel } from '../components/TokenChart'
 import ProfilePanel from '../components/ProfilePanel'
 import { useArtifact } from '../lib/useArtifact'
 import AssetAnalystBrief from '../components/AssetAnalystBrief'
@@ -43,12 +47,15 @@ import AssetYearInReview from '../components/AssetYearInReview'
 import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
 import TokenRiskBadge from '../components/TokenRiskBadge'
 import MarketCoverageRing from '../components/MarketCoverageRing'
+import AssetProvenance from '../components/AssetProvenance'
 import AssetHistoryFigure from '../components/AssetHistoryFigure'
 import AssetFactsPanel from '../components/AssetFactsPanel'
 import AttentionPersistence from '../components/AttentionPersistence'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
-const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
+// `coinmarketcap_kline` is the contract k-line aggregate, not the listed-asset
+// OHLCV series: it is named as such so the two are never read as one source.
+const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin', coinmarketcap_kline: 'CoinMarketCap k-line' }
 const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 'bg-amber-400', neutral: 'bg-[var(--fg-5)]' }
 
 // Exchange-asset detail — opens for ANY asset on the Markets page (not just the
@@ -83,7 +90,10 @@ export default function MarketAssetPage() {
   const liveQuote=useMarketQuote({supabase,orgId:org?.id,userId:user?.id,detail:initialDetail})
   const d=initialDetail?{...initialDetail,...liveQuote.quote,chain:marketNativeChain(initialDetail.sourceProvider,initialDetail.providerId)||initialDetail.chain}:null
   const [chartOptions,setChartOptions]=useScreenParams('chart_', {range:'7D',interval:'auto'})
-  const candleInterval=['auto','1H','4H','1D','1W'].includes(chartOptions.interval)?chartOptions.interval:'auto'
+  // Sub-hour widths exist only for a contract identity; a saved '5M' on any other
+  // asset falls back to automatic rather than being sent and refused.
+  const candleIntervalChoices=candleIntervals(d?.sourceProvider)
+  const candleInterval=candleIntervalChoices.includes(chartOptions.interval)?chartOptions.interval:'auto'
   const setCandleInterval=interval=>setChartOptions(previous=>({...previous,interval}))
   const sym = String(d?.symbol || routeSymbol).toUpperCase()
   const marketKey = d?.sourceProvider && d?.providerId != null ? `market:${d.sourceProvider}:${d.providerId}` : null
@@ -101,6 +111,9 @@ export default function MarketAssetPage() {
   const position = useAssetPortfolioContext({ canonicalAssetKey: network.canonicalAssetKey, from: historyFrom, to: historyTo })
   const research = useAssetThesisHistory({ canonicalKey, from: historyFrom, to: historyTo })
   const publicEvidence=useContractChartEvidence({canonicalKey,from:historyFrom,to:historyTo,portfolioId:position.portfolioId})
+  // The live lane. Its own marker kind and layer, so a streamed event is never
+  // merged into the retained public history it sits beside.
+  const [tapeMarkers,setTapeMarkers]=useState([])
   const analysis = useArtifact(`${detailScope}:${canonicalKey || ''}`)
   const backTo = typeof location.state?.from === 'string' && /^\/intel(?:[/?]|$)/.test(location.state.from) ? location.state.from : '/intel/markets'
 
@@ -240,6 +253,12 @@ export default function MarketAssetPage() {
           from before universal resolution carry no coverage: render nothing. */}
       {d.coverage && <MarketCoverageRing coverage={d.coverage} identity={d.identity} />}
 
+      {/* How the platform knows what this asset IS — every rung of the resolver
+          ladder, with its timing. It reads nothing unless this page's identity
+          is a contract or a CoinMarketCap id, because a resolution is a paid
+          question and an exchange market is not one it can be asked. */}
+      <AssetProvenance sourceProvider={d.sourceProvider} providerId={d.providerId} canonicalKey={canonicalKey} />
+
       {/* Price history is read on request only — one range is one provider
           sampling charged against the shared budget — so this figure fetches
           nothing until the reader chooses a range. The facts panel below it
@@ -276,12 +295,12 @@ export default function MarketAssetPage() {
         </div>}
         {chartPending ? <div role="status" className="min-h-[420px] flex items-center justify-center text-sm text-[var(--fg-4)]">{t('asset.matching_chart_network', { defaultValue: 'Matching your portfolio network…' })}</div> : <TokenChart key={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} assetKey={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} candles={d.candles} persistence={canonicalKey ? {supabase,userId:user?.id,orgId:org?.id,asset:canonicalKey} : null} readOnly={!canonicalKey}
           requestKey={candleInterval}
-          rangeExtra={<label className="intel-event-meta">Candle interval <select aria-label="Candle interval" value={candleInterval} onChange={e=>setCandleInterval(e.target.value)}><option value="auto">Automatic</option><option value="1H">1 hour</option><option value="4H">4 hours</option><option value="1D">1 day</option><option value="1W">1 week</option></select></label>}
-          markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles defaultRange={historyRange} onRangeChange={setHistoryRange}
+          rangeExtra={<label className="intel-event-meta">Candle interval <select aria-label="Candle interval" value={candleInterval} onChange={e=>setCandleInterval(e.target.value)}>{candleIntervalChoices.map(choice=><option key={choice} value={choice}>{candleIntervalLabel(choice,d.sourceProvider)}</option>)}</select>{d.sourceProvider==='contract'&&<span> Sub-hour candles come only from the CoinMarketCap k-line aggregate for this contract.</span>}</label>}
+          markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers,...tapeMarkers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles defaultRange={historyRange} onRangeChange={setHistoryRange}
           historyLoading={research.loading || position.loading || research.loadingMore || position.loadingMore}
           historyError={research.error || (position.error && intelReadError(position.error, 'Your portfolio activity is temporarily unavailable. Please retry from Your position.'))} historyHasMore={!!(research.nextCursor || position.nextCursor)}
           onLoadMoreHistory={() => { if (research.nextCursor) research.loadMore(); if (position.nextCursor) position.loadMore() }}
-          priceCoverage={{ chartSource:d.chartSource,capture:d.captureProof?{proof:d.captureProof,bars:d.candles}:null, coverage: d.chartCoverage, state: d.chartState, provenance: d.chartProvenance }}
+          priceCoverage={{ chartSource:d.chartSource&&d.chartSource.provider==='coinmarketcap_kline'?{...d.chartSource,provider:chartProviderLabel(d.chartSource.provider)}:d.chartSource,capture:d.captureProof?{proof:d.captureProof,bars:d.candles}:null, coverage: d.chartCoverage, state: d.chartState, provenance: d.chartProvenance }}
           loadCandles={tf => loadMarketCandleSnapshot(supabase, org.id, sym, tf, { sourceProvider: d.sourceProvider, providerId: d.providerId,interval:candleInterval })} />}
         {network.choices.length ? <AssetPortfolioPosition context={{ ...position, loading: position.loading || network.loading, error: position.error || network.error, invalidPortfolio: position.invalidPortfolio || network.invalidExplicit, refresh: network.error ? network.retry : position.refresh }}/> : <p className="intel-event-meta py-4">{t('asset.position_identity_required', { defaultValue: 'A verified network identity is not available for this market asset yet. Your market research remains available below.' })}</p>}
       </section>
@@ -388,7 +407,7 @@ export default function MarketAssetPage() {
 
       <OrderbookDepthCard orderbook={d.orderbook} />
       {canonicalKey&&<AssetVenueWorkspace canonicalKey={canonicalKey}/>}
-      <><ContractChartEvidenceStatus evidence={publicEvidence}/><ContractResearchWorkspace canonicalKey={canonicalKey} onEvidence={publicEvidence.acceptEvidence}/></>
+      <><ContractChartEvidenceStatus evidence={publicEvidence}/><LiveTape canonicalKey={canonicalKey} onMarkers={setTapeMarkers}/><ContractResearchWorkspace canonicalKey={canonicalKey} onEvidence={publicEvidence.acceptEvidence}/></>
 
       {d.memorySummary && (
         <section className="space-y-1">

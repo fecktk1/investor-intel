@@ -12,7 +12,7 @@
 import {
   Activity, Compass, Star, Radar, Wallet, BarChart3, LineChart, Scale,
   NotebookPen, Newspaper, Bell, HelpCircle, MessageSquare, Bookmark, Settings, Rss, Landmark, Briefcase, LifeBuoy,
-  LayoutDashboard, CalendarCheck, Network, Gauge, Layers, Gift,
+  LayoutDashboard, CalendarCheck, Network, Gauge, Layers, Gift, ListPlus, Rocket,
 } from 'lucide-react'
 import { THESIS_JOURNAL_ENABLED } from './lib/flags'
 
@@ -47,6 +47,8 @@ export const INTEL_NAV = [
     { to: '/intel/structure', icon: Network, labelKey: 'nav.structure_figures', defaultLabel: 'Structure figures' },
     { to: '/intel/categories', icon: Layers, labelKey: 'nav.categories', defaultLabel: 'Categories' },
     { to: '/intel/airdrops', icon: Gift, labelKey: 'nav.airdrops', defaultLabel: 'Airdrops' },
+    { to: '/intel/listings', icon: ListPlus, labelKey: 'nav.listings', defaultLabel: 'New listings' },
+    { to: '/intel/graduation', icon: Rocket, labelKey: 'nav.graduation', defaultLabel: 'Meme graduation' },
     { to: '/intel/discovery', icon: Compass, labelKey: 'nav.discovery', defaultLabel: 'Discovery' },
     { to: '/intel/macro', icon: Landmark, labelKey: 'nav.macro', defaultLabel: 'Macro' },
     { to: '/intel/market-context', icon: Activity, labelKey: 'nav.market_context', defaultLabel: 'Market Context' },

@@ -333,6 +333,70 @@ export async function readAssetFacts(supabase, { orgId, sourceProvider, provider
   } catch { return FACTS_UNAVAILABLE(op, 'asset_facts_unavailable') }
 }
 
+// ── Contract identity resolution for portfolio holdings (proposal 25) ────────
+
+const IDENTITY_UNAVAILABLE = (op, reason, extra = {}) => ({
+  // A 429 body carries retryAfterSeconds / limit / windowSeconds / runsInWindow.
+  // They are kept verbatim so the surface can say WHEN, not just "try later".
+  ...(extra && typeof extra === 'object' && !Array.isArray(extra) ? extra : {}),
+  op,
+  state: 'unavailable',
+  reason,
+  chains: [],
+  totals: null,
+  holdings: [],
+  entities: [],
+  unsupported: [],
+})
+
+// Read (or run) contract identity resolution for the org's open holdings —
+// `intel-portfolio-identity`, three operations:
+//
+//   coverage  priced-versus-unpriced by chain. Rows only: no provider call and
+//             no credits. Every chain in the book reports real counts, zeros
+//             included, and an unsupported chain carries the reason it is one.
+//   resolve   asks CoinMarketCap's DEX batch endpoints about the open
+//             unpriced/stale holdings on a verified chain and writes the prices
+//             it is given. SPENDS PROVIDER CREDITS, and four runs an hour per
+//             organisation is the ceiling.
+//   entities  fills entities.provider_ids.coinmarketcap. One credit per entity.
+//
+// Mirrors `readAssetFacts`: never throws. A 429 (`resolution_rate_limited`), a
+// 503, a 400 or an unreachable function all come back as
+// `{ state: 'unavailable', reason }` with the body's own fields intact, so the
+// caller renders what happened rather than an empty panel.
+export async function readPortfolioIdentity(supabase, { orgId, op = 'coverage', portfolioId, limit, signal } = {}) {
+  const operation = ['coverage', 'resolve', 'entities'].includes(op) ? op : 'coverage'
+  const body = {
+    op: operation,
+    orgId,
+    ...(portfolioId ? { portfolioId: String(portfolioId) } : {}),
+    ...(limit == null ? {} : { limit }),
+  }
+  try {
+    const { data, error } = await supabase.functions.invoke('intel-portfolio-identity', { body, ...(signal ? { signal } : {}) })
+    if (error) {
+      const details = await error.context?.json?.().catch(() => null)
+      return IDENTITY_UNAVAILABLE(operation, details?.error || error.message || 'portfolio_identity_unavailable', details)
+    }
+    if (data?.error) return IDENTITY_UNAVAILABLE(operation, data.error, data)
+    if (!data || typeof data !== 'object') return IDENTITY_UNAVAILABLE(operation, 'portfolio_identity_unavailable')
+    return {
+      ...data,
+      op: typeof data.op === 'string' ? data.op : operation,
+      state: 'ready',
+      reason: null,
+      // Every list is a list. A missing one is an empty read, never a crash in
+      // the render that maps over it.
+      chains: Array.isArray(data.chains) ? data.chains : [],
+      holdings: Array.isArray(data.holdings) ? data.holdings : [],
+      entities: Array.isArray(data.entities) ? data.entities : [],
+      unsupported: Array.isArray(data.unsupported) ? data.unsupported : [],
+      totals: data.totals && typeof data.totals === 'object' ? data.totals : null,
+    }
+  } catch { return IDENTITY_UNAVAILABLE(operation, 'portfolio_identity_unavailable') }
+}
+
 // Long-memory "year in review" for an asset (migration 228). Deterministic
 // rollup series + major events + top narratives over the last ~15 months.
 export async function loadAssetYearInReview(supabase, symbol, months = 15) {

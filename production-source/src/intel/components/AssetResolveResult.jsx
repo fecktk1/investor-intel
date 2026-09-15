@@ -7,18 +7,29 @@ import { formatUsd } from '../lib/market-format'
 // in this order so the ring always reads the same way, whichever steps answered.
 export const RESOLVE_LADDER = ['catalogue', 'entities', 'memecoin', 'cmc_metadata', 'cmc_dex', 'dexscreener', 'geckoterminal', 'birdeye', 'rpc']
 
+// Outcome → tone. Shared with every other read-out of the same provenance, so a
+// step that answered is the same colour wherever it is drawn. The chart kit has
+// no dashed stroke, so "not asked" is told apart by value — a skipped step draws
+// no arc at all, only its track — and by its own word in the table twin.
+export const OUTCOME_TONE = {
+  hit: 'green',
+  miss: 'muted',
+  error: 'red',
+  skipped: 'muted',
+}
+
 // Outcome → ring value + tone. A miss is drawn at half so "we asked and it had
 // nothing" is visibly different from "we never asked".
 const OUTCOME = {
-  hit: { value: 1, tone: 'green' },
-  miss: { value: 0.5, tone: 'muted' },
-  error: { value: 0.25, tone: 'red' },
-  skipped: { value: 0, tone: 'muted' },
+  hit: { value: 1, tone: OUTCOME_TONE.hit },
+  miss: { value: 0.5, tone: OUTCOME_TONE.miss },
+  error: { value: 0.25, tone: OUTCOME_TONE.error },
+  skipped: { value: 0, tone: OUTCOME_TONE.skipped },
 }
 
 // English source text for each ladder step. Kept beside the ladder so a new step
 // is never rendered as a bare identifier while its translation is pending.
-const STEP_LABELS = {
+export const STEP_LABELS = {
   catalogue: 'Market catalogue',
   entities: 'Resolved entities',
   memecoin: 'Memecoin index',
@@ -35,8 +46,69 @@ const ladderIndex = step => {
   return i === -1 ? RESOLVE_LADDER.length : i
 }
 
-const contractRouteFor = (symbol, chain, address) =>
+export const contractRouteFor = (symbol, chain, address) =>
   `/intel/markets/${encodeURIComponent(String(symbol || 'UNKNOWN').toUpperCase())}?${new URLSearchParams({ provider: 'contract', id: `${chain}:${address}` })}`
+
+// The ladder steps a resolution walked, in ladder order and never arrival order,
+// with the `index` entry removed: indexing is the shared-record WRITE the
+// resolution performed, not a source it asked. Exported so every read-out of the
+// same provenance orders and filters it identically.
+export function orderedProvenance(result) {
+  const provenance = Array.isArray(result?.provenance) ? result.provenance : []
+  return provenance
+    .map((entry, index) => ({ ...entry, index }))
+    .filter(entry => entry.step !== 'index')
+    .sort((a, b) => (ladderIndex(a.step) - ladderIndex(b.step)) || (a.index - b.index))
+}
+
+/** The on-demand indexing entry, or null for a result from before indexing. */
+export const indexProvenance = result =>
+  (Array.isArray(result?.provenance) ? result.provenance : []).find(entry => entry?.step === 'index') || null
+
+// What the resolver decided, in one sentence. `identity_only` is a RESOLUTION:
+// the chain named the asset and no market source prices it. Saying "nothing
+// answered" there would hide a real, indexed, searchable asset.
+export function resolveStatusLine(t, status) {
+  const lines = {
+    resolved: t('resolve.status_resolved', { defaultValue: 'One asset matches this identifier.' }),
+    identity_only: t('resolve.status_identity_only', { defaultValue: 'The chain answered; no market source prices it.' }),
+    ambiguous: t('resolve.status_ambiguous', { defaultValue: 'More than one asset matches this identifier. Choose the one you mean.' }),
+    unresolved: t('resolve.status_unresolved', { defaultValue: 'No provider recognised this identifier.' }),
+    invalid: t('resolve.status_invalid', { defaultValue: 'This is not an identifier any supported namespace uses.' }),
+    // resolveAsset already folds a rate-limited answer into 'unresolved'; this
+    // entry keeps a raw payload readable if one ever reaches a component.
+    rate_limited: t('resolve.status_rate_limited', { defaultValue: 'This hour’s resolution limit has been reached.' }),
+  }
+  return lines[status] || lines.unresolved
+}
+
+// The competing assets behind one ambiguous identifier. Liquidity is part of the
+// row because it is what tells two deployments of the same address apart.
+export function ResolveCandidates({ candidates = [], onPick }) {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  if (!candidates.length) return null
+  return (
+    <ul className="intel-resolve-candidates" aria-label={t('resolve.candidates', { defaultValue: 'Matching assets' })}>
+      {candidates.map((candidate, index) => (
+        <li key={`${candidate.chain}:${candidate.address}:${index}`} className="flex items-baseline justify-between gap-3 flex-wrap border-t border-[var(--border-default)] py-2">
+          <span className="text-sm text-[var(--fg-1)]">
+            {[candidate.chain, candidate.symbol, candidate.name].filter(Boolean).join(' · ')}
+          </span>
+          <span className="intel-event-meta">
+            {[candidate.address, formatUsd(candidate.liquidityUsd), candidate.source].filter(Boolean).join(' · ')}
+          </span>
+          <button
+            type="button"
+            className="intel-text-link"
+            onClick={() => onPick?.(candidate.route || contractRouteFor(candidate.symbol, candidate.chain, candidate.address))}
+          >
+            {t('resolve.open', { defaultValue: 'Open' })}
+          </button>
+        </li>
+      ))}
+    </ul>
+  )
+}
 
 // Universal resolution read-out. Shows what the resolver decided, every ladder
 // step it walked (hit, miss, skipped or error, with its cost), the competing
@@ -50,13 +122,9 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
   const deployments = Array.isArray(identity?.deployments) ? identity.deployments : []
 
   const steps = useMemo(() => {
-    const provenance = Array.isArray(result?.provenance) ? result.provenance : []
-    return provenance
-      .map((entry, index) => ({ ...entry, index }))
-      // `index` is the shared-record write, not a source the ladder asked. It is
-      // reported on its own line below; it is never a tenth rung of the ring.
-      .filter(entry => entry.step !== 'index')
-      .sort((a, b) => (ladderIndex(a.step) - ladderIndex(b.step)) || (a.index - b.index))
+    // `index` is the shared-record write, not a source the ladder asked. It is
+    // reported on its own line below; it is never a tenth rung of the ring.
+    return orderedProvenance(result)
       .map(entry => {
         const outcome = OUTCOME[entry.outcome] || OUTCOME.skipped
         return {
@@ -83,10 +151,7 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
   // On-demand indexing: the first successful resolution of an asset by anyone
   // creates the shared market_assets record. The server reports it as an `index`
   // provenance entry appended after the nine ladder steps.
-  const indexEntry = useMemo(() => {
-    const provenance = Array.isArray(result?.provenance) ? result.provenance : []
-    return provenance.find(entry => entry?.step === 'index') || null
-  }, [result])
+  const indexEntry = useMemo(() => indexProvenance(result), [result])
 
   const indexLine = indexEntry ? (
     indexEntry.outcome === 'hit' ? t('resolve.index_hit', { defaultValue: 'Indexed for everyone' })
@@ -97,15 +162,14 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
         })
   ) : null
 
-  const statusLine = {
-    resolved: t('resolve.status_resolved', { defaultValue: 'One asset matches this identifier.' }),
-    ambiguous: t('resolve.status_ambiguous', { defaultValue: 'More than one asset matches this identifier. Choose the one you mean.' }),
-    unresolved: t('resolve.status_unresolved', { defaultValue: 'No provider recognised this identifier.' }),
-    invalid: t('resolve.status_invalid', { defaultValue: 'This is not an identifier any supported namespace uses.' }),
-    // resolveAsset already folds a rate-limited answer into 'unresolved'; this
-    // entry keeps a raw payload readable if one ever reaches the component.
-    rate_limited: t('resolve.status_rate_limited', { defaultValue: 'This hour’s resolution limit has been reached.' }),
-  }[status] || t('resolve.status_unresolved', { defaultValue: 'No provider recognised this identifier.' })
+  const statusLine = resolveStatusLine(t, status)
+
+  // An identity-only asset is real, indexed and has a route. It is the one
+  // resolution that reads like a failure and is not, so it carries its own label
+  // and its own way in rather than leaving the reader at a dead end.
+  const identityRoute = identity
+    ? identity.route || (identity.chain && identity.address ? contractRouteFor(identity.symbol || result?.query, identity.chain, identity.address) : null)
+    : null
 
   const sunburstRoot = deployments.length >= 2 ? {
     name: identity.symbol || result?.query || '',
@@ -131,27 +195,15 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
         </p>
       )}
 
-      {status === 'ambiguous' && (
-        <ul className="intel-resolve-candidates" aria-label={t('resolve.candidates', { defaultValue: 'Matching assets' })}>
-          {candidates.map((candidate, index) => (
-            <li key={`${candidate.chain}:${candidate.address}:${index}`} className="flex items-baseline justify-between gap-3 flex-wrap border-t border-[var(--border-default)] py-2">
-              <span className="text-sm text-[var(--fg-1)]">
-                {[candidate.chain, candidate.symbol, candidate.name].filter(Boolean).join(' · ')}
-              </span>
-              <span className="intel-event-meta">
-                {[candidate.address, formatUsd(candidate.liquidityUsd), candidate.source].filter(Boolean).join(' · ')}
-              </span>
-              <button
-                type="button"
-                className="intel-text-link"
-                onClick={() => onPick?.(candidate.route || contractRouteFor(candidate.symbol, candidate.chain, candidate.address))}
-              >
-                {t('resolve.open', { defaultValue: 'Open' })}
-              </button>
-            </li>
-          ))}
-        </ul>
+      {status === 'identity_only' && (
+        <p className="intel-resolve-identity-only text-sm text-[var(--fg-2)]">
+          <span className="eyebrow">{t('resolve.identity_only_label', { defaultValue: 'Identity only' })}</span>{' '}
+          {t('resolve.identity_only_hint', { defaultValue: 'This asset is indexed and searchable. Nothing prices it, so every market figure on its page will be empty until a source lists it.' })}
+          {identityRoute ? <> <button type="button" className="intel-text-link" onClick={() => onPick?.(identityRoute)}>{t('resolve.open', { defaultValue: 'Open' })}</button></> : null}
+        </p>
       )}
+
+      {status === 'ambiguous' && <ResolveCandidates candidates={candidates} onPick={onPick} />}
 
       <RadialBars
         title={t('resolve.provenance_title', { defaultValue: 'How this identifier was resolved' })}

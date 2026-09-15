@@ -239,6 +239,11 @@ export default function MarketsPage() {
         if (resolve) {
           const result = await resolve(supabase, value, form.chain || null)
           if (result?.status === 'resolved' && result.identity?.route) { navigate(result.identity.route); return }
+          // An identity-only asset IS resolved: the chain named it and no market
+          // source prices it. It keeps its route, so the read-out is shown with
+          // its own label and its own way in, rather than the form reporting
+          // "couldn't find that token" about an asset it just identified.
+          if (result?.status === 'identity_only') { setResolution(result); return }
           if (result?.status === 'ambiguous' && result.candidates?.length) { setResolution(result); return }
           setErr(result?.reason || t('markets.locate_not_found', { defaultValue: "Couldn't find that token on any supported chain. Pick a chain and try again." }))
           return

@@ -7,6 +7,7 @@ import {InvestigationTable,time,value} from './InvestigationTable'
 import {evidenceAt} from '../../../supabase/functions/_shared/intel/investigation-evidence.ts'
 import {projectDexEvidence} from '../lib/dex-evidence-projection'
 import {cmcDexIdentity} from '../../../supabase/functions/_shared/market-assets/cmc-dex.ts'
+import HolderTagBoard from './HolderTagBoard'
 import SourceResearchNotes from './SourceResearchNotes'
 import {SecuritySourceHistory} from './MarketSourceHistory'
 import {SharedResearchRefresh} from './ResearchEvidence'
@@ -31,13 +32,19 @@ export default function ContractResearchWorkspace({canonicalKey,onEvidence}){
 function Workspace({canonicalKey,identity,onEvidence}){
  const [open,setOpen]=useState(false),[view,setView]=useState('overview'),[intent,setIntent]=useState({refresh:false,requestRevision:0}),[cursors,setCursors]=useState([])
  const [drafts,setDrafts]=useState({})
- const query=useMarketResearch('dexContext',{canonicalKey,view,...intent,...(cursors.length?{cursor:cursors.at(-1)}:{})},open,!Object.values(drafts).some(Boolean)),result=query.result
+ // The holder-tag board's three selections travel in the REQUEST: the capture to
+ // render, an optional second capture to compare it against and an optional tag
+ // to open. They belong to that view only — `readContractResearch` rejects them
+ // anywhere else — and a null is omitted rather than sent.
+ const [tagSelection,setTagSelection]=useState({capturedAt:null,compareWith:null,tag:null})
+ const tagParams=view==='holder_tags'?Object.fromEntries(Object.entries(tagSelection).filter(([,v])=>v)):{}
+ const query=useMarketResearch('dexContext',{canonicalKey,view,...intent,...tagParams,...(cursors.length?{cursor:cursors.at(-1)}:{})},open,!Object.values(drafts).some(Boolean)),result=query.result
  useEffect(()=>{if(result?.canonicalKey===canonicalKey)onEvidence?.(result)},[result,canonicalKey,onEvidence])
- const changeView=v=>{setView(v);setCursors([]);setIntent(i=>({refresh:false,requestRevision:i.requestRevision+1}))}
+ const changeView=v=>{setView(v);setCursors([]);setTagSelection({capturedAt:null,compareWith:null,tag:null});setIntent(i=>({refresh:false,requestRevision:i.requestRevision+1}))}
  const refresh=()=>setIntent(i=>({refresh:true,requestRevision:i.requestRevision+1}))
  return <details className="intel-open-section" onToggle={e=>setOpen(e.currentTarget.open)}><summary>On-chain participation & liquidity · CoinMarketCap</summary>
   <p className="intel-analysis-caption">{identity.label} contract <span className="break-all">{identity.address}</span>. Select the evidence you need; refresh reuses the shared cache.</p>
-  <div className="intel-holdings-toolbar"><label>Evidence <select className="select" value={view} onChange={e=>changeView(e.target.value)}><option value="overview">Token and holders</option><option value="holders">Holder history</option><option value="pools">Current pools</option><option value="swaps">Public swaps</option><option value="liquidity">Liquidity activity</option><option value="security">Security observations</option></select></label><button className="btn" disabled={query.loading} onClick={refresh}>Refresh shared contract evidence</button></div>
+  <div className="intel-holdings-toolbar"><label>Evidence <select className="select" value={view} onChange={e=>changeView(e.target.value)}><option value="overview">Token and holders</option><option value="holders">Holder history</option><option value="pools">Current pools</option><option value="swaps">Public swaps</option><option value="liquidity">Liquidity activity</option><option value="security">Security observations</option><option value="holder_tags">Holder tags and cohort</option></select></label><button className="btn" disabled={query.loading} onClick={refresh}>Refresh shared contract evidence</button></div>
   <SharedResearchRefresh query={query}/>
   {Object.values(drafts).some(Boolean)&&<p className="intel-analysis-caption">Automatic updates paused while your source notes are unsaved.</p>}
   {query.loading?<p role="status">Loading contract evidence…</p>:query.error?<p role="alert">Contract evidence could not be read. <button className="intel-text-link" onClick={()=>setIntent(i=>({refresh:false,requestRevision:i.requestRevision+1}))}>Retry retained read</button></p>:result&&<>
@@ -49,6 +56,7 @@ function Workspace({canonicalKey,identity,onEvidence}){
    {view==='pools'&&<><p className="intel-analysis-caption">Up to 12 reported pools. Liquidity and volume observation times are unreported; pool creation time does not date them. Reported liquidity is not executable depth.</p><InvestigationTable rows={result.sources?.[0]?.rows||[]} caption="Current reported pools" columns={[
     ['Pool',r=><details><summary>{r.venue||'Unreported venue'} · {r.token0?.symbol} / {r.token1?.symbol}</summary><p className="break-all">Pool: {r.address}<br/>Token 0: {r.token0?.address}<br/>Token 1: {r.token1?.address}</p></details>],['Liquidity (USD)',r=>financial(r.liquidityUsd)],['Reported 24h volume (USD)',r=>financial(r.volume24h)]
    ]}/></>}
+   {view==='holder_tags'&&<HolderTagBoard result={result} loading={query.loading} selection={tagSelection} onSelection={next=>{setTagSelection(next);setIntent(i=>({...i,refresh:false}))}} onRefresh={refresh}/>}
    {['holders','liquidity','swaps'].includes(view)&&<DexObservationTable observations={result.observations} subject={canonicalKey} view={view}/>}
    {view==='security'&&<SecuritySourceHistory history={result.securityHistory} saveable/>}
    {['liquidity','swaps'].includes(view)&&<div className="intel-investigation-pagination"><button className="btn" disabled={!cursors.length||query.loading} onClick={()=>{setCursors(c=>c.slice(0,-1));setIntent(i=>({...i,refresh:false}))}}>Previous activity</button><button className="btn" disabled={query.loading||!result.sources?.[0]?.nextCursor||cursors.includes(result.sources?.[0]?.nextCursor)} onClick={()=>{setCursors(c=>[...c,result.sources[0].nextCursor]);setIntent(i=>({...i,refresh:true}))}}>Next activity</button></div>}
