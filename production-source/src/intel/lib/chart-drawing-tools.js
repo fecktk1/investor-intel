@@ -33,6 +33,30 @@ export const DRAWING_TOOL_GROUPS=[
  ['annotations',['text','arrow_up','arrow_down','arrow','price_label','tweet']],
  ['measure',['measure','price_range']],
 ]
+// A button occupies 30px of a row and a group hairline 9px, so the number of rows
+// follows from the measured width without a layout pass. The strip NEVER scrolls:
+// whatever would spill past two rows moves into the More disclosure instead.
+// These live here, not in the toolbar module, so the deferred toolbar's
+// placeholder can reserve exactly the height the strip will take.
+export const BUTTON_WIDTH=30,SEPARATOR_WIDTH=9,MORE_WIDTH=74,ROW_LIMIT=2
+/** Items in the trailing actions group the toolbar assembles itself. */
+export const DRAWING_ACTION_COUNT=7
+export function toolbarRows(groups,width,hasMore) {
+ if(!width)return 1
+ let rows=1,used=0
+ const place=size=>{
+  const needed=size+(used?SEPARATOR_WIDTH:0)
+  if(used&&used+needed>width){rows++;used=size}else used+=needed
+ }
+ for(const group of groups)place(group.items.length*BUTTON_WIDTH)
+ if(hasMore)place(MORE_WIDTH)
+ return rows
+}
+/** Rows the full strip takes at a width, capped at the two the toolbar allows. */
+export function drawingStripRows(width) {
+ const groups=[...DRAWING_TOOL_GROUPS.map(([name,ids])=>({name,items:ids})),{name:'actions',items:new Array(DRAWING_ACTION_COUNT).fill(null)}]
+ return Math.min(ROW_LIMIT,toolbarRows(groups,width,false))
+}
 export const drawingToolLabel=(t,id)=>{const tool=DRAWING_TOOL_BY_ID[id];return tool?t(tool.key,{defaultValue:tool.label}):id}
 // Alt+letter arms a tool. Alt is required so a letter typed in a note never arms one.
 export const drawingShortcutTool=event=>{

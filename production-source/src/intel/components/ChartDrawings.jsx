@@ -2,10 +2,19 @@ import React,{useEffect,useReducer,useRef,useState} from 'react'
 import {useTranslation} from 'react-i18next'
 import {validateDrawing,drawingAnchorCount} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 import {drawingHistory,drawingReducer,translateDrawing} from '../lib/chart-drawings'
-import {DRAWING_TOOLBAR,drawingShortcutTool,drawingToolLabel} from '../lib/chart-drawing-tools'
+import {DRAWING_TOOLBAR,drawingShortcutTool,drawingToolLabel,drawingStripRows} from '../lib/chart-drawing-tools'
 import {resolveAnchor} from '../lib/chart-drawing-snap'
-import ChartDrawingToolbar from './ChartDrawingToolbar'
 import deferredPanel from './deferred-panel'
+
+// The strip itself arrives with the chart's first paint cycle rather than in
+// front of it: the placeholder reserves exactly the rows the strip will take at
+// this width (one or two, never scrolling), so nothing moves when it renders.
+function DrawingToolbarPlaceholder() {
+ const shell=useRef(null),[rows,setRows]=useState(1)
+ useEffect(()=>{setRows(drawingStripRows(shell.current?.clientWidth||0))},[])
+ return <div ref={shell} className="intel-draw-bar" role="toolbar" aria-busy="true" aria-label="Chart drawing tools" style={{minHeight:`${rows*30+6}px`}}/>
+}
+const ChartDrawingToolbar=deferredPanel(()=>import('./ChartDrawingToolbar'),{label:'The chart drawing tools',fallback:()=><DrawingToolbarPlaceholder/>})
 
 // Deferred so the price chart's first paint carries the toolbar strip and the
 // chart. The surface is an overlay on top of the plot, so nothing shifts when it

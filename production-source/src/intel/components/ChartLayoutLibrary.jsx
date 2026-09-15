@@ -1,6 +1,8 @@
 import React,{useEffect,useRef,useState} from 'react'
 import {requestChartWorkspace,saveChartLayout} from '../lib/chart-workspace-api'
-export default function ChartLayoutLibrary({context,capture,onLoad,onStudies,disabled=false,comparisons=false,canSave=true,restoredLayout=null}) {
+// `autoOpen` ('layouts' | 'templates') opens that list on mount: the deferred
+// launch (`ChartLayoutLaunch`) passes along the press that fetched this code.
+export default function ChartLayoutLibrary({context,capture,onLoad,onStudies,disabled=false,comparisons=false,canSave=true,restoredLayout=null,autoOpen=null}) {
  const [open,setOpen]=useState(false),[rows,setRows]=useState([]),[page,setPage]=useState(0),[hasMore,setHasMore]=useState(false),[allAssets,setAllAssets]=useState(false)
  const [templates,setTemplates]=useState(false)
  const [selected,setSelected]=useState(null),[renaming,setRenaming]=useState(false),[title,setTitle]=useState('Research layout'),[busy,setBusy]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(null),[notice,setNotice]=useState(null)
@@ -31,6 +33,8 @@ export default function ChartLayoutLibrary({context,capture,onLoad,onStudies,dis
  const openLayout=row=>perform(async()=>{const full=await readLayout(row);if(!current())return;await onLoad(full.state,full);if(!current())return;setSelected(full);setRenaming(false);setTitle(full.title);setNotice(`Opened ${full.title}.`);close()})
  const remove=row=>perform(async()=>{await requestChartWorkspace(context,{operation:'delete',id:row.id,revision:row.revision});if(!current())return;if(selected?.id===row.id){setSelected(null);setTitle('Research layout')}setNotice(`Deleted ${row.title}.`);await load()})
  const start=(template,opener)=>{trigger.current=opener;if(template!==templates){setSelected(null);setRenaming(false);setTitle(template?'My indicator template':'Research layout');operation.current=null}setTemplates(template);setPage(0);setRows([]);setNotice(null);setError(null);setOpen(true)}
+ const launched=useRef(false)
+ useEffect(()=>{if(autoOpen&&!launched.current&&context?.userId&&!disabled){launched.current=true;start(autoOpen==='templates',null)}},[autoOpen]) // eslint-disable-line react-hooks/exhaustive-deps
  return <><button type="button" onClick={e=>start(false,e.currentTarget)} disabled={disabled||!context?.userId}>{comparisons&&!canSave?'Open saved comparison':'Save layout'}</button>{onStudies&&<button type="button" onClick={e=>start(true,e.currentTarget)} disabled={disabled||!context?.userId}>Indicator templates</button>}
   {open&&<dialog ref={dialog} className="intel-chart-study-dialog intel-layout-library" aria-labelledby="chart-layout-library-title" onCancel={e=>{e.preventDefault();close()}}>
    <div className="intel-investigation-analysis-heading"><h2 id="chart-layout-library-title">{comparisons?'Your saved comparisons':templates?'Your indicator templates':'Your chart layouts'}</h2><button type="button" onClick={close}>Close</button></div>
