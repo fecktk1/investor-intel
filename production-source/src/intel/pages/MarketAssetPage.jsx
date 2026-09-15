@@ -1,8 +1,5 @@
 import {useContractChartEvidence} from '../lib/useContractChartEvidence'
-import ContractChartEvidenceStatus from '../components/ContractChartEvidenceStatus'
-import LiveTape from '../components/LiveTape'
 import { useScreenParams } from '../lib/useScreenParams'
-import BookCalendar from '../components/BookCalendar'
 import { mergeLinkedAssetMarkers } from '../lib/chart-history'
 import React, { useEffect, useState, useCallback } from 'react'
 import { useParams, Link, useLocation, useNavigate } from 'react-router'
@@ -25,32 +22,51 @@ import { useMarketPortfolioIdentity } from '../lib/useMarketPortfolioIdentity'
 import {useMarketQuote} from '../lib/useMarketQuote'
 import TokenAvatar from '../components/TokenAvatar'
 import AssetPortfolioPosition from '../components/AssetPortfolioPosition'
-import AssetNewsPanel from '../components/AssetNewsPanel'
 import { fmtPrice, fmtPct, fmtVol, fmtNum, pctClass, bucketConfidence } from '../lib/market-format'
 import { useDisplayCurrency } from '../lib/display-currency'
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import ConfidenceChip from '../components/ConfidenceChip'
 import ProviderCoveragePill from '../components/ProviderCoveragePill'
-import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
-import OrderbookDepthCard from '../components/OrderbookDepthCard'
-import MarketMemorySummary from '../components/MarketMemorySummary'
 import TokenChart, { CHART_RANGE_MS, candleIntervals, candleIntervalLabel } from '../components/TokenChart'
-import ProfilePanel from '../components/ProfilePanel'
 import { useArtifact } from '../lib/useArtifact'
-import AssetAnalystBrief from '../components/AssetAnalystBrief'
 import AssetSectionNav from '../components/AssetSectionNav'
 import AssetVenueWorkspace from '../components/DeferredAssetVenueWorkspace'
-import ContractResearchWorkspace from '../components/ContractResearchWorkspace'
 import IntelDisclaimer from '../components/IntelDisclaimer'
-import AssetThesisModule from '../components/thesis/AssetThesisModule'
-import AssetYearInReview from '../components/AssetYearInReview'
-import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
+import { deferredPanel } from '../components/deferred-panel'
+// Everything below the chart, the position and the market context. Each one
+// reads through its own hooks after it mounts, so nothing here is first
+// content, and each one dragged a sizeable closure — the artifact reader, the
+// contract research workspace, the thesis workspace — in front of this page's
+// first authorized asset read. The section headings stay in AssetSectionNav so
+// the jump links are unchanged whether or not the code has arrived yet.
+const AssetAnalystBrief = deferredPanel(() => import('../components/AssetAnalystBrief'), { label: 'Research for this asset' })
+const ContractResearchWorkspace = deferredPanel(() => import('../components/ContractResearchWorkspace'), { label: 'Contract research' })
+const AssetThesisModule = deferredPanel(() => import('../components/thesis/AssetThesisModule'), { label: 'Your theses for this asset' })
+const AssetYearInReview = deferredPanel(() => import('../components/AssetYearInReview'), { label: 'The year in review' })
+const BookCalendar = deferredPanel(() => import('../components/BookCalendar'), { label: 'The asset calendar' })
+const LiveTape = deferredPanel(() => import('../components/LiveTape'), { label: 'The live on-chain tape' })
+const MarketMemorySummary = deferredPanel(() => import('../components/MarketMemorySummary'), { label: 'Market context' })
+const AssetNewsPanel = deferredPanel(() => import('../components/AssetNewsPanel'), { label: 'News for this asset' })
+const CrossExchangeSpreadCard = deferredPanel(() => import('../components/CrossExchangeSpreadCard'), { label: 'The cross-exchange spread' })
+const OrderbookDepthCard = deferredPanel(() => import('../components/OrderbookDepthCard'), { label: 'Order book depth' })
+const OnchainActivityCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.OnchainActivityCard })), { label: 'On-chain activity' })
+const EcosystemNarrativesCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.EcosystemNarrativesCard })), { label: 'Ecosystem narratives' })
+const CatalystsNewsCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.CatalystsNewsCard })), { label: 'Earlier coverage' })
+const UpcomingUnlocksCard = deferredPanel(() => import('../components/MarketEnrichmentCards').then(module => ({ default: module.UpcomingUnlocksCard })), { label: 'Upcoming unlocks' })
+// The five figures between the hero and the chart are the shared chart kit's
+// only callers on this route. Each already reads through its own hook after it
+// mounts and renders nothing until that read returns, so deferring their code
+// changes when the kit downloads, not when a figure appears.
+const MarketCoverageRing = deferredPanel(() => import('../components/MarketCoverageRing'), { label: 'Identity coverage' })
+const AssetProvenance = deferredPanel(() => import('../components/AssetProvenance'), { label: 'Identity provenance' })
+const AssetHistoryFigure = deferredPanel(() => import('../components/AssetHistoryFigure'), { label: 'Price history' })
+const AssetFactsPanel = deferredPanel(() => import('../components/AssetFactsPanel'), { label: 'Asset facts' })
+const AttentionPersistence = deferredPanel(() => import('../components/AttentionPersistence'), { label: 'Attention persistence' })
+// The project profile's own read stays in the page (the analyst question and
+// the avatar fallback both use it); only the panel that draws it is deferred.
+const ProfilePanel = deferredPanel(() => import('../components/ProfilePanel'), { label: 'The project profile' })
+const ContractChartEvidenceStatus = deferredPanel(() => import('../components/ContractChartEvidenceStatus'), { label: 'Contract chart evidence' })
 import TokenRiskBadge from '../components/TokenRiskBadge'
-import MarketCoverageRing from '../components/MarketCoverageRing'
-import AssetProvenance from '../components/AssetProvenance'
-import AssetHistoryFigure from '../components/AssetHistoryFigure'
-import AssetFactsPanel from '../components/AssetFactsPanel'
-import AttentionPersistence from '../components/AttentionPersistence'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 // `coinmarketcap_kline` is the contract k-line aggregate, not the listed-asset

@@ -1,5 +1,3 @@
-import ComparisonThread from '../components/ComparisonThread'
-import ComparisonActivity from '../components/ComparisonActivity'
 import {useLiveHistoryEnd} from '../lib/useLiveHistoryEnd'
 import React, { useState, useMemo, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -18,12 +16,32 @@ import {requestChartWorkspace} from '../lib/chart-workspace-api'
 import { useArtifact } from '../lib/useArtifact'
 import { chartAsset, validateChartLayout } from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 import { comparisonTimeline } from '../lib/chart-comparison'
-import ArtifactView from '../components/ArtifactView'
-import MultiTokenChart from '../components/MultiTokenChart'
+import { deferredPanel } from '../components/deferred-panel'
 import ChartLayoutLibrary from '../components/ChartLayoutLibrary'
-import ChartSnapshotSave from '../components/ChartSnapshotSave'
+// Comparison's renderer is the Recharts chart kit — about 111 KB gzipped, the
+// largest single item on this route — and it only mounts once assets resolve.
+// Loading it with the route put it in front of the empty page and its own
+// resolve request. It stays charged to the cold Compare workflow in
+// scripts/intel-bundle-model.mjs: deferral moves bytes later, it never hides
+// them. The placeholder holds the chart's own height so nothing shifts.
+const MultiTokenChart = deferredPanel(() => import('../components/MultiTokenChart'), {
+  label: 'The comparison chart',
+  fallback: () => <div role="status" className="min-h-[420px] flex items-center justify-center text-sm text-[var(--fg-4)]">Opening the comparison chart…</div>,
+})
+// The generated comparison arrives from an explicit "Explain tradeoffs" press
+// and renders nothing before it; the snapshot control sits inside the chart's
+// own actions. Neither is this route's first content.
+const ArtifactView = deferredPanel(() => import('../components/ArtifactView'), {
+  label: 'The comparison research',
+  fallback: props => props.loading ? <section aria-busy="true" aria-label="Research generation"><p role="status">Preparing research from the available evidence…</p></section> : null,
+})
+const ChartSnapshotSave = deferredPanel(() => import('../components/ChartSnapshotSave'), { label: 'Saving this comparison' })
+// The research thread, the event lane and the underlying-source list all mount
+// around a resolved comparison, never before one.
+const ComparisonThread = deferredPanel(() => import('../components/ComparisonThread'), { label: 'The research thread' })
+const ComparisonActivity = deferredPanel(() => import('../components/ComparisonActivity'), { label: 'The comparison event lane' })
+const ConnectedAssetSources = deferredPanel(() => import('../components/ConnectedAssetSources'), { label: 'Underlying market evidence' })
 import IntelDisclaimer from '../components/IntelDisclaimer'
-import ConnectedAssetSources from '../components/ConnectedAssetSources'
 
 export function comparisonLinkAssets(raw) {
   try {
