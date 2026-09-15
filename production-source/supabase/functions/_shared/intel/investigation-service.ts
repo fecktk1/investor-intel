@@ -1,5 +1,5 @@
 import {globalCohortPrices} from './global-cohort-prices.ts'
-import {cmcPolicyEnvironment,cmcLiveActivation} from '../market-assets/cmc-operating-settings.ts'
+import {cmcPolicyEnvironment,cmcLiveActivation,cmcLiveOnchainActivation,type CmcOperatingSettings} from '../market-assets/cmc-operating-settings.ts'
 import {captureStressScenario} from './stress-scenario-service.ts'
 import {readInvestigationDepth} from './investigation-depth.ts'
 import {recordIssuerReviews} from './rwa-issuer-evidence.ts'
@@ -92,7 +92,7 @@ export function liveTapeSubject(value:unknown) {
 /** The on-chain tape is a second, separate switch. Until the owner sets it
  * after the worker release gate no contract lease is created, so the released
  * worker's plan keeps holding market identities only. */
-export const liveOnchainEnabled=()=>Deno.env.get('CMC_LIVE_ONCHAIN_ENABLED')==='true'
+export const liveOnchainEnabled=(settings:CmcOperatingSettings={})=>cmcLiveOnchainActivation(settings,key=>Deno.env.get(key))
 /** One subject's recent public tape plus this org's lease state. The
  * service-role read is scoped to the caller's org, so a lease never discloses
  * another org's viewers; bounded to one hour and 500 rows. */
@@ -127,7 +127,7 @@ export async function investigationService(db:any,actor:{userId:string;orgId:str
     const focusSubject=identity.cryptoId?identity.subject:contract?.subject
     if(!focusSubject||typeof input.enabled!=='boolean'||(input.viewId!=null&&!uuid(input.viewId)))throw new Error('invalid_live_focus')
     const settings=await loadCmcOperatingSettings(db)
-    const enabled=cmcLiveActivation(settings,key=>Deno.env.get(key))&&planAllows(cmcPlan(now,settings),'startup')&&(!contract||liveOnchainEnabled())
+    const enabled=cmcLiveActivation(settings,key=>Deno.env.get(key))&&planAllows(cmcPlan(now,settings),'startup')&&(!contract||liveOnchainEnabled(settings))
     if(input.enabled&&!enabled)return {state:'polling',reason:'Shared live focus is not enabled for the current operating profile.',observation:null}
     const expiresAt=await result(db.rpc('intel_live_focus_touch',{p_org:actor.orgId,p_user:actor.userId,p_subject:focusSubject,p_enabled:input.enabled,...(input.viewId!=null?{p_view:input.viewId}:{})}))
     if(!input.enabled)return {state:'paused',reason:null,observation:null,expiresAt}

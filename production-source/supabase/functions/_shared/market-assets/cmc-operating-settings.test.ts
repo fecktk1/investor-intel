@@ -1,5 +1,5 @@
 import {assertEquals as eq} from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import {loadCmcOperatingSettings,normalizeCmcOperatingSettings,cmcPolicyEnvironment,cmcLiveActivation} from './cmc-operating-settings.ts'
+import {loadCmcOperatingSettings,normalizeCmcOperatingSettings,cmcPolicyEnvironment,cmcLiveActivation,cmcLiveOnchainActivation} from './cmc-operating-settings.ts'
 import {cmcPlan,cmcCreditCeiling,requestCmc} from './cmc-transport.ts'
 const startup={CMC_ACCESS_PROFILE:'hackathon',CMC_VERIFIED_HACKATHON_PLAN:'startup',CMC_VERIFIED_BASELINE_PLAN:'basic',CMC_HACKATHON_EXPIRES_AT:'2026-09-30T23:59:00Z',CMC_MONTHLY_CREDIT_CEILING:'360000'}
 const names=Object.keys(startup)
@@ -29,3 +29,12 @@ Deno.test('database profile expires to the declared baseline and caps spending',
 Deno.test('explicit baseline override remains authoritative over database promotion',()=>clean(async()=>{Deno.env.set('CMC_ACCESS_PROFILE','baseline');eq(cmcPlan(Date.parse('2026-09-10T00:00:00Z'),startup),'basic')}))
 Deno.test('transport uses database Startup policy without new environment secrets',()=>clean(async()=>{let requestKey='';const db={from:(table:string)=>{const q:any={select:()=>q,eq:(field:string,value:string)=>{if(field==='cache_key')requestKey=value;return q},maybeSingle:()=>Promise.resolve({data:table==='provider_quota_budgets'?{config:startup}:null})};return q},rpc:()=>Promise.resolve({data:{allowed:false,reason:'budget_exceeded'}})};const saved=Deno.env.get('COINMARKETCAP_API_KEY');Deno.env.set('COINMARKETCAP_API_KEY','synthetic-policy-test');try{const result=await requestCmc('ohlcv',{id:1,count:10},{supabase:db,kind:'render'});eq(result.reason,'refresh_required');eq(requestKey.startsWith('cmc:v3:startup:'),true)}finally{saved==null?Deno.env.delete('COINMARKETCAP_API_KEY'):Deno.env.set('COINMARKETCAP_API_KEY',saved)}}))
 
+
+Deno.test('the on-chain tape switch reads the operating profile row, keeps the environment override and lets a disable win',()=>{
+ eq(cmcLiveOnchainActivation({},()=>undefined),false)
+ eq(cmcLiveOnchainActivation({CMC_LIVE_ENABLED:'true'},()=>undefined),false,'the price lane switch does not turn the tape on')
+ eq(cmcLiveOnchainActivation(normalizeCmcOperatingSettings({CMC_LIVE_ONCHAIN_ENABLED:'true'}),()=>undefined),true,'the profile row is enough on its own')
+ eq(cmcLiveOnchainActivation({},key=>key==='CMC_LIVE_ONCHAIN_ENABLED'?'true':undefined),true,'the environment still works')
+ eq(cmcLiveOnchainActivation({CMC_LIVE_ONCHAIN_ENABLED:'true'},key=>key==='CMC_LIVE_ONCHAIN_ENABLED'?'false':undefined),false,'an environment disable wins over the row')
+ eq(cmcLiveOnchainActivation({CMC_LIVE_ONCHAIN_ENABLED:'off'},key=>key==='CMC_LIVE_ONCHAIN_ENABLED'?'true':undefined),false,'a row disable wins over the environment')
+})
