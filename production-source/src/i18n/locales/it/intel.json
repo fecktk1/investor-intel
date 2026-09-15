@@ -917,7 +917,8 @@
       "error_ratio_blank": "Inserisci un numero per ogni rapporto di ritracciamento.",
       "error_url": "Incolla l’indirizzo di un post pubblico su x.com, ad esempio https://x.com/nome/status/1234567890.",
       "error_limit": "Un grafico supporta fino a 200 disegni. Rimuovine uno prima di aggiungerne un altro.",
-      "error_text": "Inserisci il testo dell’annotazione."
+      "error_text": "Inserisci il testo dell’annotazione.",
+      "more": "Altro"
     }
   },
   "charts": {

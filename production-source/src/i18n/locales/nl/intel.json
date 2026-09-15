@@ -917,7 +917,8 @@
       "error_ratio_blank": "Voer voor elke retracementverhouding een getal in.",
       "error_url": "Plak het adres van een openbaar bericht op x.com, bijvoorbeeld https://x.com/naam/status/1234567890.",
       "error_limit": "Een grafiek ondersteunt maximaal 200 tekeningen. Verwijder er een voordat je een nieuwe toevoegt.",
-      "error_text": "Voer de tekst van de aantekening in."
+      "error_text": "Voer de tekst van de aantekening in.",
+      "more": "Meer"
     }
   },
   "charts": {

@@ -917,7 +917,8 @@
       "error_ratio_blank": "Informe um número para cada proporção de retração.",
       "error_url": "Cole o endereço de uma publicação pública no x.com, por exemplo https://x.com/nome/status/1234567890.",
       "error_limit": "Um gráfico comporta até 200 desenhos. Remova um antes de adicionar outro.",
-      "error_text": "Informe o texto da anotação."
+      "error_text": "Informe o texto da anotação.",
+      "more": "Mais"
     }
   },
   "charts": {

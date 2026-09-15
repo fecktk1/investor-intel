@@ -917,7 +917,8 @@
       "error_ratio_blank": "Introduce un número para cada proporción de retroceso.",
       "error_url": "Pega la dirección de una publicación pública en x.com, por ejemplo https://x.com/nombre/status/1234567890.",
       "error_limit": "Un gráfico admite hasta 200 dibujos. Quita uno antes de añadir otro.",
-      "error_text": "Introduce el texto de la anotación."
+      "error_text": "Introduce el texto de la anotación.",
+      "more": "Más"
     }
   },
   "charts": {

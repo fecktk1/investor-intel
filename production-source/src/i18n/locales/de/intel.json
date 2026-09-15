@@ -917,7 +917,8 @@
       "error_ratio_blank": "Gib für jedes Retracement-Verhältnis eine Zahl ein.",
       "error_url": "Füge die Adresse eines öffentlichen Beitrags auf x.com ein, zum Beispiel https://x.com/name/status/1234567890.",
       "error_limit": "Ein Chart unterstützt bis zu 200 Zeichnungen. Entferne eine, bevor du eine weitere hinzufügst.",
-      "error_text": "Gib den Text der Anmerkung ein."
+      "error_text": "Gib den Text der Anmerkung ein.",
+      "more": "Mehr"
     }
   },
   "charts": {

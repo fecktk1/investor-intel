@@ -1732,7 +1732,8 @@
       "error_ratio_blank": "Enter a number for every retracement ratio.",
       "error_url": "Paste the address of a public post on x.com, for example https://x.com/name/status/1234567890.",
       "error_limit": "A chart supports up to 200 drawings. Remove one before adding another.",
-      "error_text": "Enter the annotation text."
+      "error_text": "Enter the annotation text.",
+      "more": "More"
     }
   },
   "charts": {

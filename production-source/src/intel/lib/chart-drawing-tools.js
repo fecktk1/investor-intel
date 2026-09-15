@@ -24,6 +24,15 @@ export const DRAWING_TOOLBAR=[
  {id:'tweet',key:'chart.draw.tool_tweet',label:'Post from X',shortcut:'X',icon:'M2.5 2.5 L13.5 13.5 M13.5 2.5 L2.5 13.5'},
 ]
 export const DRAWING_TOOL_BY_ID=Object.fromEntries(DRAWING_TOOLBAR.map(tool=>[tool.id,tool]))
+// Groups shown along the top of the plot, separated by a hairline. The trailing
+// group of actions is assembled by the toolbar itself.
+export const DRAWING_TOOL_GROUPS=[
+ ['pointer',['select','crosshair']],
+ ['lines',['trendline','ray','extended','horizontal','horizontal_ray','vertical']],
+ ['shapes',['rectangle','channel','fibonacci']],
+ ['annotations',['text','arrow_up','arrow_down','arrow','price_label','tweet']],
+ ['measure',['measure','price_range']],
+]
 export const drawingToolLabel=(t,id)=>{const tool=DRAWING_TOOL_BY_ID[id];return tool?t(tool.key,{defaultValue:tool.label}):id}
 // Alt+letter arms a tool. Alt is required so a letter typed in a note never arms one.
 export const drawingShortcutTool=event=>{
