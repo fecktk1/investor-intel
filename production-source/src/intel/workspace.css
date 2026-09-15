@@ -397,6 +397,12 @@
 .intel-snapshot-annotations { border: 0; padding: 10px 0; font-size: 12px; }
 .intel-snapshot-annotations label { display: flex; align-items: start; gap: 10px; border-top: 1px solid var(--border-default); padding-top: 10px; }
 .intel-snapshot-annotations span { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The share card reads as a page section on rails, not as a boxed preview. */
+.intel-share-card { margin: 14px 0; padding: 12px 0; border-block: 1px solid var(--border-default); }
+.intel-share-card .eyebrow { margin: 0 0 10px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+.intel-share-card dl { margin: 0; }
+.intel-share-card dt { color: var(--fg-4); font-size: 11px; }
+.intel-share-card dd { margin: 2px 0 9px; font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .intel-workstation-toolbar { gap: 8px 12px; } .intel-crosshair-legend { gap: 8px; } .intel-chart-navigation span { width: 100%; margin: 0; } .intel-study-parameters { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 
 .intel-liquidation-history{margin-top:1.5rem;border-top:1px solid var(--border-default);padding-top:1rem}.intel-liquidation-plot{width:100%;max-height:280px}.intel-liquidation-plot line{stroke:var(--border-default)}.intel-liquidation-plot text{fill:var(--fg-4);font:11px Inter,sans-serif}.intel-liquidation-plot circle{fill:var(--accent)}

@@ -894,6 +894,27 @@
       "gap_unknown_recording": "{{bars}} Bars fehlt ein Erfassungszeitstempel.",
       "gap_omitted_events": "{{events}} vergangene Ereignisse haben keine geeignete Erfassungshistorie.",
       "note_hidden": "Gespeicherte Zeichnungen und undatierte Marken bleiben während der Wiedergabe verborgen."
+    },
+    "share": {
+      "open": "Teilen",
+      "dialog_title": "Diesen Chart teilen",
+      "intro": "Ein Link zeigt auf eine gespeicherte Version dieses Charts, damit ein Leser genau das sieht, was du gesehen hast. Speichere zuerst diese Version, wähle dann Publikum, Ablauf und die enthaltenen Notizen.",
+      "default_title": "Geteilte Chart-Recherche",
+      "title_label": "Titel der gespeicherten Version",
+      "save_and_choose": "Version speichern und Publikum wählen",
+      "saving": "Version wird gespeichert…",
+      "unverified_capture": "Für diese Preisantwort gibt es noch keine verifizierte Erfassung, deshalb lässt sie sich weder speichern noch teilen. Lade den Chart-Zeitraum neu, um sie zu aktualisieren.",
+      "card_title": "Was die Empfängerin sieht",
+      "card_asset": "Asset",
+      "card_timeframe": "Zeitraum",
+      "card_range": "{{from}} bis {{to}}",
+      "card_timezone": "Zeitzone",
+      "card_data_age": "Datenalter",
+      "card_observed": "Letzte Beobachtung {{time}}",
+      "card_captured": "erfasst {{time}}",
+      "card_source": "Quelle",
+      "card_unrecorded": "Nicht erfasst",
+      "card_note": "Eine soziale Vorschau des Links zeigt nur diese Markenkarte. Preise, Notizen und Portfolio-Inhalte bleiben hinter dem Link, und der Zugriff wird beim Öffnen erneut geprüft."
     }
   },
   "charts": {

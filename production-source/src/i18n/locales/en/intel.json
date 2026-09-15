@@ -1709,6 +1709,27 @@
       "gap_unknown_recording": "{{bars}} bars lack a recording timestamp.",
       "gap_omitted_events": "{{events}} past events have no eligible recording history.",
       "note_hidden": "Saved drawings and undated levels are hidden during replay."
+    },
+    "share": {
+      "open": "Share",
+      "dialog_title": "Share this chart",
+      "intro": "A link points at a saved version of this chart, so a reader sees exactly what you saw. Save that version first, then choose an audience, an expiry and the notes to include.",
+      "default_title": "Shared chart research",
+      "title_label": "Saved version title",
+      "save_and_choose": "Save this version and choose an audience",
+      "saving": "Saving this version…",
+      "unverified_capture": "This price response has no verified capture yet, so it cannot be saved or shared. Reload the chart period to refresh it.",
+      "card_title": "What the recipient sees",
+      "card_asset": "Asset",
+      "card_timeframe": "Timeframe",
+      "card_range": "{{from}} to {{to}}",
+      "card_timezone": "Time zone",
+      "card_data_age": "Data age",
+      "card_observed": "Latest observation {{time}}",
+      "card_captured": "captured {{time}}",
+      "card_source": "Source",
+      "card_unrecorded": "Not recorded",
+      "card_note": "A social preview of the link shows this brand card only. Prices, notes and portfolio content stay behind the link and access is checked again when it is opened."
     }
   },
   "charts": {

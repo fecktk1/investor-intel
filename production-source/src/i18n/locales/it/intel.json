@@ -894,6 +894,27 @@
       "gap_unknown_recording": "{{bars}} candele non hanno un orario di registrazione.",
       "gap_omitted_events": "{{events}} eventi passati non hanno una storia di registrazione ammissibile.",
       "note_hidden": "I disegni salvati e i livelli senza data restano nascosti durante la riproduzione."
+    },
+    "share": {
+      "open": "Condividi",
+      "dialog_title": "Condividi questo grafico",
+      "intro": "Un link punta a una versione salvata di questo grafico, così chi legge vede esattamente ciò che hai visto tu. Salva prima quella versione, poi scegli il pubblico, la scadenza e le note da includere.",
+      "default_title": "Ricerca di grafico condivisa",
+      "title_label": "Titolo della versione salvata",
+      "save_and_choose": "Salva questa versione e scegli il pubblico",
+      "saving": "Salvataggio di questa versione…",
+      "unverified_capture": "Questa risposta di prezzo non ha ancora una cattura verificata, quindi non può essere salvata né condivisa. Ricarica il periodo del grafico per aggiornarla.",
+      "card_title": "Ciò che vede chi riceve il link",
+      "card_asset": "Asset",
+      "card_timeframe": "Periodo",
+      "card_range": "dal {{from}} al {{to}}",
+      "card_timezone": "Fuso orario",
+      "card_data_age": "Età dei dati",
+      "card_observed": "Ultima osservazione {{time}}",
+      "card_captured": "catturato {{time}}",
+      "card_source": "Fonte",
+      "card_unrecorded": "Non registrato",
+      "card_note": "L’anteprima social del link mostra solo questa scheda di marca. Prezzi, note e contenuti del portafoglio restano dietro il link e l’accesso viene verificato di nuovo all’apertura."
     }
   },
   "charts": {

@@ -894,6 +894,27 @@
       "gap_unknown_recording": "{{bars}} candles hebben geen vastlegtijdstempel.",
       "gap_omitted_events": "{{events}} eerdere gebeurtenissen hebben geen bruikbare vastleggeschiedenis.",
       "note_hidden": "Opgeslagen tekeningen en niveaus zonder datum blijven tijdens de weergave verborgen."
+    },
+    "share": {
+      "open": "Delen",
+      "dialog_title": "Deze grafiek delen",
+      "intro": "Een link verwijst naar een opgeslagen versie van deze grafiek, zodat een lezer precies ziet wat jij zag. Sla die versie eerst op en kies daarna het publiek, de vervaldatum en de notities die meegaan.",
+      "default_title": "Gedeelde grafiekresearch",
+      "title_label": "Titel van de opgeslagen versie",
+      "save_and_choose": "Deze versie opslaan en publiek kiezen",
+      "saving": "Deze versie wordt opgeslagen…",
+      "unverified_capture": "Dit prijsantwoord heeft nog geen geverifieerde vastlegging, dus het kan niet worden opgeslagen of gedeeld. Laad de grafiekperiode opnieuw om het te vernieuwen.",
+      "card_title": "Wat de ontvanger ziet",
+      "card_asset": "Activum",
+      "card_timeframe": "Periode",
+      "card_range": "{{from}} tot {{to}}",
+      "card_timezone": "Tijdzone",
+      "card_data_age": "Ouderdom van de gegevens",
+      "card_observed": "Laatste waarneming {{time}}",
+      "card_captured": "vastgelegd {{time}}",
+      "card_source": "Bron",
+      "card_unrecorded": "Niet vastgelegd",
+      "card_note": "Een sociale voorvertoning van de link toont alleen deze merkkaart. Prijzen, notities en portefeuille-inhoud blijven achter de link en de toegang wordt bij het openen opnieuw gecontroleerd."
     }
   },
   "charts": {

@@ -17,6 +17,7 @@ import ChartAlertEditor from './ChartAlertEditor'
 import ResponsiveChartTools from './ResponsiveChartTools'
 import ChartIndicatorMenu from './ChartIndicatorMenu'
 import ChartWatermark from './ChartWatermark'
+import ChartShareLaunch from './ChartShareLaunch'
 import {validateChartLayout} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 const ChartStructurePanel=lazy(()=>import('./ChartStructurePanel'))
 
@@ -308,7 +309,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true)}}>Reset view</button>
 
-   {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<ChartSnapshotSave context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>} {persistence&&!replay&&!readOnly&&<><ChartAssetNavigator context={persistence}/><ChartAlertEditor context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
+   {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<ChartSnapshotSave context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><ChartAssetNavigator context={persistence}/><ChartAlertEditor context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
   </div>
 
   {!replay&&!readOnly&&drawings.controls}

@@ -894,6 +894,27 @@
       "gap_unknown_recording": "{{bars}} velas no tienen marca de tiempo de registro.",
       "gap_omitted_events": "{{events}} eventos pasados no tienen un historial de registro admisible.",
       "note_hidden": "Los dibujos guardados y los niveles sin fecha quedan ocultos durante la reproducción."
+    },
+    "share": {
+      "open": "Compartir",
+      "dialog_title": "Compartir este gráfico",
+      "intro": "Un enlace apunta a una versión guardada de este gráfico, de modo que quien lo lea vea exactamente lo que viste tú. Guarda esa versión primero y luego elige público, caducidad y las notas que se incluyen.",
+      "default_title": "Investigación de gráfico compartida",
+      "title_label": "Título de la versión guardada",
+      "save_and_choose": "Guardar esta versión y elegir público",
+      "saving": "Guardando esta versión…",
+      "unverified_capture": "Esta respuesta de precios aún no tiene una captura verificada, así que no se puede guardar ni compartir. Recarga el periodo del gráfico para actualizarla.",
+      "card_title": "Lo que ve quien recibe el enlace",
+      "card_asset": "Activo",
+      "card_timeframe": "Periodo",
+      "card_range": "del {{from}} al {{to}}",
+      "card_timezone": "Zona horaria",
+      "card_data_age": "Antigüedad de los datos",
+      "card_observed": "Última observación {{time}}",
+      "card_captured": "capturado {{time}}",
+      "card_source": "Fuente",
+      "card_unrecorded": "Sin registrar",
+      "card_note": "La vista previa social del enlace muestra solo esta tarjeta de marca. Los precios, las notas y el contenido de la cartera quedan detrás del enlace y el acceso se comprueba otra vez al abrirlo."
     }
   },
   "charts": {
