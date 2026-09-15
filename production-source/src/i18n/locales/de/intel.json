@@ -165,6 +165,7 @@
     "filter_and_sort": "Filter & Sortierung",
     "historicCatalysts": "Nennenswerte Ereignisse",
     "hotInEcosystem": "Gefragt im Ökosystem",
+    "refreshFailed": "Der Markt-Snapshot konnte nicht aktualisiert werden: {{error}}",
     "lastSnapshot": "Der zuletzt geladene Snapshot wird angezeigt.",
     "load_failed": "Marktdaten sind nicht verfügbar. Aktualisiere diese Ansicht, um es erneut zu versuchen.",
     "loading": "Marktbeobachtungen werden geladen…",

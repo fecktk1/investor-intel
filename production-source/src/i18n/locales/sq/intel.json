@@ -165,6 +165,7 @@
     "filter_and_sort": "Filtrat dhe renditja",
     "historicCatalysts": "Ngjarje të dukshme",
     "hotInEcosystem": "Të nxehta në ekosistem",
+    "refreshFailed": "Pamja e tregut nuk u përditësua dot: {{error}}",
     "lastSnapshot": "Po shfaqet gjendja e fundit e ngarkuar.",
     "load_failed": "Të dhënat e tregut nuk janë të disponueshme. Rifresko këtë ekran për të provuar sërish.",
     "loading": "Po ngarkohen vëzhgimet e tregut…",

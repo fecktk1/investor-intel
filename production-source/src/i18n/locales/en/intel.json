@@ -165,6 +165,7 @@
     "filter_and_sort": "Filters & sort",
     "historicCatalysts": "Notable events",
     "hotInEcosystem": "Hot in the ecosystem",
+    "refreshFailed": "The market snapshot could not be refreshed: {{error}}",
     "lastSnapshot": "Showing the last loaded snapshot.",
     "load_failed": "Market data is unavailable. Refresh this screen to retry.",
     "loading": "Loading market observations…",

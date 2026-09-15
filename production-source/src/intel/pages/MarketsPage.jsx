@@ -305,7 +305,7 @@ export default function MarketsPage() {
           {/* 4. Crypto markets table */}
           <section className="space-y-2">
             {screenControls}
-            {marketError && <p role="alert" className="text-sm text-[var(--fg-3)]">{t('markets.refreshFailed', {defaultValue:marketError})} {marketsData && t('markets.lastSnapshot', {defaultValue:'Showing the last loaded snapshot.'})}</p>}
+            {marketError && <p role="alert" className="text-sm text-[var(--fg-3)]">{t('markets.refreshFailed', {error: marketError, defaultValue: 'The market snapshot could not be refreshed: {{error}}'})} {marketsData && t('markets.lastSnapshot', {defaultValue:'Showing the last loaded snapshot.'})}</p>}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--fg-4)]">
               <button type="button" className="btn btn--ghost btn--sm" disabled={marketsLoading} onClick={refreshMarkets}>{t('common.refresh', {defaultValue:'Refresh'})}</button>
               {marketsData?.catalog && <span>{marketsData.catalog.provider==='coinmarketcap'?'CoinMarketCap':'CoinGecko'} · {t('markets.sharedSnapshot', {defaultValue:'Shared market snapshot'})}{marketsData.catalog.fallback ? ' · '+t('markets.catalogueFallback', {defaultValue:'CMC catalogue is not current; showing CoinGecko'}) : ''}</span>}

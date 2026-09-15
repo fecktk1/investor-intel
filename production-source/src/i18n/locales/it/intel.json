@@ -165,6 +165,7 @@
     "filter_and_sort": "Filtri e ordinamento",
     "historicCatalysts": "Eventi notevoli",
     "hotInEcosystem": "Di tendenza nell’ecosistema",
+    "refreshFailed": "Non è stato possibile aggiornare l'istantanea del mercato: {{error}}",
     "lastSnapshot": "Viene mostrata l’ultima istantanea caricata.",
     "load_failed": "I dati di mercato non sono disponibili. Aggiorna questa schermata per riprovare.",
     "loading": "Caricamento delle osservazioni di mercato…",
