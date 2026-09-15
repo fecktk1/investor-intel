@@ -1,7 +1,7 @@
 // Investor Intel — contract identity resolution for portfolio holdings
 // (CMC plan Stage 4, proposal 25). On-demand only.
 //
-// Three operations, all POST, all org-scoped and all behind the Intel
+// Four operations, all POST, all org-scoped and all behind the Intel
 // entitlement (`requireIntelAccess` verifies the user, then org membership,
 // then the entitlement — the same gate `intel-asset-facts` uses, and
 // `verify_jwt` is on for this function in `supabase/config.toml`):
@@ -14,6 +14,19 @@
 //   {op:'entities'} — fills `entities.provider_ids.coinmarketcap` for the org's
 //                     contract entities that do not have one yet. Nothing in the
 //                     codebase writes that key today; `asset-resolver` reads it.
+//   {op:'unprice'}  — undoes THIS feature's own writes for named holdings. Added
+//                     after the first live run wrote one absurd price: a write
+//                     that can distort a whole portfolio must be reversible from
+//                     the UI, without a database session.
+//
+// THE PLAUSIBILITY GATE. The first live run priced a Base holding at $3,723,685
+// a token ($372.4M for the position) from a provider aggregate over an illiquid
+// pool. `holding-identity.ts` now refuses a price whose pool liquidity is under
+// $1,000 or unreported, whose implied value exceeds the token's own reported
+// market cap, or whose implied value exceeds $1,000,000 on a FIRST pricing.
+// A refused row reports `price_implausible` with the numbers it was refused on
+// and is NOT written: the holding stays unpriced, which is a known gap rather
+// than a confident error.
 //
 // WHY THIS IS AN EDGE FUNCTION AND NOT A WORKER JOB
 // The worker release is gate G2, so the portfolio-sync resolver that proposal 25
@@ -61,6 +74,12 @@ export const RESOLUTION_WINDOW_SECONDS = 3600
 /** Entities looked up per `entities` run. One credit each (`metadata` is 1 per
  * 250 identifiers and an address lookup is one identifier). */
 export const ENTITY_LOOKUP_MAX = 20
+/** Holdings one `unprice` call may reset. Bounded like every other list here. */
+export const UNPRICE_MAX = 50
+/** The only `price_source` `unprice` will undo. This operation reverses THIS
+ * feature's writes and nothing else: an exchange or Birdeye price belongs to the
+ * path that wrote it. */
+export const DEX_PRICE_SOURCE = 'coinmarketcap_dex'
 /** A read ceiling so a very large book is truncated loudly, not silently. */
 const HOLDING_ROW_LIMIT = 5000
 const ENTITY_ROW_LIMIT = 500
@@ -199,7 +218,7 @@ export async function runResolve(
 
   const plan = planHoldingResolution(rows, limit == null ? {} : { limit })
   const empty = {
-    op: 'resolve', requested: 0, matched: 0, priced: 0, identityOnly: 0,
+    op: 'resolve', requested: 0, matched: 0, priced: 0, identityOnly: 0, implausible: 0,
     unsupported: plan.unsupported, notFound: 0, credits: 0, creditsNote: CREDITS_NOTE,
     calls: 0, holdings: applyBatchAnswers(plan, [], []), truncated, planTruncated: plan.truncated,
     writeErrors: [] as string[], asOf: nowIso,
@@ -238,9 +257,12 @@ export async function runResolve(
   const summary = summarizeAnswers(answers)
   const byId = new Map(rows.map((row) => [String(row.id), row]))
 
+  // A refused price still carried a real identity, so a blank label is still
+  // filled — but not one column of pricing is written for it.
+  const identityOnly = answers.filter((a) => a.reason === 'price_unavailable' || a.reason === 'price_implausible')
   const writeErrors = [
     ...await inBatches(answers.filter((a) => a.reason === 'priced'), WRITE_CONCURRENCY, (a) => writePricedHolding(admin, orgId, a, nowIso)),
-    ...await inBatches(answers.filter((a) => a.reason === 'price_unavailable'), WRITE_CONCURRENCY, (a) => writeIdentityOnly(admin, orgId, a, byId.get(a.holdingId))),
+    ...await inBatches(identityOnly, WRITE_CONCURRENCY, (a) => writeIdentityOnly(admin, orgId, a, byId.get(a.holdingId))),
   ]
 
   // One aggregate demand counter per matched contract, never per holding and
@@ -266,6 +288,7 @@ export async function runResolve(
     matched: summary.matched,
     priced: summary.priced,
     identityOnly: summary.identityOnly,
+    implausible: summary.implausible,
     unsupported: plan.unsupported,
     notFound: summary.notFound,
     credits,
@@ -278,6 +301,45 @@ export async function runResolve(
     truncated,
     planTruncated: plan.truncated,
     writeErrors,
+    asOf: nowIso,
+  })
+}
+
+/**
+ * Undo this feature's own pricing for named holdings.
+ *
+ * Bounded to 50 ids, scoped to the caller's org, and restricted to rows whose
+ * `price_source` is still `coinmarketcap_dex` — a holding that has since been
+ * repriced by the exchange or Birdeye path belongs to that path and is left
+ * alone, reported as skipped rather than silently reverted.
+ *
+ * It is recorded in the same ledger as a paid run (auditability) but is NOT
+ * refused by the rate limit: an undo must always be available, or a member who
+ * spent their four runs producing a bad price would be stuck with it for an
+ * hour. It spends no credits and touches at most 50 rows.
+ */
+export async function runUnprice(admin: Db, orgId: string, holdingIds: string[], now: Date) {
+  const nowIso = now.toISOString()
+  const { data, error } = await admin.from('investor_portfolio_holdings').update({
+    current_price: null,
+    current_value: null,
+    price_source: null,
+    price_status: 'unpriced',
+    last_priced_at: null,
+  }).eq('org_id', orgId).eq('price_source', DEX_PRICE_SOURCE).in('id', holdingIds).select('id')
+  if (error) return json({ error: 'unprice_failed', detail: String(error.message ?? 'write_failed') }, 503)
+
+  const reset = ((data ?? []) as { id: string }[]).map((row) => String(row.id))
+  await claimRun(admin, orgId, holdingIds.length, nowIso)
+  return json({
+    op: 'unprice',
+    requested: holdingIds.length,
+    reset: reset.length,
+    // Not an error: an id that is not this org's, or no longer priced by this
+    // feature, is simply not ours to reset.
+    skipped: holdingIds.length - reset.length,
+    holdingIds: reset,
+    priceSource: DEX_PRICE_SOURCE,
     asOf: nowIso,
   })
 }
@@ -394,6 +456,13 @@ export async function handlePortfolioIdentity(
     const op = typeof body.op === 'string' ? body.op : 'coverage'
     if (op === 'coverage') return await runCoverage(admin, orgId, portfolioId, now)
     if (op === 'resolve') return await runResolve(admin, orgId, portfolioId, limit, request, now)
+    if (op === 'unprice') {
+      const raw = Array.isArray(body.holdingIds) ? body.holdingIds : null
+      if (!raw || !raw.length) return json({ error: 'invalid_holding_ids' }, 400)
+      const ids = [...new Set(raw.map((v) => String(v)))]
+      if (ids.length > UNPRICE_MAX || !ids.every((id) => UUID.test(id))) return json({ error: 'invalid_holding_ids' }, 400)
+      return await runUnprice(admin, orgId, ids, now)
+    }
     if (op === 'entities') {
       // An entities run spends one credit per entity, so it shares the resolve
       // window: four paid runs an hour for the organisation, whichever op.

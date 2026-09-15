@@ -175,7 +175,15 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
         if(body?.data==null && !Array.isArray(body)) throw new Error('malformed_response')
         // Only the reviewed DEX schemas have an exact-identity validator. A newly
         // registered path without one is not silently declared malformed.
-        if(CMC_DEX_SCHEMA_VALIDATED.has(name)&&!validateCmcDexResponse(name,body,params))throw new Error('malformed_response')
+        if(CMC_DEX_SCHEMA_VALIDATED.has(name)&&!validateCmcDexResponse(name,body,params)){
+          // A rejection here is the only moment the real provider shape is still in
+          // hand: nothing is cached, so the evidence is otherwise lost. Log a bounded
+          // sample so the next capture is diagnosable from the function logs. A DEX
+          // response body is public market data; the key travels in a request header
+          // and never appears here.
+          console.warn(JSON.stringify({cmc_malformed:name,sample:JSON.stringify(body).slice(0,800)}))
+          throw new Error('malformed_response')
+        }
         const ttl=name==='quotes'?quoteRefreshSeconds(params):spec.ttl
         const fetchedAt=new Date().toISOString(),observedAt=cmcObservedAt(body,name),expiresAt=new Date(Date.now()+ttl*1000).toISOString()
         const {error}=await db.from('market_data_response_cache').update({response_json:body,status_code:200,negative_cache:false,error_kind:null,

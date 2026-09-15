@@ -42,6 +42,27 @@ export function cmcDexNumber(value:unknown):number|null {
  * A missing or unreadable bound is itself a rejection: an unbounded answer to a
  * bounded question is not the answer to that question. */
 const withinLimit=(list:unknown[],bound:unknown)=>{const n=cmcDexInteger(bound);return n!=null&&n>0&&list.length<=n}
+/** One page of /v1/dex/holders/list. The published reference puts the rows under
+ * data.holders; the live tape has also answered with data.list and with a bare
+ * data array, and the cursor is optional (lastId, or nextId, or absent).
+ * Returns null when nothing in the response looks like a page at all. */
+export function cmcDexHolderPage(data:any):{rows:any[];cursor:string|null}|null {
+  const rows=Array.isArray(data)?data:Array.isArray(data?.holders)?data.holders:Array.isArray(data?.list)?data.list:null
+  if(!rows)return null
+  const cursor=Array.isArray(data)?null:data?.lastId??data?.nextId??null
+  return {rows,cursor:cursor==null||cursor===''?null:String(cursor)}
+}
+/** The reference names the wallet key walletAddress; address and holderAddress
+ * are the observed aliases. It identifies a classified account, never a person. */
+export function cmcDexHolderAddress(row:any):string|null {
+  for(const key of ['walletAddress','address','holderAddress'])if(typeof row?.[key]==='string'&&row[key])return row[key]
+  return null
+}
+/** Tags arrive as an array of labels, or as one comma-separated string. */
+export function cmcDexHolderTagList(value:unknown):string[]|null {
+  const list=Array.isArray(value)?value:typeof value==='string'?value.split(','):null
+  return list?list.map(v=>typeof v==='string'?v.trim():'').filter(Boolean):null
+}
 export function validateCmcDexResponse(name:string,body:any,params:Record<string,string>) {
   const d=body?.data
   if(name==='dexPlatforms')return Array.isArray(d)&&d.length<=500&&d.every(r=>r&&Number.isSafeInteger(r.id)&&typeof r.n==='string')
@@ -148,12 +169,21 @@ export function validateCmcDexResponse(name:string,body:any,params:Record<string
   // address on the requested chain, never a person; an address that is not valid
   // for the requested platform makes the whole page unusable.
   if(name==='dexHolders'){
-    if(!d||Array.isArray(d)||!Array.isArray(d.holders)||!withinLimit(d.holders,params.limit))return false
-    if(d.lastId!=null&&!isCmcDexCursor(d.lastId))return false
-    return d.holders.every((r:any)=>{
-      if(!r||typeof r!=='object'||Array.isArray(r)||!cmcDexAddress(r.walletAddress,network.platform))return false
+    // The container and the wallet key are read through cmcDexHolderPage /
+    // cmcDexHolderAddress so a documented alias is not a malformed response.
+    // Numbers arrive as strings here exactly as they do from tag_count, so no
+    // numeric field is type-checked: the row mapping parses them instead.
+    // What stays strict is identity and size: an address must be valid for the
+    // requested platform, a row that names another contract is refused, and a
+    // page longer than the one that was asked for is not that page.
+    const page=cmcDexHolderPage(d)
+    if(!page||!withinLimit(page.rows,params.limit))return false
+    if(page.cursor!=null&&!isCmcDexCursor(page.cursor))return false
+    return page.rows.every((r:any)=>{
+      if(!r||typeof r!=='object'||Array.isArray(r)||!cmcDexAddress(cmcDexHolderAddress(r),network.platform))return false
       if(r.tokenAddress!=null&&!same(r.tokenAddress,address))return false
-      return r.tags==null||(Array.isArray(r.tags)&&r.tags.length<=CMC_HOLDER_TAGS.length&&r.tags.every((t:any)=>typeof t==='string'&&t.length>0&&t.length<=64))
+      const tags=r.tags==null?null:cmcDexHolderTagList(r.tags)
+      return r.tags==null||(tags!=null&&tags.length<=CMC_HOLDER_TAGS.length&&tags.every(t=>t.length<=64))
     })
   }
   // Probed 2026-09-14: /v1/k-line/candles answers a bare data array of positional

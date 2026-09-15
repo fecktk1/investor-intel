@@ -22,6 +22,27 @@
 //      A provider-STATED zero is a different thing and stays a zero.
 //   3. Every count is a real count. A chain with nothing unpriced reports 0,
 //      not an absent row.
+//   4. A number the provider states is not automatically a price we may write.
+//      See the plausibility gate below.
+//
+// THE PLAUSIBILITY GATE (added 2026-09-15, after the first live run)
+// That run priced a Base holding, STREAMGPT, at $3,723,685 a token and valued the
+// position at $372.4M, distorting the whole portfolio. A provider aggregate over
+// an illiquid pool is arithmetic, not a price at which anything could trade.
+// Three refusals now stand between an answer and a write. A refused row keeps its
+// identity, reports `price_implausible` with the numbers it was refused on, and
+// is NOT written — the holding stays unpriced rather than becoming confidently
+// wrong, because an unpriced holding is a known gap and a wrong one is not.
+//
+//   (a) Reported pool liquidity below $1,000, or absent entirely. Liquidity is
+//       read from `dexBatch.liqUsd`, falling back to `dexPriceBatch.l`.
+//   (b) quantity x price above the token's own reported market cap
+//       (`dexBatch.mcap`, falling back to `dexPriceBatch.mc`): a holding cannot
+//       be worth more than the whole token.
+//   (c) quantity x price above $1,000,000 for a holding that was UNPRICED before
+//       this run. This ceiling is a STAGE 4 GUARD on a first write, not a law of
+//       nature — a genuine seven-figure position exists — and it is one constant
+//       to move once the gate has a live track record.
 //
 // Cost, as probed on 2026-09-14 (docs/investor-intel/evidence/
 // cmc-cost-probe-2026-09-14.json): one `dexBatch` call and one `dexPriceBatch`
@@ -38,6 +59,12 @@ export const HOLDING_RUN_LIMIT_DEFAULT = 50
 export const HOLDING_RUN_LIMIT_MAX = 200
 /** Only these two states are worth spending a credit on. */
 export const RESOLVABLE_PRICE_STATUSES = ['unpriced', 'stale'] as const
+/** Plausibility gate (a): a pool this thin does not produce a price, it produces
+ * a quotient. Below this, or with no liquidity reported at all, we refuse. */
+export const MIN_POOL_LIQUIDITY_USD = 1_000
+/** Plausibility gate (c): the largest position value this feature will write the
+ * FIRST time it prices a holding. A Stage 4 guard, not a law of nature. */
+export const MAX_FIRST_PRICE_VALUE_USD = 1_000_000
 
 export interface HoldingIdentityRow {
   id: string
@@ -85,7 +112,10 @@ export interface CoverageTotals {
 export interface CoverageReport { chains: ChainCoverage[]; totals: CoverageTotals }
 
 export type SkipReason = 'unsupported_platform' | 'no_contract_address' | 'over_run_limit'
-export type AnswerReason = 'priced' | 'price_unavailable' | 'not_found_on_provider' | SkipReason
+export type AnswerReason = 'priced' | 'price_unavailable' | 'price_implausible' | 'not_found_on_provider' | SkipReason
+/** Which refusal tripped, so a reader is told what was wrong and not merely that
+ * something was. Order of evaluation is the order listed here. */
+export type ImplausibleRule = 'liquidity_unknown' | 'liquidity_below_floor' | 'value_exceeds_market_cap' | 'value_exceeds_first_price_ceiling'
 
 export interface PlannedHolding {
   holdingId: string
@@ -95,6 +125,9 @@ export interface PlannedHolding {
   quantity: number | null
   symbol: string | null
   name: string | null
+  /** The status before this run. A holding that was already priced is held to a
+   * lower bar than one this feature is about to price for the first time. */
+  priceStatus: string
 }
 
 export interface PlanSubject { platform: string; chain: string; address: string; holdingIds: string[] }
@@ -132,7 +165,17 @@ export interface HoldingAnswer {
    * from the price embedded in the identity batch. Null when there is no price. */
   priceFrom: 'dexPriceBatch' | 'dexBatch' | null
   quantity: number | null
+  /** quantity x price. Present for a priced row; null when there is no price.
+   * For a REFUSED row this is null — the value was never accepted — and the
+   * number that was refused lives in `implausible.impliedValue`. */
   value: number | null
+  /** Pool liquidity and market cap as the provider reported them, for any matched
+   * row, so a reader can see what the gate saw. Null means the provider said
+   * nothing, which is itself a refusal under gate (a). */
+  liquidityUsd: number | null
+  marketCapUsd: number | null
+  /** Only on a `price_implausible` row: exactly what was refused, and why. */
+  implausible: { price: number; liquidityUsd: number | null; marketCapUsd: number | null; impliedValue: number | null; rule: ImplausibleRule } | null
   reason: AnswerReason
 }
 
@@ -302,6 +345,7 @@ export function planHoldingResolution(
         quantity: finite(row.quantity),
         symbol: text(row.asset_symbol) ?? text(row.normalized_symbol),
         name: text(row.name),
+        priceStatus: String(row.price_status ?? ''),
       })
     }
   }
@@ -367,6 +411,41 @@ function providerPrice(row: Record<string, unknown> | undefined): number | null 
   return price != null && price >= 0 ? price : null
 }
 
+/** A non-negative finite magnitude, or null. A negative liquidity or market cap
+ * is not a small one: it is an unusable answer, and unusable is absent. */
+function magnitude(...values: unknown[]): number | null {
+  for (const value of values) {
+    if (value == null) continue
+    const n = cmcDexNumber(value)
+    if (n != null && n >= 0) return n
+  }
+  return null
+}
+
+/**
+ * The plausibility gate. Returns the rule that refuses this price, or null when
+ * the price may be written.
+ *
+ * Gate (a) runs first and on its own: without liquidity there is no market, and
+ * the other two tests would be comparing one provider aggregate against another.
+ */
+export function implausibleRule(
+  price: number,
+  impliedValue: number | null,
+  liquidityUsd: number | null,
+  marketCapUsd: number | null,
+  wasUnpriced: boolean,
+): ImplausibleRule | null {
+  if (liquidityUsd == null) return 'liquidity_unknown'
+  if (liquidityUsd < MIN_POOL_LIQUIDITY_USD) return 'liquidity_below_floor'
+  if (impliedValue == null) return null
+  // A holding cannot be worth more than the whole token. A market cap of 0 is
+  // not a ceiling, it is another absence, so it does not refuse on its own.
+  if (marketCapUsd != null && marketCapUsd > 0 && impliedValue > marketCapUsd) return 'value_exceeds_market_cap'
+  if (wasUnpriced && impliedValue > MAX_FIRST_PRICE_VALUE_USD) return 'value_exceeds_first_price_ceiling'
+  return null
+}
+
 /**
  * Fold the two batch answers back onto every holding in the plan, including the
  * ones the plan could not ask about, so the caller gets one row per holding and
@@ -396,6 +475,14 @@ export function applyBatchAnswers(
     const identityPrice = providerPrice(identity)
     const price = quotePrice ?? identityPrice
     const priceFrom = quotePrice != null ? 'dexPriceBatch' as const : identityPrice != null ? 'dexBatch' as const : null
+    // Liquidity and market cap are stated by the identity batch (`liqUsd`,
+    // `mcap`) and, for the price batch, by `l` and `mc`. Either source counts;
+    // neither is inferred from the other.
+    const liquidityUsd = matched ? magnitude(identity?.liqUsd, quote?.l) : null
+    const marketCapUsd = matched ? magnitude(identity?.mcap, quote?.mc) : null
+    const impliedValue = price != null && holding.quantity != null ? holding.quantity * price : null
+    const rule = price == null ? null
+      : implausibleRule(price, impliedValue, liquidityUsd, marketCapUsd, holding.priceStatus === 'unpriced')
     answers.push({
       holdingId: holding.holdingId,
       chain: holding.chain,
@@ -407,8 +494,15 @@ export function applyBatchAnswers(
       cmcDexPrice: price,
       priceFrom,
       quantity: holding.quantity,
-      value: price != null && holding.quantity != null ? holding.quantity * price : null,
-      reason: !matched ? 'not_found_on_provider' : price == null ? 'price_unavailable' : 'priced',
+      // A refused value is never presented as the holding's value.
+      value: rule ? null : impliedValue,
+      liquidityUsd,
+      marketCapUsd,
+      implausible: rule && price != null ? { price, liquidityUsd, marketCapUsd, impliedValue, rule } : null,
+      reason: !matched ? 'not_found_on_provider'
+        : price == null ? 'price_unavailable'
+        : rule ? 'price_implausible'
+        : 'priced',
     })
   }
 
@@ -425,6 +519,9 @@ export function applyBatchAnswers(
       priceFrom: null,
       quantity: null,
       value: null,
+      liquidityUsd: null,
+      marketCapUsd: null,
+      implausible: null,
       reason: skip.reason,
     })
   }
@@ -435,13 +532,14 @@ export function applyBatchAnswers(
 /** Counts for the response envelope. Derived here so the Edge Function and its
  * tests cannot drift into two different definitions of "matched". */
 export function summarizeAnswers(answers: HoldingAnswer[]): {
-  matched: number; priced: number; identityOnly: number; notFound: number; unsupported: number; missingContract: number; overLimit: number
+  matched: number; priced: number; identityOnly: number; implausible: number; notFound: number; unsupported: number; missingContract: number; overLimit: number
 } {
   const count = (reason: AnswerReason) => answers.filter((a) => a.reason === reason).length
   return {
     matched: answers.filter((a) => a.matched).length,
     priced: count('priced'),
     identityOnly: count('price_unavailable'),
+    implausible: count('price_implausible'),
     notFound: count('not_found_on_provider'),
     unsupported: count('unsupported_platform'),
     missingContract: count('no_contract_address'),

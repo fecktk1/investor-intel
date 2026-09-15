@@ -26,7 +26,7 @@ const BASE_B = '0x0000000000000000000000000000000000000b02'
 const BNB_TOKEN = '0x0000000000000000000000000000000000000b11'
 const SOL_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
 
-interface Write { table: string; patch: Record<string, unknown>; filters: Record<string, unknown> }
+interface Write { table: string; patch: Record<string, unknown>; filters: Record<string, unknown>; matched: string[] }
 interface Insert { table: string; row: Record<string, unknown> }
 
 /** PostgREST-shaped stand-in: select/insert/update with eq, gte, or, order and
@@ -45,13 +45,29 @@ function fakeDb(tables: Record<string, any[]> = {}, errors: Record<string, strin
     let limitN: number | null = null
     let orExpr: string | null = null
 
+    const matching = () => {
+      let rows = [...(tables[table] ?? [])]
+      for (const [kind, column, value] of filters) {
+        if (kind === 'eq') rows = rows.filter((r) => String(r?.[column] ?? '') === String(value ?? ''))
+        if (kind === 'gte') rows = rows.filter((r) => String(r?.[column] ?? '') >= String(value))
+        if (kind === 'in') rows = rows.filter((r) => (value as unknown[]).some((v) => String(v) === String(r?.[column] ?? '')))
+      }
+      // The only `or` this function uses is the open-position predicate.
+      if (orExpr === 'is_closed.is.null,is_closed.eq.false') rows = rows.filter((r) => r?.is_closed !== true)
+      else if (orExpr) throw new Error(`unexpected or(): ${orExpr}`)
+      return rows
+    }
+
     const evaluate = (single: boolean) => {
       const key = `${table}:${op}`
       if (errors[key]) return { data: null, error: { message: errors[key] } }
       const eqFilters = Object.fromEntries(filters.filter((f) => f[0] === 'eq').map((f) => [f[1], f[2]]))
       if (op === 'update') {
-        writes.push({ table, patch: payload, filters: eqFilters })
-        return { data: null, error: null }
+        const rows = matching()
+        writes.push({ table, patch: payload, filters: eqFilters, matched: rows.map((r) => String(r.id)) })
+        // PostgREST applies the patch to every matching row; `.select()` returns them.
+        for (const row of rows) Object.assign(row, payload)
+        return single ? { data: rows[0] ?? null, error: null } : { data: rows.map((r) => ({ id: r.id })), error: null }
       }
       if (op === 'insert') {
         const row = { id: `row-${++insertSeq}`, ...payload }
@@ -59,14 +75,7 @@ function fakeDb(tables: Record<string, any[]> = {}, errors: Record<string, strin
         inserts.push({ table, row })
         return single ? { data: { id: row.id }, error: null } : { data: [row], error: null }
       }
-      let rows = [...(tables[table] ?? [])]
-      for (const [kind, column, value] of filters) {
-        if (kind === 'eq') rows = rows.filter((r) => String(r?.[column] ?? '') === String(value ?? ''))
-        if (kind === 'gte') rows = rows.filter((r) => String(r?.[column] ?? '') >= String(value))
-      }
-      // The only `or` this function uses is the open-position predicate.
-      if (orExpr === 'is_closed.is.null,is_closed.eq.false') rows = rows.filter((r) => r?.is_closed !== true)
-      else if (orExpr) throw new Error(`unexpected or(): ${orExpr}`)
+      let rows = matching()
       if (limitN != null) rows = rows.slice(0, limitN)
       return single ? { data: rows[0] ?? null, error: null } : { data: rows, error: null }
     }
@@ -76,6 +85,7 @@ function fakeDb(tables: Record<string, any[]> = {}, errors: Record<string, strin
       select() { return b },
       eq(c: string, v: unknown) { filters.push(['eq', c, v]); return b },
       gte(c: string, v: unknown) { filters.push(['gte', c, v]); return b },
+      in(c: string, v: unknown[]) { filters.push(['in', c, v]); return b },
       or(expr: string) { orExpr = expr; return b },
       order() { return b },
       limit(n: number) { limitN = n; return b },
@@ -193,7 +203,7 @@ Deno.test('resolve writes exactly the eight pricing columns, and only for this o
     investor_portfolio_holdings: [holding({ id: 'h1', quantity: 3 })],
   })
   const provider = fakeProvider({
-    dexBatch: { data: [{ pid: 199, addr: BASE_A, n: 'Degen', sym: 'DEGEN', p: 0.01 }] },
+    dexBatch: { data: [{ pid: 199, addr: BASE_A, n: 'Degen', sym: 'DEGEN', p: 0.01, liqUsd: 120_000, mcap: 15_000_000 }] },
     dexPriceBatch: { data: [{ pid: 199, a: BASE_A, p: 0.02 }] },
   })
   const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider)).json()
@@ -234,8 +244,8 @@ Deno.test('an identity-only match fills a blank label and never overwrites one',
   })
   const provider = fakeProvider({
     dexBatch: { data: [
-      { pid: 199, addr: BASE_A, n: 'Alpha', sym: 'ALPHA', p: null },
-      { pid: 199, addr: BASE_B, n: 'Beta', sym: 'BETA', p: null },
+      { pid: 199, addr: BASE_A, n: 'Alpha', sym: 'ALPHA', p: null, liqUsd: 90_000 },
+      { pid: 199, addr: BASE_B, n: 'Beta', sym: 'BETA', p: null, liqUsd: 90_000 },
     ] },
     dexPriceBatch: { data: [] },
   })
@@ -288,7 +298,7 @@ Deno.test('demand is recorded once per contract and carries no actor', async () 
     ],
   })
   const provider = fakeProvider({
-    dexBatch: { data: [{ pid: 199, addr: BASE_A, sym: 'A', p: 1 }] },
+    dexBatch: { data: [{ pid: 199, addr: BASE_A, sym: 'A', p: 1, liqUsd: 70_000, mcap: 4_000_000 }] },
     dexPriceBatch: { data: [{ pid: 199, a: BASE_A, p: 1 }] },
   })
   const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider)).json()
@@ -448,6 +458,121 @@ Deno.test('cmc ids come from the row id, then the map key, and never from junk',
   eq(cmcIdsFromMetadata(null), [])
 })
 
+Deno.test('an implausible price is reported and NOT written', async () => {
+  // The live case: $3,723,685 a token for 100 tokens of a $1.8M-cap asset.
+  const db = fakeDb({
+    ...MEMBERSHIP,
+    investor_portfolio_holdings: [
+      holding({ id: 'streamgpt', contract_address: BASE_A, quantity: 100 }),
+      holding({ id: 'thin', contract_address: BASE_B, quantity: 1 }),
+    ],
+  })
+  const provider = fakeProvider({
+    dexBatch: { data: [
+      { pid: 199, addr: BASE_A, n: 'StreamGPT', sym: 'STREAMGPT', p: 3_723_685, liqUsd: 42_000, mcap: 1_800_000 },
+      { pid: 199, addr: BASE_B, n: 'Thin', sym: 'THIN', p: 4, liqUsd: 12 },
+    ] },
+    dexPriceBatch: { data: [{ pid: 199, a: BASE_A, p: 3_723_685 }] },
+  })
+  const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider)).json()
+
+  eq([body.priced, body.implausible, body.identityOnly, body.matched], [0, 2, 0, 2])
+  const streamgpt = body.holdings.find((h: { holdingId: string }) => h.holdingId === 'streamgpt')
+  eq(streamgpt.reason, 'price_implausible')
+  eq(streamgpt.value, null)
+  eq(streamgpt.implausible, {
+    price: 3_723_685, liquidityUsd: 42_000, marketCapUsd: 1_800_000,
+    impliedValue: 372_368_500, rule: 'value_exceeds_market_cap',
+  })
+  eq(body.holdings.find((h: { holdingId: string }) => h.holdingId === 'thin').implausible.rule, 'liquidity_below_floor')
+
+  // Not one pricing column reaches the database; the identity label still does.
+  const holdingWrites = db.writes.filter((w) => w.table === 'investor_portfolio_holdings')
+  for (const write of holdingWrites) {
+    eq(Object.keys(write.patch).sort(), ['asset_symbol', 'name'])
+  }
+  eq(db.tables.investor_portfolio_holdings.find((r: { id: string }) => r.id === 'streamgpt').price_status, 'unpriced')
+  eq(db.tables.investor_portfolio_holdings.find((r: { id: string }) => r.id === 'streamgpt').current_price, undefined)
+  // The run ledger records that the run priced nothing.
+  eq(db.writes.find((w) => w.table === 'intel_holding_resolution_runs')!.patch, { priced: 0, credits: 2 })
+})
+
+Deno.test('unprice resets only this feature\'s own writes, in this org', async () => {
+  const H1 = '66666666-6666-4666-8666-666666666666'
+  const H2 = '77777777-7777-4777-8777-777777777777'
+  const H3 = '88888888-8888-4888-8888-888888888888'
+  const H4 = '99999999-9999-4999-8999-999999999999'
+  const db = fakeDb({
+    ...MEMBERSHIP,
+    investor_portfolio_holdings: [
+      holding({ id: H1, price_status: 'priced', price_source: 'coinmarketcap_dex', current_price: 3_723_685, current_value: 372_368_500, last_priced_at: '2026-09-15T11:00:00Z' }),
+      holding({ id: H2, price_status: 'priced', price_source: 'coinmarketcap_dex', current_price: 1, current_value: 2 }),
+      // Priced by another path: not ours to revert.
+      holding({ id: H3, price_status: 'priced', price_source: 'birdeye_snapshot', current_price: 9, current_value: 18 }),
+      // Another org's row, even if the id is supplied.
+      holding({ id: H4, org_id: OTHER_ORG, price_status: 'priced', price_source: 'coinmarketcap_dex', current_price: 9 }),
+    ],
+  })
+  const body = await (await call(db, { op: 'unprice', orgId: ORG, holdingIds: [H1, H2, H3, H4, H1] })).json()
+
+  eq(body.op, 'unprice')
+  eq(body.requested, 4, 'duplicate ids are collapsed before anything is touched')
+  eq(body.reset, 2)
+  eq(body.skipped, 2)
+  eq(body.holdingIds.sort(), [H1, H2].sort())
+  eq(body.priceSource, 'coinmarketcap_dex')
+
+  const write = db.writes.find((w) => w.table === 'investor_portfolio_holdings')!
+  eq(Object.keys(write.patch).sort(), ['current_price', 'current_value', 'last_priced_at', 'price_source', 'price_status'])
+  eq(write.patch.price_status, 'unpriced')
+  eq(write.patch.current_price, null)
+  eq(write.patch.current_value, null)
+  eq(write.patch.price_source, null)
+  eq(write.patch.last_priced_at, null)
+  eq(write.filters, { org_id: ORG, price_source: 'coinmarketcap_dex' })
+  eq(write.matched.sort(), [H1, H2].sort())
+
+  const rows = db.tables.investor_portfolio_holdings
+  eq(rows.find((r: { id: string }) => r.id === H1).current_price, null)
+  eq(rows.find((r: { id: string }) => r.id === H3).current_price, 9, 'the Birdeye price is untouched')
+  eq(rows.find((r: { id: string }) => r.id === H4).current_price, 9, 'the other org is untouched')
+  // Recorded in the same ledger, spending nothing.
+  const run = db.inserts.find((i) => i.table === 'intel_holding_resolution_runs')!
+  eq([run.row.requested, run.row.priced, run.row.credits], [4, 0, 0])
+})
+
+Deno.test('an undo is never refused by the rate limit', async () => {
+  const H1 = '66666666-6666-4666-8666-666666666666'
+  const db = fakeDb({
+    ...MEMBERSHIP,
+    investor_portfolio_holdings: [holding({ id: H1, price_status: 'priced', price_source: 'coinmarketcap_dex', current_price: 5 })],
+    // The organisation has already spent every run in the window.
+    intel_holding_resolution_runs: [0, 1, 2, 3].map((i) => ({ id: `r${i}`, org_id: ORG, ran_at: new Date(NOW.getTime() - i * 60_000).toISOString() })),
+  })
+  const response = await call(db, { op: 'unprice', orgId: ORG, holdingIds: [H1] })
+  eq(response.status, 200, 'a bad write must always be reversible')
+  eq((await response.json()).reset, 1)
+})
+
+Deno.test('unprice is bounded and takes only well-formed ids', async () => {
+  const db = fakeDb({ ...MEMBERSHIP, investor_portfolio_holdings: [] })
+  const factory = clientFactoryFor(db) as never
+  const tooMany = Array.from({ length: 51 }, (_, i) => `${String(i).padStart(8, '0')}-1111-4111-8111-111111111111`)
+  const cases: unknown[] = [
+    { op: 'unprice', orgId: ORG },
+    { op: 'unprice', orgId: ORG, holdingIds: [] },
+    { op: 'unprice', orgId: ORG, holdingIds: ['not-a-uuid'] },
+    { op: 'unprice', orgId: ORG, holdingIds: tooMany },
+  ]
+  for (const body of cases) {
+    const response = await handlePortfolioIdentity(post(body), factory, { now: () => NOW })
+    eq(response.status, 400)
+    eq((await response.json()).error, 'invalid_holding_ids')
+  }
+  eq(db.writes.length, 0)
+  eq(db.inserts.length, 0)
+})
+
 Deno.test('malformed and unauthenticated requests never reach the book', async () => {
   const db = fakeDb({ ...MEMBERSHIP, investor_portfolio_holdings: [holding({ id: 'h1' })] })
   const factory = clientFactoryFor(db) as never
@@ -489,7 +614,7 @@ Deno.test('a failed write is reported rather than counted as success', async () 
     { 'investor_portfolio_holdings:update': 'permission denied' },
   )
   const provider = fakeProvider({
-    dexBatch: { data: [{ pid: 199, addr: BASE_A, sym: 'A', p: 1 }] },
+    dexBatch: { data: [{ pid: 199, addr: BASE_A, sym: 'A', p: 1, liqUsd: 70_000, mcap: 4_000_000 }] },
     dexPriceBatch: { data: [{ pid: 199, a: BASE_A, p: 1 }] },
   })
   const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider)).json()

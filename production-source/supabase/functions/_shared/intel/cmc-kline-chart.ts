@@ -31,6 +31,23 @@
 //     skipped with `sourceReason: 'plan_below_startup'` and spends nothing; the
 //     ladder then continues to the pool source exactly as it does today.
 //
+// NO `from`/`to`: A LATEST-N REQUEST, NOT A WINDOWED HISTORY REQUEST.
+// Probed live on 2026-09-15 with the owner's Startup key:
+//
+//   platform=base address=0x8d01…6207 interval=1h limit=168 from=1788840000 to=1789444800
+//     -> HTTP 403, insufficient_entitlement
+//   platform=base address=0x8d01…6207 interval=1h limit=5   (no from/to)
+//     -> HTTP 200, 1 credit
+//
+// So a WINDOWED history request is above the plan and a "newest N candles"
+// request is not. This module therefore asks for the newest `limit` candles
+// (one request, no paging — paging needs a window) and applies the app window
+// LOCALLY, dropping anything older than the requested range. When the newest
+// candles do not reach back to the window start the coverage sentence says how
+// far back they actually reach, rather than presenting a short series as a
+// complete one. The registry still accepts `from`/`to` (they are documented
+// parameters and remain validated as seconds); nothing here sends them.
+//
 // Nothing here calls CoinMarketCap directly: the transport and the plan read are
 // injected through `deps`, so the module tests without a network or a database.
 
@@ -52,12 +69,11 @@ export const KLINE_INTERVALS: Record<string, string> = {
   '1M': '1min', '5M': '5min', '15M': '15min', '30M': '30min',
   '1H': '1h', '4H': '4h', '1D': '1d', '1W': '1w',
 }
-/** One page. The registry caps `limit` at 1000 for `dexCandles`. */
-export const KLINE_PAGE = 1000
-/** At most four pages a chart, so one asset page can never spend an unbounded
- * number of credits on a wide window at a fine interval. A window that needs
- * more keeps its NEWEST candles and the coverage sentence says it was cut. */
-export const KLINE_MAX_PAGES = 4
+/** The registry caps `limit` at 1000 for `dexCandles`, and one request is the
+ * whole chart: without `from`/`to` there is no cursor to page with. */
+export const KLINE_LIMIT = 1000
+/** One request a chart, so one asset page spends exactly one credit. */
+export const KLINE_MAX_CALLS = 1
 export const KLINE_SOURCE = 'coinmarketcap_kline'
 
 export interface KlineDeps {
@@ -93,35 +109,37 @@ export function klineAutoInterval(durationMs: number): string {
 
 export interface KlinePlan {
   selected: string; providerInterval: string; step: number
-  from: number; to: number; limited: boolean
-  pages: { interval: string; from: number; to: number; limit: number }[]
+  /** Window the CALLER asked for, in ms. Applied locally to whatever comes back. */
+  from: number; to: number
+  /** How many completed periods the window needs, before the 1000 ceiling. */
+  wanted: number
+  /** True when the window needs more periods than one request can return. */
+  capped: boolean
+  /** The one request: a named candle width and a count. No `from`/`to`. */
+  request: { interval: string; limit: number }
 }
 
-/** Request plan for one chart. `from`/`to` on a page are SECONDS, which is what
- * `cmcParams` validates (`/^\d{9,10}$/`) — never milliseconds. */
+/** Request plan for one chart: the newest `limit` candles at one named width.
+ * There is no window in the request — see the header probe — so there is nothing
+ * to page with, and `from`/`to` exist only to trim what comes back. */
 export function klinePlan(timeframe = '7D', interval = 'auto', now = Date.now()): KlinePlan {
   const duration = CHART_WINDOWS[timeframe]
   if (!duration || !Number.isFinite(now)) throw new Error('invalid_chart_parameters')
   const selected = interval === 'auto' ? klineAutoInterval(duration) : interval
   const step = CHART_INTERVALS[selected]
   if (!step || !KLINE_INTERVALS[selected]) throw new Error('invalid_chart_parameters')
-  // `end` is the OPEN of the period still in progress, so every candle the plan
-  // asks for is a period that has already closed.
-  const end = Math.floor(now / step) * step
+  // `to` is the OPEN of the period still in progress; every candle we keep is a
+  // period that has already closed.
+  const to = Math.floor(now / step) * step
   const wanted = Math.ceil(duration / step)
-  const start = end - wanted * step
-  const pages: KlinePlan['pages'] = []
-  for (let until = end; until > start && pages.length < KLINE_MAX_PAGES;) {
-    const first = Math.max(start, until - KLINE_PAGE * step)
-    pages.push({
-      interval: KLINE_INTERVALS[selected],
-      from: Math.floor(first / 1000), to: Math.floor(until / 1000),
-      limit: Math.min(KLINE_PAGE, Math.round((until - first) / step)) || 1,
-    })
-    until = first
+  // One extra period, because the newest row the provider returns is usually the
+  // period still in progress and is dropped locally.
+  const limit = Math.max(1, Math.min(KLINE_LIMIT, wanted + 1))
+  return {
+    selected, providerInterval: KLINE_INTERVALS[selected], step,
+    from: to - wanted * step, to, wanted, capped: wanted + 1 > KLINE_LIMIT,
+    request: { interval: KLINE_INTERVALS[selected], limit },
   }
-  const covered = pages.length ? end - Math.min(...pages.map((p) => p.from * 1000)) : 0
-  return { selected, providerInterval: KLINE_INTERVALS[selected], step, from: end - covered, to: end, limited: covered < duration, pages }
 }
 
 /** Positional k-line rows → chart bars. `closedAt` is synthesised from the
@@ -199,37 +217,48 @@ export async function loadKlineChart(admin: any, identity: CmcDexIdentity, timef
   }
 
   const request = deps.request ?? requestCmc
-  const ctx = { ...context, supabase: admin, kind: 'request' as const, caller: 'contract-kline-chart', maxCalls: KLINE_MAX_PAGES }
+  const ctx = { ...context, supabase: admin, kind: 'request' as const, caller: 'contract-kline-chart', maxCalls: KLINE_MAX_CALLS }
+  // ONE request: the newest `limit` candles at one width, no `from`/`to`.
+  const params = cmcDexParams('dexCandles', identity, { interval: plan.request.interval, unit: 'usd', limit: plan.request.limit })
   // deno-lint-ignore no-explicit-any
-  const all: Bar[] = [], states: string[] = [], reasons: string[] = [], provenance: any[] = []
-  for (const page of plan.pages) {
-    const params = cmcDexParams('dexCandles', identity, { interval: page.interval, unit: 'usd', from: page.from, to: page.to, limit: page.limit })
-    // deno-lint-ignore no-explicit-any
-    let result: any = null
-    try { result = await request('dexCandles', params, ctx) } catch { result = null }
-    if (!result) { reasons.push('provider_unavailable'); states.push('unavailable'); break }
-    states.push(result.state)
-    if (result.reason) reasons.push(result.reason)
-    if (result.provenance) provenance.push(result.provenance)
-    const recorded = Date.parse(result.provenance?.fetchedAt || '')
-    all.push(...klineBars(result.payload, plan.step, Number.isFinite(recorded) ? recorded : null, now))
-    // No repeated requests after a denial, an exhausted budget or an outage.
-    if (!result.payload) break
+  let result: any = null
+  try { result = await request('dexCandles', params, ctx) } catch { result = null }
+  const reason = (result ? result.reason : 'provider_unavailable') || null
+  // deno-lint-ignore no-explicit-any
+  const provenance: any[] = result?.provenance ? [result.provenance] : []
+  const recorded = Date.parse(result?.provenance?.fetchedAt || '')
+  const returned = klineBars(result?.payload, plan.step, Number.isFinite(recorded) ? recorded : null, now)
+  // The window is applied HERE, to what came back — the request could not carry it.
+  const candles = returned.filter((bar) => bar.t >= plan.from && (bar.closedAt ?? bar.t) <= plan.to)
+  // How far back the answer genuinely reaches, so a short series is never
+  // presented as a complete one.
+  const oldestReturned = returned[0]?.t ?? null
+  const reachesWindowStart = oldestReturned != null && oldestReturned <= plan.from + plan.step
+  const span = (ms: number) => {
+    const [unit, n] = ms >= DAY ? ['day', Math.round(ms / DAY)] as const : ['hour', Math.round(ms / HOUR)] as const
+    return `${n} ${unit}${n === 1 ? '' : 's'}`
   }
-  const candles = normalizeBars(all).bars.filter((bar) => bar.t >= plan.from && (bar.closedAt ?? bar.t) <= plan.to)
   const coverage = [
     `${plan.selected} completed ${plan.providerInterval} candles from the CoinMarketCap k-line aggregate for ${identity.label}; every pool on the chain, not one pair.`,
     'Timestamps are period opens reported in seconds; the close time is derived from the requested interval, not reported by the provider.',
     'Volume is USD for each completed period; a period with no trades is a real zero.',
-    plan.limited ? `The window was cut to the newest ${KLINE_MAX_PAGES * KLINE_PAGE} candles at this interval.` : null,
-    reasons.length ? `Some candles are unavailable (${[...new Set(reasons)].join(', ')}).` : null,
+    // The endpoint answers "the newest N candles"; a dated window is above this
+    // plan (403 insufficient_entitlement), so the range is applied after the fact.
+    `The provider was asked for the newest ${plan.request.limit} candles and the ${timeframe} range was applied locally.`,
+    plan.capped ? `${timeframe} at this interval needs ${plan.wanted} periods, more than the ${KLINE_LIMIT}-candle ceiling of one request.` : null,
+    candles.length && !reachesWindowStart
+      ? `They reach back about ${span(plan.to - oldestReturned!)}, not the full ${timeframe} range.`
+      : null,
+    reason ? `Some candles are unavailable (${reason}).` : null,
   ].filter(Boolean).join(' ')
-  const sourceState = states.every((s) => s === 'fresh') && states.length ? 'fresh' : candles.length ? 'stale' : states[0] || 'unavailable'
+  const state = result?.state
   return {
     candles, source: KLINE_SOURCE, timestampMeaning: 'open' as const, barIntervalMs: plan.step, volumeUnit: 'USD',
     coverage: candles.length ? coverage : `${coverage} No completed candles were returned for this window.`.trim(),
-    sourceState: candles.length ? sourceState : 'unavailable',
-    sourceReason: candles.length ? (reasons[0] ?? null) : (reasons[0] ?? 'no_completed_candles'),
+    sourceState: candles.length ? (state === 'fresh' ? 'fresh' : 'stale') : 'unavailable',
+    // `insufficient_entitlement`, `budget_exceeded` and the rest survive onto the
+    // ladder, which names them in the pool source's coverage sentence.
+    sourceReason: candles.length ? reason : (reason ?? 'no_completed_candles'),
     provenance, bestPair: null, bestProvider: candles.length ? KLINE_SOURCE : null,
   }
 }

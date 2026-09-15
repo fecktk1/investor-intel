@@ -1,4 +1,4 @@
-import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexNumber,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_HOLDER_TAGS} from './cmc-dex.ts'
+import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_HOLDER_TAGS} from './cmc-dex.ts'
 /** Re-exported from cmc-dex.ts, where the response validators also need it. */
 export {CMC_HOLDER_TAGS}
 // Reviewed against official CMC endpoint references 2026-09-09. Access is a
@@ -290,7 +290,11 @@ export function cmcRows(name:string,body:any): {rows:Record<string,any>[];total:
     return {rows,total:rows.length,hasMore:false}
   }
   if(name==='dexHolders'){
-    // Probed 2026-09-14/15: rows live under data.holders. Only these fields survive;
+    // Container, wallet key and tag shape are read through the same helpers the
+    // validator uses (data.holders | data.list | a bare array; walletAddress |
+    // address | holderAddress; tags as an array or one comma string), so a
+    // documented alias can never make validation and projection disagree.
+    // Only these fields survive;
     // every other provider key (name, symbol, price, totalSupply, risk flags, the
     // separate buyCount/sellCount, avg prices) is dropped rather than carried.
     // An address is a classified account, never a person: no row here may be given
@@ -303,17 +307,17 @@ export function cmcRows(name:string,body:any): {rows:Record<string,any>[];total:
     // UNKNOWN provider names, left null until a probe names them: unrealizedPnlUsd
     // (no unrealised field is documented) and txCount (the response documents
     // separate buyCount and sellCount, which are deliberately NOT summed here).
-    const raw=Array.isArray(data)?data:Array.isArray(data?.holders)?data.holders:[]
-    const rows=raw.filter((v:any)=>v&&typeof v==='object'&&!Array.isArray(v)).slice(0,250).map((r:any)=>({
-      walletAddress:typeof r.walletAddress==='string'?r.walletAddress:null,
-      balance:r.balance??null,percent:r.percent??null,
-      tags:Array.isArray(r.tags)?r.tags.filter((t:any)=>typeof t==='string').slice(0,CMC_HOLDER_TAGS.length):null,
+    const page=cmcDexHolderPage(data)
+    const rows=(page?.rows??[]).filter((v:any)=>v&&typeof v==='object'&&!Array.isArray(v)).slice(0,250).map((r:any)=>({
+      walletAddress:cmcDexHolderAddress(r),
+      balance:r.balance??r.actualBalance??null,percent:r.percent??null,
+      tags:cmcDexHolderTagList(r.tags)?.slice(0,CMC_HOLDER_TAGS.length)??null,
       fundingSource:typeof r.fundingSource==='string'?r.fundingSource:null,
       buyVolumeUsd:cmcDexNumber(r.buyVolumeUsd??r.buyUsd),sellVolumeUsd:cmcDexNumber(r.sellVolumeUsd??r.sellUsd),
       realizedPnlUsd:cmcDexNumber(r.realizedPnlUsd??r.realizedPnl),unrealizedPnlUsd:cmcDexNumber(r.unrealizedPnlUsd??r.unrealizedPnl),
       txCount:cmcDexNumber(r.txCount??r.txnCount),
       firstSeenAt:r.firstSeenAt??r.firstActiveTime??null,lastSeenAt:r.lastSeenAt??r.lastActiveTime??null}))
-    return {rows,total:null,hasMore:false,nextCursor:isCmcDexCursor(data?.lastId)?data.lastId:null}
+    return {rows,total:null,hasMore:false,nextCursor:isCmcDexCursor(page?.cursor)?page!.cursor:null}
   }
   if(isDexDiscovery(name)){
     const raw=name==='dexMeme'?['newCreations','aboutGraduates','graduates'].flatMap(stage=>(Array.isArray(data?.[stage])?data[stage]:[]).map((r:any)=>({...r,discoveryStage:stage}))):data?.leaderboardList??[]

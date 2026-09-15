@@ -59,9 +59,55 @@ Deno.test('holder pages stay inside the requested page and only carry addresses 
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,walletAddress:sol}]}},params),false)
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[holder]}},{platform:'ethereum',tokenAddress:address,tag:'tag_whale'}),false)
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,tokenAddress:'0x'+'c'.repeat(40)}]}},params),false)
- eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,tags:'tag_whale'}]}},params),false)
+ // Tags may legitimately be one comma string; a number is still not a tag list.
+ assert(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,tags:'tag_whale'}]}},params))
+ eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,tags:7}]}},params),false)
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[holder],lastId:'x&url=evil'}},params),false)
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[[holder]]}},params),false)
+})
+Deno.test('every documented holder container, wallet key and string number is one page',()=>{
+ const params={platform:'ethereum',tokenAddress:address,tag:'tag_kol',limit:'2'}
+ const wallet='0x'+'b'.repeat(40)
+ // Numbers arrive as strings from this family: the first live tag_count answered
+ // hc:"253", hr:"0.000020" and hr:"0E-18" for zero, so no numeric field may be type-gated.
+ const base={balance:'19994.083826086',percent:'0.000020',buyUsd:'12.5',sellUsd:'0E-18',realizedPnl:'-3.25',firstActiveTime:'1700000000',lastActiveTime:'1700003600'}
+ const containers=[
+  {data:{holders:[{walletAddress:wallet,...base}]}},               // published reference
+  {data:{list:[{address:wallet,...base}]}},                        // alias container and key
+  {data:[{holderAddress:wallet,...base}]},                         // bare data array
+  {data:{holders:[{walletAddress:wallet,...base}],lastId:'abc=='}},// cursor present
+  {data:{holders:[{walletAddress:wallet,...base}],nextId:12345}},  // numeric cursor alias
+ ]
+ for(const body of containers)assert(validateCmcDexResponse('dexHolders',body,params),JSON.stringify(body).slice(0,120))
+ // Identity and size stay strict across every container.
+ eq(validateCmcDexResponse('dexHolders',{data:{list:[{address:sol,...base}]}},params),false)
+ eq(validateCmcDexResponse('dexHolders',{data:[{holderAddress:wallet},{holderAddress:wallet},{holderAddress:wallet}]},params),false)
+ eq(validateCmcDexResponse('dexHolders',{data:{holders:[{walletAddress:wallet,tokenAddress:'0x'+'c'.repeat(40),...base}]}},params),false)
+ eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...base}]}},params),false)
+ eq(validateCmcDexResponse('dexHolders',{data:{rows:[{walletAddress:wallet}]}},params),false)
+ // The row mapping reads the same aliases the validator accepted, and parses the
+ // string numerics rather than dropping them.
+ const projected=cmcRows('dexHolders',{data:{list:[{address:wallet,tags:'tag_kol,tag_whale',...base}],nextId:12345}})
+ eq(projected.rows[0].walletAddress,wallet)
+ eq(projected.rows[0].tags,['tag_kol','tag_whale'])
+ eq(projected.rows[0].balance,'19994.083826086')
+ eq(projected.rows[0].buyVolumeUsd,12.5)
+ eq(projected.rows[0].sellVolumeUsd,0)
+ eq(projected.rows[0].realizedPnlUsd,-3.25)
+ eq(projected.rows[0].firstSeenAt,'1700000000')
+ eq(projected.nextCursor,'12345')
+ eq(cmcRows('dexHolders',{data:[{holderAddress:wallet,...base}]}).rows[0].walletAddress,wallet)
+ eq(cmcRows('dexHolders',{data:[{holderAddress:wallet}]}).nextCursor,null)
+ eq(cmcRows('dexHolders',{data:{rows:[]}}).rows,[])
+})
+Deno.test('tag counts read the string numerics the live capture actually returned',()=>{
+ // Verbatim from the first real capture (base 0x8d01…): every number a string,
+ // "0E-18" for a zero ratio, and the container carrying platformId and tokenAddress.
+ const contract='0x8d01ebde5e01b0917daad6f84372484084226207'
+ const params={platform:'base',tokenAddress:contract}
+ const body={data:{holders:[{hc:'253',hr:'0.000020',tb:'19994.083826086',tag:'tag_kol'},{hc:'0',hr:'0E-18',tb:'0E-18',tag:'tag_dev'}],platformId:199,tokenAddress:contract}}
+ assert(validateCmcDexResponse('dexHolderTags',body,params))
+ eq(cmcRows('dexHolderTags',body).rows,[{tag:'tag_kol',hc:253,tb:19994.083826086,hr:0.00002},{tag:'tag_dev',hc:0,tb:0,hr:0}])
 })
 Deno.test('k-line pages stay bounded, numeric and forward in time',()=>{
  const params={platform:'ethereum',address,interval:'1h',limit:'3'}

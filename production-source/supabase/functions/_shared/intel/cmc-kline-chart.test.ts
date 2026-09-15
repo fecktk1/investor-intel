@@ -1,7 +1,7 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   loadKlineChart, contractCandleLadder, klinePlan, klineBars, klineIdentity, klineAutoInterval, klineEpochMs,
-  KLINE_INTERVALS, KLINE_PAGE, KLINE_MAX_PAGES, KLINE_SOURCE,
+  KLINE_INTERVALS, KLINE_LIMIT, KLINE_MAX_CALLS, KLINE_SOURCE,
 } from './cmc-kline-chart.ts'
 import { cmcParams } from '../market-assets/cmc-capabilities.ts'
 import { cmcDexIdentity } from '../market-assets/cmc-dex.ts'
@@ -70,24 +70,24 @@ Deno.test('auto picks the interval from the window', () => {
   eq(klinePlan('1Y', 'auto', NOW).selected, '1D')
 })
 
-Deno.test('the plan pages at a thousand candles and keeps the newest window when it is cut', () => {
+Deno.test('the plan is one latest-N request with no window, capped at a thousand', () => {
   const one = klinePlan('7D', '1H', NOW)
-  eq(one.pages.length, 1)
-  eq(one.pages[0].limit, 168)
+  // 168 hourly periods plus the one still in progress, which is dropped locally.
+  eq(one.request, { interval: '1h', limit: 169 })
+  eq(one.wanted, 168)
   eq(one.step, HOUR)
-  assert(!one.limited)
-  // 30 days of one-minute candles is 43,200 periods: four pages of 1000, newest first.
+  eq(one.to, NOW)
+  eq(one.from, NOW - 168 * HOUR)
+  assert(!one.capped)
+  // 30 days of one-minute candles is 43,200 periods: one request of 1000.
   const cut = klinePlan('1M', '1M', NOW)
-  eq(cut.pages.length, KLINE_MAX_PAGES)
-  eq(cut.pages.every((p) => p.limit === KLINE_PAGE), true)
-  eq(cut.limited, true)
-  eq(cut.to, NOW)
-  eq(cut.from, NOW - KLINE_MAX_PAGES * KLINE_PAGE * 60_000)
-  // from/to are SECONDS — exactly what cmcParams validates.
-  for (const page of cut.pages) {
-    assert(/^\d{9,10}$/.test(String(page.from)), 'from is seconds')
-    assert(/^\d{9,10}$/.test(String(page.to)), 'to is seconds')
-  }
+  eq(cut.request, { interval: '1min', limit: KLINE_LIMIT })
+  eq(cut.wanted, 43_200)
+  eq(cut.capped, true)
+  eq(cut.from, NOW - 43_200 * 60_000, 'the window the caller asked for is unchanged by the cap')
+  // A windowed request is above the Startup plan (403), so no plan may carry one.
+  eq(Object.hasOwn(one.request, 'from'), false)
+  eq(Object.hasOwn(one.request, 'to'), false)
 })
 
 Deno.test('a second timestamp becomes milliseconds and a millisecond one is left alone', () => {
@@ -118,12 +118,16 @@ Deno.test('loadKlineChart returns the loadCmcChart object shape', async () => {
   const rows = Array.from({ length: 24 }, (_, i) => candle(NOW - (24 - i) * HOUR, 2 + i))
   const { request, calls } = fakeRequest(() => ok(rows))
   const chart = await loadKlineChart({}, identity, '24H', '1H', NOW, {}, { request, plan: startup })
-  eq(calls.length, 1)
+  eq(calls.length, KLINE_MAX_CALLS)
   eq(calls[0].name, 'dexCandles')
   eq(calls[0].params.interval, '1h')
   eq(calls[0].params.unit, 'usd')
   eq(calls[0].params.platform, 'ethereum')
   eq(calls[0].params.address, EVM)
+  eq(calls[0].params.limit, '25', 'the newest 24 completed periods plus the one in progress')
+  // A dated window is above the Startup plan: the request never carries one.
+  eq(calls[0].params.from, undefined)
+  eq(calls[0].params.to, undefined)
   eq(chart.source, KLINE_SOURCE)
   eq(chart.bestProvider, KLINE_SOURCE)
   eq(chart.bestPair, null)
@@ -137,17 +141,37 @@ Deno.test('loadKlineChart returns the loadCmcChart object shape', async () => {
   assert(chart.coverage.includes('derived from the requested interval'), 'the synthesised close time is stated')
 })
 
-Deno.test('every page is requested and the bars are merged', async () => {
-  const plan = klinePlan('1M', '1M', NOW)
-  const { request, calls } = fakeRequest((_name, params) => {
-    const from = Number(params.from) * 1000
-    return ok(Array.from({ length: 3 }, (_, i) => candle(from + i * 60_000, 1 + i)))
-  })
+Deno.test('one request a chart, and the app window is applied locally', async () => {
+  // The provider answers with more history than the 24H window asked for.
+  const rows = Array.from({ length: 200 }, (_, i) => candle(NOW - (200 - i) * HOUR, 2 + i))
+  const { request, calls } = fakeRequest(() => ok(rows))
+  const chart = await loadKlineChart({}, identity, '24H', '1H', NOW, {}, { request, plan: startup })
+  eq(calls.length, 1, 'no paging: paging needs a window and the request has none')
+  eq(chart.candles.length, 24, 'everything older than the 24H range is dropped locally')
+  eq(chart.candles[0].t, NOW - 24 * HOUR)
+  eq(chart.candles.at(-1)?.t, NOW - HOUR)
+  assert(chart.coverage.includes('applied locally'), 'the coverage says the range was applied after the fact')
+})
+
+Deno.test('a window wider than one request says so, and says how far back the answer reaches', async () => {
+  // 30 days of one-minute candles needs 43,200 periods; one request returns 1000.
+  const rows = Array.from({ length: KLINE_LIMIT }, (_, i) => candle(NOW - (KLINE_LIMIT - i) * 60_000, 1 + i))
+  const { request, calls } = fakeRequest(() => ok(rows))
   const chart = await loadKlineChart({}, identity, '1M', '1M', NOW, {}, { request, plan: startup })
-  eq(calls.length, plan.pages.length)
-  eq(calls.length, KLINE_MAX_PAGES)
-  eq(chart.candles.length, KLINE_MAX_PAGES * 3)
-  assert(chart.coverage.includes('cut to the newest'), 'a cut window says so')
+  eq(calls.length, 1)
+  eq(Number(calls[0].params.limit), KLINE_LIMIT)
+  eq(chart.candles.length, KLINE_LIMIT, 'every returned candle is inside the 30-day window')
+  assert(chart.coverage.includes(`more than the ${KLINE_LIMIT}-candle ceiling`), 'the cap is stated')
+  assert(chart.coverage.includes('not the full 1M range'), 'the real reach is stated')
+  assert(chart.coverage.includes('about 17 hours'), `the reach is quantified: ${chart.coverage}`)
+})
+
+Deno.test('a series that does reach the window start makes no short-reach claim', async () => {
+  const rows = Array.from({ length: 30 }, (_, i) => candle(NOW - (30 - i) * HOUR, 2 + i))
+  const { request } = fakeRequest(() => ok(rows))
+  const chart = await loadKlineChart({}, identity, '24H', '1H', NOW, {}, { request, plan: startup })
+  eq(chart.candles.length, 24)
+  assert(!chart.coverage.includes('not the full'), 'a complete window says nothing about a short reach')
 })
 
 Deno.test('an empty answer is unavailable with no_completed_candles', async () => {
@@ -160,10 +184,14 @@ Deno.test('an empty answer is unavailable with no_completed_candles', async () =
 })
 
 Deno.test('a provider reason survives onto an empty chart', async () => {
-  const { request } = fakeRequest(() => ({ payload: null, state: 'unavailable', reason: 'budget_exceeded', provenance: null }))
-  const chart = await loadKlineChart({}, identity, '7D', '1H', NOW, {}, { request, plan: startup })
-  eq(chart.sourceState, 'unavailable')
-  eq(chart.sourceReason, 'budget_exceeded')
+  for (const reason of ['budget_exceeded', 'insufficient_entitlement', 'rate_limited']) {
+    const { request } = fakeRequest(() => ({ payload: null, state: 'unavailable', reason, provenance: null }))
+    const chart = await loadKlineChart({}, identity, '7D', '1H', NOW, {}, { request, plan: startup })
+    eq(chart.sourceState, 'unavailable')
+    eq(chart.sourceReason, reason)
+    eq(chart.bestProvider, null)
+    assert(chart.coverage.includes(reason), `the coverage names ${reason}`)
+  }
 })
 
 Deno.test('below Startup the rung is skipped without a call', async () => {
@@ -196,15 +224,31 @@ Deno.test('the ladder tries k-line before the pool for a verified chain', async 
 })
 
 Deno.test('the ladder falls through to the pool with the k-line reason on it', async () => {
-  const order: string[] = []
-  const kline = () => { order.push('kline'); return Promise.resolve({ candles: [], source: KLINE_SOURCE, sourceReason: 'plan_below_startup' } as never) }
+  for (const reason of ['plan_below_startup', 'insufficient_entitlement', 'no_completed_candles']) {
+    const order: string[] = []
+    const kline = () => { order.push('kline'); return Promise.resolve({ candles: [], source: KLINE_SOURCE, sourceReason: reason } as never) }
+    // deno-lint-ignore no-explicit-any
+    const pool = (_a: any, _r: string, interval = 'auto') => { order.push(`pool:${interval}`); return Promise.resolve({ candles: [{ t: NOW - HOUR, c: 2 }], bestPair: 'p', bestProvider: 'geckoterminal' } as never) }
+    const result = await contractCandleLadder({}, contractAsset(), '7D', 'auto', {}, { kline, pool }, NOW) as Record<string, unknown>
+    eq(order, ['kline', 'pool:auto'])
+    eq(result.bestProvider, 'geckoterminal')
+    eq(result.klineReason, reason)
+    assert(String(result.coverage).includes(reason), `the pool coverage names ${reason}`)
+  }
+})
+
+Deno.test('a real 403 on the k-line rung reaches the pool coverage end to end', async () => {
+  // The transport's answer to the live 403: state unavailable, reason
+  // insufficient_entitlement, no payload. The ladder uses the real loader.
+  const { request, calls } = fakeRequest(() => ({ payload: null, state: 'unavailable', reason: 'insufficient_entitlement', provenance: null }))
   // deno-lint-ignore no-explicit-any
-  const pool = (_a: any, _r: string, interval = 'auto') => { order.push(`pool:${interval}`); return Promise.resolve({ candles: [{ t: NOW - HOUR, c: 2 }], bestPair: 'p', bestProvider: 'geckoterminal' } as never) }
-  const result = await contractCandleLadder({}, contractAsset(), '7D', 'auto', {}, { kline, pool }, NOW) as Record<string, unknown>
-  eq(order, ['kline', 'pool:auto'])
+  const pool = (_a: any, _r: string, interval = 'auto') => Promise.resolve({ candles: [{ t: NOW - HOUR, c: 2 }], bestPair: 'pool', bestProvider: 'geckoterminal', interval } as never)
+  const result = await contractCandleLadder({}, contractAsset('base'), '7D', 'auto', {}, { request, plan: startup, pool }, NOW) as Record<string, unknown>
+  eq(calls.length, 1, 'one request, then the fall-through')
+  eq(calls[0].params.from, undefined, 'no dated window on the request that 403s')
   eq(result.bestProvider, 'geckoterminal')
-  eq(result.klineReason, 'plan_below_startup')
-  assert(String(result.coverage).includes('plan_below_startup'), 'the page can say what was tried')
+  eq(result.klineReason, 'insufficient_entitlement')
+  assert(String(result.coverage).includes('insufficient_entitlement'), `the page says why: ${result.coverage}`)
 })
 
 Deno.test('an unverified chain skips the rung entirely and never asks for sub-hour pool candles', async () => {
