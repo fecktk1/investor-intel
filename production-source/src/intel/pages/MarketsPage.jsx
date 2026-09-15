@@ -90,7 +90,7 @@ export default function MarketsPage() {
   const [candidates, setCandidates] = useState(null)
   const [resolution, setResolution] = useState(null)
   const [macro, setMacro] = useState(null)
-  const [params, setParams] = useScreenParams('m_', { provider: 'auto', sort: 'market_cap', dir: 'desc', chain: '', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: PAGE_SIZE })
+  const [params, setParams] = useScreenParams('m_', { provider: 'auto', sort: 'market_cap', dir: '', chain: '', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: PAGE_SIZE })
 
   const [degenState, setDegenState] = useState(null)
   const [degenFailure, setDegenError] = useState(null)
