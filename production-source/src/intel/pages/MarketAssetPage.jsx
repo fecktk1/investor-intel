@@ -9,7 +9,7 @@ import { ArrowLeft, TrendingUp, TrendingDown, Activity } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { useMarketDetailCache } from '../context/MarketDetailCache'
-import { loadMarketDetail, loadMarketCandleSnapshot, loadMarkets } from '../lib/markets-api'
+import { DETAIL_CANDLE_RANGE, loadMarketDetail, loadMarketCandleSnapshot, loadMarkets } from '../lib/markets-api'
 // PriceWorkstation.jsx stays untouched (plan rule); the k-line source name is
 // mapped here, before the chart source reaches it.
 import { chartProviderLabel } from '../lib/chart-source-label'
@@ -310,7 +310,7 @@ export default function MarketAssetPage() {
         {chartPending || workspace.loading ? <div role="status" className="min-h-[420px] flex items-center justify-center text-sm text-[var(--fg-4)]">{chartPending ? t('asset.matching_chart_network', { defaultValue: 'Matching your portfolio network…' }) : t('asset.restoring_chart', { defaultValue: 'Restoring the chart you left…' })}</div> : <TokenChart key={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} assetKey={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} candles={d.candles} persistence={canonicalKey ? {supabase,userId:user?.id,orgId:org?.id,asset:canonicalKey,interval:candleInterval} : null} readOnly={!canonicalKey} assetName={d.displayName} assetSymbol={sym}
           requestKey={candleInterval} initialLayout={restoredLayout} workingRevision={workspace.working?.revision || 0}
           rangeExtra={<label className="intel-event-meta">Candle interval <select aria-label="Candle interval" value={candleInterval} onChange={e=>setCandleInterval(e.target.value)}>{candleIntervalChoices.map(choice=><option key={choice} value={choice}>{candleIntervalLabel(choice)}</option>)}</select><span> The chart names its source and the width it served under Price coverage.</span></label>}
-          markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers,...tapeMarkers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles defaultRange={historyRange} onRangeChange={setHistoryRange}
+          markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers,...tapeMarkers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles defaultRange={historyRange} candlesRange={DETAIL_CANDLE_RANGE} onRangeChange={setHistoryRange}
           historyLoading={research.loading || position.loading || research.loadingMore || position.loadingMore}
           historyError={research.error || (position.error && intelReadError(position.error, 'Your portfolio activity is temporarily unavailable. Please retry from Your position.'))} historyHasMore={!!(research.nextCursor || position.nextCursor)}
           onLoadMoreHistory={() => { if (research.nextCursor) research.loadMore(); if (position.nextCursor) position.loadMore() }}

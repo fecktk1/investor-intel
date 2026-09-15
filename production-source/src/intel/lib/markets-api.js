@@ -198,8 +198,11 @@ export async function loadTokenProfile(supabase, ident = {}, { orgId, refresh = 
 // Full single-asset detail (signal + WHY factors + per-provider reads + market
 // cap + spread + rollups + RAG memory + on-demand candles) for ANY exchange
 // symbol. Powers /intel/markets/:symbol.
+/** The period the detail read's candles cover. The asset page seeds only this
+ * period's chart cache with them; a restored wider period loads its own. */
+export const DETAIL_CANDLE_RANGE = '7D'
 export async function loadMarketDetail(supabase, orgId, symbol, identity = {}) {
-  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, symbol, ...identity } })
+  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, symbol, timeframe: DETAIL_CANDLE_RANGE, ...identity } })
   if (error) { const details = await error.context?.json?.().catch(() => null); const failure = new Error(details?.error || error.message || 'market_detail_failed'); failure.code = details?.error; throw failure }
   if (data?.error) throw new Error(data.error)
   return data

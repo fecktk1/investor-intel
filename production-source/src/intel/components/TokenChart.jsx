@@ -134,7 +134,7 @@ export function MarkerDetails({ events, onClose, t, onMouseEnter, onMouseLeave, 
   </section>
 }
 
-function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, assetName = null, assetSymbol = null, requestKey = '', initialLayout = null, workingRevision = 0, readOnly = false, replayCursor = undefined, onReplayChange }) {
+function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', candlesRange = null, assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, assetName = null, assetSymbol = null, requestKey = '', initialLayout = null, workingRevision = 0, readOnly = false, replayCursor = undefined, onReplayChange }) {
   const { t } = useTranslation('intel')
   const conditions=useChartAlertHistory(readOnly?null:persistence,timeWindow?.from,timeWindow?.to,assetKey)
   const inputMarkers=useMemo(()=>[...providedMarkers,...conditions.markers],[providedMarkers,conditions.markers])
@@ -148,11 +148,16 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
     : new Set(['news', 'partnerships', 'unlocks']))
   const layers = useMemo(() => [...LAYERS, ...[...new Set(inputMarkers.map(markerGroup))].filter(group => !LAYERS.some(([known]) => known === group)).map(group => [group, textLabel(group)])], [inputMarkers])
   const groups = useMemo(() => showDensityToggles ? new Set(layers.map(([group]) => group).filter(group => !hiddenGroups.has(group))) : null, [layers, hiddenGroups, showDensityToggles])
+  // The page's candles were fetched for one period (`candlesRange`). They seed
+  // that period's cache and nothing else: a restored wider period starts empty
+  // and loads its own series, so the chart never shows one week of bars under a
+  // one-month window, and a share taken then never captures the wrong series.
+  const seededRange = candlesRange || defaultRange
   const [range, setRange] = useState(defaultRange)
-  const [series, setSeries] = useState(candles || [])
+  const [series, setSeries] = useState(seededRange === defaultRange ? candles || [] : [])
   const [tfLoading, setTfLoading] = useState(false)
   const [chartError, setChartError] = useState(null)
-  const [coverage, setCoverage] = useState(priceCoverage)
+  const [coverage, setCoverage] = useState(seededRange === defaultRange ? priceCoverage : null)
   const [refreshTick,setRefreshTick]=useState(0)
   const [selection, setSelection] = useState(null)
   const [allHistory, setAllHistory] = useState(false)
@@ -197,8 +202,8 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   const loaderRef = useRef(loadCandles)
   loaderRef.current = loadCandles
 
-  useEffect(() => { cacheRef.current = {}; setSeries(candles || []); setCoverage(priceCoverage); setChartError(null); setRange(defaultRange); setSelection(null); pinRef.current = false; openedFocus.current = null; setAllHistory(false) }, [assetKey, defaultRange]) // eslint-disable-line
-  useEffect(() => { if (candles) { cacheRef.current[defaultRange] = { candles, ...priceCoverage, checkedAt:Date.now() }; if (range === defaultRange) { setSeries(candles); setCoverage(priceCoverage) } } }, [candles, defaultRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
+  useEffect(() => { cacheRef.current = {}; setSeries(seededRange === defaultRange ? candles || [] : []); setCoverage(seededRange === defaultRange ? priceCoverage : null); setChartError(null); setRange(defaultRange); setSelection(null); pinRef.current = false; openedFocus.current = null; setAllHistory(false) }, [assetKey, defaultRange]) // eslint-disable-line
+  useEffect(() => { if (candles) { cacheRef.current[seededRange] = { candles, ...priceCoverage, checkedAt:Date.now() }; if (range === seededRange) { setSeries(candles); setCoverage(priceCoverage) } } }, [candles, seededRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
   useEffect(() => { if(previousRequestKey.current!==requestKey){cacheRef.current = {};previousRequestKey.current=requestKey} }, [requestKey])
   useEffect(()=>{
     if(!loadCandles||readOnly||replayAt!=null)return
