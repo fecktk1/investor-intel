@@ -37,10 +37,13 @@ function previewStore() {
  return {get:()=>value,set:next=>{if(next===value)return;value=next;for(const listener of listeners)listener()},subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}}
 }
 
-function DrawingOptions({drawing,point,width,onChange,onEdit,onDelete}) {
+function DrawingOptions({drawing,point,width,height,onChange,onEdit,onDelete}) {
  const {t}=useTranslation('intel',{useSuspense:false})
- const left=Math.max(4,Math.min(width-250,point.x-40))
- return <div className="intel-draw-options" role="group" aria-label={t('chart.draw.options',{defaultValue:'Drawing style'})} style={{left,top:Math.max(4,point.y+16)}}>
+ // Placed from the chart's own coordinate conversion, then clamped to whatever
+ // the plot currently measures, so it stays reachable when the chart is expanded.
+ const left=Math.max(34,Math.min(Math.max(34,width-250),point.x-40))
+ const top=Math.max(4,Math.min(Math.max(4,height-40),point.y+16))
+ return <div className="intel-draw-options" role="group" aria-label={t('chart.draw.options',{defaultValue:'Drawing style'})} style={{left,top}}>
   <span className="intel-draw-swatches">{DRAWING_COLORS.map(color=><button key={color} type="button" className="intel-draw-swatch" style={{background:color}}
    aria-pressed={drawing.color.toLowerCase()===color.toLowerCase()} aria-label={t('chart.draw.color_value',{defaultValue:'Color {{color}}',color})} onClick={()=>onChange({color})}/>)}</span>
   <label>{t('chart.draw.width',{defaultValue:'Width'})}<select value={drawing.width} onChange={event=>onChange({width:Number(event.target.value)})}>{[1,2,3,4,5].map(value=><option key={value} value={value}>{value}</option>)}</select></label>
@@ -89,10 +92,10 @@ function DrawingSurface({store,surfaceRef,items,selected,tool,readOnly,width,hei
   <div className="intel-draw-layer" style={{width,height}}>
    {rendered.filter(drawing=>drawing.tool==='tweet').map(drawing=>{
     const point=project(drawing.anchors[0])
-    return point&&<ChartTweetCard key={drawing.id} drawing={drawing} point={point} width={width} context={context} selected={selected===drawing.id} readOnly={readOnly}
+    return point&&<ChartTweetCard key={drawing.id} drawing={drawing} point={point} width={width} height={height} context={context} selected={selected===drawing.id} readOnly={readOnly}
      onSelect={event=>onStart(event,drawing)}/>
    })}
-   {selectedDrawing&&selectedPoint&&<DrawingOptions drawing={selectedDrawing} point={selectedPoint} width={width} onChange={onStyle} onEdit={()=>onEdit(selectedDrawing)} onDelete={()=>onDelete(selectedDrawing.id)}/>}
+   {selectedDrawing&&selectedPoint&&<DrawingOptions drawing={selectedDrawing} point={selectedPoint} width={width} height={height} onChange={onStyle} onEdit={()=>onEdit(selectedDrawing)} onDelete={()=>onDelete(selectedDrawing.id)}/>}
   </div>
  </>
 }

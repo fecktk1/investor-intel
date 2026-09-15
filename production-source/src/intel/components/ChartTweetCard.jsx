@@ -12,7 +12,7 @@ const REASONS={
 // A post from X anchored to a time and a price. The address is all the drawing
 // stores; the author and the text are read server side. A post that could not be
 // read says so, so the card is never blank.
-export default function ChartTweetCard({drawing,point,width,context,selected,readOnly,onSelect}) {
+export default function ChartTweetCard({drawing,point,width,height,context,selected,readOnly,onSelect}) {
  const {t}=useTranslation('intel',{useSuspense:false})
  const [post,setPost]=useState(null)
  const url=drawing.url||''
@@ -25,10 +25,13 @@ export default function ChartTweetCard({drawing,point,width,context,selected,rea
   return()=>{alive=false;controller.abort()}
  },[url,context?.orgId]) // eslint-disable-line react-hooks/exhaustive-deps
  const handle=post?.handle||url.split('/')[3]||''
- const left=Math.max(0,Math.min((width||0)-232,point.x+8))
+ // Anchored from the chart's coordinate conversion, clamped to the plot as it is
+ // measured now, so an expanded or fullscreen chart keeps the card on screen.
+ const left=Math.max(0,Math.min(Math.max(0,(width||0)-232),point.x+8))
+ const top=Math.max(0,Math.min(Math.max(0,(height||0)-48),point.y-16))
  const [failureKey,failureText]=REASONS[post?.reason]||UNAVAILABLE
  const failure=post?.state==='unavailable'?t(failureKey,{defaultValue:failureText}):null
- return <article className="intel-draw-tweet" data-selected={!!selected} style={{left,top:Math.max(0,point.y-16),borderLeftColor:drawing.color}}
+ return <article className="intel-draw-tweet" data-selected={!!selected} style={{left,top,borderLeftColor:drawing.color}}
   onPointerDown={readOnly?undefined:onSelect}>
   <span className="intel-draw-tweet-author">{post?.author||(handle?`@${handle}`:t('chart.draw.tweet_unknown',{defaultValue:'Post address missing'}))}</span>
   {post?.author&&handle&&<span className="intel-draw-tweet-handle">@{handle}</span>}
