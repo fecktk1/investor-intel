@@ -1,7 +1,10 @@
 import {digest,finite,instant,stableJson,type Observation} from '../intel/investigation-evidence.ts'
 import {cmcHistoryPolicy,cmcSubject} from '../intel/investigation-normalize.ts'
 import {CMC_DEX_NETWORKS,cmcDexAddress,cmcDexIdentity} from './cmc-dex.ts'
-export const LIVE_WINDOW_MS=20000,LIVE_MESSAGE_LIMIT=200,LIVE_STALE_MS=20000
+/** A window is one bounded subscription. Sixty seconds: the probe on 2026-09-15 showed a
+ * busy Base token pushing a few swaps a minute, so a 20-second window mostly held only its
+ * handshake and the per-window handshake cost outweighed the tape it caught. */
+export const LIVE_WINDOW_MS=60000,LIVE_MESSAGE_LIMIT=200,LIVE_STALE_MS=20000
 export const LIVE_MARKET_CHANNEL='market@crypto_latest_price'
 /** Documented CoinMarketCap on-chain stream channels used by the live tape.
  * https://coinmarketcap.com/api/documentation/pro-api-websocket/overview
