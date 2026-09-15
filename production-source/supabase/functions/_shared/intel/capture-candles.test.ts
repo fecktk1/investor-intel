@@ -1,14 +1,15 @@
 // The candle history lane: where a year comes from, what it costs, what is
 // stored, what is resumed, and what is refused.
 
-import { assertEquals, assertStringIncludes } from 'https://deno.land/std@0.224.0/assert/mod.ts'
+import { assertEquals, assertStringIncludes, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   backfillAssetHistory, backfillCandidates, backfillOneAsset, candleRow, captureCandleBackfill,
   captureCandleDaily, ohlcvHistoryPages, CANDLE_CAPTURE_OPS, HISTORY_EPOCH_MS, OHLCV_MAX_PAGES,
+  OHLCV_PAGE_COUNT, OHLCV_PAGE_DAYS, BACKFILL_CREDIT_CEILING, cmcCatalogueIndex, cmcIdOf,
 } from './capture-candles.ts'
 import { binanceDailyBar, binanceDailyHistory, BINANCE_EPOCH_MS } from './exchange-history.ts'
 import { readCandleCoverage } from './capture-candles-read.ts'
-import { estimateCmcCredits } from '../market-assets/cmc-capabilities.ts'
+import { cmcParams, estimateCmcCredits } from '../market-assets/cmc-capabilities.ts'
 
 const DAY = 86_400_000
 const NOW = Date.UTC(2026, 8, 15, 12, 0, 0)
@@ -55,22 +56,42 @@ function fakeDb(store: Store, fail: Record<string, string> = {}) {
 }
 
 const ctxFor = () => ({ kind: 'job' as const })
-const kline = (t: number, close: number, volume: number | null = 10) =>
-  [t, close - 1, close + 1, close - 2, close, volume, t + DAY - 1, 0, 0, 0, 0, 0]
+/** A real `/api/v3/klines` row, in the documented order and with the documented
+ * string types: open time, O, H, L, C, BASE volume, close time, QUOTE volume,
+ * trades, taker base, taker quote, ignore. */
+const kline = (t: number, close: number, base: number | string | null = 10, quote: number | string | null = 600_000) =>
+  [t, String(close - 1), String(close + 1), String(close - 2), String(close), base == null ? null : String(base),
+    t + DAY - 1, quote == null ? null : String(quote), 812, '5.0', '300000.0', '0']
 
 // ─── Binance history ──────────────────────────────────────────────────────────
 
 Deno.test('a Binance daily row becomes a candle only when it is a completed UTC day', () => {
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100), NOW)!.t, YESTERDAY)
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100), NOW)!.closedAt, YESTERDAY + DAY - 1)
+  const bar = binanceDailyBar(kline(YESTERDAY, 100), NOW)!
+  assertEquals(bar.t, YESTERDAY)
+  assertEquals(bar.closedAt, YESTERDAY + DAY - 1)
+  // The venue publishes strings; they become numbers, not NaN.
+  assertEquals([bar.o, bar.h, bar.l, bar.c], [99, 101, 98, 100])
   // A day that has not closed is not a candle.
   assertEquals(binanceDailyBar(kline(YESTERDAY + DAY, 100), NOW), null)
   // A row whose open time is not on a UTC day boundary is not a daily candle.
   assertEquals(binanceDailyBar(kline(YESTERDAY + 3600_000, 100), NOW), null)
-  // A zero volume is a real zero; an unreported one is null.
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, 0), NOW)!.v, 0)
-  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, null), NOW)!.v, null)
   assertEquals(binanceDailyBar('not a row', NOW), null)
+})
+
+Deno.test('the stored Binance volume is the QUOTE turnover, so the archive is one unit', () => {
+  // Field 7, not field 5. CoinMarketCap OHLCV rows beside these are in USD, and
+  // `binancePair` picks the pair with the most quote volume, which is a USD
+  // stablecoin; storing the base-asset amount would put two units in one column.
+  const bar = binanceDailyBar(kline(YESTERDAY, 60_000, '2.5', '150000.0'), NOW)!
+  assertEquals(bar.v, 150_000)
+  assertEquals(bar.volumeUnit, 'USD')
+  // A day in which nothing traded is a real zero.
+  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, '0', '0'), NOW)!.v, 0)
+  // An unreported quote turnover stays NULL; the base figure is never used in
+  // its place, because that would be a different unit under the same label.
+  assertEquals(binanceDailyBar(kline(YESTERDAY, 100, '7', null), NOW)!.v, null)
+  // A row too short to carry field 7 has no quote turnover at all.
+  assertEquals(binanceDailyBar([YESTERDAY, '1', '2', '0.5', '1.5', '9', YESTERDAY + DAY - 1], NOW)!.v, null)
 })
 
 Deno.test('Binance history pages forward and only a short page proves it saw the first day', async () => {
@@ -104,35 +125,61 @@ Deno.test('a venue outage is a reason and an incomplete walk, not a claimed firs
 
 // ─── OHLCV paging and credits ─────────────────────────────────────────────────
 
-Deno.test('OHLCV pages walk backwards in thousand-day steps and cost about one credit per hundred days', () => {
-  const from = Date.UTC(2013, 3, 28), to = Date.UTC(2026, 8, 15)
-  const pages = ohlcvHistoryPages('1', from, to)
-  assertEquals(pages.length, 5)
-  const credits = pages.reduce((sum, page) => sum + estimateCmcCredits('ohlcv', { count: String(page.count) }), 0)
-  // Bitcoin since 2013 is about 4,900 daily points: about 50 credits, as documented.
-  assertEquals(credits >= 45 && credits <= 60, true, `credits=${credits}`)
-  // Each page names a single id, a daily period and a window its own count covers.
-  for (const page of pages) {
-    assertEquals(page.id, '1')
-    assertEquals(page.interval, 'daily')
-    assertEquals(page.time_period, 'daily')
-    assertEquals(Date.parse(String(page.time_end)) - Date.parse(String(page.time_start)) <= (Number(page.count) - 1) * DAY, true)
+Deno.test('every OHLCV page the lane builds is accepted by the REAL registry validator', () => {
+  // The registry caps `count` at 250 for this capability (`numericCeiling` in
+  // cmc-capabilities.ts). A page that asks for more is refused by `cmcParams`
+  // BEFORE any request leaves the process, which is exactly how a live seed run
+  // spent nothing and stored nothing. The validator is exercised here rather
+  // than mocked, so a future change to either side breaks this test.
+  assertEquals(OHLCV_PAGE_COUNT, 250)
+  assertEquals(OHLCV_PAGE_DAYS, 249)
+  assertThrows(() => cmcParams('ohlcv', { id: '1', time_period: 'daily', interval: 'daily', time_start: '2010-01-01T00:00:00.000Z', time_end: '2012-09-26T00:00:00.000Z', count: 1001 }),
+    Error, 'invalid_parameter:count')
+  for (const window of [[Date.UTC(2010, 0, 1), Date.UTC(2017, 7, 17)], [Date.UTC(2013, 3, 28), Date.UTC(2026, 8, 15)], [HISTORY_EPOCH_MS, Date.UTC(2026, 8, 15)]]) {
+    const pages = ohlcvHistoryPages('1', window[0], window[1])
+    assertEquals(pages.length > 0, true)
+    for (const page of pages) {
+      const params = cmcParams('ohlcv', page)
+      assertEquals(params.id, '1')
+      assertEquals(params.interval, 'daily')
+      assertEquals(params.time_period, 'daily')
+      assertEquals(Number(params.count) >= 1 && Number(params.count) <= OHLCV_PAGE_COUNT, true)
+      // A real credit estimate, from the same params the transport would send.
+      // A full page is 3 credits; only the last, partial page can be cheaper.
+      const cost = estimateCmcCredits('ohlcv', params)
+      assertEquals(cost >= 1 && cost <= 3, true, `cost=${cost}`)
+      assertEquals(page === pages.at(-1) || cost === 3, true, 'every full page costs the same three credits')
+    }
   }
-  // Nothing before the epoch is ever asked for.
-  assertEquals(Date.parse(String(pages.at(-1)!.time_start)) >= HISTORY_EPOCH_MS - 1, true)
-  assertEquals(ohlcvHistoryPages('1', to, to).length, 0)
-  assertEquals(ohlcvHistoryPages('1', HISTORY_EPOCH_MS, to).length <= OHLCV_MAX_PAGES, true)
 })
 
-Deno.test('the whole top 100 stays under the five thousand credit budget', () => {
-  // Worst case: every asset needs CoinMarketCap for its whole history and none
-  // is listed on a free venue.
-  const from = Date.UTC(2013, 0, 1), to = Date.UTC(2026, 8, 15)
-  const perAsset = ohlcvHistoryPages('1', from, to).reduce((sum, page) => sum + estimateCmcCredits('ohlcv', { count: String(page.count) }), 0)
-  assertEquals(perAsset * 100 < 6000, true, `worst case ${perAsset * 100}`)
-  // A realistic top 100 — a five-year median history — is well under the ceiling.
-  const median = ohlcvHistoryPages('1', to - 5 * 365 * DAY, to).reduce((sum, page) => sum + estimateCmcCredits('ohlcv', { count: String(page.count) }), 0)
-  assertEquals(median * 100 < 5000, true, `median case ${median * 100}`)
+Deno.test('a full history walk fits inside the page ceiling and its credits are the documented rate', () => {
+  // 2010 to today is about 6,100 days: 25 pages of 249, inside the 26-page
+  // ceiling, so a full walk is never cut short by the ceiling alone.
+  const full = ohlcvHistoryPages('1', HISTORY_EPOCH_MS, Date.UTC(2026, 8, 15))
+  assertEquals(full.length, 25)
+  assertEquals(full.length < OHLCV_MAX_PAGES, true)
+  const credits = full.reduce((sum, page) => sum + estimateCmcCredits('ohlcv', { count: String(page.count) }), 0)
+  assertEquals(credits, 74)
+  // Bitcoin's pre-Binance gap, which is all the paid rung ever owes for it.
+  const gap = ohlcvHistoryPages('1', Date.UTC(2013, 3, 28), Date.UTC(2017, 7, 17))
+  assertEquals(gap.reduce((sum, page) => sum + estimateCmcCredits('ohlcv', { count: String(page.count) }), 0), 19)
+  // Nothing before the epoch is ever asked for, and an empty window asks nothing.
+  assertEquals(Date.parse(String(full.at(-1)!.time_start)) >= HISTORY_EPOCH_MS - 1, true)
+  assertEquals(ohlcvHistoryPages('1', Date.UTC(2026, 8, 15), Date.UTC(2026, 8, 15)).length, 0)
+})
+
+Deno.test('the top 100 is held to the standing ceiling, and a realistic cohort fits inside it', () => {
+  const to = Date.UTC(2026, 8, 15)
+  const credits = (from: number) => ohlcvHistoryPages('1', from, to).reduce((sum, page) => sum + estimateCmcCredits('ohlcv', { count: String(page.count) }), 0)
+  // A five-year median history for every one of the hundred is well inside the
+  // standing budget, even before the free venue removes most of it.
+  assertEquals(credits(to - 5 * 365 * DAY) * 100 < BACKFILL_CREDIT_CEILING, true, `median ${credits(to - 5 * 365 * DAY) * 100}`)
+  // A cohort that ALL needed their whole history from the paid rung would exceed
+  // it, which is precisely why the ceiling is standing rather than per run: the
+  // lane stops at 5,000 instead of discovering the overrun on the invoice.
+  assertEquals(credits(HISTORY_EPOCH_MS) * 100 > BACKFILL_CREDIT_CEILING, true)
+  assertEquals(BACKFILL_CREDIT_CEILING, 5000)
 })
 
 // ─── one asset ────────────────────────────────────────────────────────────────
@@ -180,7 +227,7 @@ Deno.test('an asset on a free venue costs nothing and the paid rung only buys th
 })
 
 Deno.test('a venue-only asset spends no credits at all', async () => {
-  const { db, writes } = fakeDb({ exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'XYZUSDT', normalized_symbol: 'XYZ', volume_quote_24h: 1 }] })
+  const { db, writes } = fakeDb({ exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'XYZUSDT', normalized_symbol: 'XYZ', quote_asset: 'USDT', volume_quote_24h: 1 }] })
   let requests = 0
   const result = await backfillAssetHistory(db, { assetKey: 'market:coingecko:xyz', symbol: 'XYZ', cmcId: null }, {}, NOW, 400, {
     request: () => { requests += 1; return Promise.resolve(null) },
@@ -190,6 +237,8 @@ Deno.test('a venue-only asset spends no credits at all', async () => {
   assertEquals(result.credits, 0)
   assertEquals(result.complete, true)
   assertEquals(writes[0].onConflict, 'asset_key,provider,candle_interval,candle_time')
+  // The stored reference NAMES the unit, so a reader of the table never infers it.
+  assertEquals(writes[0].rows[0].source_ref, 'binance:XYZUSDT:volume_quote_USDT')
 })
 
 Deno.test('an asset with neither a venue nor a listing is recorded as unavailable with a reason', async () => {
@@ -244,16 +293,16 @@ Deno.test('a disabled policy stops the lane without a single provider call', asy
 Deno.test('the backfill obeys the standing credit ceiling in the policy row', async () => {
   const { db } = fakeDb({
     market_assets: [], market_asset_demand: [], exchange_latest_tickers: [],
-    market_asset_candle_backfill: [{ asset_key: KEY, provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', state: 'pending', priority: 1, candles: 0, credits_spent: 4990, attempts: 0 }],
+    market_asset_candle_backfill: [{ asset_key: KEY, provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', state: 'pending', priority: 1, candles: 0, credits_spent: 4999, attempts: 0 }],
   })
   let requests = 0
   const result = await captureCandleBackfill(db, ctxFor, new Date(NOW), 'startup', {
-    request: () => { requests += 1; return Promise.resolve({ payload: ohlcvPayload('1', Date.UTC(2013, 3, 28), 5), provenance: {} }) },
+    request: () => { requests += 1; return Promise.resolve({ payload: ohlcvPayload('1', Date.UTC(2013, 3, 28), 5), provenance: { fetchedAt: new Date(NOW).toISOString() } }) },
     policy: [{ provider: 'coinmarketcap', feature: 'candle_history', cadence_seconds: 1200, enabled: true, max_credits: 5000 }],
   })
   assertEquals(result.creditCeiling, 5000)
-  assertEquals(result.creditsSpentToDate, 4990)
-  // Ten credits left is less than one thousand-day page, so nothing is bought.
+  assertEquals(result.creditsSpentToDate, 4999)
+  // One credit left is less than the three a page costs, so nothing is bought.
   assertEquals(requests, 0)
   assertEquals(result.credits, 0)
 })
@@ -350,6 +399,180 @@ Deno.test('an unknown asset key is refused rather than queued from a guess', asy
 
 Deno.test('the lane exposes exactly the three ops the Edge Function wires', () => {
   assertEquals(Object.keys(CANDLE_CAPTURE_OPS).sort(), ['candle_backfill', 'candle_daily', 'history_backfill'])
+})
+
+Deno.test('a page the validator refuses costs nothing: credits are counted only for a request that reached the provider', async () => {
+  const { db, updates } = fakeDb({
+    exchange_latest_tickers: [],
+    market_asset_candle_backfill: [{ asset_key: KEY, provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', state: 'pending', priority: 1, candles: 0, credits_spent: 0, attempts: 0 }],
+  })
+  // This is what the live seed run did: the registry refused the page before any
+  // call, and the lane still recorded credits for it.
+  const refused = await captureCandleBackfill(db, ctxFor, new Date(NOW), 'startup', {
+    request: () => Promise.reject(new Error('invalid_parameter:count')),
+    policy: [],
+  })
+  assertEquals(refused.credits, 0)
+  assertEquals(updates[0].patch.credits_spent, 0)
+  assertEquals(updates[0].patch.reason, 'provider_unavailable')
+
+  // A provider that REPLIED without a payload has been reached, so its page is
+  // counted: the estimate is a floor the transport reconciles, not an invention.
+  const { db: db2 } = fakeDb({
+    exchange_latest_tickers: [],
+    market_asset_candle_backfill: [{ asset_key: KEY, provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', state: 'pending', priority: 1, candles: 0, credits_spent: 0, attempts: 0 }],
+  })
+  const reached = await captureCandleBackfill(db2, ctxFor, new Date(NOW), 'startup', {
+    request: () => Promise.resolve({ payload: null, reason: 'rate_limited', provenance: { fetchedAt: new Date(NOW).toISOString() } }),
+    policy: [],
+  })
+  assertEquals(reached.credits, 3)
+})
+
+Deno.test('a partial asset resumes BACKWARD from its oldest stored day and never re-asks a stored period', async () => {
+  const storedOldest = Date.UTC(2017, 7, 17), storedNewest = YESTERDAY
+  const asked: Record<string, unknown>[] = []
+  let venueFrom = 0
+  const { db, updates } = fakeDb({
+    exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'BTCUSDT', normalized_symbol: 'BTC', volume_quote_24h: 1 }],
+    market_asset_candle_backfill: [{
+      asset_key: KEY, provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', source: 'binance', state: 'partial',
+      oldest_candle: new Date(storedOldest).toISOString().slice(0, 10), newest_candle: new Date(storedNewest).toISOString().slice(0, 10),
+      candles: 3316, credits_spent: 0, attempts: 1,
+    }],
+  })
+  const result = await captureCandleBackfill(db, ctxFor, new Date(NOW), 'startup', {
+    request: (_name, params) => { asked.push(params!); return Promise.resolve({ payload: ohlcvPayload('1', Date.UTC(2013, 3, 28), 30), provenance: { fetchedAt: new Date(NOW).toISOString() } }) },
+    exchange: (_c, _s, from) => { venueFrom = from; return Promise.resolve({ bars: [], pages: 1, reason: 'no_completed_candles', complete: true }) },
+    policy: [],
+  })
+  // The venue still resumes FORWARD: its own walk pages forward, so its gap is
+  // at the new end.
+  assertEquals(venueFrom, storedNewest + DAY)
+  // The paid rung pages BACKWARD: every page ends at or before the oldest stored
+  // day, so no stored period is ever asked for again, and the walk reaches the
+  // years an interrupted run still owes.
+  assertEquals(asked.length > 0, true)
+  for (const params of asked) {
+    assertEquals(Date.parse(String(params.time_end)) <= storedOldest, true, `page ends ${params.time_end}`)
+    assertEquals(Date.parse(String(params.time_start)) >= HISTORY_EPOCH_MS - 1, true)
+  }
+  assertEquals(Date.parse(String(asked[0].time_end)) > Date.parse(String(asked.at(-1)!.time_end)), true, 'the pages walk backwards')
+  assertEquals(result.credits > 0, true)
+  // The recorded window grew at the OLD end, and the asset is not falsely closed
+  // out on a resume that bought nothing.
+  assertEquals(updates[0].patch.oldest_candle, '2013-04-28')
+  assertEquals(updates[0].patch.newest_candle, new Date(storedNewest).toISOString().slice(0, 10))
+})
+
+Deno.test("a complete asset's daily append never walks older years", async () => {
+  const storedOldest = '2013-04-28', storedNewest = new Date(YESTERDAY - DAY).toISOString().slice(0, 10)
+  const queue = () => [{
+    asset_key: KEY, provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', source: 'binance+coinmarketcap',
+    state: 'complete', oldest_candle: storedOldest, newest_candle: storedNewest, candles: 4800, credits_spent: 60, attempts: 1,
+    completed_at: new Date(NOW - DAY).toISOString(),
+  }]
+
+  // With a venue pair the append costs nothing at all: the venue covers the
+  // missing day, so the paid rung has an empty window.
+  const asked: Record<string, unknown>[] = []
+  const { db } = fakeDb({
+    exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'BTCUSDT', normalized_symbol: 'BTC', volume_quote_24h: 1 }],
+    market_asset_candle_backfill: queue(),
+  })
+  const free = await captureCandleDaily(db, ctxFor, new Date(NOW), 'startup', {
+    request: (_name, params) => { asked.push(params!); return Promise.resolve({ payload: ohlcvPayload('1', YESTERDAY, 1), provenance: { fetchedAt: new Date(NOW).toISOString() } }) },
+    exchange: (_c, _s, from) => Promise.resolve({ bars: [{ t: from, c: 60000, closedAt: from + DAY - 1 }, { t: YESTERDAY, c: 61000, closedAt: YESTERDAY + DAY - 1 }], pages: 1, reason: null, complete: true }),
+    policy: [],
+  })
+  assertEquals(asked.length, 0, 'a Binance asset is appended for free')
+  assertEquals(free.credits, 0)
+
+  // Without a venue pair the append buys ONE short forward page, never the
+  // decade it already holds.
+  const paidAsks: Record<string, unknown>[] = []
+  const { db: db2 } = fakeDb({ exchange_latest_tickers: [], market_asset_candle_backfill: queue() })
+  const paid = await captureCandleDaily(db2, ctxFor, new Date(NOW), 'startup', {
+    request: (_name, params) => { paidAsks.push(params!); return Promise.resolve({ payload: ohlcvPayload('1', Date.parse(storedNewest) + DAY, 2), provenance: { fetchedAt: new Date(NOW).toISOString() } }) },
+    policy: [],
+  })
+  assertEquals(paidAsks.length, 1, 'one short page, not a backward walk')
+  assertEquals(paid.credits, 1)
+  for (const params of paidAsks) {
+    assertEquals(Date.parse(String(params.time_start)) >= Date.parse(storedNewest), true, 'the append never reaches behind the stored window')
+    assertEquals(Number(params.count) <= OHLCV_PAGE_COUNT, true)
+  }
+})
+
+Deno.test('a CoinGecko-sourced asset still resolves its CoinMarketCap id, by canonical identity or a unique ticker', () => {
+  const index = cmcCatalogueIndex([
+    { source_provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', normalized_symbol: 'BTC', platforms: {} },
+    { source_provider: 'coinmarketcap', provider_id: '52', symbol: 'XRP', normalized_symbol: 'XRP', platforms: {} },
+    { source_provider: 'coinmarketcap', provider_id: '825', symbol: 'USDT', normalized_symbol: 'USDT', platforms: {} },
+    // Two CoinMarketCap assets claim this ticker, so it resolves to neither.
+    { source_provider: 'coinmarketcap', provider_id: '9001', symbol: 'GRASS', normalized_symbol: 'GRASS', platforms: {} },
+    { source_provider: 'coinmarketcap', provider_id: '9002', symbol: 'GRASS', normalized_symbol: 'GRASS', platforms: {} },
+  ])
+  // 1. The resolver the chart itself uses, for a row it can read directly.
+  assertEquals(cmcIdOf({ source_provider: 'coinmarketcap', provider_id: '1027' }, index), '1027')
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'usd-coin' }, index), '3408')
+  // 2. The canonical identity: both providers' rows for Bitcoin are one asset.
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'bitcoin', normalized_symbol: 'BTC' }, index), '1')
+  // 3. A ticker exactly one CoinMarketCap asset claims. This is what XRP and
+  //    USDT need: a CoinGecko-sourced catalogue row with no canonical native key.
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'ripple', normalized_symbol: 'XRP' }, index), '52')
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'tether', normalized_symbol: 'USDT' }, index), '825')
+  // An ambiguous ticker resolves to nothing rather than to a guess, and an asset
+  // with no listing anywhere keeps its honest null.
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'grass', normalized_symbol: 'GRASS' }, index), null)
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'nothing', normalized_symbol: 'NOPE' }, index), null)
+  assertEquals(cmcIdOf({ source_provider: 'coingecko', provider_id: 'ripple', normalized_symbol: 'XRP' }), null)
+})
+
+Deno.test('the seeded queue carries the resolved id, and the paid rung uses it for a CoinGecko-sourced asset', async () => {
+  const catalogue = [{ source_provider: 'coingecko', provider_id: 'ripple', symbol: 'XRP', normalized_symbol: 'XRP', market_cap_rank: 4, platforms: {} }]
+  const rows = backfillCandidates(catalogue, [], NOW, cmcCatalogueIndex([
+    { source_provider: 'coinmarketcap', provider_id: '52', symbol: 'XRP', normalized_symbol: 'XRP', platforms: {} },
+  ]))
+  assertEquals(rows.length, 1)
+  assertEquals(rows[0].provider, 'coingecko')
+  assertEquals(rows[0].cmc_id, '52')
+
+  // And the run spends its paid rung against that id rather than answering
+  // 'no_cmc_listing' because the CATALOGUE row is not a CoinMarketCap one.
+  const asked: Record<string, unknown>[] = []
+  const { db, updates } = fakeDb({
+    exchange_latest_tickers: [{ provider: 'binance', provider_symbol: 'XRPUSDT', normalized_symbol: 'XRP', quote_asset: 'USDT', volume_quote_24h: 1 }],
+    market_asset_candle_backfill: [{ ...rows[0], state: 'pending', candles: 0, credits_spent: 0, attempts: 0 }],
+  })
+  const result = await captureCandleBackfill(db, ctxFor, new Date(NOW), 'startup', {
+    request: (_name, params) => { asked.push(params!); return Promise.resolve({ payload: ohlcvPayload('52', Date.UTC(2013, 7, 4), 20), provenance: { fetchedAt: new Date(NOW).toISOString() } }) },
+    exchange: () => Promise.resolve({ bars: [{ t: Date.UTC(2018, 4, 4), c: 0.9, closedAt: Date.UTC(2018, 4, 4) + DAY - 1 }], pages: 1, reason: null, complete: true }),
+    policy: [],
+  })
+  assertEquals(asked.length > 0, true)
+  assertEquals(asked.every((params) => params.id === '52'), true)
+  assertEquals(result.credits > 0, true)
+  assertEquals(updates[0].patch.source, 'binance+coinmarketcap')
+  assertEquals(updates[0].patch.reason, null)
+  // The pre-venue years are stored, so the archive no longer starts in 2018.
+  assertEquals(updates[0].patch.oldest_candle, '2013-08-04')
+})
+
+Deno.test('an asset that genuinely resolves to nothing keeps its no_cmc_listing reason', async () => {
+  const { db, updates } = fakeDb({
+    exchange_latest_tickers: [],
+    market_asset_candle_backfill: [{ asset_key: 'market:coingecko:nothing', provider: 'coingecko', provider_id: 'nothing', cmc_id: null, symbol: 'NOPE', state: 'pending', priority: 101, candles: 0, credits_spent: 0, attempts: 0 }],
+  })
+  let requests = 0
+  const result = await captureCandleBackfill(db, ctxFor, new Date(NOW), 'startup', {
+    request: () => { requests += 1; return Promise.resolve(null) },
+    policy: [],
+  })
+  assertEquals(requests, 0)
+  assertEquals(result.credits, 0)
+  assertEquals(updates[0].patch.reason, 'no_cmc_listing')
+  assertEquals(updates[0].patch.state, 'unavailable')
 })
 
 // ─── the read view ────────────────────────────────────────────────────────────

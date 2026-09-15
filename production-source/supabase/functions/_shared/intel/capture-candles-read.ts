@@ -33,11 +33,12 @@ async function readRows(build: () => any): Promise<{ rows: any[]; reason: string
   } catch (e) { return { rows: [], reason: ((e as Error)?.message || 'read_failed').slice(0, 200) } }
 }
 
-const STATE_COLUMNS = 'asset_key,provider,provider_id,symbol,source,state,priority,oldest_candle,newest_candle,candles,credits_spent,attempts,reason,last_attempt_at,completed_at'
+const STATE_COLUMNS = 'asset_key,provider,provider_id,cmc_id,symbol,source,state,priority,oldest_candle,newest_candle,candles,credits_spent,attempts,reason,last_attempt_at,completed_at'
 
 // deno-lint-ignore no-explicit-any
 const stateRow = (row: any) => ({
   assetKey: str(row?.asset_key, 200), provider: str(row?.provider, 40), providerId: str(row?.provider_id, 40),
+  cmcId: str(row?.cmc_id, 12),
   symbol: str(row?.symbol, 50), source: str(row?.source, 60), state: str(row?.state, 20),
   priority: num(row?.priority), oldestCandle: str(row?.oldest_candle, 10), newestCandle: str(row?.newest_candle, 10),
   // A stored zero is a real count. `candles` is never null here: the column has

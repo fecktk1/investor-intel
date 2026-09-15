@@ -1,5 +1,14 @@
 import {calculateStudy,STUDY_CATALOG,CHART_ANALYSIS_VERSION,type Study} from './chart-analysis.ts'
 import {validateSavedOutcome,type SavedOutcomeAssumptions} from './chart-outcome-contract.ts'
+/** The widest chart window any range can ask for: twenty years and a day.
+ *
+ * The chart's 'ALL' range is twenty years (`CHART_WINDOWS` in cmc-chart.ts),
+ * which the stored candle archive can genuinely answer, and a window cap written
+ * for a one-year chart refuses it — which is how the long ranges lost their
+ * alert markers, their saved layouts and their position lane. The extra day is
+ * slack for a request whose ends are clocks rather than exact boundaries. */
+export const MAX_CHART_WINDOW_MS = 7301 * 86400000
+
 export const CHART_LAYOUT_VERSION=1
 export const DRAWING_TOOLS=['trendline','arrow','horizontal','ray','rectangle','price_range','fibonacci','text','extended','horizontal_ray','vertical','channel','arrow_up','arrow_down','price_label','measure','tweet'] as const
 export type DrawingTool=typeof DRAWING_TOOLS[number]
@@ -54,7 +63,7 @@ export function validateDrawing(value:any):ChartDrawing {
 export function validateChartLayout(value:any):ChartLayout {
  if(!object(value)||value.schemaVersion!==1||JSON.stringify(value).length>150000)throw new Error('invalid_chart_layout')
  const asset=chartAsset(value.asset),range=value.range
- if(!object(range)||!finite(range.from)||!finite(range.to)||range.from<0||range.to<=range.from||range.to>4102444800000||range.to-range.from>10*366*86400000)throw new Error('invalid_chart_range')
+ if(!object(range)||!finite(range.from)||!finite(range.to)||range.from<0||range.to<=range.from||range.to>4102444800000||range.to-range.from>MAX_CHART_WINDOW_MS)throw new Error('invalid_chart_range')
  if(!Array.isArray(value.studies)||value.studies.length>20||!Array.isArray(value.drawings)||value.drawings.length>200)throw new Error('chart_layout_limit')
  const studies=value.studies.map((study:any)=>{
   if(!object(study)||!string(study.id,80)||!study.id||typeof study.type!=='string'||!Object.hasOwn(STUDY_CATALOG,study.type)||study.params!=null&&!object(study.params))throw new Error('invalid_chart_study')

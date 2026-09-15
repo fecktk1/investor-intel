@@ -106,3 +106,12 @@ Deno.test('a post drawing accepts only a public status address and stores it in 
  for(const url of [undefined,'','http://x.com/forge/status/1','https://evil.com/x.com/forge/status/1','javascript:alert(1)','https://x.com/forge/status/abc','https://x.com/forge'])assertThrows(()=>post(url))
  assertThrows(()=>validateDrawing({...drawing(),url:'https://x.com/forge/status/1899'}))
 })
+
+// A saved layout on the ALL range is twenty years wide. The old ten-year cap
+// refused it, so the layout could be drawn but never saved.
+Deno.test('a saved layout may span the widest chart range and no wider',()=>{
+ const DAY=86400000,from=1788998400000
+ const wide=validateChartLayout({...layout(),range:{from,to:from+7301*DAY}})
+ eq(wide.range.to-wide.range.from,7301*DAY)
+ assertThrows(()=>validateChartLayout({...layout(),range:{from,to:from+7302*DAY}}))
+})

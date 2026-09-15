@@ -44,7 +44,16 @@ export interface ExchangeHistoryDeps {
 
 /** One raw Binance kline array → a daily bar. A row whose open time is not on a
  * UTC day boundary is dropped rather than stored under a day it does not
- * describe. */
+ * describe.
+ *
+ * VOLUME IS THE QUOTE ASSET (field 7), NOT THE BASE ASSET (field 5). The archive
+ * holds rows from two sources for one asset, and CoinMarketCap OHLCV reports USD;
+ * storing Binance's base-asset volume beside it would put two different units in
+ * one column and one `volumeUnit` on the merged series. `binancePair` picks the
+ * pair with the highest quote volume, which is a USD stablecoin for every asset
+ * in this catalogue, so the quote figure is the one that matches. A kline row
+ * that is too short to carry field 7 has no quote volume and stores NULL rather
+ * than the base figure under a quote label. */
 export function binanceDailyBar(row: unknown, now: number): Bar | null {
   if (!Array.isArray(row) || row.length < 7) return null
   const t = Number(row[0]), closeTime = Number(row[6])
@@ -56,12 +65,13 @@ export function binanceDailyBar(row: unknown, now: number): Bar | null {
   const value = (v: unknown) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
   const c = value(row[4])
   if (c == null) return null
-  const volume = value(row[5])
+  // Field 7 is the quote-asset volume; field 5 is the base asset and is NOT used.
+  const volume = row.length > 7 ? value(row[7]) : null
   return {
     t, closedAt: t + DAY - 1, o: value(row[1]), h: value(row[2]), l: value(row[3]), c,
     // A day with no trades is a real zero; an unreported volume stays null.
     v: volume != null && volume >= 0 ? volume : null,
-    volumeKind: 'period' as const,
+    volumeKind: 'period' as const, volumeUnit: 'USD' as const,
   }
 }
 

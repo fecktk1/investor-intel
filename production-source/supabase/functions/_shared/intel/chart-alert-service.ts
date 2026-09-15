@@ -4,6 +4,15 @@ import {CHAINS} from '../chains.ts'
 import {chartPricesReadable} from './chart-capture-proof.ts'
 import {researchCmcId} from './research-identity.ts'
 
+/** The widest chart window any range can ask for: twenty years and a day.
+ *
+ * The chart's 'ALL' range is twenty years (`CHART_WINDOWS` in cmc-chart.ts),
+ * which the stored candle archive can genuinely answer, and a window cap written
+ * for a one-year chart refuses it — which is how the long ranges lost their
+ * alert markers, their saved layouts and their position lane. The extra day is
+ * slack for a request whose ends are clocks rather than exact boundaries. */
+export const MAX_CHART_WINDOW_MS = 7301 * 86400000
+
 export function chartAlertAssetAliases(input:unknown) {
  const asset=chartAsset(input),mainNative:Record<string,string>={'market:coinmarketcap:1':'native:bitcoin','market:coingecko:bitcoin':'native:bitcoin','market:coinmarketcap:1027':'native:ethereum','market:coingecko:ethereum':'native:ethereum','market:coinmarketcap:5426':'native:solana','market:coingecko:solana':'native:solana','market:coinmarketcap:1839':'native:bnb','market:coingecko:binancecoin':'native:bnb','market:coinmarketcap:5805':'native:avalanche','market:coingecko:avalanche-2':'native:avalanche'}
  const canonical=chartProofAsset(mainNative[asset]||asset),aliases=new Set([asset,canonical])
@@ -51,7 +60,7 @@ export async function chartAlertService(db:any,actor:{orgId:string;userId:string
  }
  if(body.operation==='alert_history'){
   const assets=chartAlertAssetAliases(body.asset),{from,to,cursor}=body
-  if(typeof from!=='number'||typeof to!=='number'||!Number.isFinite(from)||!Number.isFinite(to)||from<0||to>4102444800000||from>to||to-from>366*86400000||cursor!=null&&(!isUuid(cursor.id)||typeof cursor.at!=='string'||!Number.isFinite(Date.parse(cursor.at))))throw new Error('invalid_chart_alert_history')
+  if(typeof from!=='number'||typeof to!=='number'||!Number.isFinite(from)||!Number.isFinite(to)||from<0||to>4102444800000||from>to||to-from>MAX_CHART_WINDOW_MS||cursor!=null&&(!isUuid(cursor.id)||typeof cursor.at!=='string'||!Number.isFinite(Date.parse(cursor.at))))throw new Error('invalid_chart_alert_history')
   return read(db.rpc('intel_chart_alert_history',{p_org:actor.orgId,p_user:actor.userId,p_assets:assets,p_from:new Date(from).toISOString(),p_to:new Date(to).toISOString(),p_cursor:cursor??null}))
  }
  if(body.operation==='alert_save'){

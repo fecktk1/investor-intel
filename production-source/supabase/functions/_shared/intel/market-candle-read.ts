@@ -175,6 +175,7 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
     reason: reasons.length ? [...new Set(reasons)].join(', ') : null,
     extra: [
       answer?.coverage ? String(answer.coverage) : null,
+      archived > 0 ? 'Archived volume is USD for every period: the archive stores the CoinMarketCap USD figure and the venue\'s quote turnover, never a base-asset amount, so one unit runs through the whole series.' : null,
       archiveTruncated ? 'The stored archive read hit its row ceiling; the oldest stored candles are not in this window.' : null,
       archiveReason ? `The stored archive could not be read (${archiveReason}).` : null,
       !order.length ? 'This asset has no verified exchange listing, no CoinMarketCap listing and no verified contract, so no candle source could be asked.' : null,
@@ -188,6 +189,9 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
     source,
     bestProvider: candles.length ? (answer?.bestProvider ?? (archived ? 'archive' : source)) : null,
     bestPair: answer?.bestPair ?? null,
+    // Archived periods are USD. When they are in the series the whole series is
+    // reported in USD rather than under the live rung's own venue label.
+    ...(archived > 0 ? { volumeUnit: 'USD' } : {}),
     barIntervalMs: plan.step,
     timestampMeaning: 'open',
     coverage,

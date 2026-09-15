@@ -30,8 +30,9 @@
 -- Numeric columns reject NaN and +/-Infinity through `1e30 >= ALL (ARRAY[abs(...)])`: NaN and Infinity both compare
 -- greater than 1e30, an all-NULL array yields NULL and coalesce lets it pass.
 --
--- CREDITS. `/v2/cryptocurrency/ohlcv/historical` is documented at one credit per 100 daily points. The lane pages a
--- thousand days at a time (about 10 credits a page), so Bitcoin since 2013 (about 4,900 days) is about 50 credits.
+-- CREDITS. `/v2/cryptocurrency/ohlcv/historical` is documented at one credit per 100 daily points, and the registry
+-- caps one page at 250 points (`numericCeiling` in cmc-capabilities.ts), so the lane pages 249 days at 3 credits a
+-- page. Bitcoin's pre-Binance gap (2013 to 2017) is 7 pages, 19 credits; a whole history from 2010 is 25 pages, 74.
 -- Most of the top 100 are listed on Binance, whose daily klines are free and reach back to 2017, so the paid rung
 -- only buys the years before that. The STANDING ceiling for the whole backfill is 5,000 credits and it lives in
 -- provider_schedule_policy.max_credits, added by this migration, so it can be changed without a deploy. One run

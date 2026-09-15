@@ -7,7 +7,7 @@ import {
   autoInterval, candleCoverage, candlePlan, candleSourceOrder, CANDLE_RANGE_MS, isArchiveRange,
   nearestInterval, spanWords, VENUE_CANDLES, CMC_INTERVAL_KEYS,
 } from './candle-ladder.ts'
-import { archiveBar, archiveCanAnswer, mergeCandles, STORED_INTERVALS } from './candle-archive.ts'
+import { archiveBar, archiveCanAnswer, ARCHIVE_PAGE_ROWS, ARCHIVE_ROW_CAP, mergeCandles, readArchiveCandles, STORED_INTERVALS } from './candle-archive.ts'
 import { exchangeBars, loadExchangeCandles } from './exchange-candles.ts'
 import { loadMarketCandles, resolveInterval } from './market-candle-read.ts'
 
@@ -123,17 +123,40 @@ const kline = (t: number, step: number, close: number, extra: Record<string, unk
 
 Deno.test('exchange bars keep closed periods, drop the period in progress and keep a zero volume', () => {
   const step = HOUR
-  const bars = exchangeBars([
+  const mapped = exchangeBars([
     kline(NOW - 3 * step, step, 100),
     kline(NOW - 2 * step, step, 101, { volumeBase: 0 }),
     kline(NOW - step, step, 102, { committed: false }),
     kline(NOW, step, 103, { close: 'not a number' }),
     { openTime: 'x', closeTime: NOW },
   ], NOW)
-  assertEquals(bars.length, 2)
-  assertEquals(bars[0].c, 100)
+  assertEquals(mapped.bars.length, 2)
+  assertEquals(mapped.bars[0].c, 100)
   // A period in which nothing traded is a real zero, not a missing value.
-  assertEquals(bars[1].v, 0)
+  assertEquals(mapped.bars[1].v, 0)
+  // No venue quote turnover on these rows, so the unit is named as the base asset
+  // rather than relabelled.
+  assertEquals(mapped.volumeUnit, 'base asset')
+})
+
+Deno.test('the exchange rung reports the unit its volume is actually in', () => {
+  const step = HOUR
+  const quoted = exchangeBars([
+    kline(NOW - 2 * step, step, 100, { volumeBase: 3, volumeQuote: 300 }),
+    kline(NOW - step, step, 101, { volumeBase: 0, volumeQuote: 0 }),
+  ], NOW)
+  // The quote turnover is preferred: it is the unit the stored archive and the
+  // CoinMarketCap series use, so a merged chart carries one honest label.
+  assertEquals(quoted.volumeUnit, 'quote asset')
+  assertEquals(quoted.bars.map((bar) => bar.v), [300, 0])
+  // Half a series with quote turnover is not a quote series: the base figure is
+  // used for all of it rather than mixing two units under one label.
+  const mixed = exchangeBars([
+    kline(NOW - 2 * step, step, 100, { volumeBase: 3, volumeQuote: 300 }),
+    kline(NOW - step, step, 101, { volumeBase: 4, volumeQuote: null }),
+  ], NOW)
+  assertEquals(mixed.volumeUnit, 'base asset')
+  assertEquals(mixed.bars.map((bar) => bar.v), [3, 4])
 })
 
 Deno.test('the exchange rung names the venue it used and falls through the ones that could not answer', async () => {
@@ -159,6 +182,9 @@ Deno.test('the exchange rung names the venue it used and falls through the ones 
   assertEquals(result.currency, 'USDT')
   assertStringIncludes(result.coverage, 'from Binance')
   assertStringIncludes(result.coverage, 'kraken could not answer')
+  // These fixture klines carry no quote turnover, so the unit says base asset.
+  assertEquals(result.volumeUnit, 'base asset')
+  assertStringIncludes(result.coverage, 'Volume is the base asset for each completed period')
 })
 
 Deno.test('the exchange rung is a reason, never an invented series, when nothing lists the symbol', async () => {
@@ -306,3 +332,78 @@ Deno.test('a failed archive read is reported and the live window is still drawn'
   assertEquals(result.candles.length, 30)
   assertStringIncludes(result.coverage as string, 'The stored archive could not be read (permission denied for table).')
 })
+
+// ─── the archive read is paged ────────────────────────────────────────────────
+
+/** A PostgREST stand-in with THIS PROJECT'S `max_rows = 1000`: it honours
+ * `.range()` but never returns more than a thousand rows for one request, the
+ * way the real server silently does. */
+function pagedDb(total: number, cap = 1000) {
+  const requests: [number, number][] = []
+  const rows = Array.from({ length: total }, (_, index) => ({
+    asset_key: 'bip122:native:BTC', provider: 'binance', candle_interval: '1d',
+    candle_time: new Date(Date.UTC(2006, 0, 1) + index * DAY).toISOString(),
+    open: 1, high: 2, low: 0.5, close: 1 + index, volume: 10, source_ref: 'binance:BTCUSDT:volume_quote_USDT',
+    recorded_at: new Date(NOW).toISOString(),
+  }))
+  const builder: Record<string, unknown> = {
+    select: () => builder, eq: () => builder, gte: () => builder, lte: () => builder, order: () => builder,
+    range: (from: number, to: number) => {
+      requests.push([from, to])
+      const size = Math.min(to - from + 1, cap)
+      return Promise.resolve({ data: rows.slice(from, from + size), error: null })
+    },
+  }
+  return { db: { from: () => builder }, requests }
+}
+
+Deno.test('the archive read PAGES: a window wider than the server row ceiling is not silently truncated', async () => {
+  // `max_rows = 1000` in supabase/config.toml is applied silently, so a single
+  // `.limit(9000)` returned the OLDEST thousand days of a five-year window and
+  // reported no truncation at all.
+  assertEquals(ARCHIVE_PAGE_ROWS, 1000)
+  const { db, requests } = pagedDb(3316)
+  const read = await readArchiveCandles(db, 'bip122:native:BTC', '1D', Date.UTC(2006, 0, 1), NOW)
+  assertEquals(read.rows, 3316)
+  assertEquals(read.bars.length, 3316)
+  assertEquals(read.truncated, false)
+  assertEquals(read.reason, null)
+  // Four requests: three full pages and a short one that ends the walk.
+  assertEquals(requests, [[0, 999], [1000, 1999], [2000, 2999], [3000, 3999]])
+  // The newest stored day is the last bar, not the thousandth.
+  assertEquals(read.bars.at(-1)!.t, Date.UTC(2006, 0, 1) + 3315 * DAY)
+})
+
+Deno.test('a window that exhausts the total row cap is reported as truncated rather than short', async () => {
+  const { db, requests } = pagedDb(ARCHIVE_ROW_CAP + 500)
+  const read = await readArchiveCandles(db, 'bip122:native:BTC', '1D', Date.UTC(2006, 0, 1), NOW)
+  assertEquals(read.rows, ARCHIVE_ROW_CAP)
+  assertEquals(read.truncated, true)
+  assertEquals(requests.length, ARCHIVE_ROW_CAP / ARCHIVE_PAGE_ROWS)
+})
+
+Deno.test('a short first page ends the walk without a second request', async () => {
+  const { db, requests } = pagedDb(12)
+  const read = await readArchiveCandles(db, 'bip122:native:BTC', '1D', Date.UTC(2006, 0, 1), NOW)
+  assertEquals(read.rows, 12)
+  assertEquals(read.truncated, false)
+  assertEquals(requests, [[0, 999]])
+})
+
+Deno.test('a long merged range reports the archive ending at the NEWEST stored day', async () => {
+  const { db } = pagedDb(3316)
+  const result = await loadMarketCandles(identity(), '5Y', '1D', NOW, {
+    exchange: () => Promise.resolve({ candles: [], sourceReason: 'no_exchange_listing' }),
+    cmc: () => Promise.resolve({ candles: [] }),
+    archive: (assetKey, interval, from, to) => archiveSeriesFor(db, assetKey, interval, from, to),
+  })
+  const ladder = result.ladder as Record<string, unknown>
+  assertEquals(ladder.archivedCandles, 3316)
+  assertEquals(String(ladder.archiveEndsAt).slice(0, 10), new Date(Date.UTC(2006, 0, 1) + 3315 * DAY).toISOString().slice(0, 10))
+  // One unit runs through the whole series, and the sentence says so.
+  assertEquals(result.volumeUnit, 'USD')
+  assertStringIncludes(result.coverage as string, 'Archived volume is USD for every period')
+})
+// deno-lint-ignore no-explicit-any
+const archiveSeriesFor = (db: any, assetKey: string, interval: string, from: number, to: number) =>
+  readArchiveCandles(db, assetKey, interval, from, to).then((read) => ({ ...read, incomplete: 0 }))
