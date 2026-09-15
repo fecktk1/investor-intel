@@ -58,6 +58,8 @@ Deno.test('subscribe frames batch market identities and address each contract ch
   eq(frames.slice(1,5).map(f=>f.channel),[...LIVE_ONCHAIN_CHANNELS])
   eq(frames[1].params,{platform_id:199,address:evm})
   eq(frames[5].params,{platform_id:16,address:mint})
+  eq(frames[4].params,{platform_id:199,address:evm,interval:'1h'},'unique traders need the window they are counted over (probed 2026-09-15, error 2401 without it)')
+  eq(frames[8].params,{platform_id:16,address:mint,interval:'1h'})
   eq(frames.every(f=>f.method==='subscribe'),true)
   eq(frames.map(f=>f.id),[1,2,3,4,5,6,7,8,9],'ids are unique within the connection')
   eq(liveSubscribeMessages([base],false),[],'contracts alone raise no subscription while the tape is off')
@@ -98,8 +100,8 @@ Deno.test('stream clocks bound every channel the same way',()=>{
   }
 })
 Deno.test('control, error and off-plan frames keep their existing meaning',()=>{
-  eq(decodeCmcLive(JSON.stringify({type:'error',status:{error_code:1006}}),subjects,now),{kind:'error',code:1006})
-  eq(decodeCmcLive(JSON.stringify({type:'ack',code:0}),subjects,now),{kind:'ack',accepted:true})
+  eq(decodeCmcLive(JSON.stringify({type:'error',status:{error_code:1006}}),subjects,now),{kind:'error',code:1006,id:null,detail:null})
+  eq(decodeCmcLive(JSON.stringify({type:'ack',code:0}),subjects,now),{kind:'ack',accepted:true,id:null,channel:null})
   eq(decodeCmcLive(JSON.stringify({type:'welcome'}),subjects,now),{kind:'control'})
   eq(decodeCmcLive(push('onchain@kline',{o:1},{platform_id:199,address:evm}),subjects,now),{kind:'ignored'},'an unsubscribed channel is not a tape event')
   eq(decodeCmcLive(JSON.stringify({id:2,code:0,ts:now,msg:'pong'}),subjects,now),{kind:'ignored'})
@@ -155,4 +157,14 @@ Deno.test('the metric vocabulary the read path and the worker share is closed',(
   eq(liveTapeKind('price'),'quote');eq(liveTapeKind('holder_count'),null)
   eq(LIVE_PERSISTED_KINDS.sort(),['agg','liquidity','quote','swap','traders'])
   eq([liveWindowSeconds('5m'),liveWindowSeconds('24h'),liveWindowSeconds('7d'),liveWindowSeconds('nope'),liveWindowSeconds(null)],[300,86400,604800,null,null])
+})
+
+Deno.test('acknowledgements and refusals name the subscription they answer',()=>{
+  const ack:any=decodeCmcLive(JSON.stringify({type:'ack',id:3,code:0,channel:'onchain@token_agg_event',params:{platform_id:199,address:evm},msg:'ok'}),subjects,now)
+  eq([ack.kind,ack.accepted,ack.id,ack.channel],['ack',true,3,'onchain@token_agg_event'])
+  const refused:any=decodeCmcLive(JSON.stringify({type:'error',id:4,status:{error_code:'2401',error_message:'Missing required param for channel.',error_detail:"Param 'interval' is required for channel 'onchain@unique_trader'."}}),subjects,now)
+  eq([refused.kind,refused.code,refused.id],['error',2401,4])
+  eq(refused.detail,"Param 'interval' is required for channel 'onchain@unique_trader'.")
+  const bare:any=decodeCmcLive(JSON.stringify({type:'error',status:{error_code:1006}}),subjects,now)
+  eq([bare.kind,bare.id],['error',null],'a refusal without an id names no subscription')
 })
