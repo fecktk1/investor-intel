@@ -847,6 +847,33 @@
       "unresolved_asset": "niet vastgesteld",
       "unverified_capture": "Een prijsantwoord heeft geen geverifieerde vastlegging. Vernieuw de vergelijking of de activumgrafiek voordat je opslaat.",
       "visible_period": "Zichtbare periode (UTC)"
+    },
+    "indicators": {
+      "open": "Indicatoren",
+      "open_count": "Indicatoren ({{total}})",
+      "title": "Indicatoren",
+      "hint": "Een gekozen indicator wordt meteen getekend. Open „Geavanceerde parameters” om de instellingen te wijzigen of een tweede kopie toe te voegen.",
+      "family_trend": "Trend",
+      "family_momentum": "Momentum",
+      "family_volatility": "Volatiliteit",
+      "family_volume": "Volume",
+      "family_other": "Overige indicatoren",
+      "no_parameters": "Geen parameters",
+      "advanced": "Geavanceerde parameters",
+      "limit_count": "Een grafiek draagt maximaal 20 indicatoren. Verwijder er een om er een toe te voegen.",
+      "limit_panes": "Gebruik hoogstens drie indicatorvlakken per grafiek. Verwijder er een om er een toe te voegen.",
+      "dialog_title": "Grafiekindicatoren",
+      "dialog_intro": "Kies een indicator en stel de parameters in. De lijst bij Grafiekgereedschap zet dezelfde indicatoren aan en uit met hun standaardwaarden.",
+      "dialog_choose": "Indicator",
+      "add": "Indicator toevoegen",
+      "remove": "Verwijderen",
+      "calculating": "Indicatoren worden berekend…"
+    },
+    "workstation": {
+      "layout_outside": "Deze opgeslagen weergave valt buiten de geladen prijsperiode. Kies een langere periode om de marktgeschiedenis te laden.",
+      "layout_restored": "Opgeslagen weergave, tekeningen en indicatoren hersteld.",
+      "readings_summary": "Prijsgegevens en indicatordefinities lezen",
+      "readings_note": "Laatste {{observations}} geladen waarnemingen · {{timezone}}. Indicatoren gebruiken waargenomen candles; ontbrekende candles worden niet verzonnen."
     }
   },
   "charts": {

@@ -337,6 +337,21 @@
 .intel-workstation-toolbar button, .intel-chart-navigation button { font-size: 12px; border-bottom: 1px solid var(--border-default); min-height: 32px; padding: 5px 2px; }
 .intel-workstation-toolbar button[aria-pressed="true"] { border-color: var(--accent); color: var(--fg-1); }
 .intel-workstation-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; min-height: 32px; }
+/* Indicators: a plain disclosure on a hairline, never a floating card. */
+.intel-indicator-menu { position: relative; }
+.intel-indicator-menu > button[aria-expanded="true"] { border-color: var(--accent); color: var(--fg-1); }
+.intel-indicator-panel { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: min(360px, calc(100vw - 32px)); max-height: min(60vh, 460px); overflow: auto; background: var(--bg-1); border: 1px solid var(--border-default); padding: 12px 14px 14px; }
+.intel-indicator-hint { font-size: 11px; color: var(--fg-4); margin: 0 0 10px; }
+.intel-indicator-family { border: 0; padding: 0; margin: 0; }
+.intel-indicator-family + .intel-indicator-family { margin-top: 12px; }
+.intel-indicator-family legend { width: 100%; padding: 0 0 5px; margin-bottom: 4px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--fg-4); border-bottom: 1px solid var(--border-default); }
+.intel-indicator-row { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 9px; padding: 5px 0; font-size: 12px; min-height: 30px; }
+.intel-indicator-row input { align-self: center; accent-color: var(--accent); }
+.intel-indicator-name { color: var(--fg-1); }
+.intel-indicator-parameters { grid-column: 2; font-size: 11px; color: var(--fg-4); font-variant-numeric: tabular-nums; }
+.intel-indicator-notice { margin: 10px 0 0; font-size: 12px; color: var(--signal-red); }
+.intel-indicator-panel .intel-indicator-advanced { width: 100%; margin-top: 12px; padding: 10px 0 0; border: 0; border-top: 1px solid var(--border-default); text-align: left; font-size: 12px; color: var(--fg-1); min-height: 32px; text-decoration: underline; text-underline-offset: 4px; }
+.intel-indicator-panel :is(input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .intel-crosshair-legend { min-height: 30px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; color: var(--fg-3); font-size: 11px; padding-bottom: 6px; }
 .intel-crosshair-legend span { font-family: 'Geist Mono', monospace; font-variant-numeric: tabular-nums; }
 .intel-crosshair-legend b { color: var(--fg-1); font-weight: 400; }

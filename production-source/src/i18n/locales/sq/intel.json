@@ -847,6 +847,33 @@
       "unresolved_asset": "i pazgjidhur",
       "unverified_capture": "Një përgjigje çmimi nuk ka kapje të verifikuar. Rifresko krahasimin ose grafikun e aktivit para ruajtjes.",
       "visible_period": "Periudha e dukshme (UTC)"
+    },
+    "indicators": {
+      "open": "Tregues",
+      "open_count": "Tregues ({{total}})",
+      "title": "Tregues",
+      "hint": "Një tregues i zgjedhur vizatohet menjëherë. Hap „Parametra të përparuar“ për të ndryshuar cilësimet ose për të shtuar një kopje të dytë.",
+      "family_trend": "Trendi",
+      "family_momentum": "Momentumi",
+      "family_volatility": "Luhatshmëria",
+      "family_volume": "Volumi",
+      "family_other": "Tregues të tjerë",
+      "no_parameters": "Pa parametra",
+      "advanced": "Parametra të përparuar",
+      "limit_count": "Një grafik mban deri në 20 tregues. Hiq një për të shtuar një tjetër.",
+      "limit_panes": "Përdor më së shumti tre panele treguesish për grafik. Hiq një për të shtuar një tjetër.",
+      "dialog_title": "Treguesit e grafikut",
+      "dialog_intro": "Zgjidh një tregues dhe cakto parametrat e tij. Lista te Mjetet e grafikut i ndez dhe i fik të njëjtët tregues me vlerat e tyre të parazgjedhura.",
+      "dialog_choose": "Tregues",
+      "add": "Shto tregues",
+      "remove": "Hiq",
+      "calculating": "Po llogariten treguesit…"
+    },
+    "workstation": {
+      "layout_outside": "Kjo pamje e ruajtur bie jashtë periudhës së ngarkuar të çmimeve. Zgjidh një periudhë më të gjatë për të ngarkuar historinë e saj të tregut.",
+      "layout_restored": "Pamja e ruajtur, vizatimet dhe treguesit u rikthyen.",
+      "readings_summary": "Lexo të dhënat e çmimit dhe përkufizimet e treguesve",
+      "readings_note": "Vëzhgimet e fundit {{observations}} të ngarkuara · {{timezone}}. Treguesit përdorin qirinjtë e vëzhguar; qirinjtë që mungojnë nuk trillohen."
     }
   },
   "charts": {

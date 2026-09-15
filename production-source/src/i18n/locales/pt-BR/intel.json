@@ -842,11 +842,38 @@
       "save_snapshot": "Salvar snapshot",
       "saved_privately": "Snapshot salvo de forma privada.",
       "saving": "Salvando snapshot…",
-      "studies": "Estudos",
+      "studies": "Indicadores",
       "title_label": "Título do snapshot",
       "unresolved_asset": "não resolvido",
       "unverified_capture": "Uma resposta de preço não tem captura verificada. Atualize a comparação ou o gráfico do ativo antes de salvar.",
       "visible_period": "Período visível (UTC)"
+    },
+    "indicators": {
+      "open": "Indicadores",
+      "open_count": "Indicadores ({{total}})",
+      "title": "Indicadores",
+      "hint": "Selecionar um indicador o desenha na hora. Abra «Parâmetros avançados» para mudar os ajustes ou acrescentar uma segunda cópia.",
+      "family_trend": "Tendência",
+      "family_momentum": "Momento",
+      "family_volatility": "Volatilidade",
+      "family_volume": "Volume",
+      "family_other": "Outros indicadores",
+      "no_parameters": "Sem parâmetros",
+      "advanced": "Parâmetros avançados",
+      "limit_count": "Um gráfico comporta até 20 indicadores. Remova um para acrescentar outro.",
+      "limit_panes": "Use no máximo três painéis de indicadores por gráfico. Remova um para acrescentar outro.",
+      "dialog_title": "Indicadores do gráfico",
+      "dialog_intro": "Escolha um indicador e defina seus parâmetros. A lista em Ferramentas do gráfico liga e desliga os mesmos indicadores com seus valores padrão.",
+      "dialog_choose": "Indicador",
+      "add": "Acrescentar indicador",
+      "remove": "Remover",
+      "calculating": "Calculando indicadores…"
+    },
+    "workstation": {
+      "layout_outside": "Esta visão salva fica fora do período de preços carregado. Escolha um período mais longo para carregar seu histórico de mercado.",
+      "layout_restored": "Visão salva, desenhos e indicadores restaurados.",
+      "readings_summary": "Ler dados de preço e definições de indicadores",
+      "readings_note": "Últimas {{observations}} observações carregadas · {{timezone}}. Os indicadores usam os candles observados; candles ausentes não são inventados."
     }
   },
   "charts": {

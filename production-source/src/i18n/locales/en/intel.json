@@ -1657,11 +1657,38 @@
       "save_snapshot": "Save snapshot",
       "saved_privately": "Snapshot saved privately.",
       "saving": "Saving snapshot…",
-      "studies": "Studies",
+      "studies": "Indicators",
       "title_label": "Snapshot title",
       "unresolved_asset": "unresolved",
       "unverified_capture": "A price response has no verified capture. Refresh the comparison or asset chart before saving.",
       "visible_period": "Visible period (UTC)"
+    },
+    "indicators": {
+      "open": "Indicators",
+      "open_count": "Indicators ({{total}})",
+      "title": "Indicators",
+      "hint": "Selecting an indicator draws it immediately. Open Advanced parameters to change its settings or add a second copy.",
+      "family_trend": "Trend",
+      "family_momentum": "Momentum",
+      "family_volatility": "Volatility",
+      "family_volume": "Volume",
+      "family_other": "Other indicators",
+      "no_parameters": "No parameters",
+      "advanced": "Advanced parameters",
+      "limit_count": "A chart carries up to 20 indicators. Remove one to add another.",
+      "limit_panes": "Use up to three indicator panes per chart. Remove one to add another.",
+      "dialog_title": "Chart indicators",
+      "dialog_intro": "Choose an indicator and set its parameters. The list in Chart tools turns the same indicators on and off with their defaults.",
+      "dialog_choose": "Indicator",
+      "add": "Add indicator",
+      "remove": "Remove",
+      "calculating": "Calculating indicators…"
+    },
+    "workstation": {
+      "layout_outside": "This saved view is outside the loaded price period. Choose a longer period to load its market history.",
+      "layout_restored": "Saved view, drawings and indicators restored.",
+      "readings_summary": "Read price data and indicator definitions",
+      "readings_note": "Latest {{observations}} loaded observations · {{timezone}}. Indicators use observed bars; missing bars are not synthesized."
     }
   },
   "charts": {

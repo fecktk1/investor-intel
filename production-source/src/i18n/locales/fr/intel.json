@@ -847,6 +847,33 @@
       "unresolved_asset": "non résolu",
       "unverified_capture": "Une réponse de prix n’a pas de capture vérifiée. Actualisez la comparaison ou le graphique de l’actif avant d’enregistrer.",
       "visible_period": "Période visible (UTC)"
+    },
+    "indicators": {
+      "open": "Indicateurs",
+      "open_count": "Indicateurs ({{total}})",
+      "title": "Indicateurs",
+      "hint": "Un indicateur sélectionné est tracé immédiatement. Ouvrez « Paramètres avancés » pour modifier ses réglages ou ajouter une seconde copie.",
+      "family_trend": "Tendance",
+      "family_momentum": "Momentum",
+      "family_volatility": "Volatilité",
+      "family_volume": "Volume",
+      "family_other": "Autres indicateurs",
+      "no_parameters": "Aucun paramètre",
+      "advanced": "Paramètres avancés",
+      "limit_count": "Un graphique accepte jusqu’à 20 indicateurs. Retirez-en un pour en ajouter un autre.",
+      "limit_panes": "Utilisez au maximum trois panneaux d’indicateurs par graphique. Retirez-en un pour en ajouter un autre.",
+      "dialog_title": "Indicateurs du graphique",
+      "dialog_intro": "Choisissez un indicateur et définissez ses paramètres. La liste des outils du graphique active et désactive les mêmes indicateurs avec leurs valeurs par défaut.",
+      "dialog_choose": "Indicateur",
+      "add": "Ajouter un indicateur",
+      "remove": "Retirer",
+      "calculating": "Calcul des indicateurs…"
+    },
+    "workstation": {
+      "layout_outside": "Cette vue enregistrée se situe hors de la période de prix chargée. Choisissez une période plus longue pour charger son historique de marché.",
+      "layout_restored": "Vue enregistrée, dessins et indicateurs restaurés.",
+      "readings_summary": "Lire les données de prix et les définitions des indicateurs",
+      "readings_note": "Dernières {{observations}} observations chargées · {{timezone}}. Les indicateurs utilisent les bougies observées ; les bougies manquantes ne sont pas inventées."
     }
   },
   "charts": {

@@ -847,6 +847,33 @@
       "unresolved_asset": "nicht aufgelöst",
       "unverified_capture": "Eine Preisantwort hat keine verifizierte Erfassung. Aktualisiere den Vergleich oder den Asset-Chart vor dem Speichern.",
       "visible_period": "Sichtbarer Zeitraum (UTC)"
+    },
+    "indicators": {
+      "open": "Indikatoren",
+      "open_count": "Indikatoren ({{total}})",
+      "title": "Indikatoren",
+      "hint": "Ein ausgewählter Indikator wird sofort gezeichnet. Öffne „Erweiterte Parameter“, um seine Einstellungen zu ändern oder eine zweite Kopie hinzuzufügen.",
+      "family_trend": "Trend",
+      "family_momentum": "Momentum",
+      "family_volatility": "Volatilität",
+      "family_volume": "Volumen",
+      "family_other": "Weitere Indikatoren",
+      "no_parameters": "Keine Parameter",
+      "advanced": "Erweiterte Parameter",
+      "limit_count": "Ein Chart trägt bis zu 20 Indikatoren. Entferne einen, um einen weiteren hinzuzufügen.",
+      "limit_panes": "Nutze höchstens drei Indikator-Bereiche pro Chart. Entferne einen, um einen weiteren hinzuzufügen.",
+      "dialog_title": "Chart-Indikatoren",
+      "dialog_intro": "Wähle einen Indikator und lege seine Parameter fest. Die Liste in den Chart-Werkzeugen schaltet dieselben Indikatoren mit ihren Standardwerten ein und aus.",
+      "dialog_choose": "Indikator",
+      "add": "Indikator hinzufügen",
+      "remove": "Entfernen",
+      "calculating": "Indikatoren werden berechnet…"
+    },
+    "workstation": {
+      "layout_outside": "Diese gespeicherte Ansicht liegt außerhalb des geladenen Preiszeitraums. Wähle einen längeren Zeitraum, um ihre Markthistorie zu laden.",
+      "layout_restored": "Gespeicherte Ansicht, Zeichnungen und Indikatoren wiederhergestellt.",
+      "readings_summary": "Preisdaten und Indikator-Definitionen lesen",
+      "readings_note": "Neueste {{observations}} geladene Beobachtungen · {{timezone}}. Indikatoren nutzen beobachtete Bars; fehlende Bars werden nicht erzeugt."
     }
   },
   "charts": {

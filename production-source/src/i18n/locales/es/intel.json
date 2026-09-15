@@ -842,11 +842,38 @@
       "save_snapshot": "Guardar instantánea",
       "saved_privately": "Instantánea guardada de forma privada.",
       "saving": "Guardando instantánea…",
-      "studies": "Estudios",
+      "studies": "Indicadores",
       "title_label": "Título de la instantánea",
       "unresolved_asset": "sin resolver",
       "unverified_capture": "Una respuesta de precios no tiene una captura verificada. Actualiza la comparación o el gráfico del activo antes de guardar.",
       "visible_period": "Período visible (UTC)"
+    },
+    "indicators": {
+      "open": "Indicadores",
+      "open_count": "Indicadores ({{total}})",
+      "title": "Indicadores",
+      "hint": "Al seleccionar un indicador se dibuja de inmediato. Abre «Parámetros avanzados» para cambiar sus ajustes o añadir una segunda copia.",
+      "family_trend": "Tendencia",
+      "family_momentum": "Impulso",
+      "family_volatility": "Volatilidad",
+      "family_volume": "Volumen",
+      "family_other": "Otros indicadores",
+      "no_parameters": "Sin parámetros",
+      "advanced": "Parámetros avanzados",
+      "limit_count": "Un gráfico admite hasta 20 indicadores. Elimina uno para añadir otro.",
+      "limit_panes": "Usa como máximo tres paneles de indicadores por gráfico. Elimina uno para añadir otro.",
+      "dialog_title": "Indicadores del gráfico",
+      "dialog_intro": "Elige un indicador y define sus parámetros. La lista de Herramientas del gráfico activa y desactiva los mismos indicadores con sus valores predeterminados.",
+      "dialog_choose": "Indicador",
+      "add": "Añadir indicador",
+      "remove": "Eliminar",
+      "calculating": "Calculando indicadores…"
+    },
+    "workstation": {
+      "layout_outside": "Esta vista guardada queda fuera del periodo de precios cargado. Elige un periodo más largo para cargar su historial de mercado.",
+      "layout_restored": "Vista guardada, dibujos e indicadores restaurados.",
+      "readings_summary": "Leer datos de precio y definiciones de indicadores",
+      "readings_note": "Últimas {{observations}} observaciones cargadas · {{timezone}}. Los indicadores usan las velas observadas; las velas que faltan no se inventan."
     }
   },
   "charts": {

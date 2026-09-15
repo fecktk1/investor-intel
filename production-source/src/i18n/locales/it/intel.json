@@ -847,6 +847,33 @@
       "unresolved_asset": "non risolto",
       "unverified_capture": "Una risposta di prezzo non ha un’acquisizione verificata. Aggiorna il confronto o il grafico dell’asset prima di salvare.",
       "visible_period": "Periodo visibile (UTC)"
+    },
+    "indicators": {
+      "open": "Indicatori",
+      "open_count": "Indicatori ({{total}})",
+      "title": "Indicatori",
+      "hint": "Un indicatore selezionato viene disegnato subito. Apri «Parametri avanzati» per cambiarne le impostazioni o aggiungere una seconda copia.",
+      "family_trend": "Tendenza",
+      "family_momentum": "Momentum",
+      "family_volatility": "Volatilità",
+      "family_volume": "Volume",
+      "family_other": "Altri indicatori",
+      "no_parameters": "Nessun parametro",
+      "advanced": "Parametri avanzati",
+      "limit_count": "Un grafico regge fino a 20 indicatori. Rimuovine uno per aggiungerne un altro.",
+      "limit_panes": "Usa al massimo tre riquadri di indicatori per grafico. Rimuovine uno per aggiungerne un altro.",
+      "dialog_title": "Indicatori del grafico",
+      "dialog_intro": "Scegli un indicatore e imposta i suoi parametri. L’elenco negli Strumenti del grafico attiva e disattiva gli stessi indicatori con i valori predefiniti.",
+      "dialog_choose": "Indicatore",
+      "add": "Aggiungi indicatore",
+      "remove": "Rimuovi",
+      "calculating": "Calcolo degli indicatori…"
+    },
+    "workstation": {
+      "layout_outside": "Questa vista salvata è fuori dal periodo di prezzo caricato. Scegli un periodo più lungo per caricare la sua storia di mercato.",
+      "layout_restored": "Vista salvata, disegni e indicatori ripristinati.",
+      "readings_summary": "Leggi i dati di prezzo e le definizioni degli indicatori",
+      "readings_note": "Ultime {{observations}} osservazioni caricate · {{timezone}}. Gli indicatori usano le candele osservate; le candele mancanti non vengono inventate."
     }
   },
   "charts": {
