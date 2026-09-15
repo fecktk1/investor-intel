@@ -17,6 +17,23 @@ Deno.test('CMC product sharing has separate permission from image or data export
  const expired=await projectChartShare({snapshot:capture,audience:'owner',drawingIds:[id]},productEnv,now+86400000)
  eq(expired.bars,null);eq(expired.layout.drawings[0].text,'Selected words')
 })
+Deno.test('a Binance or stitched archive capture is shareable only when every part permits it',async()=>{
+ const binanceEnv=(key:string)=>['INTEL_CHART_BINANCE_RETENTION','INTEL_CHART_BINANCE_EXPORT','INTEL_CHART_BINANCE_SHARING'].includes(key)?'true':undefined
+ const capture={...state,source:{provider:'binance',currency:'USDT'},policy:{retain:true,retainUntil:now+86400000,export:true,productShare:false}}
+ eq(chartSourceShareAllowed(capture,binanceEnv,now),true)
+ eq(chartSourceShareAllowed(capture,k=>k==='INTEL_CHART_BINANCE_SHARING'?undefined:binanceEnv(k),now),false)
+ eq(chartSourceShareAllowed({...capture,policy:{...capture.policy,export:false}},binanceEnv,now),false)
+ const view=await projectChartShare({snapshot:capture,audience:'public',drawingIds:[id]},binanceEnv,now)
+ eq(view.bars,capture.bars)
+ // A stitched archive series: the whole never exported (CoinMarketCap export is
+ // off), so the Binance part clears on its recorded part permission and the
+ // CoinMarketCap part on product sharing. Either missing refuses the share.
+ const stitched={...capture,source:{provider:'binance+coinmarketcap',currency:'USD'},policy:{...capture.policy,export:false,partExport:['binance'],productShare:true}}
+ eq(chartSourceShareAllowed(stitched,binanceEnv,now),false)
+ eq(chartSourceShareAllowed(stitched,k=>binanceEnv(k)??productEnv(k),now),true)
+ eq(chartSourceShareAllowed({...stitched,policy:{...stitched.policy,partExport:[]}},k=>binanceEnv(k)??productEnv(k),now),false)
+ await assertRejects(()=>projectChartShare({snapshot:stitched,audience:'org'},binanceEnv,now),Error,'source_unavailable')
+})
 Deno.test('share projection includes only selected annotations and has a separate integrity hash',async()=>{const r=await projectChartShare({snapshot:state,audience:'public',drawingIds:[id],expiresAt:'2026-09-11'},all);eq(r.layout.drawings.length,1);eq(r.layout.drawings[0].text,'Selected words');eq(r.layout.visibility,{});eq(JSON.stringify(r).includes('Private omitted'),false);eq(JSON.stringify(r).includes('Never include'),false);eq('user_id'in r,false);eq(r.hash===state.hash,false);eq(state.layout.drawings.length,2)})
 Deno.test('sharing defaults omit every private drawing',async()=>{const r=await projectChartShare({snapshot:state,audience:'org',expiresAt:'2026-09-11'},all);eq(r.layout.drawings,[])})
 Deno.test('current source permission revocation blocks non-owner projections even if previously permitted',async()=>{for(const audience of ['org','unlisted','public'])await assertRejects(()=>projectChartShare({snapshot:state,audience},()=>undefined),Error,'source_unavailable')})

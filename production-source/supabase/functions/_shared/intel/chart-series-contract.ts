@@ -7,6 +7,6 @@ export function chartSeriesResponse(response:any,servedAt=Date.now()) {
  const grid=regularBarGrid(normalized.bars)
  const bars:Bar[]=normalized.bars.map(b=>({...b,...(meaning==='close'?{closedAt:b.t}:{}),...(meaning==='observation'?{closedAt:b.t}:{})}))
  const source:ChartSource={provider,currency:response?.currency||'USD',timestampMeaning:meaning,intervalMs:Number.isSafeInteger(response?.barIntervalMs)&&response.barIntervalMs>=1000?response.barIntervalMs:grid?.step??null,observedAt:bars.at(-1)?.closedAt??bars.at(-1)?.t??null,servedAt,
-  sourceUrl:provider==='coingecko'?'https://www.coingecko.com/':provider==='coinmarketcap'?'https://coinmarketcap.com/':provider==='geckoterminal'?'https://www.geckoterminal.com/':provider==='birdeye'?'https://birdeye.so/':null,...(response?.volumeUnit?{volumeUnit:String(response.volumeUnit)}:{})}
+  sourceUrl:provider==='coingecko'?'https://www.coingecko.com/':provider==='coinmarketcap'?'https://coinmarketcap.com/':provider==='geckoterminal'?'https://www.geckoterminal.com/':provider==='birdeye'?'https://birdeye.so/':provider==='binance'?'https://www.binance.com/':null,...(response?.volumeUnit?{volumeUnit:String(response.volumeUnit)}:{})}
  return {candles:bars,source,coverage:normalized.rejected?`${normalized.rejected} invalid price observations omitted.`:null}
 }

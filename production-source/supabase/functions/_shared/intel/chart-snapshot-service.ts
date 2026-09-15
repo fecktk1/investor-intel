@@ -1,6 +1,6 @@
 import {validateChartLayout,isUuid} from './chart-workspace-contract.ts'
 import {CHART_ANALYSIS_VERSION} from './chart-analysis.ts'
-import {verifyChartCapture,chartCapturePolicy,chartRetentionDeadline,chartPricesReadable} from './chart-capture-proof.ts'
+import {verifyChartCapture,chartCapturePolicy,chartRetentionDeadline,chartPricesReadable,chartSourceProviders} from './chart-capture-proof.ts'
 import {digest,stableJson} from './investigation-evidence.ts'
 import {chartImage} from './chart-image.ts'
 import {projectSnapshotPrices,snapshotExportAllowed} from './chart-snapshot-prices.ts'
@@ -15,12 +15,16 @@ export async function buildChartSnapshot(input:any,secret:string,env:(key:string
  if(typeof input.title!=='string'||!input.title.trim()||input.title.length>120)throw new Error('invalid_snapshot_title')
  const captureOne=async(asset:string,capture:any)=>{
   const verified=await verifyChartCapture(capture?.proof,capture?.bars,asset,secret,now),policy=chartCapturePolicy(verified.source.provider,env)
-  const replay=layout.replay,bars=replayBars(verified.bars,replay)
+  const replay=layout.replay,bars=replayBars(verified.bars,replay),parts=chartSourceProviders(verified.source.provider)
   const deadline=chartRetentionDeadline({source:verified.source,createdAt:now},env),retain=policy.retain&&deadline>now
+  // A stitched archive series (binance+coinmarketcap) records which parts
+  // permitted export at capture, because the whole exports only when every part
+  // does, while a share may still clear each part on its own terms.
+  const partExport=parts.length>1?parts.filter(part=>chartCapturePolicy(part,env).export):null
   return {asset,createdAt:now,capturedAt:verified.capturedAt,source:verified.source,sourceHash:verified.hash,barCount:bars.length,
    ...(replay?{sourceBarCount:verified.bars.length,replaySeriesHash:await digest(stableJson(bars))}:{}),
    firstObservation:bars[0]?.t,lastObservation:bars.at(-1)?.t,bars:retain?bars:null,
-   policy:{retain,export:retain&&policy.export,retainUntil:retain?deadline:null,productShare:retain&&verified.source.provider==='coinmarketcap'&&env('INTEL_CHART_CMC_PRODUCT_SHARING')==='true'},
+   policy:{retain,export:retain&&policy.export,retainUntil:retain?deadline:null,productShare:retain&&parts.includes('coinmarketcap')&&env('INTEL_CHART_CMC_PRODUCT_SHARING')==='true',...(retain&&partExport?{partExport}:{})},
    gaps:[...retain?[]:['The original price capture is reference-only. Your selected notes and its source fingerprint remain saved.'],...replay?[`Replay checkpoint through ${new Date(replay.at).toISOString()}. ${replay.knownOnly?'Only source bars recorded by that time are included.':'Historical candles may include later source corrections.'} This checkpoint was saved later and does not establish when the idea was first authored.`,...bars.length?[]:['No eligible completed source observations were available for this replay cutoff.']]:[]]}
  }
  let comparisonSeries:any[]|undefined

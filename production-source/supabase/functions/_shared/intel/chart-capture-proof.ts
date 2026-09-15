@@ -32,15 +32,23 @@ export async function verifyChartCapture(proof:ChartCaptureProof,bars:unknown[],
  if(normalized.rejected||normalized.truncated||normalized.bars.length!==proof.count||await digest(stableJson(normalized.bars))!==proof.hash)throw new Error('chart_capture_series_changed')
  return {bars:normalized.bars,source:proof.source,hash:proof.hash,capturedAt:proof.issuedAt}
 }
+/** The policy prefix of every source a chart series can name. The stored candle
+ * archive stitches Binance klines onto CoinMarketCap OHLCV for the years before a
+ * listing and labels the series `binance+coinmarketcap`, so a source label is a
+ * `+`-joined list and every part must permit an action before the whole does. */
+export const CHART_SOURCE_POLICY_PREFIX:Record<string,string>={coingecko:'COINGECKO',geckoterminal:'GECKOTERMINAL',birdeye:'BIRDEYE',coinmarketcap:'CMC',binance:'BINANCE'}
+export const chartSourceProviders=(provider:unknown):string[]=>typeof provider==='string'?provider.split('+').map(p=>p.trim()).filter(Boolean):[]
+export const chartSourcePolicyKey=(prefix:string,action:'RETENTION'|'EXPORT'|'SHARING')=>prefix==='CMC'&&action!=='SHARING'?action==='RETENTION'?'CMC_ALLOW_HISTORICAL_RETENTION':'CMC_ALLOW_EXPORT':`INTEL_CHART_${prefix}_${action}`
 export function chartCapturePolicy(provider:string,env:(name:string)=>string|undefined) {
- const names:Record<string,string>={coingecko:'COINGECKO',geckoterminal:'GECKOTERMINAL',birdeye:'BIRDEYE',coinmarketcap:'CMC'}
- const source=names[provider];if(!source)return {retain:false,export:false}
- const retain=env(source==='CMC'?'CMC_ALLOW_HISTORICAL_RETENTION':`INTEL_CHART_${source}_RETENTION`)==='true'
- return {retain,export:retain&&env(source==='CMC'?'CMC_ALLOW_EXPORT':`INTEL_CHART_${source}_EXPORT`)==='true'}
+ const parts=chartSourceProviders(provider).map(p=>CHART_SOURCE_POLICY_PREFIX[p])
+ if(!parts.length||parts.some(p=>!p))return {retain:false,export:false}
+ const retain=parts.every(p=>env(chartSourcePolicyKey(p,'RETENTION'))==='true')
+ return {retain,export:retain&&parts.every(p=>env(chartSourcePolicyKey(p,'EXPORT'))==='true')}
 }
 export function chartRetentionDeadline(state:any,env:(name:string)=>string|undefined){
- const provider=state.source?.provider,days=provider==='coinmarketcap'?Math.max(1,Math.min(365,Number(env('CMC_HISTORY_RETENTION_DAYS'))||30)):30
- const captured=Number(state.createdAt??state.capturedAt),saved=Number(state.policy?.retainUntil),terms=provider==='coinmarketcap'?Date.parse(env('CMC_SOURCE_POLICY_EXPIRES_AT')||''):NaN
+ // A series with any CoinMarketCap part keeps CoinMarketCap's retention terms.
+ const cmc=chartSourceProviders(state.source?.provider).includes('coinmarketcap'),days=cmc?Math.max(1,Math.min(365,Number(env('CMC_HISTORY_RETENTION_DAYS'))||30)):30
+ const captured=Number(state.createdAt??state.capturedAt),saved=Number(state.policy?.retainUntil),terms=cmc?Date.parse(env('CMC_SOURCE_POLICY_EXPIRES_AT')||''):NaN
  if(!Number.isFinite(captured))return 0
  return Math.min(captured+days*86400000,Number.isFinite(saved)&&saved>0?saved:Infinity,Number.isFinite(terms)?terms:Infinity)
 }

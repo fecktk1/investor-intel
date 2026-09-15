@@ -1,5 +1,5 @@
 import {isUuid,validateChartLayout} from './chart-workspace-contract.ts'
-import {chartCapturePolicy,chartPricesReadable,chartRetentionDeadline} from './chart-capture-proof.ts'
+import {chartCapturePolicy,chartPricesReadable,chartRetentionDeadline,chartSourceProviders,CHART_SOURCE_POLICY_PREFIX,chartSourcePolicyKey} from './chart-capture-proof.ts'
 import {stableJson,digest} from './investigation-evidence.ts'
 import {snapshotSeries,projectSnapshotPrices} from './chart-snapshot-prices.ts'
 type Env=(name:string)=>string|undefined
@@ -16,10 +16,17 @@ export const validChartShareSlug=(value:unknown):value is string=>typeof value==
 export const chartShareShortUrl=(slug:unknown):string|null=>validChartShareSlug(slug)?`${CHART_SHARE_SHORT_ORIGIN}/${slug}`:null
 export function chartSourceShareAllowed(state:any,env:Env,now=Date.now()):boolean{
  if(state.layout?.comparison){const series=snapshotSeries(state);return series.length===state.layout.comparison.assets.length&&series.every(s=>chartSourceShareAllowed(s,env,now))}
- const provider=state.source?.provider,policy=chartCapturePolicy(provider,env)
- const prefix:Record<string,string>={coinmarketcap:'CMC',coingecko:'COINGECKO',geckoterminal:'GECKOTERMINAL',birdeye:'BIRDEYE'}
- if(provider==='coinmarketcap'&&state.policy?.productShare===true&&env('INTEL_CHART_CMC_PRODUCT_SHARING')==='true')return !!state.bars&&chartPricesReadable(state,env,now)
- return !!prefix[provider]&&state.policy?.export===true&&policy.export&&env(`INTEL_CHART_${prefix[provider]}_SHARING`)==='true'
+ // Every part of a stitched source (`binance+coinmarketcap`) must allow the
+ // share. CoinMarketCap product sharing is its own permission; every other part
+ // needs the export permission recorded at capture, still granted, plus sharing.
+ const parts=chartSourceProviders(state.source?.provider)
+ const allowed=(part:string)=>{
+  if(part==='coinmarketcap'&&state.policy?.productShare===true&&env('INTEL_CHART_CMC_PRODUCT_SHARING')==='true')return !!state.bars&&chartPricesReadable(state,env,now)
+  const prefix=CHART_SOURCE_POLICY_PREFIX[part]
+  const recorded=state.policy?.export===true||(Array.isArray(state.policy?.partExport)&&state.policy.partExport.includes(part))
+  return !!prefix&&recorded&&chartCapturePolicy(part,env).export&&env(chartSourcePolicyKey(prefix,'SHARING'))==='true'
+ }
+ return parts.length>0&&parts.every(allowed)
 }
 export async function projectChartShare(resolved:any,env:Env,now=Date.now()){
  const original=resolved.snapshot,external=resolved.audience!=='owner'

@@ -7,6 +7,15 @@ const drawing={id,tool:'text',anchors:[{t:now-1000,price:11}],text:'Private orig
 const layout={schemaVersion:1,asset:'native:bitcoin',range:{from:now-10000,to:now},studies:[],drawings:[drawing],visibility:{portfolio:true}}
 const source=chartSeriesResponse({source:'coingecko',candles:[{t:now-1000,c:11}]},now)
 const input=async()=>({title:'Chart research',layout,capture:{bars:source.candles,proof:await makeChartCaptureProof('native:bitcoin',source.candles,source.source,secret,now)}})
+Deno.test('a stitched archive capture retains only when every part permits it and records which parts may export',async()=>{
+ const stitched=chartSeriesResponse({source:'binance+coinmarketcap',candles:[{t:now-1000,c:11}]},now)
+ const capture=async()=>({bars:stitched.candles,proof:await makeChartCaptureProof('native:bitcoin',stitched.candles,stitched.source,secret,now)})
+ const both=(key:string)=>['INTEL_CHART_BINANCE_RETENTION','INTEL_CHART_BINANCE_EXPORT','CMC_ALLOW_HISTORICAL_RETENTION','INTEL_CHART_CMC_PRODUCT_SHARING'].includes(key)?'true':key==='CMC_SOURCE_POLICY_EXPIRES_AT'?new Date(now+86400000).toISOString():undefined
+ const snapshot=await buildChartSnapshot({title:'Chart research',layout,capture:await capture(),includeDrawingIds:[]},secret,both,now)
+ eq(snapshot.policy,{retain:true,export:false,retainUntil:now+86400000,productShare:true,partExport:['binance']});eq(snapshot.bars?.length,1)
+ const binanceOnly=await buildChartSnapshot({title:'Chart research',layout,capture:await capture(),includeDrawingIds:[]},secret,key=>key.startsWith('INTEL_CHART_BINANCE')?'true':undefined,now)
+ eq(binanceOnly.bars,null);eq(binanceOnly.policy,{retain:false,export:false,retainUntil:null,productShare:false})
+})
 Deno.test('retained captures expire without discarding selected research, and a later policy cannot extend the original deadline',async()=>{
  const env=(key:string)=>key==='INTEL_CHART_COINGECKO_RETENTION'?'true':undefined
  const snapshot=await buildChartSnapshot({...await input(),includeDrawingIds:[id]},secret,env,now)
