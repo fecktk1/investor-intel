@@ -22,7 +22,11 @@ import AlertSourceReceipt,{alertValueLabel} from '../components/AlertSourceRecei
 import AlertRuleHistory from '../components/AlertRuleHistory'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
 
-const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift', 'unlock', 'supply_shock', 'metadata_migration', 'metadata_notice']
+const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift', 'unlock', 'supply_shock', 'metadata_migration', 'metadata_notice', 'liquidation_cascade', 'attention_entry']
+
+// Triggers whose English name is not simply their key with the underscores
+// taken out.
+const TRIGGER_LABELS = { metadata_notice: 'Listing notice', liquidation_cascade: 'Liquidation cascade', attention_entry: 'Attention entry' }
 
 // A listing notice is present or it is not, so its rule carries no reader
 // threshold and no comparator choice: threshold_pct is fixed at 1, the
@@ -30,6 +34,42 @@ const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activi
 // re-arms after its cooldown. Built here — not in marketAlertConfig — because
 // it is not a market trigger and must never pick up the market fields.
 export const METADATA_NOTICE_CONFIG = { threshold_pct: 1, condition: 'legacy_level', repeat: 'rearm', direction: 'either' }
+
+// CMC plan proposals 13 and 23. Both are capture-clock rules evaluated by
+// intel-alerts-eval against a recorded series, so both fix the same three
+// fields the listing notice fixes — a level match, re-arming after cooldown, no
+// direction to choose — and let the reader set only what the rule actually
+// compares. Neither is a market trigger, so neither may pick up the market
+// fields (reset margin, sustain window).
+const CAPTURE_RULE_FIXED = { condition: 'legacy_level', repeat: 'rearm', direction: 'either' }
+export const CASCADE_WINDOWS = ['1h', '4h']
+export const ATTENTION_LISTS = ['trending', 'most_visited', 'gainers', 'losers']
+export const LIQUIDATION_CASCADE_DEFAULTS = { multiple: 3, window: '1h', ...CAPTURE_RULE_FIXED }
+export const ATTENTION_ENTRY_DEFAULTS = { hours: 1, list: 'trending', ...CAPTURE_RULE_FIXED }
+
+// The evaluator reads `threshold_pct` for every rule it stores, so the reader's
+// multiple (and, for attention, the hour count) is written into BOTH fields from
+// the one input. They can never drift apart, and no percentage is implied: the
+// number is a ratio against this asset's own seven-day average for the window.
+export function liquidationCascadeConfig(form) {
+  const multiple = Number(form?.multiple)
+  if (form?.multiple === '' || !Number.isFinite(multiple) || multiple < 1.5 || multiple > 20) {
+    throw new Error('Choose a cascade multiple between 1.5 and 20 times the seven-day average for that window.')
+  }
+  const windowKey = String(form?.cascadeWindow || LIQUIDATION_CASCADE_DEFAULTS.window)
+  if (!CASCADE_WINDOWS.includes(windowKey)) throw new Error('Choose the one-hour or the four-hour liquidation window.')
+  return { threshold_pct: multiple, multiple, window: windowKey, ...CAPTURE_RULE_FIXED }
+}
+
+export function attentionEntryConfig(form) {
+  const hours = Number(form?.attentionHours)
+  if (form?.attentionHours === '' || !Number.isInteger(hours) || hours < 1 || hours > 24) {
+    throw new Error('Choose a whole number of consecutive hourly captures from 1 to 24.')
+  }
+  const list = String(form?.attentionList || ATTENTION_ENTRY_DEFAULTS.list)
+  if (!ATTENTION_LISTS.includes(list)) throw new Error('Choose one of the captured attention lists.')
+  return { threshold_pct: hours, hours, list, ...CAPTURE_RULE_FIXED }
+}
 
 // P10 — Smart Alerts. Rules are created here; evaluation + the AI "why it
 // matters" artifact run server-side (cron + intel-generate) in production.
@@ -44,7 +84,11 @@ function ScopedAlertsPage() {
   const [rules, setRules] = useState([])
   const [events, setEvents] = useState([])
   const [loading, setLoading] = useState(true)
-  const [form, setForm] = useState({ ...marketAlertForm(), chain: 'solana', value: '', trigger: 'price_move', threshold: '10', active:false })
+  const [form, setForm] = useState({
+    ...marketAlertForm(), chain: 'solana', value: '', trigger: 'price_move', threshold: '10', active:false,
+    multiple: String(LIQUIDATION_CASCADE_DEFAULTS.multiple), cascadeWindow: LIQUIDATION_CASCADE_DEFAULTS.window,
+    attentionHours: String(ATTENTION_ENTRY_DEFAULTS.hours), attentionList: ATTENTION_ENTRY_DEFAULTS.list,
+  })
   const [busy, setBusy] = useState(false)
   const [err, setErr] = useState(null)
   const why = useArtifact()
@@ -105,7 +149,7 @@ function ScopedAlertsPage() {
       } else {
         const ent = await resolveEntity(supabase, org.id, { kind: form.trigger === 'wallet_activity' ? 'wallet' : 'asset', chain: form.chain, value: form.value.trim() })
         entityId = ent.id
-        config = form.trigger === 'liquidity_drop' ? { min_liquidity_usd: threshold } : form.trigger === 'wallet_activity' ? { min_usd: threshold } : form.trigger === 'unlock' ? {window_days:threshold} : form.trigger === 'metadata_migration' ? {} : form.trigger === 'metadata_notice' ? { ...METADATA_NOTICE_CONFIG } : { threshold_pct: threshold }
+        config = form.trigger === 'liquidity_drop' ? { min_liquidity_usd: threshold } : form.trigger === 'wallet_activity' ? { min_usd: threshold } : form.trigger === 'unlock' ? {window_days:threshold} : form.trigger === 'metadata_migration' ? {} : form.trigger === 'metadata_notice' ? { ...METADATA_NOTICE_CONFIG } : form.trigger === 'liquidation_cascade' ? liquidationCascadeConfig(form) : form.trigger === 'attention_entry' ? attentionEntryConfig(form) : { threshold_pct: threshold }
       }
       config={...config,title:form.title,note:form.note,visibility:'private',...(MARKET_TRIGGERS.includes(form.trigger)?marketAlertConfig(form):{})}
       if(form.trigger==='unlock'&&threshold>90)throw Error('Choose an unlock window from zero to 90 days.')
@@ -140,12 +184,38 @@ function ScopedAlertsPage() {
           <input className="input w-full" data-tutorial="intel-alerts.identifier-input" placeholder={form.trigger === 'narrative_heat' ? 'Narrative slug' : form.trigger === 'wallet_activity' ? 'Wallet address' : t('watchlist.ph.token', { defaultValue: 'Token mint / contract' })} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
         </label>
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.trigger', { defaultValue: 'Trigger' })}</span>
-          <select className="select" data-tutorial="intel-alerts.trigger-select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: tr === 'metadata_notice' ? 'Listing notice' : tr.replace(/_/g, ' ') })}</option>)}</select>
+          <select className="select" data-tutorial="intel-alerts.trigger-select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: TRIGGER_LABELS[tr] || tr.replace(/_/g, ' ') })}</option>)}</select>
         </label>
-        <label className="block w-28"><span className="text-[11px] text-[var(--fg-4)]">{form.trigger === 'liquidity_drop' ? 'Liquidity below $' : form.trigger === 'wallet_activity' ? 'Transfer above $' : form.trigger === 'narrative_heat' ? 'Momentum points' : form.trigger==='unlock' ? 'Days ahead' : form.trigger==='metadata_migration' ? 'All material changes' : form.trigger==='metadata_notice' ? t('alerts.notice_threshold_label', { defaultValue: 'Any notice present' }) : '%'}</span>
-          <input className="input w-full" type="number" min="0" step="any" required disabled={form.trigger==='metadata_migration'||form.trigger==='metadata_notice'} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
+        <label className="block w-28"><span className="text-[11px] text-[var(--fg-4)]">{form.trigger === 'liquidity_drop' ? 'Liquidity below $' : form.trigger === 'wallet_activity' ? 'Transfer above $' : form.trigger === 'narrative_heat' ? 'Momentum points' : form.trigger==='unlock' ? 'Days ahead' : form.trigger==='metadata_migration' ? 'All material changes' : form.trigger==='metadata_notice' ? t('alerts.notice_threshold_label', { defaultValue: 'Any notice present' }) : form.trigger==='liquidation_cascade' ? t('alerts.cascade_threshold_label', { defaultValue: 'Set by the multiple' }) : form.trigger==='attention_entry' ? t('alerts.attention_threshold_label', { defaultValue: 'Set by the hours' }) : '%'}</span>
+          <input className="input w-full" type="number" min="0" step="any" required disabled={form.trigger==='metadata_migration'||form.trigger==='metadata_notice'||form.trigger==='liquidation_cascade'||form.trigger==='attention_entry'} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
         </label>
+        {form.trigger==='liquidation_cascade'&&<>
+          <label className="block w-32"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.cascade_multiple_label', { defaultValue: 'Times the 7-day average' })}</span>
+            <input className="input w-full" data-testid="cascade-multiple" type="number" min="1.5" max="20" step="0.5" required value={form.multiple} onChange={(e) => setForm((f) => ({ ...f, multiple: e.target.value }))} />
+          </label>
+          <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.cascade_window_label', { defaultValue: 'Liquidation window' })}</span>
+            <select className="select" data-testid="cascade-window" value={form.cascadeWindow} onChange={(e) => setForm((f) => ({ ...f, cascadeWindow: e.target.value }))}>
+              <option value="1h">{t('alerts.cascade_window_1h', { defaultValue: 'Rolling 1 hour' })}</option>
+              <option value="4h">{t('alerts.cascade_window_4h', { defaultValue: 'Rolling 4 hours' })}</option>
+            </select>
+          </label>
+        </>}
+        {form.trigger==='attention_entry'&&<>
+          <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.attention_list_label', { defaultValue: 'Attention list' })}</span>
+            <select className="select" data-testid="attention-list" value={form.attentionList} onChange={(e) => setForm((f) => ({ ...f, attentionList: e.target.value }))}>
+              <option value="trending">{t('alerts.attention_list_trending', { defaultValue: 'Trending' })}</option>
+              <option value="most_visited">{t('alerts.attention_list_most_visited', { defaultValue: 'Most visited' })}</option>
+              <option value="gainers">{t('alerts.attention_list_gainers', { defaultValue: 'Top gainers' })}</option>
+              <option value="losers">{t('alerts.attention_list_losers', { defaultValue: 'Top losers' })}</option>
+            </select>
+          </label>
+          <label className="block w-32"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.attention_hours_label', { defaultValue: 'Consecutive hours' })}</span>
+            <input className="input w-full" data-testid="attention-hours" type="number" min="1" max="24" step="1" required value={form.attentionHours} onChange={(e) => setForm((f) => ({ ...f, attentionHours: e.target.value }))} />
+          </label>
+        </>}
         {form.trigger==='metadata_notice'&&<p className="intel-analysis-caption w-full" data-testid="metadata-notice-explanation">{t('alerts.notice_explanation', { defaultValue: 'Fires when a CoinMarketCap listing notice is present for this asset. It is evaluated at the daily metadata clock, not on your schedule, and the wording of the notice is not interpreted: the rule reports only that a notice exists, so read the notice itself before acting. There is no threshold and no direction to choose — the rule re-arms after its cooldown.' })}</p>}
+        {form.trigger==='liquidation_cascade'&&<p className="intel-analysis-caption w-full" data-testid="liquidation-cascade-explanation">{t('alerts.cascade_explanation', { defaultValue: 'Fires when the newest five-minute liquidation capture for this asset reports a total for the chosen window at or above your multiple of the same window’s seven-day average. The comparison is a ratio against this asset’s OWN recent average, not a percentage of anything and not a measure of positions at risk: the figures are provider-reported aggregates across the venues it covers, so a provider that adds or drops a venue moves the ratio on its own. There is no direction to choose — the rule matches a level at the capture clock and re-arms after its cooldown.' })}</p>}
+        {form.trigger==='attention_entry'&&<p className="intel-analysis-caption w-full" data-testid="attention-entry-explanation">{t('alerts.attention_explanation', { defaultValue: 'Fires when this asset has been in the chosen attention list for that many consecutive hourly captures. It reads the provider’s own published list, so it says where readers are being pointed and nothing else: attention is not a valuation, not a flow, and not a forecast, and an asset can leave the list between captures without the rule ever seeing it. There is no direction to choose — the rule matches a level at the hourly capture clock and re-arms after its cooldown.' })}</p>}
         <details className="w-full"><summary>Condition, original note and activation</summary>
           <label>Alert name<input maxLength={120} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/></label>
           {MARKET_TRIGGERS.includes(form.trigger)&&<MarketAlertFields form={form} setForm={setForm} trigger={form.trigger} disabled={busy}/>}

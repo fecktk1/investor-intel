@@ -4,6 +4,7 @@ import { Gauge } from 'lucide-react'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
 import RegimeRibbon from '../components/RegimeRibbon'
 import RegimeDayPanel from '../components/RegimeDayPanel'
+import NetworkHealthStrip from '../components/NetworkHealthStrip'
 import { captureReasonText } from '../lib/capture-api'
 import { PolarClock } from '../charts'
 
@@ -77,6 +78,10 @@ export default function RegimePage() {
           state={clockState} reason={reason}
         />
       </section>
+
+      {/* What the chains themselves reported, beside what the market felt. Owns
+          its own read and its own plan gate. */}
+      <NetworkHealthStrip />
     </IntelPageShell>
   )
 }

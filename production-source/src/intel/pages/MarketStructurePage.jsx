@@ -6,6 +6,9 @@ import RankMap from '../components/RankMap'
 import RwaUniverse from '../components/RwaUniverse'
 import IndexConstituents from '../components/IndexConstituents'
 import LiquidationHeat from '../components/LiquidationHeat'
+import LiquidationClock from '../components/LiquidationClock'
+import ExchangeReserves from '../components/ExchangeReserves'
+import VenueShare from '../components/VenueShare'
 
 // /intel/structure — the four figures the CMC capture tables support on their
 // own: where the top names sit week to week, what the tokenized universe is made
@@ -55,6 +58,9 @@ export default function MarketStructurePage() {
       <RwaUniverse />
       <IndexConstituents />
       <LiquidationHeat ids={liquidationIds} />
+      <LiquidationClock ids={liquidationIds} />
+      <ExchangeReserves />
+      <VenueShare />
     </IntelPageShell>
   )
 }

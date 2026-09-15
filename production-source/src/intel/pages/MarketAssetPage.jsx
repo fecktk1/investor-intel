@@ -45,6 +45,7 @@ import TokenRiskBadge from '../components/TokenRiskBadge'
 import MarketCoverageRing from '../components/MarketCoverageRing'
 import AssetHistoryFigure from '../components/AssetHistoryFigure'
 import AssetFactsPanel from '../components/AssetFactsPanel'
+import AttentionPersistence from '../components/AttentionPersistence'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
@@ -245,6 +246,7 @@ export default function MarketAssetPage() {
           reads rows the daily passes already wrote and costs nothing. */}
       <AssetHistoryFigure sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
       <AssetFactsPanel sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
+      <AttentionPersistence sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
 
       <AssetSectionNav sections={[
         { id: 'asset-chart', key: 'asset.chart_position', label: 'Chart & position' },
