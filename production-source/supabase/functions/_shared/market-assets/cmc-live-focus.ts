@@ -106,7 +106,7 @@ export type LiveTapeEvent={kind:'invalid'}|
    baseAddress:string|null;quoteAddress:string|null;baseQuantity:number|null;quoteQuantity:number|null}|
   {kind:'liquidity';subject:string;eventType:string;amountUsd:number;timestamp:number;venue:string|null;transaction:string;logIndex:string|null;
    baseAddress:string|null;quoteAddress:string|null;baseQuantity:number|null;quoteQuantity:number|null}|
-  {kind:'agg';subject:string;window:string|null;volumeUsd:number;txCount:number|null;timestamp:number}|
+  {kind:'agg';subject:string;liquidityUsd:number;priceUsd:number|null;aggregatePriceUsd:number|null;timestamp:number}|
   {kind:'traders';subject:string;uniqueTraders:number;window:string|null;timestamp:number;windowStart:number|null}
 function decodeOnchain(channel:string,message:any,subjects:string[],now:number):LiveTapeEvent {
   const subject=onchainSubject(message,subjects),d=message?.data??{},timestamp=finite(message?.ts)??finite(d.ts)
@@ -114,19 +114,25 @@ function decodeOnchain(channel:string,message:any,subjects:string[],now:number):
   const venue=text(d.en,120),logIndex=d.lgid==null?null:String(d.lgid)
   const legs={baseAddress:text(d.t0a,120),quoteAddress:text(d.t1a,120),baseQuantity:finite(d.a0),quoteQuantity:finite(d.a1)}
   if(channel==='onchain@transaction'){
-    const tx=text(d.tx??d.txn,200),amountUsd=finite(d.v),side=d.tp==='buy'||d.tp==='sell'?d.tp:'unclassified'
+    // Probed 2026-09-15: the value is `vu` (USD), each leg carries its own USD price
+    // (`t0pu`, `t1pu`), and the subject token is whichever leg names the lease's address.
+    const tx=text(d.tx??d.txn,200),amountUsd=finite(d.vu??d.v),side=d.tp==='buy'||d.tp==='sell'?d.tp:'unclassified'
     if(!tx||logIndex==null||amountUsd==null||amountUsd<0)return {kind:'invalid'}
-    return {kind:'swap',subject,tx,side,amountUsd,priceUsd:finite(d.t0pu),timestamp:timestamp!,venue,logIndex,excluded:d.ex===true,...legs}
+    const asked=String(message?.params?.address??'').toLowerCase()
+    const priceUsd=asked&&String(d.t1a??'').toLowerCase()===asked?finite(d.t1pu??d.t0pu):finite(d.t0pu??d.t1pu)
+    return {kind:'swap',subject,tx,side,amountUsd,priceUsd,timestamp:timestamp!,venue,logIndex,excluded:d.ex===true,...legs}
   }
   if(channel==='onchain@liquidity_event'){
-    const transaction=text(d.txn??d.tx,200),amountUsd=finite(d.tu??d.v)
+    const transaction=text(d.txn??d.tx,200),amountUsd=finite(d.tu??d.vu??d.v)
     if(!transaction||logIndex==null||amountUsd==null||amountUsd<0)return {kind:'invalid'}
     return {kind:'liquidity',subject,eventType:text(d.tp,64)??'Unclassified',amountUsd,timestamp:timestamp!,venue,transaction,logIndex,...legs}
   }
   if(channel==='onchain@token_agg_event'){
-    const volumeUsd=finite(d.vu),txCount=integer(d.tc??d.txc)
-    if(volumeUsd==null||volumeUsd<0)return {kind:'invalid'}
-    return {kind:'agg',subject,window:text(d.win,16),volumeUsd,txCount,timestamp:timestamp!}
+    // Probed 2026-09-15: the body is {pid, a, ap, p, lu, ts}: the aggregate price across
+    // the token's pools, the price, and the liquidity in USD. It carries no volume.
+    const liquidityUsd=finite(d.lu),priceUsd=finite(d.ap??d.p),aggregatePriceUsd=finite(d.ap)
+    if(liquidityUsd==null||liquidityUsd<0)return {kind:'invalid'}
+    return {kind:'agg',subject,liquidityUsd,priceUsd,aggregatePriceUsd,timestamp:timestamp!}
   }
   const uniqueTraders=integer(d.ut)
   if(uniqueTraders==null)return {kind:'invalid'}
@@ -139,7 +145,7 @@ export function decodeCmcLive(raw:string,subjects:string[],now:number) {
   // one refused channel can be recorded without discarding the accepted ones.
   if(message.type==='error')return {kind:'error',code:Number(message.status?.error_code)||null,id:integer(message.id),detail:text(message.status?.error_detail,200)}
   if(message.type==='ack')return {kind:'ack',accepted:Number(message.code)===0,id:integer(message.id),channel:text(message.channel,64)}
-  if(message.type==='pong'||message.type==='welcome')return {kind:'control'}
+  if(message.type==='pong'||message.type==='welcome'||(message.type==null&&message.msg==='PONG'))return {kind:'control'}
   if(message.type!=='data')return {kind:'ignored'}
   if(LIVE_ONCHAIN_CHANNELS.includes(message.channel))return decodeOnchain(message.channel,message,subjects,now)
   if(message.channel!==LIVE_MARKET_CHANNEL)return {kind:'ignored'}
@@ -147,12 +153,12 @@ export function decodeCmcLive(raw:string,subjects:string[],now:number) {
   if(!subject||!subjects.includes(subject)||price==null||price<=0||timestamp==null||timestamp>now+5000||now-timestamp>LIVE_STALE_MS)return {kind:'invalid'}
   return {kind:'quote',subject,price,timestamp,volumeUsd:finite(message.data.vu),marketCapUsd:finite(message.data.mc)}
 }
-export const LIVE_TAPE_METRICS=['swap_event_usd','liquidity_event_usd','swap_volume_usd','unique_traders'] as const
+export const LIVE_TAPE_METRICS=['swap_event_usd','liquidity_event_usd','liquidity_usd','unique_traders'] as const
 const LIVE_METRICS={
   quote:{metric:'price',unit:'USD',channel:LIVE_MARKET_CHANNEL},
   swap:{metric:'swap_event_usd',unit:'USD',channel:'onchain@transaction'},
   liquidity:{metric:'liquidity_event_usd',unit:'USD',channel:'onchain@liquidity_event'},
-  agg:{metric:'swap_volume_usd',unit:'USD',channel:'onchain@token_agg_event'},
+  agg:{metric:'liquidity_usd',unit:'USD',channel:'onchain@token_agg_event'},
   traders:{metric:'unique_traders',unit:'accounts',channel:'onchain@unique_trader'},
 } as const
 export const LIVE_PERSISTED_KINDS=Object.keys(LIVE_METRICS) as (keyof typeof LIVE_METRICS)[]
@@ -172,15 +178,15 @@ export async function liveObservation(event:any,recordedAt:number):Promise<Obser
   const subject=identity?.kind==='contract'?identity.chainSubject:event.subject
   const place=identity?.kind==='contract'?{chain:identity.platform,contract:identity.address,leaseSubject:identity.subject}:{}
   const clock={timeMeaning:'Provider stream timestamp',transport:'shared_server_stream'}
-  const periodSeconds=kind==='agg'||kind==='traders'?liveWindowSeconds(event.window):null
-  const value=kind==='quote'?event.price:kind==='swap'||kind==='liquidity'?event.amountUsd:kind==='agg'?event.volumeUsd:event.uniqueTraders
+  const periodSeconds=kind==='traders'?liveWindowSeconds(event.window):null
+  const value=kind==='quote'?event.price:kind==='swap'||kind==='liquidity'?event.amountUsd:kind==='agg'?event.liquidityUsd:event.uniqueTraders
   const metadata=kind==='quote'?clock:kind==='swap'?{...place,...clock,eventType:event.side,venue:event.venue??null,transaction:event.tx,logIndex:event.logIndex??null,
       baseAddress:event.baseAddress??null,quoteAddress:event.quoteAddress??null,baseQuantity:event.baseQuantity??null,quoteQuantity:event.quoteQuantity??null,
       basePriceUsd:event.priceUsd??null,excluded:event.excluded===true,scope:'Reported public swap; not a personal trade.'}:
     kind==='liquidity'?{...place,...clock,eventType:event.eventType,venue:event.venue??null,transaction:event.transaction,logIndex:event.logIndex??null,
       baseAddress:event.baseAddress??null,quoteAddress:event.quoteAddress??null,baseQuantity:event.baseQuantity??null,quoteQuantity:event.quoteQuantity??null,
       scope:'Reported pool liquidity activity; not a personal trade or executable order-book depth.'}:
-    kind==='agg'?{...place,...clock,window:event.window??null,txCount:event.txCount??null,scope:'Provider-aggregated on-chain swap volume for the window; not a personal trade.'}:
+    kind==='agg'?{...place,...clock,priceUsd:event.priceUsd??null,aggregatePriceUsd:event.aggregatePriceUsd??null,scope:'Provider-aggregated on-chain liquidity for the contract across its reported pools, with the aggregate price at that moment; not executable depth.'}:
       {...place,...clock,window:event.window??null,windowStart:event.windowStart??null,scope:'Provider-reported unique on-chain trader accounts for the window; accounts, not people.'}
   return {id,subject,provider:'coinmarketcap',metric:spec.metric,value,unit:spec.unit,sourceRef,sourceUrl:'https://coinmarketcap.com/api/documentation/pro-api-websocket/overview',
     observedAt:new Date(event.timestamp).toISOString(),recordedAt:new Date(recordedAt).toISOString(),expiresAt:new Date(event.timestamp+LIVE_STALE_MS).toISOString(),periodSeconds,

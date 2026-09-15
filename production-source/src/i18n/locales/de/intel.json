@@ -450,7 +450,7 @@
     "quiet": "Die Lease wird gehalten und in diesem Fenster wurde noch kein On-Chain-Ereignis gemeldet. Ein ruhiger Vertrag ist ein ruhiger Vertrag, kein fehlendes Tape.",
     "kind_swap": "Öffentlicher Swap",
     "kind_liquidity": "Pool-Liquidität",
-    "kind_agg": "Swap-Volumen im Fenster",
+    "kind_agg": "Aggregierte Liquidität",
     "kind_traders": "Eindeutige Trader",
     "venue_unreported": "Handelsplatz nicht gemeldet",
     "side_unclassified": "nicht klassifiziert",
