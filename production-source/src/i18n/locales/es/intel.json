@@ -911,6 +911,7 @@
       "apply": "Aplicar dibujo",
       "anchor_caption": "Las coordenadas siguen ancladas a su hora y su precio cuando cambias el tamaño o haces zoom. Guarda el diseño para conservarlas entre visitas.",
       "read_list": "Leer y editar {{count}} dibujos",
+      "read_list_readonly": "Leer {{count}} dibujos",
       "error_drawing": "Este dibujo está incompleto. Coloca cada ancla antes de guardarlo.",
       "error_anchor": "Introduce una fecha válida y un precio mayor que cero para cada ancla.",
       "error_style": "Elige un color, un grosor de línea de 1 a 5 y un estilo de línea.",

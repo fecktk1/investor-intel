@@ -911,6 +911,7 @@
       "apply": "Zbato vizatimin",
       "anchor_caption": "Koordinatat mbeten të lidhura me kohën dhe çmimin e tyre kur ndryshon përmasat ose zmadhon. Ruaje faqosjen që të mbeten ndër vizita.",
       "read_list": "Lexo dhe redakto {{count}} vizatime",
+      "read_list_readonly": "Lexo {{count}} vizatime",
       "error_drawing": "Ky vizatim është i paplotë. Vendos çdo spirancë para se ta ruash.",
       "error_anchor": "Fut një datë të vlefshme dhe një çmim më të madh se zero për çdo spirancë.",
       "error_style": "Zgjidh një ngjyrë, një trashësi vije nga 1 deri në 5 dhe një stil vije.",

@@ -911,6 +911,7 @@
       "apply": "Appliquer le dessin",
       "anchor_caption": "Les coordonnées restent attachées à leur heure et à leur prix lorsque vous redimensionnez ou zoomez. Enregistrez la disposition pour les conserver d’une visite à l’autre.",
       "read_list": "Lire et modifier {{count}} dessins",
+      "read_list_readonly": "Lire {{count}} dessins",
       "error_drawing": "Ce dessin est incomplet. Placez chaque ancre avant de l’enregistrer.",
       "error_anchor": "Saisissez une date valide et un prix supérieur à zéro pour chaque ancre.",
       "error_style": "Choisissez une couleur, une épaisseur de ligne de 1 à 5 et un style de ligne.",

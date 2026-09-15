@@ -911,6 +911,7 @@
       "apply": "Tekening toepassen",
       "anchor_caption": "Coördinaten blijven aan hun tijd en prijs verankerd wanneer je het formaat wijzigt of zoomt. Sla de indeling op om ze tussen bezoeken te bewaren.",
       "read_list": "{{count}} tekeningen lezen en bewerken",
+      "read_list_readonly": "{{count}} tekeningen lezen",
       "error_drawing": "Deze tekening is onvolledig. Plaats elk anker voordat je haar opslaat.",
       "error_anchor": "Voer voor elk anker een geldige datum en een prijs groter dan nul in.",
       "error_style": "Kies een kleur, een lijndikte van 1 tot 5 en een lijnstijl.",

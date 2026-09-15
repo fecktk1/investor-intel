@@ -911,6 +911,7 @@
       "apply": "Zeichnung übernehmen",
       "anchor_caption": "Koordinaten bleiben an ihrer Zeit und ihrem Preis verankert, wenn du die Größe änderst oder zoomst. Speichere das Layout, um sie über Besuche hinweg zu behalten.",
       "read_list": "{{count}} Zeichnungen lesen und bearbeiten",
+      "read_list_readonly": "{{count}} Zeichnungen lesen",
       "error_drawing": "Diese Zeichnung ist unvollständig. Setze jeden Ankerpunkt, bevor du sie speicherst.",
       "error_anchor": "Gib für jeden Ankerpunkt ein gültiges Datum und einen Preis größer als null ein.",
       "error_style": "Wähle eine Farbe, eine Linienbreite von 1 bis 5 und einen Linienstil.",

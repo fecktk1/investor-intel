@@ -911,6 +911,7 @@
       "apply": "Aplicar desenho",
       "anchor_caption": "As coordenadas continuam presas ao seu horário e ao seu preço quando você redimensiona ou dá zoom. Salve o layout para mantê-las entre as visitas.",
       "read_list": "Ler e editar {{count}} desenhos",
+      "read_list_readonly": "Ler {{count}} desenhos",
       "error_drawing": "Este desenho está incompleto. Posicione cada âncora antes de salvá-lo.",
       "error_anchor": "Informe uma data válida e um preço maior que zero para cada âncora.",
       "error_style": "Escolha uma cor, uma espessura de linha de 1 a 5 e um estilo de linha.",

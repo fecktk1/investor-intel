@@ -1726,6 +1726,7 @@
       "apply": "Apply drawing",
       "anchor_caption": "Coordinates stay attached to their time and price when you resize or zoom. Save the layout to keep them across visits.",
       "read_list": "Read and edit {{count}} drawings",
+      "read_list_readonly": "Read {{count}} drawings",
       "error_drawing": "This drawing is incomplete. Place every anchor before saving it.",
       "error_anchor": "Enter a valid date and a price greater than zero for every anchor.",
       "error_style": "Choose a color, a line width from 1 to 5 and a line style.",

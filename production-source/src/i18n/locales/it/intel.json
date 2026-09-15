@@ -911,6 +911,7 @@
       "apply": "Applica disegno",
       "anchor_caption": "Le coordinate restano ancorate alla loro ora e al loro prezzo quando ridimensioni o fai zoom. Salva il layout per conservarle tra una visita e l’altra.",
       "read_list": "Leggi e modifica {{count}} disegni",
+      "read_list_readonly": "Leggi {{count}} disegni",
       "error_drawing": "Questo disegno è incompleto. Posiziona ogni ancora prima di salvarlo.",
       "error_anchor": "Inserisci una data valida e un prezzo maggiore di zero per ogni ancora.",
       "error_style": "Scegli un colore, uno spessore di linea da 1 a 5 e uno stile di linea.",
