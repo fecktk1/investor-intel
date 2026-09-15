@@ -128,8 +128,8 @@ REVOKE ALL ON FUNCTION public.intel_revoke_chart_share(uuid,uuid,uuid) FROM PUBL
 GRANT EXECUTE ON FUNCTION public.intel_revoke_chart_share(uuid,uuid,uuid) TO service_role;
 
 -- Keep chart plumbing out of the Links & QR list, which is for campaigns.
--- Byte-for-byte the body from 20260723150000_asset_short_links.sql plus the new
--- kind — the shape (q.*, scan_count, counter_last_scanned_at, ORDER BY
+-- The body from 20260723150000_asset_short_links.sql plus the new kind; a row
+-- with no kind at all is still listed, as the live definition lists it — the shape (q.*, scan_count, counter_last_scanned_at, ORDER BY
 -- updated_at) is what the QR Manager UI reads, so it must not drift.
 CREATE OR REPLACE FUNCTION qr_list(p_include_archived boolean DEFAULT false)
 RETURNS jsonb
@@ -154,7 +154,7 @@ BEGIN
       LEFT JOIN qr_scan_counters c ON c.qr_code_id = q.id
       WHERE q.org_id = v_org
         AND (p_include_archived OR q.archived_at IS NULL)
-        AND q.kind NOT IN ('asset', 'chart_share')
+        AND (q.kind IS NULL OR q.kind NOT IN ('asset', 'chart_share'))
     ) x
   ), '[]'::jsonb);
 END $$;
