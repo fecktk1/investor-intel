@@ -15,8 +15,12 @@ const minus = (ms: number) => new Date(NOW.getTime() - ms).toISOString()
 /** The exchange lanes resolve their capabilities from the registry by path, so
  * the fixtures follow whatever is registered today and keep passing the day
  * `/v1/exchange/listings/latest` is added. */
-const SELECT_CAPABILITY = EXCHANGE_LISTINGS_CAPABILITY ?? EXCHANGE_MAP_CAPABILITY!
-const VENUE_CAPABILITY = EXCHANGE_LISTINGS_CAPABILITY ?? DERIVATIVE_EXCHANGES_CAPABILITY!
+// The listing endpoint is above Startup (tier growth), so on the Startup plan the
+// fixtures use the selection source the lane actually calls: the exchange map.
+const SELECT_CAPABILITY = EXCHANGE_MAP_CAPABILITY!
+// On the Startup plan the lane reads the derivatives list; the spot listing is
+// tier growth (probed 2026-09-15) and is reported as the gap it is.
+const VENUE_CAPABILITY = DERIVATIVE_EXCHANGES_CAPABILITY!
 const ASSETS_CAPABILITY = EXCHANGE_ASSETS_CAPABILITY!
 
 /** `cmcRows` reads a capability's rows from `data` or from `data.<rows>`. */
@@ -309,7 +313,7 @@ Deno.test('venue share captures one row per venue per kind per day from a single
     // Until `/v1/exchange/listings/latest` is registered the spot half is a
     // reported gap, and the derivatives half comes from the derivatives list.
     eq(result.spot, 0); eq(result.derivatives, 2)
-    eq(result.partial, 'spot_listings_capability_unregistered')
+    eq(result.partial, 'spot_listings_above_plan')
     eq(written[0].num_market_pairs, 101)
     eq(written[0].observed_at, minus(600_000))
   }

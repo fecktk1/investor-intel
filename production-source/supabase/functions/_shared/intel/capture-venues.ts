@@ -158,9 +158,11 @@ export function exchangeFromRow(row: any): VenueExchange | null {
 /** The ten largest spot venues. The listings endpoint carries the 24 h volume,
  * so the order is recomputed here rather than trusted; the exchange map has no
  * volume field at all and is taken in the order the provider sorted it. */
-export async function selectTopExchanges(ctxFor: CtxFor, deps: CaptureDeps, limit: number):
+export async function selectTopExchanges(ctxFor: CtxFor, deps: CaptureDeps, limit: number, plan = 'basic'):
   Promise<{ exchanges: VenueExchange[]; credits: number; source: string | null; reason: string | null }> {
-  if (EXCHANGE_LISTINGS_CAPABILITY) {
+  // The listing endpoint sits above Startup (probed 2026-09-15); below its
+  // tier the map is the selection source and no credit is spent finding out.
+  if (EXCHANGE_LISTINGS_CAPABILITY && !planBlock('select', EXCHANGE_LISTINGS_CAPABILITY, plan)) {
     // `exchangeListings` (registered 2026-09-15) accepts `sort`; the page is
     // still ordered locally by the reported volume so a provider default
     // order can never change which venues are chosen.
@@ -245,7 +247,7 @@ export async function captureExchangeReserves(
     if (skip) return skip
 
     const snapshotDate = utcDate(now)
-    const selection = await selectTopExchanges(ctxFor, deps, RESERVE_EXCHANGES)
+    const selection = await selectTopExchanges(ctxFor, deps, RESERVE_EXCHANGES, plan)
     credits += selection.credits
     if (!selection.exchanges.length) return { job, rows: 0, credits, snapshotDate, error: selection.reason || 'no_reported_exchanges' }
 
@@ -363,10 +365,15 @@ export async function captureVenueShare(
   const job = 'venue_share'
   let credits = 0
   try {
-    const capability = EXCHANGE_LISTINGS_CAPABILITY ?? DERIVATIVE_EXCHANGES_CAPABILITY
+    // The spot listing is above Startup (probed 2026-09-15); below its tier the
+    // derivatives list still gives the OI half, and the spot half is reported
+    // as the gap it is.
+    const listingAllowed = !!EXCHANGE_LISTINGS_CAPABILITY && !planBlock(job, EXCHANGE_LISTINGS_CAPABILITY, plan)
+    const capability = listingAllowed ? EXCHANGE_LISTINGS_CAPABILITY : DERIVATIVE_EXCHANGES_CAPABILITY
     if (!capability) return { job, rows: 0, credits: 0, skipped: 'venue_capability_unregistered' }
     const blocked = planBlock(job, capability, plan)
     if (blocked) return blocked
+    const spotGap = EXCHANGE_LISTINGS_CAPABILITY ? (listingAllowed ? null : 'spot_listings_above_plan') : 'spot_listings_capability_unregistered'
     const skip = await guardJob(admin, job, 'venue_share', deps, now, { table: 'intel_venue_share_snapshots', column: 'created_at' })
     if (skip) return skip
 
@@ -390,7 +397,7 @@ export async function captureVenueShare(
       job, rows: written.rows, credits, snapshotDate, source: capability,
       spot, derivatives: rows.length - spot,
       // A missing spot half is a reported gap, never a silently short capture.
-      ...(capability === EXCHANGE_LISTINGS_CAPABILITY ? {} : { partial: 'spot_listings_capability_unregistered' }),
+      ...(spotGap ? { partial: spotGap } : {}),
       ...(written.error ? { error: written.error } : {}),
     }
   } catch (e) { return failed(job, credits, e) }

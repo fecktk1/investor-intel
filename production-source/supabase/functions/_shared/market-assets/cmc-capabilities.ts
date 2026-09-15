@@ -70,7 +70,9 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   exchangeMap: cap('/v1/exchange/map','metadata',['listing_status','slug','start','limit','sort'],{ttl:86400,stale:86400}),
   // Registered 2026-09-15 for the venue-share lane: every active exchange with
   // its 24-hour spot volume and pair count in one page (100 rows a credit).
-  exchangeListings: cap('/v1/exchange/listings/latest','structure',['start','limit','sort','sort_dir','market_type','category'],{demand:false,cost:'100',ttl:3600,stale:86400}),
+  // Probed 2026-09-15 01:50 UTC on the Startup key: insufficient_entitlement, so
+  // the endpoint sits above Startup and the lane falls back to the exchange map.
+  exchangeListings: cap('/v1/exchange/listings/latest','structure',['start','limit','sort','sort_dir','market_type','category'],{demand:false,tier:'growth',cost:'100',ttl:3600,stale:86400}),
   exchangeHistory: cap('/v1/exchange/quotes/historical','structure',['id','slug','time_start','time_end','count','interval'],{demand:false,cost:'100',ttl:3600,required:['id','slug']}),
   // Probed 2026-09-14 on the Startup key: 403 / 1006, the subscription plan does not include this endpoint.
   blockchainStats: cap('/v1/blockchain/statistics/latest','regime',['id','symbol','slug'],{tier:'growth',ttl:900,required:['id','symbol','slug']}),
