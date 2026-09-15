@@ -167,14 +167,16 @@ export default function LiquidationHeat({ ids = [], rows = [] }) {
 
   const [read, setRead] = useState({ status: 'loading', payload: null, reason: null })
 
-  // The seven-day totals are market-wide, so the read happens even with no asset
-  // selected: an empty `ids` list still returns the strip, just no per-asset rows.
+  // The read takes `providerIds` (capture-read.ts readLiquidations); the
+  // seven-day strip sums the first three requested assets, and with none
+  // selected the function answers `no_asset_selected`, which renders as the
+  // empty state rather than a market-wide strip nobody captured.
   useEffect(() => {
     const list = requestedRef.current
     const controller = new AbortController()
     let alive = true
     setRead({ status: 'loading', payload: null, reason: null })
-    readCaptureView('liquidations', { ids: list }, { orgId, signal: controller.signal, supabase })
+    readCaptureView('liquidations', { providerIds: list }, { orgId, signal: controller.signal, supabase })
       .then(payload => { if (alive) setRead({ status: 'ready', payload, reason: null }) })
       .catch(error => { if (alive) setRead({ status: 'unavailable', payload: null, reason: captureUnavailable(error).reason }) })
     return () => { alive = false; controller.abort() }

@@ -18,8 +18,15 @@
 // reader instead of falling back to the anonymous client and collecting a 401.
 import { supabase } from '../../lib/supabase'
 
-// Mirrors CAPTURE_VIEWS in supabase/functions/_shared/intel/capture-read.ts.
-export const CAPTURE_VIEWS = ['regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations']
+// Mirrors CAPTURE_VIEWS in supabase/functions/_shared/intel/capture-read.ts plus
+// the lane views merged in intel-capture/index.ts (LANE_VIEWS: venues,
+// categories, fx).
+export const CAPTURE_VIEWS = [
+  'regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations',
+  'exchange_reserves', 'venue_share',
+  'categories', 'category_disagreement', 'airdrops', 'network_stats',
+  'fx',
+]
 
 let rememberedClient = null
 const usable = client => !!client && typeof client.functions?.invoke === 'function'
