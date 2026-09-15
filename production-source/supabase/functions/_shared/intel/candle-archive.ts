@@ -27,7 +27,7 @@
 // which hold the service role; Intel members reach it only through those reads.
 
 import { aggregateOhlcv } from './cmc-chart.ts'
-import { normalizeBars, type Bar } from './chart-analysis.ts'
+import type { Bar } from './chart-analysis.ts'
 
 const DAY = 86_400_000
 
@@ -106,6 +106,24 @@ export function archiveBar(row: any, step: number): Bar | null {
   }
 }
 
+/** Stored rows to bars, oldest first, one per period.
+ *
+ * NOT `normalizeBars`: that helper is the RENDERER's gate and slices to the
+ * newest 5,000 bars whatever limit it is given, so a sixteen-year daily archive
+ * (Bitcoin holds 5,907 days) lost its oldest years BEFORE the weekly
+ * aggregation ever saw them. The archive's own ceiling is ARCHIVE_ROW_CAP, every
+ * row was checked by the table's constraints when it was written, and the
+ * aggregation drops any incomplete week itself. */
+// deno-lint-ignore no-explicit-any
+export function archiveBars(rows: any[], step: number): Bar[] {
+  const byTime = new Map<number, Bar>()
+  for (const row of rows) {
+    const bar = archiveBar(row, step)
+    if (bar && bar.c > 0) byTime.set(bar.t, bar)
+  }
+  return [...byTime.values()].sort((a, b) => a.t - b.t)
+}
+
 export interface ArchiveRead { bars: Bar[]; reason: string | null; truncated: boolean; rows: number }
 
 /** Stored candles for one asset over one window, oldest first. */
@@ -136,7 +154,7 @@ export async function readArchiveCandles(db: any, assetKey: string, interval: st
       // this window are genuinely not in the answer, and the caller is told.
       if (rows.length >= cap) { truncated = true; break }
     }
-    const bars = normalizeBars(preferArchiveProvider(rows).map((row) => archiveBar(row, step)).filter((bar): bar is Bar => !!bar)).bars
+    const bars = archiveBars(preferArchiveProvider(rows), step)
     return { bars, reason: null, truncated, rows: rows.length }
   } catch (e) { return { bars: [], reason: ((e as Error)?.message || 'archive_read_failed').slice(0, 200), truncated: false, rows: 0 } }
 }

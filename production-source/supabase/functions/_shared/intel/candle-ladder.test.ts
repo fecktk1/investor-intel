@@ -7,7 +7,7 @@ import {
   autoInterval, candleCoverage, candlePlan, candleSourceOrder, CANDLE_RANGE_MS, isArchiveRange,
   nearestInterval, spanWords, VENUE_CANDLES, CMC_INTERVAL_KEYS,
 } from './candle-ladder.ts'
-import { archiveBar, archiveCanAnswer, ARCHIVE_PAGE_ROWS, ARCHIVE_ROW_CAP, mergeCandles, readArchiveCandles, STORED_INTERVALS } from './candle-archive.ts'
+import { archiveBar, archiveBars, archiveCanAnswer, ARCHIVE_PAGE_ROWS, ARCHIVE_ROW_CAP, archiveSeries, mergeCandles, readArchiveCandles, STORED_INTERVALS } from './candle-archive.ts'
 import { exchangeBars, loadExchangeCandles } from './exchange-candles.ts'
 import { loadMarketCandles, resolveInterval } from './market-candle-read.ts'
 
@@ -407,3 +407,26 @@ Deno.test('a long merged range reports the archive ending at the NEWEST stored d
 // deno-lint-ignore no-explicit-any
 const archiveSeriesFor = (db: any, assetKey: string, interval: string, from: number, to: number) =>
   readArchiveCandles(db, assetKey, interval, from, to).then((read) => ({ ...read, incomplete: 0 }))
+
+Deno.test('an archive longer than the renderer ceiling keeps EVERY stored day, so the weekly series starts at the first stored week', async () => {
+  // Bitcoin holds 5,907 daily rows (2010-07-14 onward). Passing them through
+  // the renderer gate sliced them to the newest 5,000 and the ALL chart began
+  // in 2013 with a complete 2010 archive underneath it.
+  const { db } = pagedDb(5907)
+  const read = await readArchiveCandles(db, 'bip122:native:BTC', '1D', Date.UTC(2006, 0, 1), NOW)
+  assertEquals(read.rows, 5907)
+  assertEquals(read.bars.length, 5907)
+  assertEquals(read.bars[0].t, Date.UTC(2006, 0, 1))
+  const weekly = await archiveSeries(db, 'bip122:native:BTC', '1W', Date.UTC(2006, 0, 1), NOW, NOW)
+  // 2006-01-02 is the first Monday after the first stored day.
+  assertEquals(weekly.bars[0].t, Date.UTC(2006, 0, 2))
+  assertEquals(weekly.bars.length > 800, true)
+  // The bar builder itself keeps one bar per period, oldest first, and drops a
+  // row that has no positive close.
+  const bars = archiveBars([
+    { candle_time: '2020-01-02T00:00:00.000Z', close: 2, recorded_at: '2020-01-03T00:00:00.000Z' },
+    { candle_time: '2020-01-01T00:00:00.000Z', close: 1, recorded_at: '2020-01-02T00:00:00.000Z' },
+    { candle_time: '2020-01-03T00:00:00.000Z', close: 0, recorded_at: '2020-01-04T00:00:00.000Z' },
+  ], DAY)
+  assertEquals(bars.map((bar) => bar.c), [1, 2])
+})
