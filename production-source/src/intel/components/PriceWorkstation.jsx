@@ -71,6 +71,17 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  const selectedStructure=structureSelection?.bars===bars&&structureOpen?structureSelection.finding:null
 
  const sourceBounds=useRef(null),plottedGrid=useRef(null),initialView=useRef(initialState.range)
+ const autoScaleRef=useRef(autoScale);autoScaleRef.current=autoScale
+ // A manual price scale is a LOCKED RANGE, and the range itself is not part of
+ // any saved state. Restoring "auto scale off" on its own handed the renderer no
+ // price range at all, so a restored chart painted nothing until Reset view. A
+ // chart that comes back with a manual scale is therefore scaled to its bars
+ // once, on the frame after its window is placed, and locked there.
+ const lockScaleAfterFit=(chart,manual)=>{
+  if(!manual||!chart)return
+  const scale=chart.priceScale('right');scale.applyOptions({autoScale:true})
+  requestAnimationFrame(()=>{if(api.current===chart&&!autoScaleRef.current)scale.applyOptions({autoScale:false})})
+ }
 
  const [palette,setPalette]=useState(null),[studyDialog,setStudyDialog]=useState(false)
 
@@ -274,7 +285,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
    }
    previousWindow.current=timeWindow?{...timeWindow}:null
    plottedGrid.current=source.grid
-   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;refreshGeometry();emitWorkspace()}})})}
+   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;lockScaleAfterFit(chart,!autoScaleRef.current);refreshGeometry();emitWorkspace()}})})}
 
    refreshGeometry()
 
@@ -403,7 +414,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   cancelAnimationFrame(fitFrame.current);fitted.current=true
 
   // A restored layout becomes the working state the member goes on from.
-  fitFrame.current=requestAnimationFrame(()=>{const grid=gridRef.current;if(api.current&&grid)api.current.timeScale().setVisibleLogicalRange({from:continuousChartLogical(grid,layout.range.from),to:continuousChartLogical(grid,layout.range.to)});emitWorkspace()})
+  fitFrame.current=requestAnimationFrame(()=>{const grid=gridRef.current;if(api.current&&grid)api.current.timeScale().setVisibleLogicalRange({from:continuousChartLogical(grid,layout.range.from),to:continuousChartLogical(grid,layout.range.to)});lockScaleAfterFit(api.current,layout.autoScale===false);emitWorkspace()})
 
   setLayoutNote(layout.range.to<(source?.grid.start??0)||layout.range.from>(source?.grid.end??Infinity)?t('chart.workstation.layout_outside',{defaultValue:'This saved view is outside the loaded price period. Choose a longer period to load its market history.'}):t('chart.workstation.layout_restored',{defaultValue:'Saved view, drawings and indicators restored.'}))
 
