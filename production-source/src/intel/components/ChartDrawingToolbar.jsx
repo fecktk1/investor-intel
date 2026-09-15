@@ -1,6 +1,6 @@
 import React,{useEffect,useId,useMemo,useRef,useState} from 'react'
 import {useTranslation} from 'react-i18next'
-import {DRAWING_TOOL_BY_ID,DRAWING_TOOL_GROUPS} from '../lib/chart-drawing-tools'
+import {DRAWING_TOOL_BY_ID,DRAWING_TOOL_GROUPS,ROW_LIMIT,toolbarRows} from '../lib/chart-drawing-tools'
 import deferredPanel from './deferred-panel'
 
 const ACTION_ICONS={
@@ -13,22 +13,9 @@ const ACTION_ICONS={
  clear:'M2 13h12 M4 10.5 10.5 4 12 5.5 5.5 12z M9 5.5 10.5 7',
  more:'M3.5 8h.01 M8 8h.01 M12.5 8h.01',
 }
-// A button occupies 30px of a row and a group hairline 9px, so the number of rows
-// follows from the measured width without a layout pass. The strip NEVER scrolls:
-// whatever would spill past two rows moves into the More disclosure instead.
-export const BUTTON_WIDTH=30,SEPARATOR_WIDTH=9,MORE_WIDTH=74,ROW_LIMIT=2
-
-export function toolbarRows(groups,width,hasMore) {
- if(!width)return 1
- let rows=1,used=0
- const place=size=>{
-  const needed=size+(used?SEPARATOR_WIDTH:0)
-  if(used&&used+needed>width){rows++;used=size}else used+=needed
- }
- for(const group of groups)place(group.items.length*BUTTON_WIDTH)
- if(hasMore)place(MORE_WIDTH)
- return rows
-}
+// Row arithmetic lives in the tools library so the deferred strip's placeholder
+// reserves the same height; re-exported here for the callers that had it.
+export {BUTTON_WIDTH,SEPARATOR_WIDTH,MORE_WIDTH,ROW_LIMIT,toolbarRows} from '../lib/chart-drawing-tools'
 
 // Only the body of the disclosure is deferred; the button that opens it is eager,
 // so the strip never changes shape while the panel loads.
