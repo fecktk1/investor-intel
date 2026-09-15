@@ -1,5 +1,5 @@
 import {assertEquals as eq,assertAlmostEquals as near,assertThrows} from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import {normalizeBars,regularBarGrid,barsAt,sma,ema,rsi,calculateStudy,calculateStudies,type Bar,STUDY_CATALOG} from './chart-analysis.ts'
+import {normalizeBars,regularBarGrid,barsAt,sma,ema,rsi,calculateStudy,calculateStudies,studyLookbackBars,LOOKBACK_LADDER,MAX_LOOKBACK_BARS,type Bar,STUDY_CATALOG} from './chart-analysis.ts'
 const start=Date.parse('2026-09-07T00:00:00Z'),day=86400000
 const bars=(values:number[],volumes?:number[]):Bar[]=>values.map((c,i)=>({t:start+i*day,o:c,h:c,l:c,c,v:volumes?.[i]??1}))
 const calc=(type:string,values:number[],params:Record<string,unknown>={},volumes?:number[])=>calculateStudy(bars(values,volumes),{id:'test',type,params})
@@ -112,6 +112,33 @@ Deno.test('known prior weekly extrema survive a gap in the current week but part
  const input=bars([1,2,3,4,5,6,7,80,90,99]).filter((_b,i)=>i!==8)
  const result=calculateStudy(input,{id:'w',type:'weekly'},{intervalMs:day});eq(values(result),[7,7]);eq(values(result,1),[1,1])
  eq(values(calculateStudy(input.filter((_b,i)=>i!==2),{id:'w',type:'weekly'},{intervalMs:day})),[])
+})
+Deno.test('a chart asks for exactly the warm-up its studies need, quantized up to the ladder',()=>{
+ const need=(type:string,params?:Record<string,unknown>)=>studyLookbackBars([{id:'s',type,...(params?{params}:{})}])
+ // Nothing to warm up is no extra history at all, so a plain chart costs nothing.
+ eq(studyLookbackBars([]),0);eq(studyLookbackBars([{id:'s',type:'not_a_study'}]),0)
+ // The default 50-period average needs 50 closes before the first visible bar.
+ eq(need('sma'),60);eq(need('ema'),60);eq(need('bollinger'),60);eq(need('atr'),60)
+ eq(need('rsi'),60);eq(need('vwrsi'),60);eq(need('macd'),60);eq(need('stoch_rsi'),60)
+ eq(need('obv'),60);eq(need('vwap'),60);eq(need('weekly'),60)
+ // DEMA needs two seeds (2 × 43 − 1 = 85) and Ichimoku a span plus its shift (52 + 26 = 78).
+ eq(need('dema'),120);eq(need('ichimoku'),120)
+ // The whole set takes the largest warm-up, not the sum.
+ eq(studyLookbackBars([{id:'a',type:'sma'},{id:'b',type:'ichimoku'},{id:'c',type:'obv'}]),120)
+ // The ladder quantizes UP, so nudging a period from 60 to 61 reuses one request
+ // rather than refetching the chart.
+ eq(need('sma',{period:60}),60);eq(need('sma',{period:61}),120);eq(need('sma',{period:250}),250)
+ eq(need('sma',{period:251}),500);eq(need('sma',{period:500}),500)
+ // Above the ladder the request is the cap, never an unbounded provider read.
+ eq(need('dema',{period:500}),MAX_LOOKBACK_BARS);eq(need('stoch_rsi',{period:500,stochastic:500,k:500,d:500}),1000)
+ eq(LOOKBACK_LADDER,[0,60,120,250,500,1000])
+ // An invalid period contributes nothing rather than throwing the chart away.
+ for(const params of [{period:0},{period:501},{period:'x'},{period:2.5}])eq(need('sma',params),0)
+ // The arithmetic is the one the calculation itself reports as its warm-up.
+ for(const [type,params] of [['sma',{period:50}],['dema',{period:43}],['macd',{}],['ichimoku',{}],['stoch_rsi',{}],['rsi',{}]] as const){
+  const warmup=calculateStudy(bars(Array.from({length:3},(_v,i)=>i+1)),{id:'w',type,params}).warmup
+  eq(LOOKBACK_LADDER.find(rung=>rung>=warmup)??MAX_LOOKBACK_BARS,need(type,params),type)
+ }
 })
 Deno.test('study inputs reject reversed and duplicate clocks and invalid declared intervals',()=>{
  const input=bars([1,2]);assertThrows(()=>calculateStudy([...input].reverse(),{id:'s',type:'sma'}));assertThrows(()=>calculateStudy([input[0],input[0]],{id:'s',type:'sma'}))

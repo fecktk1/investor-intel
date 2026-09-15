@@ -130,6 +130,13 @@ export interface CandlePlan {
   to: number
   /** Completed periods the window needs, before any request ceiling. */
   wanted: number
+  /** Extra completed periods GRANTED before the window, so a study that needs a
+   * warm-up (a 50-period average needs 50 closes) has a value at the first
+   * visible bar instead of an empty first fifty. It is what was asked for after
+   * the source's own ceiling has been honoured: the window is served first and
+   * the warm-up takes what is left, so asking for one can never shorten the
+   * chart the reader actually sees. Zero when nothing asked for one. */
+  lookback: number
   /** Periods one request may return. */
   limit: number
   /** True when the window needs more periods than one request can carry. */
@@ -158,8 +165,13 @@ export function nearestInterval(requested: string, supported: string[]): string 
  * request candle ceiling. The plan never asks for more than `limit` periods; a
  * window that needs more is `capped`, and `reachesFrom` says how far back the
  * newest `limit` periods actually go so the coverage sentence can state it.
+ *
+ * `lookback` is extra COMPLETED periods before the window, the warm-up a study
+ * needs so it has a value at the first visible bar. `wanted` stays the periods
+ * of the window itself, because every coverage sentence is about the window the
+ * reader asked for and not about the bars fetched to warm an indicator up.
  */
-export function candlePlan(range: string, interval: string, source: { limit: number; intervals: string[] }, now = Date.now()): CandlePlan {
+export function candlePlan(range: string, interval: string, source: { limit: number; intervals: string[] }, now = Date.now(), lookback = 0): CandlePlan {
   const duration = CANDLE_RANGE_MS[range]
   if (!duration || !Number.isFinite(now)) throw new Error('invalid_chart_parameters')
   if (interval !== 'auto' && !CHART_INTERVALS[interval]) throw new Error('invalid_chart_parameters')
@@ -171,13 +183,20 @@ export function candlePlan(range: string, interval: string, source: { limit: num
   const to = Math.floor(now / step) * step
   const wanted = Math.max(1, Math.ceil(duration / step))
   const ceiling = Math.max(1, Math.trunc(source.limit))
+  // The WINDOW IS SERVED FIRST. Warm-up periods take only what the ceiling has
+  // left after the window and its one in-progress period, so a study asking for
+  // a long warm-up can never push the oldest visible bars out of the request.
+  const asked = Number.isFinite(Number(lookback)) ? Math.trunc(Number(lookback)) : 0
+  const granted = Math.min(Math.max(0, asked), Math.max(0, ceiling - wanted - 1))
   // One extra period, because the newest row a provider returns is usually the
   // period still in progress and is dropped locally.
-  const limit = Math.min(ceiling, wanted + 1)
+  const limit = Math.min(ceiling, wanted + granted + 1)
+  // `capped` is still about the WINDOW: a chart is short when the range itself
+  // does not fit, never because a warm-up request was trimmed.
   const capped = wanted + 1 > ceiling
   return {
     range, requested, selected, substituted: selected !== requested, step,
-    from: to - wanted * step, to, wanted, limit, capped,
+    from: to - (wanted + granted) * step, to, wanted, lookback: granted, limit, capped,
     reachesFrom: to - Math.max(0, limit - 1) * step,
   }
 }
@@ -212,7 +231,11 @@ export interface CoverageInput {
 export function candleCoverage(input: CoverageInput): string {
   const { plan, source, oldest, count } = input
   const archived = Number(input.archived) || 0
-  const reachesStart = oldest != null && oldest <= plan.from + plan.step
+  // The shortfall sentence is about the WINDOW the reader asked for. Warm-up
+  // periods sit before it, so a series that covers the whole range but not the
+  // warm-up is a complete range and is not announced as a short one.
+  const windowFrom = plan.to - plan.wanted * plan.step
+  const reachesStart = oldest != null && oldest <= windowFrom + plan.step
   const parts: (string | null | undefined)[] = [
     `${intervalLabel(plan.selected)} candles for ${plan.range} from ${sourceLabel(source)}.`,
     plan.substituted

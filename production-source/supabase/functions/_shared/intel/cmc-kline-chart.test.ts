@@ -90,6 +90,31 @@ Deno.test('the plan is one latest-N request with no window, capped at a thousand
   eq(Object.hasOwn(one.request, 'to'), false)
 })
 
+Deno.test('a study warm-up grows the newest-N request, but only with what the ceiling has left', () => {
+  const warm = klinePlan('7D', '1H', NOW, 60)
+  eq(warm.wanted, 168)
+  eq(warm.lookback, 60)
+  // 168 window periods, 60 warm-up periods and the one still in progress.
+  eq(warm.request, { interval: '1h', limit: 229 })
+  eq(warm.from, NOW - 228 * HOUR)
+  assert(!warm.capped)
+  // 7 days of 15-minute candles is 672 periods, so 327 warm-up periods fit under
+  // the 1000-candle ceiling and 500 do not: the window is served first.
+  const partial = klinePlan('7D', '15M', NOW, 500)
+  eq(partial.wanted, 672)
+  eq(partial.lookback, 327)
+  eq(partial.request.limit, KLINE_LIMIT)
+  // A window that already exceeds the ceiling gets no warm-up at all and is the
+  // same plan it was before warm-ups existed.
+  const full = klinePlan('1M', '1M', NOW, 500)
+  eq(full.lookback, 0)
+  eq(full.from, klinePlan('1M', '1M', NOW).from)
+  eq(full.capped, true)
+  eq(full.request.limit, KLINE_LIMIT)
+  // A warm-up that is not a whole count of periods is no warm-up.
+  for (const value of [-3, Number.NaN, undefined as unknown as number]) eq(klinePlan('7D', '1H', NOW, value).lookback, 0)
+})
+
 Deno.test('a second timestamp becomes milliseconds and a millisecond one is left alone', () => {
   eq(klineEpochMs(1_700_000_000), 1_700_000_000_000)
   eq(klineEpochMs(1_700_000_000_000), 1_700_000_000_000)

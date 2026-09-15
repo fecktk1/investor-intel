@@ -113,6 +113,10 @@ export interface KlinePlan {
   from: number; to: number
   /** How many completed periods the window needs, before the 1000 ceiling. */
   wanted: number
+  /** Extra completed periods GRANTED before the window, the warm-up a study needs
+   * to have a value at the first visible bar. The window takes the ceiling first,
+   * so this is only what `KLINE_LIMIT` had left over. */
+  lookback: number
   /** True when the window needs more periods than one request can return. */
   capped: boolean
   /** The one request: a named candle width and a count. No `from`/`to`. */
@@ -121,8 +125,12 @@ export interface KlinePlan {
 
 /** Request plan for one chart: the newest `limit` candles at one named width.
  * There is no window in the request — see the header probe — so there is nothing
- * to page with, and `from`/`to` exist only to trim what comes back. */
-export function klinePlan(timeframe = '7D', interval = 'auto', now = Date.now()): KlinePlan {
+ * to page with, and `from`/`to` exist only to trim what comes back.
+ *
+ * `lookback` asks for extra completed periods BEFORE the window so a study has a
+ * value at the first visible bar. The window is served first: the warm-up takes
+ * only what the 1000-candle ceiling has left. */
+export function klinePlan(timeframe = '7D', interval = 'auto', now = Date.now(), lookback = 0): KlinePlan {
   const duration = CHART_WINDOWS[timeframe]
   if (!duration || !Number.isFinite(now)) throw new Error('invalid_chart_parameters')
   const selected = interval === 'auto' ? klineAutoInterval(duration) : interval
@@ -132,12 +140,17 @@ export function klinePlan(timeframe = '7D', interval = 'auto', now = Date.now())
   // period that has already closed.
   const to = Math.floor(now / step) * step
   const wanted = Math.ceil(duration / step)
+  const asked = Number.isFinite(Number(lookback)) ? Math.trunc(Number(lookback)) : 0
+  // The window first, the warm-up with what is left of the one-request ceiling.
+  const granted = Math.min(Math.max(0, asked), Math.max(0, KLINE_LIMIT - wanted - 1))
   // One extra period, because the newest row the provider returns is usually the
   // period still in progress and is dropped locally.
-  const limit = Math.max(1, Math.min(KLINE_LIMIT, wanted + 1))
+  const limit = Math.max(1, Math.min(KLINE_LIMIT, wanted + granted + 1))
   return {
     selected, providerInterval: KLINE_INTERVALS[selected], step,
-    from: to - wanted * step, to, wanted, capped: wanted + 1 > KLINE_LIMIT,
+    // `capped` stays about the WINDOW: a chart is short when the range does not
+    // fit in one request, never because a warm-up request was trimmed.
+    from: to - (wanted + granted) * step, to, wanted, lookback: granted, capped: wanted + 1 > KLINE_LIMIT,
     request: { interval: KLINE_INTERVALS[selected], limit },
   }
 }
@@ -203,10 +216,10 @@ const EMPTY = (reason: string, step: number | null, coverage: string) => ({
  */
 // deno-lint-ignore no-explicit-any
 export async function loadKlineChart(admin: any, identity: CmcDexIdentity, timeframe = '7D', interval = 'auto',
-  now = Date.now(), context: MarketAssetsContext = {}, deps: KlineDeps = {}) {
+  now = Date.now(), context: MarketAssetsContext = {}, deps: KlineDeps = {}, lookback = 0) {
   if (!identity?.platform || !identity?.address) return EMPTY('missing_identifier', null, 'No verified CoinMarketCap DEX contract identity for this asset.')
   let plan: KlinePlan
-  try { plan = klinePlan(timeframe, interval, now) } catch { return EMPTY('invalid_chart_parameters', null, 'The requested range and interval are not a k-line sampling.') }
+  try { plan = klinePlan(timeframe, interval, now, lookback) } catch { return EMPTY('invalid_chart_parameters', null, 'The requested range and interval are not a k-line sampling.') }
 
   // A capability above the current plan is never attempted: the rung is skipped
   // with a reason and the ladder continues, the way `network_stats` is skipped
@@ -233,7 +246,10 @@ export async function loadKlineChart(admin: any, identity: CmcDexIdentity, timef
   // How far back the answer genuinely reaches, so a short series is never
   // presented as a complete one.
   const oldestReturned = returned[0]?.t ?? null
-  const reachesWindowStart = oldestReturned != null && oldestReturned <= plan.from + plan.step
+  // The shortfall sentence is about the WINDOW the reader asked for; warm-up
+  // periods sit before it and their absence does not shorten the range.
+  const windowFrom = plan.to - plan.wanted * plan.step
+  const reachesWindowStart = oldestReturned != null && oldestReturned <= windowFrom + plan.step
   const span = (ms: number) => {
     const [unit, n] = ms >= DAY ? ['day', Math.round(ms / DAY)] as const : ['hour', Math.round(ms / HOUR)] as const
     return `${n} ${unit}${n === 1 ? '' : 's'}`
@@ -281,11 +297,13 @@ export interface LadderDeps extends KlineDeps {
  */
 // deno-lint-ignore no-explicit-any
 export async function contractCandleLadder(admin: any, canonical: any, timeframe = '7D', interval = 'auto',
-  context: MarketAssetsContext = {}, deps: LadderDeps = {}, now = Date.now()) {
+  context: MarketAssetsContext = {}, deps: LadderDeps = {}, now = Date.now(), lookback = 0) {
   const identity = klineIdentity(canonical)
   let klineReason = 'no_cmc_dex_chain'
   if (identity) {
-    const kline = await (deps.kline ?? loadKlineChart)(admin, identity, timeframe, interval, now, context, deps)
+    // The warm-up travels with the k-line request. The pool source below has no
+    // period vocabulary of its own to extend, so it answers its usual window.
+    const kline = await (deps.kline ?? loadKlineChart)(admin, identity, timeframe, interval, now, context, deps, lookback)
     if (kline.candles.length) return kline
     klineReason = kline.sourceReason || 'no_completed_candles'
   }

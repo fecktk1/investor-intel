@@ -36,21 +36,29 @@ export function cmcFallbackCoverage(result:{sourceReason?:string|null;sourceStat
  const reason=result?.sourceReason||result?.sourceState
  return `CMC ${interval} candles are unavailable: ${reason&&reasons[reason]?reasons[reason]:result?'no complete periods were returned':'this asset has no verified CMC identity'}. Showing CoinGecko observations at their original spacing; volume is unavailable.`
 }
-export function cmcChartPlan(id:string,range='1M',interval='auto',now=Date.now()){
+/** `lookback` is extra completed periods BEFORE the window, the warm-up a study
+ * needs to have a value at the first visible bar. OHLCV pages COST CREDITS (one
+ * per 100 daily points), so the warm-up is bounded to 1000 periods by the caller
+ * and is only asked for when a study on the chart actually needs it; the
+ * `available` cap below still bounds what one read may request either way. */
+export function cmcChartPlan(id:string,range='1M',interval='auto',now=Date.now(),lookback=0){
  // A sub-hour interval is a valid APP interval but not a valid OHLCV sampling:
  // the provider has no period shorter than one hour, so it is refused here
  // rather than silently answered with hourly bars under a one-minute label.
  if(!/^[1-9][0-9]{0,9}$/.test(id)||!CHART_WINDOWS[range]||(interval!=='auto'&&!CMC_OHLCV_INTERVALS.includes(interval))||!Number.isFinite(now))throw new Error('invalid_chart_parameters')
  const duration=CHART_WINDOWS[range],selected=interval==='auto'?(duration<=7*DAY?'1H':'1D'):interval
  const step=CHART_INTERVALS[selected],base=step<DAY?HOUR:DAY
+ const granted=Number.isFinite(Number(lookback))?Math.max(0,Math.trunc(Number(lookback))):0
+ // The requested span is the window plus its warm-up; both are read at the same spacing.
+ const span=duration+granted*step
  // Startup intraday history is one month. Keep older requested periods as visible gaps.
- const available=Math.min(duration,base===HOUR?30*DAY:365*DAY)
+ const available=Math.min(span,base===HOUR?30*DAY:365*DAY)
  // Shared parameters change at a UTC boundary, after the documented publication delay.
  const end=Math.floor((now-10*60000)/base)*base,start=end-Math.ceil(available/base)*base
  const pages:Record<string,unknown>[]=[]
  for(let until=end;until>start;){const first=Math.max(start,until-240*base),count=(until-first)/base
   pages.push({id,time_period:base===HOUR?'hourly':'daily',interval:base===HOUR?'hourly':'daily',time_start:new Date(first-1).toISOString(),time_end:new Date(until-1).toISOString(),count:count+1});until=first}
- return {pages,base,step,selected,from:now-duration,to:now,limited:available<duration}
+ return {pages,base,step,selected,from:now-span,to:now,limited:available<span,lookback:granted}
 }
 /** Aggregate only complete UTC buckets of genuine, contiguous OHLC bars. Never decimate hourly bars into fake 4h candles. */
 export function aggregateOhlcv(input:Bar[],base:number,step:number,now:number){
@@ -77,8 +85,8 @@ export function cmcOhlcvBars(payload:unknown,id:string,recordedAt:number|null,ba
   return [{t,closedAt,o:q.open,h:q.high,l:q.low,c:q.close,v:q.volume,volumeKind:base===HOUR?'snapshot':'period',volumeUnit:'USD',...(recordedAt!=null?{recordedAt}:{})}]})
  return normalizeBars(bars).bars.filter(b=>b.o!=null)
 }
-export async function loadCmcChart(admin:any,id:string,range='1M',interval='auto',now=Date.now(),request=requestCmc,context:MarketAssetsContext={}){
- const plan=cmcChartPlan(id,range,interval,now),all:Bar[]=[],states:string[]=[],reasons:string[]=[],provenance:any[]=[]
+export async function loadCmcChart(admin:any,id:string,range='1M',interval='auto',now=Date.now(),request=requestCmc,context:MarketAssetsContext={},lookback=0){
+ const plan=cmcChartPlan(id,range,interval,now,lookback),all:Bar[]=[],states:string[]=[],reasons:string[]=[],provenance:any[]=[]
  const ctx={...context,supabase:admin,kind:'request' as const,caller:'canonical-ohlcv-chart',maxCalls:4}
  for(const params of plan.pages){
   const result=await request('ohlcv',params,ctx)

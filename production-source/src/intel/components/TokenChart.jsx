@@ -12,7 +12,7 @@ import {workingDraftStore} from '../lib/chart-working-state'
 import deferredPanel from './deferred-panel'
 import { chartEventChanges } from '../lib/chart-event-changes'
 import {chartReplay,replayStops} from '../lib/chart-replay'
-import { normalizeBars, regularBarGrid } from '../../../supabase/functions/_shared/intel/chart-analysis'
+import { normalizeBars, regularBarGrid, studyLookbackBars } from '../../../supabase/functions/_shared/intel/chart-analysis'
 const PriceWorkstation = lazy(() => import('./PriceWorkstation'))
 const TokenChartFallback = lazy(() => import('./TokenChartFallback'))
 // Reading the working state is first content and happens before this chart is
@@ -168,6 +168,13 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   // The draft the chart reports on every change, held outside React so a pan or
   // an added drawing costs no render here and the saver can arrive afterwards.
   const draftStore = useRef(null); if (!draftStore.current) draftStore.current = workingDraftStore()
+  // An indicator needs history BEFORE the window to have a value at the window's
+  // first bar: a 50-period average has none for the first 49. Every load asks the
+  // source for that many extra completed periods, sized from the indicators in
+  // use, and the figure never shrinks: a study removed costs nothing, a study
+  // added past the current allowance loads the period once more.
+  const [lookback, setLookback] = useState(() => studyLookbackBars(initialLayout?.studies || []))
+  useEffect(() => draftStore.current.subscribe(draft => { const next = studyLookbackBars(draft?.studies || []); setLookback(current => next > current ? next : current) }), [])
   // A NEW PERIOD IS A NEW WINDOW. The draft handed to a workstation that is being
   // rebuilt keeps the member's drawings, indicators and view, but not the window
   // of the period they just left: the rebuilt chart would fit to that window over
@@ -203,7 +210,8 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   loaderRef.current = loadCandles
 
   useEffect(() => { cacheRef.current = {}; setSeries(seededRange === defaultRange ? candles || [] : []); setCoverage(seededRange === defaultRange ? priceCoverage : null); setChartError(null); setRange(defaultRange); setSelection(null); pinRef.current = false; openedFocus.current = null; setAllHistory(false) }, [assetKey, defaultRange]) // eslint-disable-line
-  useEffect(() => { if (candles) { cacheRef.current[seededRange] = { candles, ...priceCoverage, checkedAt:Date.now() }; if (range === seededRange) { setSeries(candles); setCoverage(priceCoverage) } } }, [candles, seededRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
+  // The page's candles carry no lookback, so they seed only the lookback-free entry.
+  useEffect(() => { if (candles) { cacheRef.current[`${seededRange}:0`] = { candles, ...priceCoverage, checkedAt:Date.now() }; if (range === seededRange && lookback === 0) { setSeries(candles); setCoverage(priceCoverage) } } }, [candles, seededRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
   useEffect(() => { if(previousRequestKey.current!==requestKey){cacheRef.current = {};previousRequestKey.current=requestKey} }, [requestKey])
   useEffect(()=>{
     if(!loadCandles||readOnly||replayAt!=null)return
@@ -216,14 +224,14 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
     if (!loaderRef.current) return
     let alive = true
     setChartError(null)
-    const cached=cacheRef.current[range]
+    const key=`${range}:${lookback}`,cached=cacheRef.current[key]
     if (cached && Date.now()-cached.checkedAt<60000) { setSeries(cached.candles); setCoverage(cached); setTfLoading(false); return }
     setTfLoading(!cached); if(!cached)setCoverage(null)
-    Promise.resolve(loaderRef.current(range)).then(c => { if (alive) { const snapshot = {...(Array.isArray(c) ? { candles: c } : { ...c, candles: c?.candles || [] }),checkedAt:Date.now()}; cacheRef.current[range] = snapshot; setSeries(snapshot.candles); setCoverage(snapshot) } })
+    Promise.resolve(loaderRef.current(range,{lookbackBars:lookback})).then(c => { if (alive) { const snapshot = {...(Array.isArray(c) ? { candles: c } : { ...c, candles: c?.candles || [] }),checkedAt:Date.now()}; cacheRef.current[key] = snapshot; setSeries(snapshot.candles); setCoverage(snapshot) } })
       .catch(() => { if (alive) { const lastGood=cached&&Date.now()-cached.checkedAt<=15*60000;setSeries(lastGood?cached.candles:[]);setCoverage(lastGood?{...cached,state:'stale'}:null);setChartError(lastGood?'Price history could not be refreshed. Showing the last loaded observations.':'Price history is temporarily unavailable. Choose another period or reload to retry.') } })
       .finally(() => { if (alive) setTfLoading(false) })
     return () => { alive = false }
-  }, [range, assetKey, requestKey, refreshTick])
+  }, [range, assetKey, requestKey, refreshTick, lookback])
   useEffect(() => { onRangeChange?.(range) }, [range, onRangeChange])
   useEffect(() => { setViewport(null);setRendererFailed(false) }, [assetKey,range])
   // A renderer refusal is about the bars it was given. New bars (the range's own
@@ -235,7 +243,11 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
     return () => document.removeEventListener('keydown', close)
   }, [])
 
-  const allBars = useMemo(() => normalizeBars((loadCandles ? series : candles || []).slice(-10000)).bars.filter(c => !timeWindow || (c.t >= timeWindow.from && c.t <= timeWindow.to)), [loadCandles,series,candles,timeWindow?.from,timeWindow?.to])
+  // The bars kept run from the lookback the indicators need to the end of the
+  // window; the workstation fits its view to the window and leaves the earlier
+  // bars to the left of it, where a pan can reach them.
+  const lookbackMs = lookback * (coverage?.chartSource?.intervalMs || 0)
+  const allBars = useMemo(() => normalizeBars((loadCandles ? series : candles || []).slice(-10000)).bars.filter(c => !timeWindow || (c.t >= timeWindow.from - lookbackMs && c.t <= timeWindow.to)), [loadCandles,series,candles,timeWindow?.from,timeWindow?.to,lookbackMs])
   const replay=replayAt!=null,stops=useMemo(()=>replayStops(allBars,knownOnly),[allBars,knownOnly])
   const replayResult=useMemo(()=>replay?chartReplay(allBars,inputMarkers,replayAt,knownOnly):null,[allBars,inputMarkers,replayAt,knownOnly,replay])
   const workstationBars=replayResult?.bars||allBars,markers=replayResult?.events||inputMarkers,keyLevels=replay?[]:inputKeyLevels,maxDrawdown=replay?null:inputDrawdown

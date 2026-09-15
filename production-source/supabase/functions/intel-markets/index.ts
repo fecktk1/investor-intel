@@ -31,6 +31,8 @@ import {positionDepthQuotes} from '../_shared/intel/position-depth.ts'
 import {loadCmcChart,CHART_WINDOWS,CHART_INTERVALS} from '../_shared/intel/cmc-chart.ts'
 import {contractCandleLadder,klineIdentity} from '../_shared/intel/cmc-kline-chart.ts'
 import {loadMarketCandles} from '../_shared/intel/market-candle-read.ts'
+import {MAX_LOOKBACK_BARS} from '../_shared/intel/chart-analysis.ts'
+import {autoInterval,CANDLE_RANGE_MS} from '../_shared/intel/candle-ladder.ts'
 import {loadExchangeCandles} from '../_shared/intel/exchange-candles.ts'
 import {archiveSeries} from '../_shared/intel/candle-archive.ts'
 import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
@@ -52,6 +54,12 @@ function freshness(asOf: string | null, providerDegraded: boolean): 'fresh' | 's
   return 'degraded'
 }
 const n = (v: unknown) => (typeof v === 'number' ? v : -Infinity)
+/** Warm-up periods a chart request may ask for: an integer from 0 to
+ * `MAX_LOOKBACK_BARS`. Provider pages cost credits, so the ceiling is the
+ * ladder's own and anything outside it is treated as no warm-up rather than as
+ * an error the reader sees instead of a chart. */
+const lookbackBars = (value: unknown): number =>
+  Number.isInteger(value) && (value as number) >= 0 && (value as number) <= MAX_LOOKBACK_BARS ? value as number : 0
 
 function appChainFromPlatform(platform: string): string {
   return marketChain(platform)
@@ -123,6 +131,10 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
         candlesOnly: body.candlesOnly === true,
         quotesOnly: body.quotesOnly === true,
         interval: typeof body.interval==='string'?body.interval:'auto',
+        // Extra COMPLETED periods before the window, so a study on the chart has
+        // a value at the first visible bar. Anything that is not an integer in
+        // range is no warm-up at all, never a rejected chart.
+        lookbackBars: lookbackBars(body.lookbackBars),
         orgId,userId:verifiedUserId,
       })))
     }
@@ -160,18 +172,31 @@ if(import.meta.main)Deno.serve(req=>handleMarkets(req))
  * and is never relabelled as a candle width. */
 const COINGECKO_DAYS: Record<string, number> = { '1H':1,'12H':1,'24H':1,'3D':7,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365,'2Y':365,'5Y':365,'ALL':365 }
 const RANGE_DAYS: Record<string, number> = { '1H':1/24,'12H':.5,'24H':1,'3D':3,'7D':7,'1M':30,'3M':90,'6M':180,'1Y':365,'2Y':730,'5Y':1825,'ALL':7300 }
+/** The CoinGecko window is asked for in DAYS, so the warm-up is converted from
+ * periods to days at the automatic width of the timeframe and rounded up. The
+ * provider's own longest OHLC window is a year, so the total is capped there. */
+function coingeckoLookbackDays(timeframe: string, lookback: number): number {
+  const periods = Number.isFinite(Number(lookback)) ? Math.max(0, Math.trunc(Number(lookback))) : 0
+  if (!periods) return 0
+  const step = CHART_INTERVALS[autoInterval(CANDLE_RANGE_MS[timeframe] || 0)] || 3600000
+  return Math.ceil(periods * step / 86400000)
+}
 // deno-lint-ignore no-explicit-any
-async function coingeckoCandles(admin: any, canonical: any, timeframe: string) {
-  const days = COINGECKO_DAYS[timeframe] || 7
+async function coingeckoCandles(admin: any, canonical: any, timeframe: string, lookback = 0) {
+  const extraDays = coingeckoLookbackDays(timeframe, lookback)
+  const days = Math.min(365, (COINGECKO_DAYS[timeframe] || 7) + extraDays)
   const rows = await fetchCoingeckoOhlc(String(canonical.provider_id), days, { supabase: admin, jobName: 'intel-markets-detail', caller: 'canonical-chart', kind: 'request' }).catch(() => null)
-  const end = Date.now(), start = end - (RANGE_DAYS[timeframe] || 7) * 86400000
+  const end = Date.now(), start = end - ((RANGE_DAYS[timeframe] || 7) + extraDays) * 86400000
   // deno-lint-ignore no-explicit-any
   const candles = Array.isArray(rows) ? rows.filter((row:any) => Number(row[0]) >= start && Number(row[0]) <= end).map((row:any) => ({t:Number(row[0]),o:Number(row[1]),h:Number(row[2]),l:Number(row[3]),c:Number(row[4]),v:null})) : []
   return { candles, source: 'coingecko', bestPair: null, bestProvider: candles.length ? 'coingecko' : null, sourceReason: candles.length ? null : 'no_completed_candles' }
 }
 
+// `lookback` is extra COMPLETED periods before the window, so a study drawn on
+// the chart has a value at the first visible bar instead of an empty warm-up.
+// Every rung receives it, and every rung serves the window first.
 // deno-lint-ignore no-explicit-any
-async function assetCandles(admin: any, canonical: any, verified: boolean, timeframe: string, interval='auto',context:MarketAssetsContext={}) {
+async function assetCandles(admin: any, canonical: any, verified: boolean, timeframe: string, interval='auto',context:MarketAssetsContext={},lookback=0) {
   const identityKey = marketCanonicalIdentity(canonical).canonicalAssetKey || (canonical?.source_provider && canonical?.provider_id != null ? `market:${canonical.source_provider}:${canonical.provider_id}` : null)
   return loadMarketCandles({
     assetKey: identityKey,
@@ -181,12 +206,12 @@ async function assetCandles(admin: any, canonical: any, verified: boolean, timef
     klineIdentity: canonical?.source_provider === 'contract' && !!klineIdentity(canonical),
     coingeckoId: canonical?.source_provider === 'coingecko' && canonical?.provider_id != null,
   }, timeframe, interval, Date.now(), {
-    exchange: (range, width) => loadExchangeCandles(admin, String(canonical?.normalized_symbol || ''), range, width),
-    cmc: (id, range, width) => loadCmcChart(admin, id, range, width, Date.now(), undefined, context),
-    kline: (range, width) => contractCandleLadder(admin, canonical, range, width, context),
-    coingecko: () => coingeckoCandles(admin, canonical, timeframe),
+    exchange: (range, width, lb) => loadExchangeCandles(admin, String(canonical?.normalized_symbol || ''), range, width, Date.now(), undefined, lb),
+    cmc: (id, range, width, lb) => loadCmcChart(admin, id, range, width, Date.now(), undefined, context, lb),
+    kline: (range, width, lb) => contractCandleLadder(admin, canonical, range, width, context, undefined, Date.now(), lb),
+    coingecko: (lb) => coingeckoCandles(admin, canonical, timeframe, lb),
     archive: (assetKey, width, from, to) => archiveSeries(admin, assetKey, width, from, to),
-  })
+  }, lookback)
 }
 
 // deno-lint-ignore no-explicit-any
@@ -220,9 +245,12 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
 // The resulting row is a response projection, never a synthetic database insert.
 // deno-lint-ignore no-explicit-any
 // deno-lint-ignore no-explicit-any
-async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; interval?:string; candlesOnly?: boolean; quotesOnly?:boolean; sourceProvider?:string; providerId?:string;orgId?:string|null;userId?:string } = {}): Promise<Response> {
+async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; interval?:string; lookbackBars?:number; candlesOnly?: boolean; quotesOnly?:boolean; sourceProvider?:string; providerId?:string;orgId?:string|null;userId?:string } = {}): Promise<Response> {
   const timeframe = opts.timeframe || '7D'
   const interval = opts.interval || 'auto'
+  // Re-validated here, so a direct caller of `marketDetail` cannot ask a provider
+  // for an unbounded warm-up.
+  const lookback = lookbackBars(opts.lookbackBars)
   // EVERY identity may ask for every width. The four sub-hour widths used to be
   // refused outside a contract identity because the k-line aggregate was the only
   // source that could sample them; the free public exchange registry samples them
@@ -252,8 +280,8 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   const cexVerified=hasVerifiedCexIdentity(resolved.data,identityMapping.data) && (identityMatch.confidence==='high'||!!verifiedNativeMarketSymbol(resolved.data))
   // Lightweight path for chart timeframe cycling — candles only, no full assembly.
   if (opts.candlesOnly) {
-    const c = await assetCandles(admin, resolved.data, cexVerified, timeframe,interval,context)
-    return json({ ...c, timeframe,chartAsset:marketCanonicalIdentity(resolved.data).canonicalAssetKey||`market:${resolved.data.source_provider}:${resolved.data.provider_id}` })
+    const c = await assetCandles(admin, resolved.data, cexVerified, timeframe,interval,context,lookback)
+    return json({ ...c, timeframe,lookbackBars:lookback,chartAsset:marketCanonicalIdentity(resolved.data).canonicalAssetKey||`market:${resolved.data.source_provider}:${resolved.data.provider_id}` })
   }
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR, maR] = await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
@@ -298,7 +326,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // deno-lint-ignore no-explicit-any
   const rollups: Record<string, any> = {}
   for (const r of (rollR.data || [])) rollups[r.timeframe] = r
-  const chart = await assetCandles(admin, canonical, cexVerified, timeframe,interval,context)
+  const chart = await assetCandles(admin, canonical, cexVerified, timeframe,interval,context,lookback)
   const { candles, bestPair, bestProvider } = chart
   const prof = profR.data, sig = sigR.data
   const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null

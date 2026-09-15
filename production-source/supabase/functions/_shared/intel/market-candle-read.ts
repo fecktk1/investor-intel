@@ -55,11 +55,16 @@ export interface SourceResult {
 
 // deno-lint-ignore no-explicit-any
 type RungAnswer = { candles?: any[]; [key: string]: any }
+/** Every rung takes the same trailing `lookback`: extra completed periods before
+ * the window, so one warm-up request answers the whole chart whichever rung ends
+ * up serving it. The CoinGecko rung is bound to its timeframe by its caller and
+ * has never read the range or width it was handed, so it takes the lookback on
+ * its own. */
 export interface CandleLadderDeps {
-  exchange?: (range: string, interval: string) => Promise<RungAnswer>
-  cmc?: (id: string, range: string, interval: string) => Promise<RungAnswer>
-  kline?: (range: string, interval: string) => Promise<RungAnswer>
-  coingecko?: (range: string, interval: string) => Promise<RungAnswer>
+  exchange?: (range: string, interval: string, lookback: number) => Promise<RungAnswer>
+  cmc?: (id: string, range: string, interval: string, lookback: number) => Promise<RungAnswer>
+  kline?: (range: string, interval: string, lookback: number) => Promise<RungAnswer>
+  coingecko?: (lookback: number) => Promise<RungAnswer>
   archive?: (assetKey: string, interval: string, from: number, to: number) => Promise<{ bars: Bar[]; reason: string | null; truncated: boolean; incomplete?: number }>
 }
 
@@ -96,9 +101,15 @@ export function resolveInterval(range: string, interval: string): string {
  * reason and the walk continues. When no rung answers and the archive holds
  * nothing either, the result carries an empty series, the reasons of every rung
  * that was tried, and a coverage sentence that says which sources were asked.
+ *
+ * `lookback` is extra completed periods BEFORE the window, so a study drawn on
+ * the chart (a 50-period average, say) has a value at the FIRST visible bar
+ * instead of an empty first fifty. It extends every rung's own plan and the
+ * archive window by the same amount; the window itself is always served first,
+ * so a warm-up request can never shorten the range the reader asked for.
  */
 export async function loadMarketCandles(identity: LadderIdentity, range = '7D', interval = 'auto',
-  now = Date.now(), deps: CandleLadderDeps = {}): Promise<SourceResult> {
+  now = Date.now(), deps: CandleLadderDeps = {}, lookback = 0): Promise<SourceResult> {
   if (!CANDLE_RANGE_MS[range]) throw new Error('invalid_chart_parameters')
   const requested = resolveInterval(range, interval)
   const order = candleSourceOrder({
@@ -117,16 +128,16 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
   let answeredBy = ''
   for (const rung of order) {
     const call = rung === 'exchange' ? deps.exchange
-      : rung === 'cmc_ohlcv' ? (identity.cmcId ? (r: string, i: string) => deps.cmc!(identity.cmcId as string, r, i) : undefined)
+      : rung === 'cmc_ohlcv' ? (identity.cmcId ? (r: string, i: string, lb: number) => deps.cmc!(identity.cmcId as string, r, i, lb) : undefined)
       : rung === 'kline' ? deps.kline
-      : deps.coingecko
+      : deps.coingecko ? (_r: string, _i: string, lb: number) => deps.coingecko!(lb) : undefined
     if (!call) continue
     tried.push(rung)
     // Each rung is planned against its OWN width vocabulary, so a rung that
     // cannot sample the requested width is asked for the nearest width it can
     // and the substitution is reported rather than hidden.
     let answered: RungAnswer | null = null
-    try { answered = await call(range, requested) } catch { answered = null }
+    try { answered = await call(range, requested, lookback) } catch { answered = null }
     if (!answered) { reasons.push(`${rung}:provider_unavailable`); continue }
     const result: SourceResult = { ...answered, candles: answered.candles ?? [] }
     lastResult = result
@@ -141,7 +152,7 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
   // The ladder plan is unbounded on purpose: the CAP belongs to the rung that
   // answered and is already stated in its own coverage sentence, which is
   // appended below. Repeating it here would report one ceiling twice.
-  const plan = candlePlan(range, requested, { limit: Number.MAX_SAFE_INTEGER, intervals: servedWidths }, now)
+  const plan = candlePlan(range, requested, { limit: Number.MAX_SAFE_INTEGER, intervals: servedWidths }, now, lookback)
   const served = plan.selected
 
   // ── The archive, under the live window ──
@@ -151,7 +162,10 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
   let candles: Bar[] = answer?.candles?.length ? normalizeBars(answer.candles).bars : []
   const archiveWanted = isArchiveRange(range) && archiveCanAnswer(served) && !!identity.assetKey && !!deps.archive
   if (archiveWanted) {
-    const window = { from: now - CANDLE_RANGE_MS[range], to: now }
+    // The archive is read for the warm-up too, otherwise a study on a long range
+    // would warm up on provider bars for a chart the archive is drawing.
+    // `plan.step` is the served width and `plan.lookback` the periods granted.
+    const window = { from: now - CANDLE_RANGE_MS[range] - plan.lookback * plan.step, to: now }
     const read = await deps.archive!(identity.assetKey as string, served, window.from, window.to).catch(() => null)
     if (!read) archiveReason = 'archive_read_failed'
     else {

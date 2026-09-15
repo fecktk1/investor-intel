@@ -127,10 +127,15 @@ const EMPTY = (reason: string, coverage: string, plan: CandlePlan | null = null)
  *
  * Returns the same shape the other chart sources return, so the detail response,
  * `chartSeriesResponse` and the renderer treat it like any other source.
+ *
+ * `lookback` is extra completed periods BEFORE the window, the warm-up a study
+ * needs to have a value at the first visible bar. The venue ceiling still serves
+ * the window first (`candlePlan`), so asking for a warm-up never costs the
+ * reader any of the range they asked for.
  */
 // deno-lint-ignore no-explicit-any
 export async function loadExchangeCandles(db: any, symbol: string, range = '7D', interval = 'auto',
-  now = Date.now(), deps: ExchangeCandleDeps = {}): Promise<ExchangeCandleResult> {
+  now = Date.now(), deps: ExchangeCandleDeps = {}, lookback = 0): Promise<ExchangeCandleResult> {
   const normalized = String(symbol || '').toUpperCase().trim()
   if (!normalized) return EMPTY('missing_symbol', 'No normalized symbol for this asset, so no public exchange listing can be looked up.')
   const rows = await (deps.tickers ?? readTickers)(db, normalized)
@@ -145,7 +150,7 @@ export async function loadExchangeCandles(db: any, symbol: string, range = '7D',
     const providerSymbol = String(row?.provider_symbol || '')
     if (!limits || !providerSymbol) { lastReason = lastReason || 'unknown_venue'; continue }
     let plan: CandlePlan
-    try { plan = candlePlan(range, interval, limits, now) } catch { return EMPTY('invalid_chart_parameters', 'The requested range and interval are not an exchange sampling.') }
+    try { plan = candlePlan(range, interval, limits, now, lookback) } catch { return EMPTY('invalid_chart_parameters', 'The requested range and interval are not an exchange sampling.') }
     lastPlan = plan
     const providerInterval = EXCHANGE_INTERVALS[plan.selected]
     if (!providerInterval) { lastReason = lastReason || 'unsupported_interval'; continue }

@@ -88,6 +88,78 @@ Deno.test('a substituted width is named as the width that was actually served', 
   assertStringIncludes(coverage, 'not relabelled 4 hour ones')
 })
 
+// ─── warm-up (lookback) ───────────────────────────────────────────────────────
+
+Deno.test('a warm-up is granted in full when the source ceiling has room for it', () => {
+  const plan = candlePlan('1M', '4H', VENUE_CANDLES.binance, NOW, 50)
+  // The WINDOW is still the window: coverage sentences count the periods the
+  // reader asked for, not the bars fetched to warm an indicator up.
+  assertEquals(plan.wanted, 180)
+  assertEquals(plan.lookback, 50)
+  assertEquals(plan.from, plan.to - 230 * plan.step)
+  assertEquals(plan.limit, 231)
+  assertEquals(plan.capped, false)
+  assertEquals(plan.reachesFrom, plan.to - 230 * plan.step)
+  // No warm-up asked for is the plan that existed before warm-ups did.
+  const plain = candlePlan('1M', '4H', VENUE_CANDLES.binance, NOW)
+  assertEquals(plain.lookback, 0)
+  assertEquals(plain.from, plain.to - 180 * plain.step)
+  assertEquals(plain.limit, 181)
+})
+
+Deno.test('the window is never short-changed by a warm-up: it takes only what the ceiling has left', () => {
+  // Coinbase returns 300 rows. 7 days of hourly candles is 168 periods plus the
+  // one in progress, so 131 warm-up periods fit and 500 do not.
+  const partial = candlePlan('7D', '1H', VENUE_CANDLES.coinbase, NOW, 500)
+  assertEquals(partial.wanted, 168)
+  assertEquals(partial.lookback, 131)
+  assertEquals(partial.limit, 300)
+  assertEquals(partial.from, partial.to - 299 * partial.step)
+  assertEquals(partial.capped, false)
+  // Kraken returns 720 rows and 1 month of hourly candles needs all 720: there
+  // is no room at all, and the window keeps every period it had.
+  const none = candlePlan('1M', '1H', VENUE_CANDLES.kraken, NOW, 200)
+  assertEquals(none.wanted, 720)
+  assertEquals(none.lookback, 0)
+  assertEquals(none.from, none.to - 720 * none.step)
+  assertEquals(none.limit, 720)
+})
+
+Deno.test('a warm-up changes neither what capped means nor how far a capped request reaches', () => {
+  const plain = candlePlan('1Y', '1M', VENUE_CANDLES.binance, NOW)
+  const asked = candlePlan('1Y', '1M', VENUE_CANDLES.binance, NOW, 500)
+  // A window that already exceeds the ceiling gets no warm-up, so the two plans
+  // are the same plan.
+  assertEquals(asked.lookback, 0)
+  assertEquals(asked.capped, plain.capped)
+  assertEquals(asked.reachesFrom, plain.reachesFrom)
+  assertEquals(asked.from, plain.from)
+  assertEquals(asked.limit, plain.limit)
+  // A warm-up that fits moves `reachesFrom` back with the request and leaves
+  // `capped` alone, because the range itself still fits.
+  const room = candlePlan('7D', '1H', VENUE_CANDLES.binance, NOW, 60)
+  assertEquals(room.capped, false)
+  assertEquals(room.reachesFrom, room.to - 228 * room.step)
+})
+
+Deno.test('a warm-up that is not a whole count of periods is no warm-up, never a thrown chart', () => {
+  for (const value of [-10, Number.NaN, Number.POSITIVE_INFINITY, undefined as unknown as number]) {
+    assertEquals(candlePlan('7D', '1H', VENUE_CANDLES.binance, NOW, value).lookback, 0)
+  }
+  // A fractional request is truncated rather than rounded into an extra period.
+  assertEquals(candlePlan('7D', '1H', VENUE_CANDLES.binance, NOW, 12.9).lookback, 12)
+})
+
+Deno.test('a series that covers the whole range but not its warm-up is not announced as a short range', () => {
+  const plan = candlePlan('7D', '1H', VENUE_CANDLES.binance, NOW, 60)
+  const windowFrom = plan.to - plan.wanted * plan.step
+  const covered = candleCoverage({ plan, source: 'binance', oldest: windowFrom, count: 168 })
+  assertEquals(covered.includes('reach back about'), false)
+  // A series that does not even reach the window start still says so.
+  const short = candleCoverage({ plan, source: 'binance', oldest: plan.to - 24 * HOUR, count: 24 })
+  assertStringIncludes(short, 'They reach back about 1 day, not the full 7D range.')
+})
+
 Deno.test('a range or width outside the vocabulary is an error, not a quiet default', () => {
   assertThrows(() => candlePlan('10Y', 'auto', VENUE_CANDLES.binance, NOW), Error, 'invalid_chart_parameters')
   assertThrows(() => candlePlan('7D', '3M', VENUE_CANDLES.binance, NOW), Error, 'invalid_chart_parameters')
@@ -212,6 +284,30 @@ Deno.test('a sub-hour width is served by the venue for a listed asset, not refus
   assertStringIncludes(result.coverage, '1 minute candles for 1H from Binance')
 })
 
+Deno.test('the exchange rung asks its venue for the warm-up as well as the window', async () => {
+  const step = HOUR
+  let asked = ''
+  const start = Math.floor(NOW / step) * step - 228 * step
+  const result = await loadExchangeCandles({}, 'BTC', '7D', '1H', NOW, {
+    tickers: () => Promise.resolve([{ provider: 'binance', provider_symbol: 'BTCUSDT', quote_asset: 'USDT', volume_quote_24h: 1 }]),
+    provider: () => ({
+      getKlines: (_s: string, interval: string, limit: number) => {
+        asked = `${interval}:${limit}`
+        return Promise.resolve(Array.from({ length: 228 }, (_, i) => kline(start + i * step, step, 100 + i)))
+      },
+    }),
+  }, 60)
+  // 168 window periods plus 60 warm-up periods plus the one in progress.
+  assertEquals(asked, '1h:229')
+  assertEquals(result.plan?.lookback, 60)
+  // The warm-up bars are KEPT: they are what the first visible bar's study needs.
+  assertEquals(result.candles.length, 228)
+  assertEquals(result.candles[0].t, start)
+  // A complete range is not reported as a short one because the venue had no
+  // more warm-up to give.
+  assertEquals(result.coverage.includes('not the full 7D range'), false)
+})
+
 // ─── archive ──────────────────────────────────────────────────────────────────
 
 Deno.test('only the stored widths and the weekly candle built from them are archive answers', () => {
@@ -296,6 +392,34 @@ Deno.test('a long range merges the stored archive under the provider window and 
   assertEquals(ladder.archivedCandles, 4000)
   assertEquals(ladder.range, 'ALL')
   assertStringIncludes(result.coverage as string, '4000 of 4030 candles come from the stored daily archive')
+})
+
+Deno.test('every rung is asked for the same warm-up and the archive window is extended by it', async () => {
+  let exchangeArgs: unknown[] = [], cmcArgs: unknown[] = [], archiveArgs: unknown[] = []
+  const result = await loadMarketCandles(identity(), '1Y', '1D', NOW, {
+    exchange: (...args) => { exchangeArgs = args; return Promise.resolve({ candles: [], sourceReason: 'no_exchange_listing' }) },
+    cmc: (...args) => { cmcArgs = args; return Promise.resolve({ candles: candles(NOW - 365 * DAY, DAY, 365), source: 'coinmarketcap' }) },
+    archive: (...args) => { archiveArgs = args; return Promise.resolve({ bars: [], reason: null, truncated: false }) },
+  }, 60)
+  assertEquals(exchangeArgs, ['1Y', '1D', 60])
+  assertEquals(cmcArgs, ['1', '1Y', '1D', 60])
+  // The archive is read for the warm-up too: a study on a long range must warm
+  // up on the same series the chart is drawn from.
+  assertEquals(archiveArgs[2], NOW - CANDLE_RANGE_MS['1Y'] - 60 * DAY)
+  assertEquals(archiveArgs[3], NOW)
+  assertEquals(result.candles.length, 365)
+})
+
+Deno.test('the k-line and CoinGecko rungs receive the warm-up as well', async () => {
+  let klineArgs: unknown[] = [], geckoArgs: unknown[] = []
+  await loadMarketCandles(identity({ cexVerified: false, cmcId: null, klineIdentity: true, coingeckoId: true }), '7D', '1H', NOW, {
+    kline: (...args) => { klineArgs = args; return Promise.resolve({ candles: [], sourceReason: 'no_completed_candles' }) },
+    // The CoinGecko rung is bound to its timeframe by its caller, so the warm-up
+    // is the only thing it is handed.
+    coingecko: (...args) => { geckoArgs = args; return Promise.resolve({ candles: candles(NOW - 168 * HOUR, HOUR, 168), source: 'coingecko' }) },
+  }, 120)
+  assertEquals(klineArgs, ['7D', '1H', 120])
+  assertEquals(geckoArgs, [120])
 })
 
 Deno.test('a short range never reads the archive, so a minute chart cannot be padded with daily rows', async () => {
