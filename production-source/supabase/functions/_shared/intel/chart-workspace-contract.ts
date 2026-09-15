@@ -36,7 +36,12 @@ export function tweetStatusUrl(value:unknown):string {
  return `https://x.com/${match[1]}/status/${match[2]}`
 }
 export type ChartAnchor={t:number;price:number}
-export type ChartDrawing={id:string;tool:DrawingTool;anchors:ChartAnchor[];text:string;color:string;width:number;dash?:DrawingDash;url?:string;ratios?:number[];outcome?:SavedOutcomeAssumptions}
+/** The size a member gave a post card, in CSS pixels. Only a post carries one;
+ * every other drawing is sized by its anchors. Bounded so a saved layout can
+ * never hold a card wider or taller than a chart. */
+export type DrawingBox={width:number;height:number}
+export const DRAWING_BOX_LIMITS={minWidth:200,maxWidth:640,minHeight:80,maxHeight:720}
+export type ChartDrawing={id:string;tool:DrawingTool;anchors:ChartAnchor[];text:string;color:string;width:number;dash?:DrawingDash;url?:string;box?:DrawingBox;ratios?:number[];outcome?:SavedOutcomeAssumptions}
 export type ChartComparison={assets:{asset:string;label:string}[];arrangement:'overlay'|'2x2'|'1x4';priceScale:'independent'|'shared'|'returns';period:string}
 export type ChartLayout={purpose?:'study_template';replay?:{at:number;knownOnly:boolean};comparison?:ChartComparison;size?:string;preset?:string;schemaVersion:1;asset:string;interval:string;range:{from:number;to:number};mode:string;scale:string;autoScale:boolean;volume:boolean;theme:string;timezone:string;studies:Study[];drawings:ChartDrawing[];visibility:Record<string,boolean>}
 export const isUuid=(v:unknown):v is string=>typeof v==='string'&&/^[a-f0-9]{8}-[a-f0-9]{4}-[1-5][a-f0-9]{3}-[89ab][a-f0-9]{3}-[a-f0-9]{12}$/i.test(v)
@@ -61,6 +66,11 @@ export function validateDrawing(value:any):ChartDrawing {
  if(dash!=='solid')drawing.dash=dash as DrawingDash
  if(value.tool==='tweet')drawing.url=tweetStatusUrl(value.url)
  else if(value.url!=null)throw new Error('invalid_tweet_url')
+ if(value.box!=null){
+  const {minWidth,maxWidth,minHeight,maxHeight}=DRAWING_BOX_LIMITS,box=value.box
+  if(value.tool!=='tweet'||!object(box)||!Number.isInteger(box.width)||!Number.isInteger(box.height)||box.width<minWidth||box.width>maxWidth||box.height<minHeight||box.height>maxHeight)throw new Error('invalid_drawing_box')
+  drawing.box={width:box.width,height:box.height}
+ }
  if(value.outcome!=null){if(value.tool!=='text')throw new Error('invalid_chart_outcome_assumptions');drawing.outcome=validateSavedOutcome(value.outcome)}
  if(value.tool==='fibonacci'){
   const ratios=value.ratios??[0,0.236,0.382,0.5,0.618,0.786,1]

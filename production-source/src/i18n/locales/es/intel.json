@@ -899,6 +899,7 @@
       "tool": "Herramienta",
       "tweet_url": "Dirección de la publicación en X",
       "tweet_open": "Abrir la publicación en X",
+      "tweet_resize": "Cambiar el tamaño de la tarjeta de la publicación",
       "tweet_unknown": "Falta la dirección de la publicación",
       "tweet_loading": "Leyendo la publicación…",
       "tweet_unavailable": "No se pudo leer esta publicación.",

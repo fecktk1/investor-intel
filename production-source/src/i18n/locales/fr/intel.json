@@ -899,6 +899,7 @@
       "tool": "Outil",
       "tweet_url": "Adresse de la publication sur X",
       "tweet_open": "Ouvrir la publication sur X",
+      "tweet_resize": "Redimensionner la carte de la publication",
       "tweet_unknown": "Adresse de la publication manquante",
       "tweet_loading": "Lecture de la publication…",
       "tweet_unavailable": "Cette publication n’a pas pu être lue.",

@@ -105,6 +105,12 @@ Deno.test('a post drawing accepts only a public status address and stores it in 
  eq(post('https://www.x.com/forge/statuses/1899').url,'https://x.com/forge/status/1899')
  for(const url of [undefined,'','http://x.com/forge/status/1','https://evil.com/x.com/forge/status/1','javascript:alert(1)','https://x.com/forge/status/abc','https://x.com/forge'])assertThrows(()=>post(url))
  assertThrows(()=>validateDrawing({...drawing(),url:'https://x.com/forge/status/1899'}))
+ // A post card keeps the size the member gave it, within the chart's bounds;
+ // no other drawing carries a size, because its anchors size it.
+ eq(post('https://x.com/forge/status/1899').box,undefined)
+ eq(validateDrawing({...drawing(),tool:'tweet',url:'https://x.com/forge/status/1899',box:{width:320,height:180}}).box,{width:320,height:180})
+ for(const box of [{width:100,height:180},{width:320,height:20},{width:2000,height:180},{width:320.5,height:180},{width:'320',height:180},{height:180},'wide'])assertThrows(()=>validateDrawing({...drawing(),tool:'tweet',url:'https://x.com/forge/status/1899',box}))
+ assertThrows(()=>validateDrawing({...drawing(),box:{width:320,height:180}}))
 })
 
 // ── The working state: what the chart looked like when the member last left it ──

@@ -899,6 +899,7 @@
       "tool": "Werkzeug",
       "tweet_url": "Adresse des Beitrags auf X",
       "tweet_open": "Beitrag auf X öffnen",
+      "tweet_resize": "Größe der Beitragskarte ändern",
       "tweet_unknown": "Adresse des Beitrags fehlt",
       "tweet_loading": "Beitrag wird gelesen…",
       "tweet_unavailable": "Dieser Beitrag konnte nicht gelesen werden.",

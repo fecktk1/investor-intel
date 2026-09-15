@@ -899,6 +899,7 @@
       "tool": "Strumento",
       "tweet_url": "Indirizzo del post su X",
       "tweet_open": "Apri il post su X",
+      "tweet_resize": "Ridimensiona la scheda del post",
       "tweet_unknown": "Indirizzo del post mancante",
       "tweet_loading": "Lettura del post…",
       "tweet_unavailable": "Non è stato possibile leggere questo post.",

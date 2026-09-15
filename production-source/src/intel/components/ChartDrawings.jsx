@@ -129,12 +129,26 @@ export function useChartDrawings({project,unproject,width,height,scale,initialIt
  }
  const remove=id=>{dispatch({type:'delete',id});setSelected(current=>current===id?null:current)}
  const restyle=patch=>{const drawing=history.items.find(d=>d.id===selected);if(drawing)commit({...drawing,...patch})}
+ const resize=(drawing,box)=>{const current=history.items.find(d=>d.id===drawing.id);if(current)commit({...current,box})}
+ // The style row and a post card stay while the pointer works on them; a press
+ // anywhere else on the page, the chart itself included, is the member walking
+ // away from the drawing and clears the selection. The drawing surface takes no
+ // pointer events while idle, so this cannot be left to the surface.
+ useEffect(()=>{
+  if(readOnly||!selected)return
+  const away=event=>{
+   const target=event.target
+   if(target?.closest?.('.intel-draw-options,.intel-draw-tweet,.intel-drawing-surface,.intel-draw-bar,.intel-chart-study-dialog,dialog'))return
+   setSelected(null)
+  }
+  document.addEventListener('pointerdown',away,true);return()=>document.removeEventListener('pointerdown',away,true)
+ },[readOnly,selected])
  useEffect(()=>{
   if(readOnly)return
   const key=event=>{
    const target=event.target
    if(target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName||''))return
-   if(event.key==='Escape'){cancel();return}
+   if(event.key==='Escape'){cancel();if(!editor)setSelected(null);return}
    if((event.key==='Delete'||event.key==='Backspace')&&selected&&!editor){event.preventDefault();remove(selected);return}
    const next=drawingShortcutTool(event)
    if(!next)return
@@ -176,7 +190,7 @@ export function useChartDrawings({project,unproject,width,height,scale,initialIt
   onDelete={()=>selected&&remove(selected)} onClear={()=>{setTool('select');dispatch({type:'clear'});setSelected(null)}}/>
  const overlay=<DrawingSurface store={preview} surfaceRef={surface} items={history.items} selected={selected} tool={tool} readOnly={readOnly} width={width} height={height}
   project={project} intervalMs={intervalMs} context={context} onStart={start} onMove={move} onFinish={finish} onCancel={cancel}
-  onEdit={setEditor} onDelete={remove} onSelect={setSelected} onStyle={restyle}/>
+  onEdit={setEditor} onDelete={remove} onSelect={setSelected} onStyle={restyle} onResize={resize}/>
  const editorView=editor&&<DrawingEditor editor={editor} tools={DRAWABLE} error={error} onChange={setEditor} onClose={closeEditor} onApply={saveEditor}/>
  // A shared, read-only chart offers its drawings to read, never to edit.
  const list=history.items.length>0&&<details className="intel-chart-readings"><summary>{readOnly?t('chart.draw.read_list_readonly',{defaultValue:'Read {{count}} drawings',count:history.items.length}):t('chart.draw.read_list',{defaultValue:'Read and edit {{count}} drawings',count:history.items.length})}</summary>

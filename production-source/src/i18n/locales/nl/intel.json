@@ -899,6 +899,7 @@
       "tool": "Gereedschap",
       "tweet_url": "Adres van het bericht op X",
       "tweet_open": "Het bericht op X openen",
+      "tweet_resize": "Grootte van de berichtkaart aanpassen",
       "tweet_unknown": "Adres van het bericht ontbreekt",
       "tweet_loading": "Bericht wordt gelezen…",
       "tweet_unavailable": "Dit bericht kon niet worden gelezen.",

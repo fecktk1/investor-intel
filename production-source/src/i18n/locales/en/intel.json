@@ -1714,6 +1714,7 @@
       "tool": "Tool",
       "tweet_url": "Address of the post on X",
       "tweet_open": "Open the post on X",
+      "tweet_resize": "Resize the post card",
       "tweet_unknown": "Post address missing",
       "tweet_loading": "Reading the post…",
       "tweet_unavailable": "This post could not be read.",

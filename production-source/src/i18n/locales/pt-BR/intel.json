@@ -899,6 +899,7 @@
       "tool": "Ferramenta",
       "tweet_url": "Endereço da publicação no X",
       "tweet_open": "Abrir a publicação no X",
+      "tweet_resize": "Redimensionar o cartão da publicação",
       "tweet_unknown": "Endereço da publicação ausente",
       "tweet_loading": "Lendo a publicação…",
       "tweet_unavailable": "Não foi possível ler esta publicação.",

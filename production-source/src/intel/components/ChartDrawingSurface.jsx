@@ -10,16 +10,17 @@ const signed=value=>`${value>=0?'+':''}${number(value)}`
 // Deferred within the deferred surface: an anchored post card and the style row
 // for the selected drawing, each reserving the footprint it will occupy.
 const TweetCard=deferredPanel(()=>import('./ChartTweetCard'),{label:'This post from X',
- fallback:({point,width,height})=>{
-  const left=Math.max(0,Math.min(Math.max(0,(width||0)-232),point.x+8)),top=Math.max(0,Math.min(Math.max(0,(height||0)-48),point.y-16))
-  return <article className="intel-draw-tweet" aria-hidden="true" style={{left,top,minHeight:48}}/>
+ fallback:({point,width,height,drawing})=>{
+  const box=drawing?.box||{width:300,height:null}
+  const left=Math.max(0,Math.min(Math.max(0,(width||0)-box.width-8),point.x+8)),top=Math.max(0,Math.min(Math.max(0,(height||0)-48),point.y-16))
+  return <article className="intel-draw-tweet" aria-hidden="true" style={{left,top,width:box.width,minHeight:box.height||96}}/>
  }})
 const DrawingOptions=deferredPanel(()=>import('./ChartDrawingOptions'),{label:'The drawing style row'})
 
 // The drawing surface: the SVG the pointer draws on, plus the HTML layer that
 // carries anchored post cards and the style row. Deferred as a whole, so the
 // price chart's first paint carries the toolbar and the chart only.
-export default function ChartDrawingSurface({store,surfaceRef,items,selected,tool,readOnly,width,height,project,intervalMs,context,onStart,onMove,onFinish,onCancel,onEdit,onDelete,onSelect,onStyle}) {
+export default function ChartDrawingSurface({store,surfaceRef,items,selected,tool,readOnly,width,height,project,intervalMs,context,onStart,onMove,onFinish,onCancel,onEdit,onDelete,onSelect,onStyle,onResize}) {
  const {t}=useTranslation('intel',{useSuspense:false})
  const preview=useSyncExternalStore(store.subscribe,store.get,store.get)
  const rendered=preview?(items.some(d=>d.id===preview.id)?items.map(d=>d.id===preview.id?preview:d):[...items,preview]):items
@@ -55,7 +56,7 @@ export default function ChartDrawingSurface({store,surfaceRef,items,selected,too
    {rendered.filter(drawing=>drawing.tool==='tweet').map(drawing=>{
     const point=project(drawing.anchors[0])
     return point&&<TweetCard key={drawing.id} drawing={drawing} point={point} width={width} height={height} context={context} selected={selected===drawing.id} readOnly={readOnly}
-     onSelect={event=>onStart(event,drawing)}/>
+     onSelect={event=>onStart(event,drawing)} onResize={box=>onResize?.(drawing,box)}/>
    })}
    {selectedDrawing&&selectedPoint&&<DrawingOptions drawing={selectedDrawing} point={selectedPoint} width={width} height={height} onChange={onStyle} onEdit={()=>onEdit(selectedDrawing)} onDelete={()=>onDelete(selectedDrawing.id)}/>}
   </div>

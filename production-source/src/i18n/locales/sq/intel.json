@@ -899,6 +899,7 @@
       "tool": "Mjeti",
       "tweet_url": "Adresa e postimit në X",
       "tweet_open": "Hap postimin në X",
+      "tweet_resize": "Ndrysho madhësinë e kartës së postimit",
       "tweet_unknown": "Mungon adresa e postimit",
       "tweet_loading": "Po lexohet postimi…",
       "tweet_unavailable": "Ky postim nuk mund të lexohej.",
