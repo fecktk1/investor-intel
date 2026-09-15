@@ -16,6 +16,7 @@ import ChartSnapshotSave from './ChartSnapshotSave'
 import ChartAlertEditor from './ChartAlertEditor'
 import ResponsiveChartTools from './ResponsiveChartTools'
 import ChartIndicatorMenu from './ChartIndicatorMenu'
+import ChartWatermark from './ChartWatermark'
 import {validateChartLayout} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 const ChartStructurePanel=lazy(()=>import('./ChartStructurePanel'))
 
@@ -320,6 +321,8 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   <div className="intel-workstation-canvas" style={{height:totalHeight}} onPointerMoveCapture={e=>{if(e.buttons)refreshAfterGesture()}} onPointerUpCapture={refreshAfterGesture} onWheelCapture={refreshAfterGesture}>
 
    <div ref={host} style={{height:totalHeight}} role="img" aria-label={`${mode==='line'?'Price':mode==='candles'?'Candlestick':'OHLC'} chart, ${bars.length} observations. Use chart navigation controls or read price data below.`}/>
+
+   <ChartWatermark background={palette?.background}/>
 
    <svg className="intel-workstation-overlay" width={geometry.width} height={totalHeight} aria-label="Chart research markers" style={{pointerEvents:'none'}}>
 
