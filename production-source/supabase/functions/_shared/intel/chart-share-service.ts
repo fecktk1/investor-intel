@@ -7,6 +7,13 @@ type Actor={orgId:string;userId:string}
 const read=async(query:any)=>{const {data,error}=await query;if(error)throw new Error(error.message==='chart_share_limit'?'chart_share_limit':'chart_share_storage_unavailable');return data}
 const token=()=>Array.from(crypto.getRandomValues(new Uint8Array(32)),v=>v.toString(16).padStart(2,'0')).join('')
 export const validChartShareToken=(value:unknown):value is string=>typeof value==='string'&&/^[a-f0-9]{64}$/.test(value)
+/** The short-link front door. tcfqr.link resolves any slug through qr-redirect,
+ * which copies the stored destination into Location verbatim, so the capability
+ * fragment survives the 302 and is never sent to a server. */
+export const CHART_SHARE_SHORT_ORIGIN='https://tcfqr.link'
+/** An eight character base62 slug, minted by intel_chart_share_short_link. */
+export const validChartShareSlug=(value:unknown):value is string=>typeof value==='string'&&/^[0-9A-Za-z]{6,16}$/.test(value)
+export const chartShareShortUrl=(slug:unknown):string|null=>validChartShareSlug(slug)?`${CHART_SHARE_SHORT_ORIGIN}/${slug}`:null
 export function chartSourceShareAllowed(state:any,env:Env,now=Date.now()):boolean{
  if(state.layout?.comparison){const series=snapshotSeries(state);return series.length===state.layout.comparison.assets.length&&series.every(s=>chartSourceShareAllowed(s,env,now))}
  const provider=state.source?.provider,policy=chartCapturePolicy(provider,env)
@@ -34,12 +41,23 @@ export async function resolveChartShare(db:any,shareToken:unknown,verifiedViewer
  return {snapshot:await projectChartShare(resolved,env)}
 }
 export async function chartShareService(db:any,actor:Actor,input:any,env:Env,now=Date.now()){
- const owned=()=>db.from('intel_chart_shares').select('id,token,snapshot_id,audience,drawing_ids,expires_at,revoked_at,created_at').eq('org_id',actor.orgId).eq('user_id',actor.userId)
+ const owned=()=>db.from('intel_chart_shares').select('id,token,snapshot_id,audience,drawing_ids,expires_at,revoked_at,created_at,short_slug').eq('org_id',actor.orgId).eq('user_id',actor.userId)
+ // The short address is the link a member hands out, so a created or retried
+ // share carries it. A mint that cannot answer never loses the share itself:
+ // the caller falls back to the full address rather than seeing a failure.
+ const withShortLink=async(share:any)=>{
+  if(validChartShareSlug(share?.short_slug))return {...share,shortUrl:chartShareShortUrl(share.short_slug)}
+  try{
+   const {data,error}=await db.rpc('intel_chart_share_short_link',{p_org:actor.orgId,p_user:actor.userId,p_share:share.id})
+   if(error||!validChartShareSlug(data))return {...share,shortUrl:null}
+   return {...share,short_slug:data,shortUrl:chartShareShortUrl(data)}
+  }catch{return {...share,shortUrl:null}}
+ }
  if(input.operation==='share_list'){
   if(!isUuid(input.snapshotId))throw new Error('invalid_chart_share_snapshot')
   const page=input.page??0;if(!Number.isInteger(page)||page<0||page>100)throw new Error('invalid_chart_share_page')
   const rows=await read(owned().eq('snapshot_id',input.snapshotId).order('created_at',{ascending:false}).order('id',{ascending:false}).range(page*20,page*20+20))
-  return {shares:(rows||[]).slice(0,20),hasMore:(rows||[]).length>20}
+  return {shares:(rows||[]).slice(0,20).map((row:any)=>({...row,shortUrl:chartShareShortUrl(row.short_slug)})),hasMore:(rows||[]).length>20}
  }
  if(input.operation==='share_revoke'){
   if(!isUuid(input.id))throw new Error('invalid_chart_share_id')
@@ -47,7 +65,7 @@ export async function chartShareService(db:any,actor:Actor,input:any,env:Env,now
  }
  if(input.operation!=='share_create'||!isUuid(input.snapshotId)||!isUuid(input.operationId))throw new Error('invalid_chart_share_operation')
  const previous=await read(owned().eq('operation_id',input.operationId).maybeSingle())
- if(previous){if(previous.revoked_at||!previous.snapshot_id||Date.parse(previous.expires_at)<=now)throw new Error('chart_share_unavailable');return {share:previous}}
+ if(previous){if(previous.revoked_at||!previous.snapshot_id||Date.parse(previous.expires_at)<=now)throw new Error('chart_share_unavailable');return {share:await withShortLink(previous)}}
  const audience=input.audience??'owner',ids=input.includeDrawingIds??[],expiresAt=input.expiresAt
  if(!['owner','org','unlisted','public'].includes(audience)||typeof expiresAt!=='number'||!Number.isFinite(expiresAt)||expiresAt<=now||expiresAt>now+30*86400000)throw new Error('invalid_chart_share')
  const row=await read(db.from('intel_chart_snapshots').select('state').eq('org_id',actor.orgId).eq('user_id',actor.userId).eq('id',input.snapshotId).maybeSingle())
@@ -56,5 +74,5 @@ export async function chartShareService(db:any,actor:Actor,input:any,env:Env,now
  if(audience!=='owner'&&!chartSourceShareAllowed(row.state,env,now))throw new Error('chart_share_source_unavailable')
  const share=await read(db.rpc('intel_create_chart_share',{p_org:actor.orgId,p_user:actor.userId,p_snapshot:input.snapshotId,p_operation:input.operationId,p_token:token(),p_audience:audience,p_drawings:ids,p_expires:new Date(expiresAt).toISOString()}))
  if(!share||share.revoked_at||!share.snapshot_id||Date.parse(share.expires_at)<=now)throw new Error('chart_share_unavailable')
- return {share:{id:share.id,token:share.token,snapshot_id:share.snapshot_id,audience:share.audience,drawing_ids:share.drawing_ids,expires_at:share.expires_at,revoked_at:share.revoked_at,created_at:share.created_at}}
+ return {share:await withShortLink({id:share.id,token:share.token,snapshot_id:share.snapshot_id,audience:share.audience,drawing_ids:share.drawing_ids,expires_at:share.expires_at,revoked_at:share.revoked_at,created_at:share.created_at,short_slug:share.short_slug??null})}
 }

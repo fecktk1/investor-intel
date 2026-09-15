@@ -39,3 +39,38 @@ Deno.test('replay sharing rechecks completed and recorded times and never projec
  const view=await projectChartShare({snapshot:original,audience:'owner',drawingIds:[id,id2]},all,now)
  eq(view.bars,[original.bars[0]]);eq(view.layout.drawings,[]);eq(view.sourceHash,'series');eq(view.replaySeriesHash,'subset');eq(JSON.stringify(view).includes('999999'),false);eq(original.bars.length,4)
 })
+
+const live={id,token:'a'.repeat(64),snapshot_id:id,audience:'org',drawing_ids:[],expires_at:new Date(now+86400000).toISOString(),revoked_at:null,created_at:new Date(now).toISOString()}
+Deno.test('a created link carries the short address a member actually hands out',async()=>{
+ const db=dbMock([null,{state},live,'Ab3xZ9kQ'])
+ const result=await chartShareService(db,actor,{operation:'share_create',snapshotId:id,operationId:id,audience:'org',includeDrawingIds:[id],expiresAt:now+86400000},all,now)
+ eq(result.share.short_slug,'Ab3xZ9kQ')
+ eq(result.share.shortUrl,'https://tcfqr.link/Ab3xZ9kQ')
+ // The capability is still the token; the slug only points at it.
+ eq(result.share.token,'a'.repeat(64))
+ // The mint is scoped to the owner and the share it belongs to, never to a
+ // destination chosen by the request.
+ eq(db.calls.find(c=>c[0]==='rpc'&&c[1]==='intel_chart_share_short_link'),['rpc','intel_chart_share_short_link',{p_org:'org',p_user:'owner',p_share:id}])
+})
+Deno.test('a short address that cannot be minted never loses the link itself',async()=>{
+ for(const answer of [null,'',{},'no slash/here','A'.repeat(40)]){
+  const db=dbMock([null,{state},live,answer])
+  const result=await chartShareService(db,actor,{operation:'share_create',snapshotId:id,operationId:id,audience:'org',includeDrawingIds:[],expiresAt:now+86400000},all,now)
+  eq(result.share.shortUrl,null)
+  eq(result.share.token,'a'.repeat(64))
+ }
+})
+Deno.test('a retried create reuses the stored slug instead of minting a second one',async()=>{
+ const db=dbMock([{...live,short_slug:'Ab3xZ9kQ'}])
+ const result=await chartShareService(db,actor,{operation:'share_create',snapshotId:id,operationId:id,audience:'org',expiresAt:now+86400000},all,now)
+ eq(result.share.shortUrl,'https://tcfqr.link/Ab3xZ9kQ')
+ eq(db.calls.some(c=>c[0]==='rpc'),false)
+})
+Deno.test('the management list shows the short address of each live link',async()=>{
+ const db=dbMock([[{...live,short_slug:'Ab3xZ9kQ'},{...live,id:id2,short_slug:null}]])
+ const result=await chartShareService(db,actor,{operation:'share_list',snapshotId:id},all,now)
+ eq(result.shares[0].shortUrl,'https://tcfqr.link/Ab3xZ9kQ')
+ eq(result.shares[1].shortUrl,null)
+ // Listing never mints: a read stays a read.
+ eq(db.calls.some(c=>c[0]==='rpc'),false)
+})

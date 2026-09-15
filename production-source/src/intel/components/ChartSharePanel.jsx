@@ -35,7 +35,11 @@ export default function ChartSharePanel({context,captureLayout,captureFrame=null
  const verified=!!seriesCapture?.proof
  const save=async()=>{
   const id=++generation.current
-  const body={operation:'snapshot_save',title,layout:preview,capture:seriesCapture,includeDrawingIds:[]}
+  // The saved version keeps every drawing on the chart, because the link is
+  // meant to open the chart the member made. Leaving this empty saved a version
+  // with no drawings at all, so no note could ever be offered on the next step.
+  // A replay capture has no drawings by construction, which the service checks.
+  const body={operation:'snapshot_save',title,layout:preview,capture:seriesCapture,includeDrawingIds:(preview.drawings||[]).map(d=>d.id)}
   const signature=JSON.stringify(body);if(operation.current?.signature!==signature)operation.current={signature,id:crypto.randomUUID()}
   setBusy(true);setError(null)
   try{
@@ -53,7 +57,7 @@ export default function ChartSharePanel({context,captureLayout,captureFrame=null
   <div className="intel-investigation-analysis-heading"><h2 id={heading}>{t('chart.share.dialog_title',{defaultValue:'Share this chart'})}</h2><button type="button" onClick={close}>{t('common.close',{defaultValue:'Close'})}</button></div>
   {captureFrame&&<ChartShareImage capture={()=>captureFrame(preview.range)} layout={preview} source={chartSource}/>}
   <h3 className="eyebrow">{t('chart.share.link_option',{defaultValue:'Or share a link'})}</h3>
-  <p className="intel-analysis-caption">{t('chart.share.intro',{defaultValue:'A link points at a saved version of this chart, so a reader sees exactly what you saw. Save that version first, then choose an audience, an expiry and the notes to include.'})}</p>
+  <p className="intel-analysis-caption">{t('chart.share.intro',{defaultValue:'A link points at a saved version of this chart, so a reader sees exactly what you saw, drawings and indicators included, and cannot change it. Save that version first, then choose an audience, an expiry and the notes to include.'})}</p>
   <ChartShareCard layout={preview} source={chartSource} capturedAt={seriesCapture?.proof?.issuedAt??null} latestObservation={latestObservation}/>
   <label>{t('chart.share.title_label',{defaultValue:'Saved version title'})}<input maxLength={120} value={title} disabled={busy} onChange={e=>setTitle(e.target.value)}/></label>
   {!verified&&<p role="status">{t('chart.share.unverified_capture',{defaultValue:'This price response has no verified capture yet, so it cannot be saved or shared. Reload the chart period to refresh it.'})}</p>}

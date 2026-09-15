@@ -371,18 +371,27 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   <ResponsiveChartTools label="Chart tools">
   <div className="intel-workstation-toolbar" role="group" aria-label="Chart display controls">
 
+   {/* A read-only workstation is somebody else's saved chart. It can be zoomed,
+       panned, hovered and read, but nothing here may re-render it as a
+       different chart: the view, the scale, the indicator set, the layout
+       preset, the time zone and the volume lane are all part of what the author
+       saved, so they are absent rather than merely disabled. A disabled control
+       still reads as "you could change this", and a disabled select still
+       announced the author's private preset name. */}
+   {!readOnly&&<>
    <label>View<select value={ohlc?mode:'line'} onChange={e=>setMode(e.target.value)}><option value="line">Line</option><option value="candles" disabled={!ohlc}>Candles</option><option value="ohlc" disabled={!ohlc}>OHLC bars</option></select></label>
 
    <label>Scale<select value={scale} onChange={e=>setScale(e.target.value)}><option value="linear">Linear</option><option value="log">Logarithmic</option><option value="percent">Percent</option><option value="indexed">Indexed to 100</option></select></label>
 
-   <label>Layout<select disabled={readOnly} value={preset} onChange={e=>{setPreset(e.target.value);setStudies(presets[e.target.value]);setVolume(e.target.value==='Volume')}}>{Object.keys(presets).map(p=><option key={p}>{p}</option>)}{preset==='Custom'&&<option>Custom</option>}</select></label>
+   <label>Layout<select value={preset} onChange={e=>{setPreset(e.target.value);setStudies(presets[e.target.value]);setVolume(e.target.value==='Volume')}}>{Object.keys(presets).map(p=><option key={p}>{p}</option>)}{preset==='Custom'&&<option>Custom</option>}</select></label>
 
    <label>Time<select value={timezone} onChange={e=>setTimezone(e.target.value)}><option value="UTC">UTC</option>{deviceZone!=='UTC'&&<option value={deviceZone}>Device time</option>}{!['UTC',deviceZone].includes(timezone)&&<option value={timezone}>{timezone}</option>}</select></label>
 
-   <ChartIndicatorMenu studies={studies} disabled={readOnly} onToggle={toggleIndicator} onAdvanced={()=>setStudyDialog(true)}/>
+   <ChartIndicatorMenu studies={studies} onToggle={toggleIndicator} onAdvanced={()=>setStudyDialog(true)}/>
+   </>}
    <button type="button" aria-expanded={structureOpen} onClick={()=>{setStructureOpen(v=>!v);setStructureSelection(null)}}>Structure</button>
 
-   <label className="intel-workstation-check"><input type="checkbox" checked={volume} disabled={!hasVolume} onChange={e=>setVolume(e.target.checked)}/>{volumeLabel}</label>
+   {!readOnly&&<label className="intel-workstation-check"><input type="checkbox" checked={volume} disabled={!hasVolume} onChange={e=>setVolume(e.target.checked)}/>{volumeLabel}</label>}
 
    <button type="button" aria-pressed={autoScale} onClick={()=>setAutoScale(v=>!v)}>Auto scale</button>
 
