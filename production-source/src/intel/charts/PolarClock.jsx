@@ -37,7 +37,7 @@ export default function PolarClock({ title, description, period = '24h', buckets
         />
       }
     >
-      <svg viewBox="0 0 340 340" role="img"
+      <svg viewBox="0 0 340 340" role="img" className="intel-chart-radial"
         aria-label={`${title}. ${period}. ${t('charts.show_as_table', { defaultValue: 'Show as table' })}`}>
         <circle cx={CX} cy={CY} r={R_IN} fill="none" stroke={gridStroke} />
         <circle cx={CX} cy={CY} r={R_OUT} fill="none" stroke={gridStroke} strokeDasharray="2 5" />

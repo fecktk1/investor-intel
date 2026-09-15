@@ -238,6 +238,98 @@ export async function loadMarketContextBySymbols(supabase, symbols = []) {
   } catch { return {} }
 }
 
+// ── Price history on demand, and the facts the daily passes already recorded ──
+
+const HISTORY_UNAVAILABLE = reason => ({
+  history: { points: [], interval: null, source: null, observedAt: null, fetchedAt: null, state: 'unavailable', reason, credits: null },
+  metrics: { volatility30d: null, maxDrawdown: null, distanceFromHigh: null, timeUnderWaterDays: null },
+  identity: null,
+})
+
+// Read one price-history window for an asset, plus the risk measures derived
+// from exactly those points (intel-markets `history` mode).
+//
+// A history read is the one read a reader pays for: the provider is sampled once
+// per range and the snapshot is then shared, so this is only ever called from an
+// explicit request. Never throws: an invalid range (HTTP 400
+// `invalid_history_range`), a rate limit, an exhausted budget or an unreachable
+// function all come back as `history.state: 'unavailable'` carrying the server's
+// own reason code, so the caller renders a reason rather than an empty chart.
+// A contract identity answers `no_coinmarketcap_listing` with every metric null.
+export async function readAssetHistory(supabase, { orgId, symbol, sourceProvider, providerId, range = '90d', signal } = {}) {
+  const body = {
+    orgId,
+    history: true,
+    range,
+    ...(sourceProvider && providerId != null ? { sourceProvider, providerId: String(providerId) } : symbol ? { symbol } : {}),
+  }
+  try {
+    const { data, error } = await supabase.functions.invoke('intel-markets', { body, ...(signal ? { signal } : {}) })
+    if (error) {
+      const details = await error.context?.json?.().catch(() => null)
+      return HISTORY_UNAVAILABLE(details?.error || error.message || 'history_unavailable')
+    }
+    if (data?.error) return HISTORY_UNAVAILABLE(data.error)
+    if (!data || typeof data !== 'object' || !data.history) return HISTORY_UNAVAILABLE('history_unavailable')
+    const history = data.history
+    return {
+      history: {
+        ...history,
+        points: Array.isArray(history.points) ? history.points : [],
+        state: typeof history.state === 'string' ? history.state : 'unavailable',
+        reason: history.reason ?? (history.state === 'unavailable' ? 'history_unavailable' : null),
+      },
+      metrics: data.metrics && typeof data.metrics === 'object' ? data.metrics : HISTORY_UNAVAILABLE('history_unavailable').metrics,
+      identity: data.identity || null,
+    }
+  } catch { return HISTORY_UNAVAILABLE('history_unavailable') }
+}
+
+const FACTS_UNAVAILABLE = (op, reason) => (op === 'cohorts'
+  ? { state: 'unavailable', reason, cohorts: [], assets: null, unavailable: true }
+  : {
+    state: 'unavailable', reason,
+    asset: null, supply: null, age: null, deployments: [], notice: null,
+    deltas: { rows: [], days: null, unavailable: true, reason }, factsAt: null, attribution: null,
+  })
+
+// Read the recorded facts for one asset — supply trust, the listing notice, every
+// deployment, listing age and the daily market-pair/supply deltas — or the
+// listing-age cohort table (`op: 'cohorts'`). Both are reads of rows another job
+// already wrote: no provider call, no credits.
+//
+// Never throws. A 404 (`asset_not_found`), a 400 or an unreachable function all
+// come back as `{ state: 'unavailable', reason }` with every section empty, so
+// no section can ever be filled in with a number that was not read.
+export async function readAssetFacts(supabase, { orgId, sourceProvider, providerId, days = 30, op = 'asset', provider, signal } = {}) {
+  const body = op === 'cohorts'
+    ? { op: 'cohorts', orgId, ...(provider ? { provider } : {}) }
+    : { op: 'asset', orgId, sourceProvider, providerId: providerId == null ? providerId : String(providerId), days }
+  try {
+    const { data, error } = await supabase.functions.invoke('intel-asset-facts', { body, ...(signal ? { signal } : {}) })
+    if (error) {
+      const details = await error.context?.json?.().catch(() => null)
+      return FACTS_UNAVAILABLE(op, details?.error || error.message || 'asset_facts_unavailable')
+    }
+    if (data?.error) return FACTS_UNAVAILABLE(op, data.error)
+    if (!data || typeof data !== 'object') return FACTS_UNAVAILABLE(op, 'asset_facts_unavailable')
+    if (op === 'cohorts') {
+      if (!Array.isArray(data.cohorts)) return FACTS_UNAVAILABLE(op, data.reason || 'asset_facts_unavailable')
+      return { ...data, state: data.unavailable ? 'unavailable' : 'ready', reason: data.reason ?? null }
+    }
+    if (!data.asset) return FACTS_UNAVAILABLE(op, data.reason || 'asset_facts_unavailable')
+    return {
+      ...data,
+      state: 'ready',
+      reason: null,
+      deployments: Array.isArray(data.deployments) ? data.deployments : [],
+      deltas: data.deltas && typeof data.deltas === 'object'
+        ? { ...data.deltas, rows: Array.isArray(data.deltas.rows) ? data.deltas.rows : [] }
+        : { rows: [], days: null, unavailable: true, reason: 'asset_facts_unavailable' },
+    }
+  } catch { return FACTS_UNAVAILABLE(op, 'asset_facts_unavailable') }
+}
+
 // Long-memory "year in review" for an asset (migration 228). Deterministic
 // rollup series + major events + top narratives over the last ~15 months.
 export async function loadAssetYearInReview(supabase, symbol, months = 15) {

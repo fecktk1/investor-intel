@@ -86,6 +86,9 @@ export default function IntelModeShell({ children }) {
           sectionDefault: 'Super admin',
           items: [
             { to: '/super-admin', icon: Shield, labelKey: 'nav.super_admin', defaultLabel: 'Super Admin' },
+            // Internal Intel-only surfaces. They live here rather than in
+            // INTEL_NAV because every reader of INTEL_NAV can open its routes.
+            { to: '/intel/admin/data-budget', icon: Gauge, labelKey: 'nav.data_budget', defaultLabel: 'Data budget' },
           ],
         },
       ]

@@ -3,7 +3,7 @@ import { Navigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { useProfile } from '../../lib/profile-context'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
-import { RadialGauge, RadialBars, Sunburst, PolarClock, Ribbon, Bump, HeatStrip, StackedShare, Sparkline } from '../charts'
+import { RadialGauge, RadialBars, Sunburst, PolarClock, Ribbon, Bump, HeatStrip, StackedShare, Sparkline, LineArea } from '../charts'
 
 const DAY = 86400000
 const WEEK = DAY * 7
@@ -103,6 +103,21 @@ const SHARE_SERIES = [
   { key: 'other', label: 'Other', tone: 'fourth', track: [25.2, 24.2, 23.1, 22.3, 21.9, 22.3, 22.6, 22.3, 22.3] },
 ].map(s => ({ ...s, points: SHARE_TIMES.map((t, i) => ({ t, value: s.track[i] })) }))
 
+// Forty-two daily closes with their reported volume, a decline from day 6 to
+// day 21 and a recovery on day 34 — the shape the price-history figure draws.
+const LINE_PRICES = [
+  3120, 3186, 3240, 3298, 3355, 3402, 3361, 3288, 3190, 3104, 3021, 2960, 2884, 2812,
+  2760, 2705, 2688, 2641, 2604, 2570, 2538, 2496, 2544, 2611, 2688, 2742, 2810, 2879,
+  2944, 3011, 3086, 3140, 3212, 3288, 3410, 3388, 3441, 3496, 3522, 3489, 3540, 3588,
+]
+const LINE_POINTS = LINE_PRICES.map((price, i) => ({
+  t: T0 + i * DAY,
+  value: price,
+  secondary: Math.round((9 + ((i * 7) % 11)) * 1_000_000_000 * (1 + (i % 5) * 0.12)),
+}))
+const LINE_SPANS = [{ from: T0 + DAY * 6, to: T0 + DAY * 21, tone: 'red', label: 'Deepest decline: -25.7%' }]
+const LINE_MARKS = [{ t: T0 + DAY * 34, tone: 'green', label: 'Back at the previous peak' }]
+
 const SPARKS = [
   { key: 'BTC', label: 'BTC', tone: 'accent', values: [64100, 64980, 63120, 65340, 66800, 66210, 68040] },
   { key: 'ETH', label: 'ETH', tone: 'blue', values: [3120, 3080, 3190, 3240, 3160, 3210, 3305] },
@@ -126,6 +141,7 @@ const SAMPLES = {
     heat: HEAT,
     share: SHARE_SERIES,
     sparks: SPARKS,
+    line: LINE_POINTS,
   },
   zero: {
     gaugeValue: 0,
@@ -137,6 +153,7 @@ const SAMPLES = {
     heat: HEAT.map(c => ({ ...c, value: 0 })),
     share: SHARE_SERIES.map(s => ({ ...s, points: s.points.map(p => ({ ...p, value: 0 })) })),
     sparks: SPARKS.map(s => ({ ...s, values: s.values.map(() => 0) })),
+    line: LINE_POINTS.map(p => ({ ...p, value: 0, secondary: 0 })),
   },
 }
 
@@ -252,6 +269,16 @@ export default function ChartLabPage() {
         description={t('lab.charts_stacked_sub', { defaultValue: 'Recorded share of total market capitalisation by segment.' })}
         series={data.share} formatTime={week}
         state={state} reason={reason} onSelect={pick('Share band')}
+      />
+
+      <LineArea
+        title={t('lab.charts_linearea_title', { defaultValue: 'Price with volume, decline and recovery' })}
+        description={t('lab.charts_linearea_sub', { defaultValue: 'Daily closes as the line, reported volume as the faint band along the bottom, the deepest decline shaded between its peak and trough, and the day the peak was regained marked.' })}
+        points={data.line} spans={LINE_SPANS} marks={LINE_MARKS}
+        valueLabel={t('lab.charts_linearea_value', { defaultValue: 'Close' })}
+        secondaryLabel={t('lab.charts_linearea_secondary', { defaultValue: 'Volume' })}
+        formatValue={usd} formatSecondary={usd} formatTime={day}
+        state={state} reason={reason} onSelect={pick('Span or mark')}
       />
 
       <figure className="intel-chart intel-chart-kit">

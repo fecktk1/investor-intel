@@ -4,7 +4,7 @@
 //
 // The numbers pinned here are the contract the Data budget panel and the
 // nightly SQL apply share. `app_private.intel_apply_plan_targets` in
-// 20260915020100_intel_schedule_policy_apply.sql mirrors the same table and is
+// 20260915004534_intel_schedule_policy_apply.sql mirrors the same table and is
 // pinned independently by scripts/test-intel-schedule-policy.mjs.
 
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'

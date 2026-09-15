@@ -43,7 +43,7 @@ export default function RadialGauge({
       }
     >
       {/* Extra horizontal room so the outermost zone labels never clip at phone width. */}
-      <svg viewBox="-40 0 420 246" role="img" style={{ maxHeight: `${height * 1.4}px` }}
+      <svg viewBox="-40 0 420 246" role="img" className="intel-chart-radial" style={{ maxHeight: `${height * 1.4}px` }}
         aria-label={`${title}. ${fmt(safeValue)}. ${t('charts.show_as_table', { defaultValue: 'Show as table' })}`}>
         <path d={arcStroke(CX, CY, R - BAND / 2, A0, A1)} fill="none" stroke={trackStroke} strokeWidth={BAND} />
         {bands.map((band, i) => {

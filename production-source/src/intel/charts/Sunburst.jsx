@@ -62,7 +62,7 @@ export default function Sunburst({ title, description, root, depth = 3, formatVa
         />
       }
     >
-      <svg viewBox="0 0 340 340" role="img"
+      <svg viewBox="0 0 340 340" role="img" className="intel-chart-radial"
         aria-label={`${title}. ${fmt(total)}. ${t('charts.show_as_table', { defaultValue: 'Show as table' })}`}>
         <circle cx={CX} cy={CY} r={R0} fill="none" stroke={gridStroke} />
         {arcs.map(arc => {

@@ -8,6 +8,10 @@
 .intel-chart-kit-state { color: var(--fg-4); font-size: .82rem; line-height: 1.6; padding-block: 1.25rem; }
 .intel-chart-kit-readout { color: var(--fg-3); font-size: .78rem; line-height: 1.6; padding-top: .6rem; min-height: 1.6em; }
 .intel-chart-kit svg { display: block; width: 100%; max-width: 100%; height: auto; overflow: visible; }
+/* Round figures (gauges, rings, sunbursts, clocks) read at one size; a ring
+   that fills a full-width section is a wall, not a figure. Strips and lines
+   keep the full width. */
+.intel-chart-kit svg.intel-chart-radial { max-width: 22rem; }
 .intel-chart-kit svg text { fill: var(--fg-4); font-size: 11px; font-family: Inter, sans-serif; }
 .intel-chart-kit svg text.intel-chart-value { fill: var(--fg-1); font-variant-numeric: tabular-nums; }
 .intel-chart-kit svg text.intel-chart-strong { fill: var(--fg-2); }

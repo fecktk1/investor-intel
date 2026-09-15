@@ -22,7 +22,14 @@ import AlertSourceReceipt,{alertValueLabel} from '../components/AlertSourceRecei
 import AlertRuleHistory from '../components/AlertRuleHistory'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
 
-const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift', 'unlock', 'supply_shock', 'metadata_migration']
+const TRIGGERS = ['price_move', 'liquidity_drop', 'volume_spike', 'wallet_activity', 'narrative_heat', 'holder_shift', 'unlock', 'supply_shock', 'metadata_migration', 'metadata_notice']
+
+// A listing notice is present or it is not, so its rule carries no reader
+// threshold and no comparator choice: threshold_pct is fixed at 1, the
+// evaluation is a level match at the daily metadata clock, and the rule
+// re-arms after its cooldown. Built here — not in marketAlertConfig — because
+// it is not a market trigger and must never pick up the market fields.
+export const METADATA_NOTICE_CONFIG = { threshold_pct: 1, condition: 'legacy_level', repeat: 'rearm', direction: 'either' }
 
 // P10 — Smart Alerts. Rules are created here; evaluation + the AI "why it
 // matters" artifact run server-side (cron + intel-generate) in production.
@@ -98,7 +105,7 @@ function ScopedAlertsPage() {
       } else {
         const ent = await resolveEntity(supabase, org.id, { kind: form.trigger === 'wallet_activity' ? 'wallet' : 'asset', chain: form.chain, value: form.value.trim() })
         entityId = ent.id
-        config = form.trigger === 'liquidity_drop' ? { min_liquidity_usd: threshold } : form.trigger === 'wallet_activity' ? { min_usd: threshold } : form.trigger === 'unlock' ? {window_days:threshold} : form.trigger === 'metadata_migration' ? {} : { threshold_pct: threshold }
+        config = form.trigger === 'liquidity_drop' ? { min_liquidity_usd: threshold } : form.trigger === 'wallet_activity' ? { min_usd: threshold } : form.trigger === 'unlock' ? {window_days:threshold} : form.trigger === 'metadata_migration' ? {} : form.trigger === 'metadata_notice' ? { ...METADATA_NOTICE_CONFIG } : { threshold_pct: threshold }
       }
       config={...config,title:form.title,note:form.note,visibility:'private',...(MARKET_TRIGGERS.includes(form.trigger)?marketAlertConfig(form):{})}
       if(form.trigger==='unlock'&&threshold>90)throw Error('Choose an unlock window from zero to 90 days.')
@@ -133,11 +140,12 @@ function ScopedAlertsPage() {
           <input className="input w-full" data-tutorial="intel-alerts.identifier-input" placeholder={form.trigger === 'narrative_heat' ? 'Narrative slug' : form.trigger === 'wallet_activity' ? 'Wallet address' : t('watchlist.ph.token', { defaultValue: 'Token mint / contract' })} value={form.value} onChange={(e) => setForm((f) => ({ ...f, value: e.target.value }))} />
         </label>
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('alerts.trigger', { defaultValue: 'Trigger' })}</span>
-          <select className="select" data-tutorial="intel-alerts.trigger-select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: tr.replace(/_/g, ' ') })}</option>)}</select>
+          <select className="select" data-tutorial="intel-alerts.trigger-select" value={form.trigger} onChange={(e) => setForm((f) => ({ ...f, trigger: e.target.value }))}>{TRIGGERS.map((tr) => <option key={tr} value={tr}>{t(`alerts.triggers.${tr}`, { defaultValue: tr === 'metadata_notice' ? 'Listing notice' : tr.replace(/_/g, ' ') })}</option>)}</select>
         </label>
-        <label className="block w-28"><span className="text-[11px] text-[var(--fg-4)]">{form.trigger === 'liquidity_drop' ? 'Liquidity below $' : form.trigger === 'wallet_activity' ? 'Transfer above $' : form.trigger === 'narrative_heat' ? 'Momentum points' : form.trigger==='unlock' ? 'Days ahead' : form.trigger==='metadata_migration' ? 'All material changes' : '%'}</span>
-          <input className="input w-full" type="number" min="0" step="any" required disabled={form.trigger==='metadata_migration'} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
+        <label className="block w-28"><span className="text-[11px] text-[var(--fg-4)]">{form.trigger === 'liquidity_drop' ? 'Liquidity below $' : form.trigger === 'wallet_activity' ? 'Transfer above $' : form.trigger === 'narrative_heat' ? 'Momentum points' : form.trigger==='unlock' ? 'Days ahead' : form.trigger==='metadata_migration' ? 'All material changes' : form.trigger==='metadata_notice' ? t('alerts.notice_threshold_label', { defaultValue: 'Any notice present' }) : '%'}</span>
+          <input className="input w-full" type="number" min="0" step="any" required disabled={form.trigger==='metadata_migration'||form.trigger==='metadata_notice'} value={form.threshold} onChange={(e) => setForm((f) => ({ ...f, threshold: e.target.value }))} />
         </label>
+        {form.trigger==='metadata_notice'&&<p className="intel-analysis-caption w-full" data-testid="metadata-notice-explanation">{t('alerts.notice_explanation', { defaultValue: 'Fires when a CoinMarketCap listing notice is present for this asset. It is evaluated at the daily metadata clock, not on your schedule, and the wording of the notice is not interpreted: the rule reports only that a notice exists, so read the notice itself before acting. There is no threshold and no direction to choose — the rule re-arms after its cooldown.' })}</p>}
         <details className="w-full"><summary>Condition, original note and activation</summary>
           <label>Alert name<input maxLength={120} value={form.title} onChange={e=>setForm(f=>({...f,title:e.target.value}))}/></label>
           {MARKET_TRIGGERS.includes(form.trigger)&&<MarketAlertFields form={form} setForm={setForm} trigger={form.trigger} disabled={busy}/>}

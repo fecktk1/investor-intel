@@ -23,6 +23,7 @@ const MarketResearchPage = React.lazy(() => import('./pages/MarketResearchPage')
 const InvestigationPage = React.lazy(() => import('./pages/InvestigationPage'))
 const ChartSnapshotPage = React.lazy(() => import('./pages/ChartSnapshotPage'))
 const MarketsPage = React.lazy(() => import('./pages/MarketsPage'))
+const MarketStructurePage = React.lazy(() => import('./pages/MarketStructurePage'))
 const MarketAssetPage = deferredRoute(() => import('./pages/MarketAssetPage'), <div className="intel-route-loading" role="status">Loading research…</div>)
 const PortfolioPage = React.lazy(() => import('./pages/PortfolioPage'))
 const PortfolioAssetPage = React.lazy(() => import('./pages/PortfolioAssetPage'))
@@ -32,6 +33,7 @@ const AnalyzeInputPage = React.lazy(() => import('./pages/AnalyzeInputPage'))
 const ExecutionPage = React.lazy(() => import('./pages/ExecutionPage'))
 const DefiPage = React.lazy(() => import('./pages/DefiPage'))
 const MacroPage = React.lazy(() => import('./pages/MacroPage'))
+const RegimePage = React.lazy(() => import('./pages/RegimePage'))
 const BriefsPage = React.lazy(() => import('./pages/BriefsPage'))
 const AlertsPage = React.lazy(() => import('./pages/AlertsPage'))
 const ThesisPage = React.lazy(() => import('./pages/ThesisPage'))
@@ -50,6 +52,7 @@ const IntelSettingsPage = React.lazy(() => import('./pages/IntelSettingsPage'))
 const CommentKingPage = React.lazy(() => import('./pages/CommentKingPage'))
 const NewsPage = React.lazy(() => import('./pages/NewsPage'))
 const ChartLabPage = React.lazy(() => import('./pages/ChartLabPage'))
+const DataBudgetPage = React.lazy(() => import('./pages/DataBudgetPage'))
 const SupportInboxPage = React.lazy(() => import('../pages/SupportInboxPage'))
 const SupportTicketPage = React.lazy(() => import('../pages/SupportTicketPage'))
 
@@ -76,6 +79,10 @@ export default function IntelApp() {
         <Routes>
           <Route index element={<MarketPulsePage />} />
           <Route path="markets" element={<MarketsPage />} />
+          {/* CMC capture figures (rank map, RWA universe, index constituents,
+              liquidation heat). Distinct from /intel/market-structure, which is
+              the exchange market-research workspace. */}
+          <Route path="structure" element={<MarketStructurePage />} />
           <Route path="rwa" element={<MarketResearchPage workspace="rwa" />} />
           <Route path="market-structure" element={<MarketResearchPage workspace="structure" />} />
           <Route path="discovery" element={<MarketResearchPage workspace="discovery" />} />
@@ -84,6 +91,7 @@ export default function IntelApp() {
           <Route path="chart-snapshots/:id" element={<ChartSnapshotPage />} />
           <Route path="markets/:symbol" element={<MarketAssetPage />} />
           <Route path="macro" element={<MacroPage />} />
+          <Route path="regime" element={<RegimePage />} />
           <Route path="watchlist" element={<WatchlistPage />} />
           <Route path="portfolio" element={<PortfolioPage />} />
           <Route path="portfolio/:portfolioId/asset/:assetKey" element={<PortfolioAssetPage />} />
@@ -129,6 +137,10 @@ export default function IntelApp() {
 
           {/* Internal chart kit gallery; the page itself gates on super admin. */}
           <Route path="lab/charts" element={<ChartLabPage />} />
+
+          {/* Provider plan, schedule cost and capture depth; the page itself
+              gates on super admin and the edge function answers 403 as well. */}
+          <Route path="admin/data-budget" element={<DataBudgetPage />} />
 
           <Route path="research" element={<SavedResearchPage />} />
           <Route path="settings" element={<IntelSettingsPage />} />

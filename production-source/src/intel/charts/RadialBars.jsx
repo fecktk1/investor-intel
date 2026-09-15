@@ -28,7 +28,7 @@ export default function RadialBars({ title, description, series = [], formatValu
         />
       }
     >
-      <svg viewBox="0 0 280 280" role="img"
+      <svg viewBox="0 0 280 280" role="img" className="intel-chart-radial"
         aria-label={`${title}. ${rows.map(r => `${r.label}: ${fmt(r.value)}`).join('. ')}`}>
         {rows.map(r => (
           <g key={r.key ?? r.index}>

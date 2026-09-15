@@ -24,6 +24,7 @@ import CrossExchangeSpreadCard from '../components/CrossExchangeSpreadCard'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import RegimeBanner from '../components/RegimeBanner'
 import RankMovers from '../components/RankMovers'
+import RecentlyDiscovered from '../components/RecentlyDiscovered'
 import { IntelMetricCard, IntelPageHeader, IntelPageShell, IntelTabs } from '../components/IntelPrimitives'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
@@ -40,6 +41,7 @@ const ScreenVerification=import.meta.env.DEV?lazy(()=>import('../dev/ScreenVerif
 // Route-level split: the chart kit is only paid for by readers who open the
 // market context rail or the Degen screen.
 const MarketsCharts = lazy(() => import('../components/MarketsCharts'))
+const RegimeRibbon = lazy(() => import('../components/RegimeRibbon'))
 // INTEGRATION POINTS. DegenCharts (Degen screen / intel-degen contract) and
 // AssetResolveResult (asset resolver) are owned by other work in flight. A bare
 // dynamic import of a file that does not exist yet fails at transform time, so
@@ -342,8 +344,10 @@ export default function MarketsPage() {
               </>
             )}
           </section>
+          <RecentlyDiscovered />
           {contextOpen && <div className="intel-expanded-context">
           <Suspense fallback={<p role="status" className="py-6 text-sm text-[var(--fg-4)]">{t('markets.charts_loading', { defaultValue: 'Loading market figures…' })}</p>}>
+            <RegimeRibbon compact />
             <MarketsCharts
               snapshot={snap}
               macro={macro}

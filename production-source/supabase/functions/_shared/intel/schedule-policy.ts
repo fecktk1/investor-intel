@@ -22,7 +22,7 @@
 //      ("requires_plan:startup"), never attempted and never silently dropped.
 //
 // The target tables below are mirrored in
-// `supabase/migrations/20260915020100_intel_schedule_policy_apply.sql`
+// `supabase/migrations/20260915004534_intel_schedule_policy_apply.sql`
 // (`app_private.intel_apply_plan_targets`), which is what pg_cron runs nightly.
 // Change one and you must change the other; both are pinned by their own tests.
 

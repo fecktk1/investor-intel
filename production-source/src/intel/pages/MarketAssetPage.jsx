@@ -42,6 +42,8 @@ import AssetYearInReview from '../components/AssetYearInReview'
 import { OnchainActivityCard, EcosystemNarrativesCard, CatalystsNewsCard, UpcomingUnlocksCard } from '../components/MarketEnrichmentCards'
 import TokenRiskBadge from '../components/TokenRiskBadge'
 import MarketCoverageRing from '../components/MarketCoverageRing'
+import AssetHistoryFigure from '../components/AssetHistoryFigure'
+import AssetFactsPanel from '../components/AssetFactsPanel'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 const PROVIDER_LABELS = { binance: 'Binance', coinbase: 'Coinbase', kraken: 'Kraken', kucoin: 'KuCoin' }
@@ -225,6 +227,13 @@ export default function MarketAssetPage() {
       {/* What this identity can feed, and why the rest cannot. Detail payloads
           from before universal resolution carry no coverage: render nothing. */}
       {d.coverage && <MarketCoverageRing coverage={d.coverage} identity={d.identity} />}
+
+      {/* Price history is read on request only — one range is one provider
+          sampling charged against the shared budget — so this figure fetches
+          nothing until the reader chooses a range. The facts panel below it
+          reads rows the daily passes already wrote and costs nothing. */}
+      <AssetHistoryFigure sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
+      <AssetFactsPanel sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
 
       <AssetSectionNav sections={[
         { id: 'asset-chart', key: 'asset.chart_position', label: 'Chart & position' },

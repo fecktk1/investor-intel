@@ -12,7 +12,7 @@
 import {
   Activity, Compass, Star, Radar, Wallet, BarChart3, LineChart, Scale,
   NotebookPen, Newspaper, Bell, HelpCircle, MessageSquare, Bookmark, Settings, Rss, Landmark, Briefcase, LifeBuoy,
-  LayoutDashboard, CalendarCheck,
+  LayoutDashboard, CalendarCheck, Network, Gauge,
 } from 'lucide-react'
 import { THESIS_JOURNAL_ENABLED } from './lib/flags'
 
@@ -43,6 +43,8 @@ export const INTEL_NAV = [
   ]},
   { sectionKey: 'section.markets_workspace', sectionDefault: 'Markets', items: [
     { to: '/intel/markets', icon: Compass, labelKey: 'nav.markets', defaultLabel: 'Markets' },
+    { to: '/intel/regime', icon: Gauge, labelKey: 'nav.regime', defaultLabel: 'Market regime' },
+    { to: '/intel/structure', icon: Network, labelKey: 'nav.structure_figures', defaultLabel: 'Structure figures' },
     { to: '/intel/discovery', icon: Compass, labelKey: 'nav.discovery', defaultLabel: 'Discovery' },
     { to: '/intel/macro', icon: Landmark, labelKey: 'nav.macro', defaultLabel: 'Macro' },
     { to: '/intel/market-context', icon: Activity, labelKey: 'nav.market_context', defaultLabel: 'Market Context' },

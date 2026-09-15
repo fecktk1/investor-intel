@@ -53,6 +53,9 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
     const provenance = Array.isArray(result?.provenance) ? result.provenance : []
     return provenance
       .map((entry, index) => ({ ...entry, index }))
+      // `index` is the shared-record write, not a source the ladder asked. It is
+      // reported on its own line below; it is never a tenth rung of the ring.
+      .filter(entry => entry.step !== 'index')
       .sort((a, b) => (ladderIndex(a.step) - ladderIndex(b.step)) || (a.index - b.index))
       .map(entry => {
         const outcome = OUTCOME[entry.outcome] || OUTCOME.skipped
@@ -76,6 +79,23 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
     if (value >= 0.25) return t('resolve.outcome_error', { defaultValue: 'Failed' })
     return t('resolve.outcome_skipped', { defaultValue: 'Not asked' })
   }
+
+  // On-demand indexing: the first successful resolution of an asset by anyone
+  // creates the shared market_assets record. The server reports it as an `index`
+  // provenance entry appended after the nine ladder steps.
+  const indexEntry = useMemo(() => {
+    const provenance = Array.isArray(result?.provenance) ? result.provenance : []
+    return provenance.find(entry => entry?.step === 'index') || null
+  }, [result])
+
+  const indexLine = indexEntry ? (
+    indexEntry.outcome === 'hit' ? t('resolve.index_hit', { defaultValue: 'Indexed for everyone' })
+      : indexEntry.outcome === 'miss' ? t('resolve.index_miss', { defaultValue: 'Already indexed' })
+        : t('resolve.index_not', {
+          defaultValue: 'Not indexed: {{detail}}',
+          detail: indexEntry.detail || t('resolve.index_no_detail', { defaultValue: 'no reason given' }),
+        })
+  ) : null
 
   const statusLine = {
     resolved: t('resolve.status_resolved', { defaultValue: 'One asset matches this identifier.' }),
@@ -164,6 +184,10 @@ export default function AssetResolveResult({ result, onPick, onRefresh }) {
           </tbody>
         </table>
       </details>
+
+      {indexLine && (
+        <p className="intel-resolve-index intel-event-meta">{indexLine}</p>
+      )}
 
       {sunburstRoot && (
         <Sunburst
