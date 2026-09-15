@@ -1757,6 +1757,8 @@
       "add": "Add indicator",
       "remove": "Remove",
       "calculating": "Calculating indicators…",
+      "active_list": "Active indicators",
+      "remove_active": "Remove {{label}}",
       "loading": "Loading the indicator list…",
       "appearance": "Chart appearance",
       "appearance_app": "Follow app theme",

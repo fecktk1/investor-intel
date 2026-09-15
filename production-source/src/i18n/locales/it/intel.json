@@ -942,6 +942,8 @@
       "add": "Aggiungi indicatore",
       "remove": "Rimuovi",
       "calculating": "Calcolo degli indicatori…",
+      "active_list": "Indicatori attivi",
+      "remove_active": "Rimuovi {{label}}",
       "loading": "Caricamento dell’elenco degli indicatori…",
       "appearance": "Aspetto del grafico",
       "appearance_app": "Segui il tema dell’app",

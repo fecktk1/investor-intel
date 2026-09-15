@@ -942,6 +942,8 @@
       "add": "Shto tregues",
       "remove": "Hiq",
       "calculating": "Po llogariten treguesit…",
+      "active_list": "Treguesit aktivë",
+      "remove_active": "Hiq {{label}}",
       "loading": "Po ngarkohet lista e treguesve…",
       "appearance": "Pamja e grafikut",
       "appearance_app": "Ndiq temën e aplikacionit",

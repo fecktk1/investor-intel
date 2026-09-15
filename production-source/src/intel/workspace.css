@@ -358,6 +358,15 @@
 .intel-workstation-toolbar button, .intel-chart-navigation button { font-size: 12px; border-bottom: 1px solid var(--border-default); min-height: 32px; padding: 5px 2px; }
 .intel-workstation-toolbar button[aria-pressed="true"] { border-color: var(--accent); color: var(--fg-1); }
 .intel-workstation-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; min-height: 32px; }
+/* The controls on the left, the indicators in force on the right, each in the
+   colour of its line. On a narrow screen the list wraps under the controls. */
+.intel-workstation-head { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 24px; }
+.intel-workstation-head > .intel-workstation-toolbar { flex: 1 1 520px; min-width: 0; }
+.intel-workstation-active { list-style: none; margin: 0 0 0 auto; padding: 6px 0 0; display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto; max-width: min(100%, 380px); font-size: 12px; }
+.intel-workstation-active li { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.intel-workstation-active li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intel-workstation-head .intel-workstation-active button { min-height: 24px; padding: 0 6px; border: 0; color: inherit; font-size: 15px; line-height: 1; opacity: .75; }
+.intel-workstation-head .intel-workstation-active button:hover, .intel-workstation-head .intel-workstation-active button:focus-visible { opacity: 1; }
 /* Indicators: a plain disclosure on a hairline, never a floating card. */
 .intel-indicator-menu { position: relative; }
 .intel-indicator-menu > button[aria-expanded="true"] { border-color: var(--accent); color: var(--fg-1); }

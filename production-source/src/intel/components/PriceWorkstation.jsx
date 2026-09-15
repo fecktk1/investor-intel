@@ -293,6 +293,10 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  useEffect(()=>{api.current?.applyOptions({localization:{timeFormatter:time=>barTime(Number(time)*1000,timezone)},timeScale:{tickMarkFormatter:(time,type)=>new Date(Number(time)*1000).toLocaleString(undefined,{timeZone:timezone,...tickMarkParts(type)})}})},[timezone,ready])
 
+ // One colour per drawn line: the first study's first line takes the accent,
+ // every other line walks the study palette. The active list uses the same
+ // function, so a name reads in the colour of the line it names.
+ const studyColor=(studyIndex,seriesIndex)=>studyIndex===0&&seriesIndex===0?palette?.accent||studyColors[0]:studyColors[(studyIndex+seriesIndex)%studyColors.length]
  useLayoutEffect(()=>{
   const chart=api.current;if(!chart||!source)return
   for(const series of studySeries.current)chart.removeSeries(series)
@@ -309,7 +313,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
     if(!line.points.length)continue
 
-   const pane=result.pane==='price'?0:addPane(result.pane),series=chart.addSeries(line.kind==='histogram'?HistogramSeries:LineSeries,{color:studyIndex===0&&seriesIndex===0?palette?.accent||studyColors[0]:studyColors[(studyIndex+seriesIndex)%studyColors.length],lineWidth:1,priceLineVisible:false,lastValueVisible:false,title:line.name,...(['rsi','vwrsi','stoch_rsi'].includes(result.pane)?{autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})}:{})},pane)
+   const pane=result.pane==='price'?0:addPane(result.pane),series=chart.addSeries(line.kind==='histogram'?HistogramSeries:LineSeries,{color:studyColor(studyIndex,seriesIndex),lineWidth:1,priceLineVisible:false,lastValueVisible:false,...(['rsi','vwrsi','stoch_rsi'].includes(result.pane)?{autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})}:{})},pane)
 
     series.setData(studyRendererData(line.points,source.grid));studySeries.current.push(series)
 
@@ -412,9 +416,25 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   '--border-default':theme==='gray'?'#464b55':'#343b46','--border-subtle':'#464b55','--signal-green':'#6cc6a2','--signal-red':'#e89a9d','--accent':'#dfa647','--forge-gold':'#dfa647'}
 
 
+ // The indicators in force, beside the controls rather than as labels on the
+ // plot: each in the colour its line is drawn in, with its parameters, and a
+ // way to take it off the chart. A read-only chart lists them without the
+ // control, because the set is part of what the author saved.
+ const activeStudies=studies.length>0&&<ul className="intel-workstation-active" aria-label={t('chart.indicators.active_list',{defaultValue:'Active indicators'})}>
+  {studies.map((study,index)=>{
+   const spec=STUDY_CATALOG[study.type];if(!spec)return null
+   const params=Object.entries({...spec.defaults,...study.params}).filter(([,value])=>value!=null).map(([key,value])=>`${key} ${value}`).join(', ')
+   const label=params?`${spec.label} · ${params}`:spec.label
+   return <li key={study.id} style={{color:studyColor(index,0)}}><span>{label}</span>
+    {!readOnly&&<button type="button" aria-label={t('chart.indicators.remove_active',{label,defaultValue:'Remove {{label}}'})} onClick={()=>{setStudies(rows=>rows.filter(row=>row.id!==study.id));setPreset('Custom')}}>×</button>}
+   </li>
+  })}
+ </ul>
+
  return <div className="intel-price-workstation" ref={root} data-size={covering?'covering':size} style={chartTheme}>
 
   <ResponsiveChartTools label="Chart tools">
+  <div className="intel-workstation-head">
   <div className="intel-workstation-toolbar" role="group" aria-label="Chart display controls">
 
    {/* A read-only workstation is somebody else's saved chart. It can be zoomed,
@@ -446,6 +466,8 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
    <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true);emitWorkspace()}}>Reset view</button>
 
    {persistence&&!readOnly&&<ChartLayoutLaunch context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<SnapshotSave triggerLabel={t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})} context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} captureFrame={captureFrame} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><AssetNavigator triggerLabel="Assets" context={persistence}/><AlertEditor triggerLabel="Create alert" context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
+  </div>
+  {activeStudies}
   </div>
 
   {!replay&&!readOnly&&drawings.controls}

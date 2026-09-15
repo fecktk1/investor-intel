@@ -942,6 +942,8 @@
       "add": "Indikator hinzufügen",
       "remove": "Entfernen",
       "calculating": "Indikatoren werden berechnet…",
+      "active_list": "Aktive Indikatoren",
+      "remove_active": "{{label}} entfernen",
       "loading": "Indikatorliste wird geladen…",
       "appearance": "Chart-Darstellung",
       "appearance_app": "App-Theme folgen",

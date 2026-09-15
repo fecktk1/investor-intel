@@ -942,6 +942,8 @@
       "add": "Indicator toevoegen",
       "remove": "Verwijderen",
       "calculating": "Indicatoren worden berekend…",
+      "active_list": "Actieve indicatoren",
+      "remove_active": "{{label}} verwijderen",
       "loading": "Indicatorlijst wordt geladen…",
       "appearance": "Uiterlijk van de grafiek",
       "appearance_app": "Het app-thema volgen",
