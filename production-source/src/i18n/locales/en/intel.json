@@ -576,7 +576,7 @@
     "quiet": "The lease is held and no on-chain event has been reported in this window yet. A quiet contract is a quiet contract, not a missing tape.",
     "kind_swap": "Public swap",
     "kind_liquidity": "Pool liquidity",
-    "kind_agg": "Window swap volume",
+    "kind_agg": "Aggregate liquidity",
     "kind_traders": "Unique traders",
     "venue_unreported": "Venue unreported",
     "side_unclassified": "unclassified",

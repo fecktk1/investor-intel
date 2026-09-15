@@ -125,7 +125,7 @@ export default function LiveTape({canonicalKey,onMarkers}) {
         const url=meta.transaction?explorerTxUrl(identity.platform,meta.transaction):null
         return <li key={`${meta.transaction??'row'}:${meta.logIndex??index}:${event.observedAt}`} className="flex flex-wrap gap-x-3">
           <span className="intel-event-meta">{clockTime(event.observedAt)}</span>
-          <span>{t(`live_tape.kind_${event.kind}`,{defaultValue:{swap:'Public swap',liquidity:'Pool liquidity',agg:'Window swap volume',traders:'Unique traders'}[event.kind]||String(event.kind)})}</span>
+          <span>{t(`live_tape.kind_${event.kind}`,{defaultValue:{swap:'Public swap',liquidity:'Pool liquidity',agg:'Aggregate liquidity',traders:'Unique traders'}[event.kind]||String(event.kind)})}</span>
           <span className="intel-number">{event.unit==='USD'?fmtVol(event.value):`${fmtNum(event.value)} ${event.unit??''}`.trim()}</span>
           <span>{meta.venue||t('live_tape.venue_unreported',{defaultValue:'Venue unreported'})}</span>
           <span>{meta.eventType||t('live_tape.side_unclassified',{defaultValue:'unclassified'})}</span>

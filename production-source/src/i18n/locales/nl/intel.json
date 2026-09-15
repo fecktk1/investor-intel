@@ -450,7 +450,7 @@
     "quiet": "De reservering wordt aangehouden en er is in dit venster nog geen on-chain gebeurtenis gerapporteerd. Een stil contract is een stil contract, geen ontbrekende tape.",
     "kind_swap": "Publieke swap",
     "kind_liquidity": "Poolliquiditeit",
-    "kind_agg": "Swapvolume in het venster",
+    "kind_agg": "Geaggregeerde liquiditeit",
     "kind_traders": "Unieke handelaren",
     "venue_unreported": "Handelsplatform niet gerapporteerd",
     "side_unclassified": "niet geclassificeerd",

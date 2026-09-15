@@ -450,7 +450,7 @@
     "quiet": "La concession est détenue et aucun événement on-chain n’a encore été rapporté dans cette fenêtre. Un contrat calme est un contrat calme, pas un tape manquant.",
     "kind_swap": "Swap public",
     "kind_liquidity": "Liquidité du pool",
-    "kind_agg": "Volume de swaps de la fenêtre",
+    "kind_agg": "Liquidité agrégée",
     "kind_traders": "Traders uniques",
     "venue_unreported": "Plateforme non indiquée",
     "side_unclassified": "non classé",

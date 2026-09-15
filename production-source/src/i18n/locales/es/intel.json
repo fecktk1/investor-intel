@@ -450,7 +450,7 @@
     "quiet": "La concesión está activa y todavía no se ha reportado ningún evento on-chain en esta ventana. Un contrato tranquilo es un contrato tranquilo, no un tape que falta.",
     "kind_swap": "Swap público",
     "kind_liquidity": "Liquidez del pool",
-    "kind_agg": "Volumen de swaps de la ventana",
+    "kind_agg": "Liquidez agregada",
     "kind_traders": "Traders únicos",
     "venue_unreported": "Plataforma no reportada",
     "side_unclassified": "sin clasificar",

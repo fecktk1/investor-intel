@@ -8,7 +8,7 @@ const subjects=[market,base,sol]
 const push=(channel:string,data:any,params:any,ts:number=now)=>JSON.stringify({type:'data',channel,params,data,ts})
 const swap=(patch:any={},params:any={platform_id:199,address:evm})=>push('onchain@transaction',{tx:'0xfeed',lgid:7,v:1250.5,tp:'buy',en:'Uniswap v3',t0a:evm,t1a:'0x'+'cd'.repeat(20),a0:10,a1:2,t0pu:125.05,...patch},params)
 const liquidity=(patch:any={})=>push('onchain@liquidity_event',{txn:'0xbeef',lgid:3,tu:9000,tp:'add',en:'Aerodrome',t0a:evm,t1a:'0x'+'cd'.repeat(20),a0:4,a1:5,...patch},{platform_id:199,address:evm})
-const agg=(patch:any={})=>push('onchain@token_agg_event',{vu:43210.75,tc:128,win:'1h',pid:199,a:evm,...patch},{platform_id:199,address:evm})
+const agg=(patch:any={})=>push('onchain@token_agg_event',{pid:199,a:evm,ap:0.0047202,p:0.0047203,lu:2065408.09,ts:now,...patch},{platform_id:199,address:evm})
 const traders=(patch:any={})=>push('onchain@unique_trader',{ut:412,ot:now-3600000,win:'1h',...patch},{platform_id:16,address:mint})
 
 Deno.test('both lease grammars parse, and nothing else does',()=>{
@@ -70,7 +70,10 @@ Deno.test('every on-chain kind decodes with its own shape',()=>{
     logIndex:'7',excluded:false,baseAddress:evm,quoteAddress:'0x'+'cd'.repeat(20),baseQuantity:10,quoteQuantity:2})
   eq(decodeCmcLive(liquidity(),subjects,now),{kind:'liquidity',subject:base,eventType:'add',amountUsd:9000,timestamp:now,venue:'Aerodrome',transaction:'0xbeef',
     logIndex:'3',baseAddress:evm,quoteAddress:'0x'+'cd'.repeat(20),baseQuantity:4,quoteQuantity:5})
-  eq(decodeCmcLive(agg(),subjects,now),{kind:'agg',subject:base,window:'1h',volumeUsd:43210.75,txCount:128,timestamp:now})
+  eq(decodeCmcLive(agg(),subjects,now),{kind:'agg',subject:base,liquidityUsd:2065408.09,priceUsd:0.0047202,aggregatePriceUsd:0.0047202,timestamp:now})
+  const live:any=decodeCmcLive(swap({v:undefined,vu:0.1226,t0a:'0x'+'42'.repeat(20),t1a:evm,t1pu:0.00472,t0pu:2457.9}),subjects,now)
+  eq([live.kind,live.amountUsd,live.priceUsd],['swap',0.1226,0.00472],'the probed body: vu is the value and the subject token price is its own leg')
+  eq(decodeCmcLive('{"id":2,"code":0,"ts":1,"msg":"PONG"}',subjects,now),{kind:'control'})
   eq(decodeCmcLive(traders(),subjects,now),{kind:'traders',subject:sol,uniqueTraders:412,window:'1h',timestamp:now,windowStart:now-3600000})
   eq(decodeCmcLive(swap({tp:'liquidate'}),subjects,now).kind,'swap')
   eq((decodeCmcLive(swap({tp:'liquidate'}),subjects,now) as any).side,'unclassified','an unknown side is reported, not guessed')
@@ -80,12 +83,12 @@ Deno.test('a zero swap, a zero window and a zero trader count are values',async(
   const zero=decodeCmcLive(swap({v:0}),subjects,now) as any
   eq(zero.kind,'swap');eq(zero.amountUsd,0)
   eq((await liveObservation(zero,now)).value,0)
-  eq((decodeCmcLive(agg({vu:0,tc:0}),subjects,now) as any).volumeUsd,0)
+  eq((decodeCmcLive(agg({lu:0}),subjects,now) as any).liquidityUsd,0)
   eq((await liveObservation(decodeCmcLive(traders({ut:0}),subjects,now),now)).value,0)
 })
 Deno.test('unreadable on-chain frames are invalid, never a silent drop',()=>{
   const bad=[swap({tx:undefined}),swap({lgid:null}),swap({v:'oops'}),swap({v:-1}),liquidity({txn:undefined}),liquidity({tu:null}),
-    agg({vu:undefined}),agg({vu:-5}),traders({ut:null}),traders({ut:2.5}),traders({ut:-1}),
+    agg({lu:undefined}),agg({lu:-5}),traders({ut:null}),traders({ut:2.5}),traders({ut:-1}),
     swap({},{platform_id:199,address:'0xnot-an-address'}),swap({},{platform_id:56,address:evm}),
     push('onchain@transaction',{tx:'0x1',lgid:1,v:1},{platform_id:199,address:'0x'+'11'.repeat(20)})]
   for(const frame of bad)eq(decodeCmcLive(frame,subjects,now).kind,'invalid',frame.slice(0,90))
@@ -93,7 +96,7 @@ Deno.test('unreadable on-chain frames are invalid, never a silent drop',()=>{
 })
 Deno.test('stream clocks bound every channel the same way',()=>{
   for(const channel of ['onchain@transaction','onchain@liquidity_event','onchain@token_agg_event']){
-    const body=channel==='onchain@transaction'?{tx:'0x1',lgid:1,v:5}:channel==='onchain@liquidity_event'?{txn:'0x1',lgid:1,tu:5}:{vu:5}
+    const body=channel==='onchain@transaction'?{tx:'0x1',lgid:1,v:5}:channel==='onchain@liquidity_event'?{txn:'0x1',lgid:1,tu:5}:{lu:5}
     eq(decodeCmcLive(push(channel,body,{platform_id:199,address:evm},now-LIVE_STALE_MS-1),subjects,now).kind,'invalid','stale')
     eq(decodeCmcLive(push(channel,body,{platform_id:199,address:evm},now+5001),subjects,now).kind,'invalid','future')
     eq(decodeCmcLive(push(channel,body,{platform_id:199,address:evm},now-LIVE_STALE_MS),subjects,now).kind!=='invalid',true)
@@ -137,13 +140,13 @@ Deno.test('observations carry the tape metrics, the source channel and the DEX e
   eq(l.metadata.eventType,'add');eq(l.metadata.transaction,'0xbeef');eq(l.metadata.venue,'Aerodrome');eq(l.metadata.baseAddress,evm)
   eq(l.metadata.scope,'Reported pool liquidity activity; not a personal trade or executable order-book depth.')
   const a=await liveObservation(decodeCmcLive(agg(),subjects,now),now)
-  eq([a.metric,a.unit,a.value,a.periodSeconds],['swap_volume_usd','USD',43210.75,3600])
-  eq(a.sourceRef,'coinmarketcap:onchain@token_agg_event');eq(a.metadata.txCount,128);eq(a.metadata.window,'1h')
+  eq([a.metric,a.unit,a.value,a.periodSeconds],['liquidity_usd','USD',2065408.09,null])
+  eq(a.sourceRef,'coinmarketcap:onchain@token_agg_event');eq(a.metadata.priceUsd,0.0047202);eq(a.metadata.aggregatePriceUsd,0.0047202)
   const t=await liveObservation(decodeCmcLive(traders(),subjects,now),now)
   eq([t.metric,t.unit,t.value,t.periodSeconds],['unique_traders','accounts',412,3600])
   eq(t.subject,solChain);eq(t.metadata.chain,'solana');eq(t.metadata.contract,mint);eq(t.metadata.leaseSubject,sol)
   eq(t.sourceRef,'coinmarketcap:onchain@unique_trader')
-  eq((await liveObservation(decodeCmcLive(agg({win:'13h'}),subjects,now),now)).periodSeconds,null,'an unknown window is no period, never a guess')
+  eq((await liveObservation(decodeCmcLive(traders({win:'13h'}),subjects,now),now)).periodSeconds,null,'an unknown window is no period, never a guess')
 })
 Deno.test('every observation id is stable per event and separates one event from the next',async()=>{
   const first=decodeCmcLive(swap(),subjects,now),second=decodeCmcLive(swap({lgid:8}),subjects,now)
@@ -152,7 +155,7 @@ Deno.test('every observation id is stable per event and separates one event from
   eq(/^cmc:[a-f0-9]{64}$/.test((await liveObservation(first,now)).id),true)
 })
 Deno.test('the metric vocabulary the read path and the worker share is closed',()=>{
-  eq([...LIVE_TAPE_METRICS],['swap_event_usd','liquidity_event_usd','swap_volume_usd','unique_traders'])
+  eq([...LIVE_TAPE_METRICS],['swap_event_usd','liquidity_event_usd','liquidity_usd','unique_traders'])
   eq(LIVE_TAPE_METRICS.map(liveTapeKind),['swap','liquidity','agg','traders'])
   eq(liveTapeKind('price'),'quote');eq(liveTapeKind('holder_count'),null)
   eq(LIVE_PERSISTED_KINDS.sort(),['agg','liquidity','quote','swap','traders'])

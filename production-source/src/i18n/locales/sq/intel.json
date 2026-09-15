@@ -450,7 +450,7 @@
     "quiet": "Rezervimi mbahet dhe në këtë dritare ende nuk është raportuar asnjë ngjarje në rrjet. Një kontratë e qetë është një kontratë e qetë, jo një rrjedhë që mungon.",
     "kind_swap": "Shkëmbim publik",
     "kind_liquidity": "Likuiditeti i pool-it",
-    "kind_agg": "Volumi i shkëmbimeve në dritare",
+    "kind_agg": "Likuiditeti i agreguar",
     "kind_traders": "Tregtues unikë",
     "venue_unreported": "Vendi i tregtimit nuk raportohet",
     "side_unclassified": "e paklasifikuar",
