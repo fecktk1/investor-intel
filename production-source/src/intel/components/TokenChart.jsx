@@ -196,6 +196,9 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   }, [range, assetKey, requestKey, refreshTick])
   useEffect(() => { onRangeChange?.(range) }, [range, onRangeChange])
   useEffect(() => { setViewport(null);setRendererFailed(false) }, [assetKey,range])
+  // A renderer refusal is about the bars it was given. New bars (the range's own
+  // series arriving after a transitional render) get the workstation again.
+  useEffect(() => { setRendererFailed(false) }, [series])
   useEffect(() => {
     const close = e => { if (e.key === 'Escape') closeDetail() }
     document.addEventListener('keydown', close)

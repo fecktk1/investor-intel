@@ -1,4 +1,6 @@
 import {regularBarGrid} from '../../../supabase/functions/_shared/intel/chart-analysis'
+/** Continuous-axis points one series may carry, bars and whitespace together. */
+export const WHITESPACE_POINT_LIMIT=10000
 export function rendererData(bars,mode='candles',intervalMs,timeWindow) {
  let grid=regularBarGrid(bars,intervalMs)
  if(!grid)return null
@@ -8,9 +10,13 @@ export function rendererData(bars,mode='candles',intervalMs,timeWindow) {
   const start=grid.start+Math.floor((Math.min(grid.start,timeWindow.from)-grid.start)/grid.step)*grid.step
   const end=grid.start+Math.ceil((Math.max(grid.end,timeWindow.to)-grid.start)/grid.step)*grid.step
   const count=(end-start)/grid.step+1
-  if(count>10000)return null
-  const byTime=new Map(grid.points.map(point=>[point.t,point.bar]))
-  grid={...grid,start,end,points:Array.from({length:count},(_,i)=>({t:start+i*grid.step,bar:byTime.get(start+i*grid.step)??null}))}
+  // A window far wider than the bars (a two-year window still holding last
+  // week's hourly bars while the new range loads) is not a renderer failure:
+  // the whitespace is simply not extended, and the bars draw on their own grid.
+  if(count<=WHITESPACE_POINT_LIMIT){
+   const byTime=new Map(grid.points.map(point=>[point.t,point.bar]))
+   grid={...grid,start,end,points:Array.from({length:count},(_,i)=>({t:start+i*grid.step,bar:byTime.get(start+i*grid.step)??null}))}
+  }
  }
  return {grid,data:grid.points.map(({t,bar})=>!bar?{time:t/1000}:mode==='line'?{time:t/1000,value:bar.c}:{time:t/1000,open:bar.o,high:bar.h,low:bar.l,close:bar.c})}
 }

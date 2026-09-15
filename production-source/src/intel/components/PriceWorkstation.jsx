@@ -41,6 +41,10 @@ const barTime=(t,timeZone)=>new Date(t).toLocaleString(undefined,{dateStyle:'med
 
 
 
+// Time-axis marks by the renderer's own tick kind (0 year, 1 month, 2 day, 3
+// time, 4 time with seconds). A multi-year range marks years and months; a day
+// mark keeps the month so a week of daily bars still reads as dates.
+const tickMarkParts=type=>type===0?{year:'numeric'}:type===1?{month:'short',year:'2-digit'}:type===2?{month:'short',day:'numeric'}:{hour:'2-digit',minute:'2-digit',hour12:false}
 function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,replay=false,knownOnly=false,readOnly=false,height:baseHeight=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
  const {t}=useTranslation('intel',{useSuspense:false})
  const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null),root=useRef(null)
@@ -175,7 +179,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    api.current=chart;mainData.current=[];lastMode.current=null;fitted.current=false;sourceBounds.current=null;studySeries.current=[];setReady(v=>v+1)
 
-  }catch{callbacks.current.onFailure?.();return}
+  }catch(error){console.warn('[intel-chart] renderer could not be created',error);callbacks.current.onFailure?.();return}
 
   const resize=new ResizeObserver(entries=>{chart.applyOptions({width:Math.floor(entries[0].contentRect.width)});refreshGeometry()});resize.observe(host.current)
 
@@ -222,7 +226,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    refreshGeometry()
 
-  }catch{callbacks.current.onFailure?.()}
+  }catch(error){console.warn('[intel-chart] renderer could not draw this series',error);callbacks.current.onFailure?.()}
 
  },[source,mode,ready,ohlc,refreshGeometry,replay,viewKey])
  useEffect(()=>{
@@ -235,7 +239,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  },[scale,autoScale,ready,refreshGeometry])
 
- useEffect(()=>{api.current?.applyOptions({localization:{timeFormatter:time=>barTime(Number(time)*1000,timezone)},timeScale:{tickMarkFormatter:(time,type)=>new Date(Number(time)*1000).toLocaleString(undefined,{timeZone:timezone,...(type<=2?{month:'short',day:'numeric'}:{hour:'2-digit',minute:'2-digit',hour12:false})})}})},[timezone,ready])
+ useEffect(()=>{api.current?.applyOptions({localization:{timeFormatter:time=>barTime(Number(time)*1000,timezone)},timeScale:{tickMarkFormatter:(time,type)=>new Date(Number(time)*1000).toLocaleString(undefined,{timeZone:timezone,...tickMarkParts(type)})}})},[timezone,ready])
 
  useLayoutEffect(()=>{
   const chart=api.current;if(!chart||!source)return
