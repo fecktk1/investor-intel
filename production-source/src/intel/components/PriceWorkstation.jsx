@@ -86,17 +86,27 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  // it moved places it again, and the last placement is measured against the
  // bars actually on the chart. Measured live on 2026-09-15 before this hold: a
  // one-month view of 180 four-hour bars opened at bar 123 instead of bar 64.
- const placeWindow=(chart,range,hold=true)=>{
+ // `now` places at once as well: right for the first fit, which already runs
+ // two frames after its data, and for an appended bar; wrong in the task that
+ // just replaced the series with a longer history, where the hold alone places
+ // it. The window reported to the working state right after a placement is the
+ // one placed, so a placed-at-once window is what a restore hands back.
+ const placeWindow=(chart,range,{hold=true,now=true}={})=>{
   if(!chart||!range)return
   const scale=chart.timeScale(),until=performance.now()+250
-  scale.setVisibleLogicalRange(range)
   cancelAnimationFrame(viewportFrame.current)
-  if(!hold)return
+  if(now)scale.setVisibleLogicalRange(range)
+  // The renderer answers a read made right after a set with the range it had
+  // BEFORE the set, so a working state reported in the same task as a placement
+  // recorded the window the placement replaced, and a reload brought that old
+  // window back. The state is reported again once the placement has settled.
+  if(!hold){viewportFrame.current=requestAnimationFrame(()=>{viewportFrame.current=requestAnimationFrame(()=>{if(api.current===chart)emitWorkspace()})});return}
   const keep=()=>{
    if(api.current!==chart)return
    const current=scale.getVisibleLogicalRange()
    if(current&&Math.abs(current.from-range.from)>0.01)scale.setVisibleLogicalRange(range)
    if(performance.now()<until)viewportFrame.current=requestAnimationFrame(keep)
+   else emitWorkspace()
   }
   viewportFrame.current=requestAnimationFrame(keep)
  }
@@ -307,7 +317,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
     // Bars added at the FRONT (an indicator's warm-up) are the case the renderer
     // catches up on late, so that placement is held; bars added at the end (the
     // minute refresh) are placed once, as before, and never fight a pan.
-    if(nextRange)placeWindow(chart,nextRange,!!oldGrid&&source.grid.start!==oldGrid.start)
+    if(nextRange){const front=!!oldGrid&&source.grid.start!==oldGrid.start;placeWindow(chart,nextRange,{hold:front,now:!front})}
    }
    previousWindow.current=timeWindow?{...timeWindow}:null
    plottedGrid.current=source.grid
@@ -334,8 +344,19 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  // every other line walks the study palette. The active list uses the same
  // function, so a name reads in the colour of the line it names.
  const studyColor=(studyIndex,seriesIndex)=>studyIndex===0&&seriesIndex===0?palette?.accent||studyColors[0]:studyColors[(studyIndex+seriesIndex)%studyColors.length]
+ // The indicator lines are rebuilt AFTER the renderer has taken the price
+ // series in, never in the same task. Removing a study series in the task that
+ // also set the price series to a longer history left the renderer drawing
+ // only the candles it had before: the newest fifty-nine of a month were
+ // missing until the data was set again (measured live on 2026-09-15; with
+ // the removal held back, every candle stayed). Two frames later the renderer
+ // has settled and the rebuild is safe; the delay is not visible.
+ const studyFrame=useRef(0)
  useLayoutEffect(()=>{
   const chart=api.current;if(!chart||!source)return
+  cancelAnimationFrame(studyFrame.current)
+  studyFrame.current=requestAnimationFrame(()=>{studyFrame.current=requestAnimationFrame(()=>{if(api.current!==chart)return
+  const removed=studySeries.current.length>0
   for(const series of studySeries.current)chart.removeSeries(series)
 
   studySeries.current=[]
@@ -360,8 +381,15 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   if(volume&&hasVolume){const series=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false},addPane('volume'));series.setData(bars.filter(b=>b.v!=null).map(b=>({time:b.t/1000,value:b.v,color:b.c>=(b.o??b.c)?'#6CC6A299':'#D9878899'})));studySeries.current.push(series)}
 
+  // Removing a series while the renderer is still absorbing a longer price
+  // history froze the candles it draws at the count it had before, whatever
+  // the delay (measured live on 2026-09-15: the newest fifty-nine of a month
+  // missing, every time). Setting the price series again after the removal is
+  // what restored them every time, so the rebuild ends with exactly that.
+  if(removed&&main.current&&mainData.current.length)main.current.setData(mainData.current)
   chart.applyOptions({height:height+panes.size*96});chart.panes().forEach((pane,index)=>pane.setStretchFactor(index===0?height:96));refreshGeometry()
-
+  })})
+  return()=>cancelAnimationFrame(studyFrame.current)
  },[studyResult.results,volume,hasVolume,ready,source,height,refreshGeometry,palette]) // eslint-disable-line react-hooks/exhaustive-deps
 
  useEffect(()=>{
@@ -500,7 +528,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    <button type="button" onClick={cycleSize}>{size==='fullscreen'?t('chart.size.exit',{defaultValue:'Exit full screen'}):size==='tall'?t('chart.size.full',{defaultValue:'Full screen'}):t('chart.size.taller',{defaultValue:'Taller chart'})}</button>
 
-   <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true);emitWorkspace()}}>Reset view</button>
+   <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)placeWindow(api.current,{from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true);emitWorkspace()}}>Reset view</button>
 
    {persistence&&!readOnly&&<ChartLayoutLaunch context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<SnapshotSave triggerLabel={t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})} context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} captureFrame={captureFrame} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><AssetNavigator triggerLabel="Assets" context={persistence}/><AlertEditor triggerLabel="Create alert" context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
   </div>
