@@ -36,9 +36,13 @@ import { CATEGORY_CAPTURE_OPS } from '../_shared/intel/capture-categories.ts'
 import { CATEGORY_CAPTURE_VIEWS } from '../_shared/intel/capture-categories-read.ts'
 import { FX_CAPTURE_OPS } from '../_shared/intel/capture-fx.ts'
 import { FX_CAPTURE_VIEWS } from '../_shared/intel/capture-fx-read.ts'
+import { LISTING_CAPTURE_OPS } from '../_shared/intel/capture-listings.ts'
+import { LISTING_CAPTURE_VIEWS } from '../_shared/intel/capture-listings-read.ts'
+import { MEME_CAPTURE_OPS } from '../_shared/intel/capture-meme.ts'
+import { MEME_CAPTURE_VIEWS } from '../_shared/intel/capture-meme-read.ts'
 
-const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS }
-const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS }
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS }
+const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 function json(body: unknown, status = 200) {

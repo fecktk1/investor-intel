@@ -14,7 +14,7 @@ Deno.test('metadata notice rules are loaded and committed beside the existing ma
  const notice:any={metric:'metadata_notice',unit:'notice',overview:{noticePresent:true},observation:{id:'cmc-metadata-notice:1027:'+'b'.repeat(64),subject:'market:coinmarketcap:1027',provider:'coinmarketcap',sourceRef:'coinmarketcap:/v2/cryptocurrency/info',value:1,unit:'notice',periodSeconds:null,observedAt:'2026-09-14T06:00:00Z',recordedAt:'2026-09-14T06:00:00Z',expiresAt:'2026-09-16T06:00:00Z',sampleAt:'2026-09-14T06:00:00Z',clockBasis:'provider_observation',metadata:{noticeHash:'b'.repeat(64),excerpt:'Trading suspended.'},coverage:'fixture'}}
  let fired=0;const r=await evaluateMarketAlerts(db,async()=>{fired++},async()=>notice)
  eq(r.checked,1);eq(r.fired,1);eq(fired,1)
- eq(db.calls.find(c=>c[0]==='in')?.[2],['price_move','volume_spike','liquidity_drop','metadata_notice','liquidation_cascade','attention_entry'])
+ eq(db.calls.find(c=>c[0]==='in')?.[2],['price_move','volume_spike','liquidity_drop','metadata_notice','liquidation_cascade','attention_entry','listing_flag_change'])
  eq(db.calls.find(c=>c[0]==='intel_record_market_alert')[1].p_observation.value,1)
  eq(db.calls.find(c=>c[0]==='intel_record_market_alert')[1].p_observation.unit,'notice')
 })
@@ -31,4 +31,29 @@ Deno.test('capture-backed triggers are loaded and their source selectors are par
  eq(r.checked,3);eq(r.fired,3)
  eq(seen,['liquidation_cascade:1h','liquidation_cascade:4h','attention_entry:trending'])
  eq(db.calls.filter(c=>c[0]==='intel_record_market_alert').length,3)
+})
+Deno.test('listing flag-change rules are loaded and committed beside the existing market triggers',async()=>{
+ const flagRule={...rule,id:'flags',trigger_type:'listing_flag_change',config:{threshold_pct:1,condition:'legacy_level',repeat:'rearm',direction:'either'},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ const db=database([flagRule],{state:'fired'})
+ const before='a'.repeat(64),after='b'.repeat(64)
+ const flags:any={metric:'listing_flag_change',unit:'flags',overview:{changed:true},observation:{id:`cmc-new-listing-flags:1027:2026-09-15:${before}:${after}`,subject:'market:coinmarketcap:1027',provider:'coinmarketcap',sourceRef:'intel_new_listing_snapshots:coinmarketcap:1027',metric:'listing_flag_change',value:1,unit:'flags',periodSeconds:null,observedAt:'2026-09-15T06:10:00Z',recordedAt:'2026-09-15T06:10:00Z',expiresAt:'2026-09-17T06:10:00Z',sampleAt:'2026-09-15T06:10:00Z',clockBasis:'provider_observation',metadata:{securityHash:after,previousSecurityHash:before},coverage:'fixture'}}
+ let fired=0;const r=await evaluateMarketAlerts(db,async()=>{fired++},async()=>flags)
+ eq(r.checked,1);eq(r.fired,1);eq(fired,1)
+ eq(db.calls.find(c=>c[0]==='in')?.[2],['price_move','volume_spike','liquidity_drop','metadata_notice','liquidation_cascade','attention_entry','listing_flag_change'])
+ const recorded=db.calls.find(c=>c[0]==='intel_record_market_alert')[1]
+ eq(recorded.p_observation.value,1);eq(recorded.p_observation.unit,'flags');eq(recorded.p_observation.periodSeconds,null)
+ // Both hashes are in the id, so the SAME change read again is the same
+ // observation and the database, not the evaluator, refuses the second firing.
+ eq(recorded.p_observation.id.endsWith(`${before}:${after}`),true)
+})
+Deno.test('a flag-change rule shares one read with another rule on the same asset, and its failures are persisted',async()=>{
+ const flagRule={...rule,id:'flags',trigger_type:'listing_flag_change',config:{threshold_pct:1},entity:{canonical_ref_key:'market:coinmarketcap:1027'}}
+ const db=database([flagRule,{...flagRule,id:'flags-two'}],{state:'fired'})
+ let reads=0
+ const r=await evaluateMarketAlerts(db,async()=>{},async()=>{reads++;return evidence})
+ eq(reads,1,'two rules on the same asset and trigger are one read');eq(r.fired,2)
+ const broken=database([flagRule])
+ const failedRun=await evaluateMarketAlerts(broken,async()=>{},async()=>{throw Error('alert_source_coverage_unavailable')})
+ eq(failedRun.unavailable,1);eq(failedRun.fired,0)
+ eq(broken.calls.some(c=>c[0]==='intel_record_alert_evaluation'),true,'an unavailable source is recorded, never a silent success')
 })

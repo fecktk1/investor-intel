@@ -1,6 +1,7 @@
 import { hasVerifiedCexIdentity } from '../intel/market-read-quality.ts'
 import assert from 'node:assert/strict'
 import { cmcParams, cmcRows, cmcRequestBody, estimateCmcCredits, cmcObservedAt } from './cmc-capabilities.ts'
+import { cmcDexIdentity, cmcDexParams } from './cmc-dex.ts'
 import { requestCmc, cmcPlan, cmcCreditCeiling } from './cmc-transport.ts'
 import { planCmcRefresh, refreshCmcDemand } from './cmc-refresh-planner.ts'
 import { assembleTokenUnlockState } from '../intel/market-enrichment.ts'
@@ -333,6 +334,41 @@ Deno.test('registered DEX paths keep exact-contract identity, bounded batches an
  assert.deepEqual(cmcRequestBody('dexPriceBatch',cmcParams('dexPriceBatch',{tokens:[{platform:'ethereum',address:registered}]})),{tokens:[{platform:'ethereum',address:registered}]})
  assert.equal(cmcRequestBody('dexHolders',cmcParams('dexHolders',{platform:'ethereum',tokenAddress:registered,tag:'tag_whale',limit:5})).limit,5)
 })
+Deno.test('cmcDexParams keys each DEX family by its own subject and carries its own options',()=>{
+ const identity=cmcDexIdentity(`eip155:1:${registered}`)!
+ // Existing single-contract callers keep the exact params they had.
+ assert.deepEqual(cmcDexParams('dexToken',identity),{platform:'ethereum',address:registered})
+ assert.deepEqual(cmcDexParams('dexSecurity',identity),{platformName:'ethereum',address:registered})
+ assert.deepEqual(cmcDexParams('dexPools',identity),{platform:'ethereum',address:registered,size:'12'})
+ assert.deepEqual(cmcDexParams('dexSwaps',identity),{platform:'ethereum',address:registered,limit:'25'})
+ assert.deepEqual(cmcDexParams('dexLiquidityEvents',identity),{platform:'ethereum',address:registered,limit:'25'})
+ assert.deepEqual(cmcDexParams('dexHolderCount',identity),{platform:'ethereum',tokenAddress:registered})
+ assert.deepEqual(cmcDexParams('dexHolderHistory',identity),{platform:'ethereum',tokenAddress:registered,interval:'1d',limit:'30'})
+ // The holder family keys its subject as tokenAddress, never address.
+ assert.deepEqual(cmcDexParams('dexHolderTags',identity),{platform:'ethereum',tokenAddress:registered})
+ assert.deepEqual(cmcDexParams('dexHolders',identity,{tag:'tag_whale'}),{platform:'ethereum',tokenAddress:registered,tag:'tag_whale',limit:'50'})
+ assert.deepEqual(cmcDexParams('dexHolders',identity,{tag:'tag_bot',limit:10,lastId:'cursor'}),{platform:'ethereum',tokenAddress:registered,tag:'tag_bot',limit:'10',lastId:'cursor'})
+ // k-line windows are seconds and stay strings for the canonical param map.
+ assert.deepEqual(cmcDexParams('dexCandles',identity,{interval:'4h',unit:'native',limit:5,from:1700000000,to:1700003600}),
+  {platform:'ethereum',address:registered,interval:'4h',unit:'native',limit:'5',from:'1700000000',to:'1700003600'})
+ assert.deepEqual(cmcDexParams('dexCandles',identity),{platform:'ethereum',address:registered})
+ // Lookup and batch capabilities carry their own subjects, with no identity at all.
+ assert.deepEqual(cmcDexParams('dexSearch',null,{q:'paxg',limit:3}),{q:'paxg',limit:'3'})
+ assert.deepEqual(cmcDexParams('dexSearch',null,{q:'paxg',platform:'base'}),{q:'paxg',platform:'base'})
+ assert.deepEqual(cmcDexParams('dexBatch',null,{platform:'ethereum',addresses:[registered]}),{platform:'ethereum',addresses:[registered]})
+ assert.deepEqual(cmcDexParams('dexPriceBatch',null,{tokens:[{platform:'solana',address:solanaMint}]}),{tokens:[{platform:'solana',address:solanaMint}]})
+ // One identity is the single-member convenience case for a batch, not a requirement.
+ assert.deepEqual(cmcDexParams('dexBatch',identity),{platform:'ethereum',addresses:[registered]})
+ assert.deepEqual(cmcDexParams('dexPriceBatch',identity),{tokens:[{platform:'ethereum',address:registered}]})
+ assert.throws(()=>cmcDexParams('dexToken',null,{}),/missing_identifier/)
+ // Every branch still has to survive cmcParams; nothing here bypasses it.
+ assert.deepEqual(cmcParams('dexHolders',cmcDexParams('dexHolders',identity,{tag:'tag_whale'})),{limit:'50',platform:'ethereum',tag:'tag_whale',tokenAddress:registered})
+ assert.deepEqual(cmcParams('dexHolderTags',cmcDexParams('dexHolderTags',identity)),{platform:'ethereum',tokenAddress:registered})
+ assert.equal(cmcParams('dexCandles',cmcDexParams('dexCandles',identity,{limit:5})).unit,'usd')
+ assert.equal(cmcParams('dexSearch',cmcDexParams('dexSearch',null,{q:'paxg',limit:3})).limit,'3')
+ assert.equal(cmcParams('dexBatch',cmcDexParams('dexBatch',identity)).addresses,registered)
+ assert.throws(()=>cmcParams('dexHolders',cmcDexParams('dexHolders',identity)),/invalid_holder_tag/)
+})
 Deno.test('quote history accepts documented sub-daily intervals only inside their published windows',()=>{
  assert.equal(cmcParams('history',{id:1,interval:'hourly',count:744,time_start:'2026-08-15T00:00:00Z',time_end:'2026-09-14T00:00:00Z'}).interval,'hourly')
  assert.throws(()=>cmcParams('history',{id:1,interval:'hourly',count:745}),/invalid_parameter:count/)
@@ -347,7 +383,20 @@ Deno.test('k-line rows become named candle fields and dex holder responses have 
  assert.deepEqual(cmcRows('dexCandles',body).rows,[{o:1,h:2,l:0.5,c:1.5,v:100,t:1700000000,traders:7}])
  assert.equal(cmcObservedAt(body,'dexCandles'),new Date(1700000000000).toISOString())
  assert.equal(cmcObservedAt({data:[[1,2,0.5,1.5,100,4102444800,7]]},'dexCandles'),null)
- assert.deepEqual(cmcRows('dexHolders',{data:{holders:[{address:registered,balance:'1'}]}}).rows,[{address:registered,balance:'1'}])
+ // Holder rows survive only as the documented whitelist: an unknown provider key
+ // (here `address`) is dropped rather than carried, and no wallet is ever labelled a person.
+ const holder={address:registered,walletAddress:registered,balance:'1',percent:'0.5',tags:['tag_whale'],fundingSource:'binance',
+  buyUsd:'10',sellUsd:'4',realizedPnl:'6',buyCount:3,sellCount:1,name:'Some Person',symbol:'PAXG',riskLevelFlag:2,firstActiveTime:1700000000,lastActiveTime:1700003600}
+ const holderRow=cmcRows('dexHolders',{data:{holders:[holder],lastId:'cursor-1'}})
+ assert.deepEqual(holderRow.rows,[{walletAddress:registered,balance:'1',percent:'0.5',tags:['tag_whale'],fundingSource:'binance',
+  buyVolumeUsd:10,sellVolumeUsd:4,realizedPnlUsd:6,unrealizedPnlUsd:null,txCount:null,firstSeenAt:1700000000,lastSeenAt:1700003600}])
+ assert.equal(holderRow.nextCursor,'cursor-1')
+ for(const dropped of ['address','name','symbol','riskLevelFlag','buyCount','sellCount','quote'])assert.equal(dropped in holderRow.rows[0],false)
+ // Tag counts are classification counts, not quoted assets: no empty quote object.
+ const tagRows=cmcRows('dexHolderTags',{data:{platformId:1,tokenAddress:registered,holders:[{tag:'tag_whale',hc:12,tb:'900.5',hr:'0.25',extra:'x'}]}})
+ assert.deepEqual(tagRows.rows,[{tag:'tag_whale',hc:12,tb:900.5,hr:0.25}])
+ assert.equal(tagRows.total,1)
+ assert.equal(cmcRows('dexHolderTags',{data:{holders:Array.from({length:12},()=>({tag:'tag_bot',hc:1,tb:'1',hr:'0'}))}}).rows.length,8)
  assert.equal(cmcObservedAt({data:{holders:[{address:registered}]},status:{timestamp:'2026-09-15T00:00:00Z'}},'dexHolders'),null)
  assert.equal(cmcObservedAt({data:{tags:[]},status:{timestamp:'2026-09-15T00:00:00Z'}},'dexHolderTags'),null)
 })

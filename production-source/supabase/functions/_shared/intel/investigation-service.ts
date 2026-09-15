@@ -18,6 +18,7 @@ import {retainMarketSourceVersions} from './market-source-versions.ts'
 import {makeBenchmarkReceipt} from './benchmark-receipt.ts'
 import {benchmarkRequestPlan} from './benchmark-comparison.ts'
 import {dexCohortService} from './dex-cohort-service.ts'
+import {liveFocusSubject,liveContractSubject,liveObservationSubject,liveTapeKind,LIVE_TAPE_METRICS} from '../market-assets/cmc-live-focus.ts'
 
 export const INVESTIGATION_LENSES=['replay','ownership','fragility','attention','delta','stress','sector','coverage','sessions','counterargument','live','cohort','receipt','participation','liquidity','benchmark'] as const
 export function investigationIdentity(value:unknown) {
@@ -80,20 +81,59 @@ export async function readReceiptObservations(db:any,ids:string[],now:number) {
   for(let start=0;start<unique.length;start+=50)records.push(...await result(db.from('intel_market_observations').select('observation').in('id',unique.slice(start,start+50)).gt('retain_until',new Date(now).toISOString()).limit(50)))
   return records
 }
+/** Both lease grammars, plus the canonical contract key a market page already
+ * holds (`eip155:8453:0x…`, `solana:<mint>`) and the CMC identities
+ * `investigationIdentity` resolves. Anything else is not a tape subject. */
+export function liveTapeSubject(value:unknown) {
+  const direct=liveFocusSubject(value)??liveContractSubject(value)
+  if(direct)return direct
+  try{const identity=investigationIdentity(value);return identity.cryptoId?liveFocusSubject(identity.subject):liveContractSubject(identity.requested)}catch{return null}
+}
+/** The on-chain tape is a second, separate switch. Until the owner sets it
+ * after the worker release gate no contract lease is created, so the released
+ * worker's plan keeps holding market identities only. */
+export const liveOnchainEnabled=()=>Deno.env.get('CMC_LIVE_ONCHAIN_ENABLED')==='true'
+/** One subject's recent public tape plus this org's lease state. The
+ * service-role read is scoped to the caller's org, so a lease never discloses
+ * another org's viewers; bounded to one hour and 500 rows. */
+export async function readLiveTape(db:any,actor:{userId:string;orgId:string},input:any,now:number) {
+  const focus=liveTapeSubject(input.subject)
+  if(!focus)throw new Error('invalid_live_tape')
+  const since=input.since==null?now-300000:instant(input.since)
+  if(since==null||since>now+1000||now-since>3600000)throw new Error('invalid_live_tape_since')
+  // The lease speaks `contract:…`; the evidence lives under the chain subject
+  // the REST DEX rows already use, so one contract has one tape, not two.
+  const observationSubject=liveObservationSubject(focus.subject)!
+  const rows=await result(db.from('intel_market_observations').select('observation,observed_at,id').eq('subject',observationSubject).eq('provider','coinmarketcap')
+    .in('metric',[...LIVE_TAPE_METRICS]).gt('observed_at',new Date(since).toISOString()).gt('retain_until',new Date(now).toISOString())
+    .order('observed_at',{ascending:false}).order('id',{ascending:false}).limit(500))??[]
+  const leases=await result(db.from('intel_live_focus_demands').select('user_id,expires_at').eq('org_id',actor.orgId).eq('subject',focus.subject)
+    .gt('expires_at',new Date(now).toISOString()).limit(100))??[]
+  const lease={active:leases.length>0,expiresAt:leases.map((r:any)=>r.expires_at).sort().at(-1)??null,viewers:new Set(leases.map((r:any)=>r.user_id)).size}
+  const events=rows.map((row:any)=>{const o=row.observation as Observation
+    return {kind:liveTapeKind(o.metric),metric:o.metric,value:o.value,unit:o.unit,observedAt:o.observedAt,metadata:o.metadata??{}}})
+  // A quiet contract with a live lease is a quiet market, not a missing lease.
+  return {subject:focus.subject,observationSubject,events,asOf:new Date(now).toISOString(),lease,reason:!lease.active&&!events.length?'no_live_lease':null}
+}
 export async function investigationService(db:any,actor:{userId:string;orgId:string},input:any,now=Date.now()) {
+  const operation=input.operation??'load'
+  if(operation==='tape')return readLiveTape(db,actor,input,now)
   const identity=investigationIdentity(input.subject),lens=String(input.lens??'replay')
   if(!INVESTIGATION_LENSES.includes(lens as any))throw new Error('invalid_investigation_lens')
-  const operation=input.operation??'load'
   const sourceEnv=cmcPolicyEnvironment(await loadCmcOperatingSettings(db),key=>Deno.env.get(key),now)
   const historyPolicy=cmcHistoryPolicy(now,new Date(now+21600000).toISOString(),sourceEnv)
   if(operation==='live') {
-    if(!identity.cryptoId||typeof input.enabled!=='boolean'||(input.viewId!=null&&!uuid(input.viewId)))throw new Error('invalid_live_focus')
+    const contract=identity.cryptoId?null:liveContractSubject(identity.requested)
+    const focusSubject=identity.cryptoId?identity.subject:contract?.subject
+    if(!focusSubject||typeof input.enabled!=='boolean'||(input.viewId!=null&&!uuid(input.viewId)))throw new Error('invalid_live_focus')
     const settings=await loadCmcOperatingSettings(db)
-    const enabled=cmcLiveActivation(settings,key=>Deno.env.get(key))&&planAllows(cmcPlan(now,settings),'startup')
+    const enabled=cmcLiveActivation(settings,key=>Deno.env.get(key))&&planAllows(cmcPlan(now,settings),'startup')&&(!contract||liveOnchainEnabled())
     if(input.enabled&&!enabled)return {state:'polling',reason:'Shared live focus is not enabled for the current operating profile.',observation:null}
-    const expiresAt=await result(db.rpc('intel_live_focus_touch',{p_org:actor.orgId,p_user:actor.userId,p_subject:identity.subject,p_enabled:input.enabled,...(input.viewId!=null?{p_view:input.viewId}:{})}))
+    const expiresAt=await result(db.rpc('intel_live_focus_touch',{p_org:actor.orgId,p_user:actor.userId,p_subject:focusSubject,p_enabled:input.enabled,...(input.viewId!=null?{p_view:input.viewId}:{})}))
     if(!input.enabled)return {state:'paused',reason:null,observation:null,expiresAt}
-    const latest=await result(db.from('intel_market_observations').select('observation').eq('subject',identity.subject).eq('metric','price').eq('observation->>sourceRef','coinmarketcap:market@crypto_latest_price').gt('retain_until',new Date(now).toISOString()).order('observed_at',{ascending:false}).limit(1))
+    const query=db.from('intel_market_observations').select('observation').eq('subject',liveObservationSubject(focusSubject)!)
+    const latest=await result((contract?query.in('metric',[...LIVE_TAPE_METRICS]):query.eq('metric','price').eq('observation->>sourceRef','coinmarketcap:market@crypto_latest_price'))
+      .gt('retain_until',new Date(now).toISOString()).order('observed_at',{ascending:false}).limit(1))
     const observation=latest?.[0]?.observation??null,fresh=observation&&Date.parse(observation.expiresAt)>now
     return {state:!input.enabled?'paused':fresh?'live':'polling',reason:input.enabled&&!fresh?'Waiting for a fresh stream observation; cached polling remains available.':null,observation:fresh?observation:null,expiresAt}
   }

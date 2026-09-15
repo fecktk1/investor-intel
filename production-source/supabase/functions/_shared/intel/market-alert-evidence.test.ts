@@ -154,3 +154,60 @@ Deno.test('an hourly list that stopped being captured, or was never captured, as
   await assertRejects(()=>readMarketAlertEvidence(attentionDb(10*60000,[0]),attentionRule(config),now),Error,'alert_rule_config_invalid')
  }
 })
+
+// listing_flag_change: the two newest DAILY new-listing snapshots of one asset.
+// The value is a change test over their recorded security-flag hashes, and the
+// observation id carries both hashes and the newer snapshot's date.
+const DAY=86400000,HASH_A='a'.repeat(64),HASH_B='b'.repeat(64)
+const listingRule=(over:any={})=>({trigger_type:'listing_flag_change',config:{threshold_pct:1,condition:'legacy_level',repeat:'rearm',direction:'either',...over},entity:{canonical_ref_key:MARKET,display_symbol:'NEW'}})
+// `age` is how old the NEWER snapshot's capture is; `hashes` are [newer, older].
+const listingDb=(hashes:(string|null)[],options:{age?:number;rows?:number}={})=>captureDb(()=>{
+ const age=options.age??4*3600000,count=options.rows??hashes.length
+ const rows=hashes.slice(0,count).map((hash,i)=>({provider:'coinmarketcap',provider_id:'1027',symbol:'NEW',chain:'eip155:8453',contract_address:'0x'+'c'.repeat(40),
+  security_hash:hash,security_state:hash?'captured':'rate_limited',snapshot_date:new Date(now-age-i*DAY).toISOString().slice(0,10),captured_at:iso(-age-i*DAY)}))
+ return {data:rows}
+})
+const listingDay=(age=4*3600000)=>new Date(now-age).toISOString().slice(0,10)
+Deno.test('a changed flag hash between the two newest daily snapshots is a value of 1 dated by the newer capture',async()=>{
+ const database=listingDb([HASH_B,HASH_A])
+ const r=await readMarketAlertEvidence(database,listingRule(),now)
+ eq(r.metric,'listing_flag_change');eq(r.unit,'flags')
+ eq(r.observation.value,1);eq(r.observation.unit,'flags');eq(r.observation.periodSeconds,null)
+ eq(r.observation.clockBasis,'provider_observation')
+ eq(r.observation.observedAt,iso(-4*3600000));eq(r.observation.sampleAt,iso(-4*3600000));eq(r.observation.recordedAt,iso(-4*3600000))
+ eq(r.observation.expiresAt,iso(-4*3600000+48*3600000))
+ // Both hashes AND the snapshot date are in the id, so a re-armed rule cannot
+ // fire twice on one change and a later change is a different observation.
+ eq(r.observation.id,`cmc-new-listing-flags:1027:${listingDay()}:${HASH_A}:${HASH_B}`)
+ eq(r.observation.sourceRef,'intel_new_listing_snapshots:coinmarketcap:1027')
+ const metadata=(r.observation as any).metadata
+ eq(metadata.securityHash,HASH_B);eq(metadata.previousSecurityHash,HASH_A);eq(metadata.chain,'eip155:8453')
+ eq((r.overview as any).changed,true)
+ eq(database.calls.some(c=>c[0]==='from'&&c[1]==='intel_new_listing_snapshots'),true)
+ eq(database.calls.some(c=>c[0]==='eq'&&c[1]==='provider_id'&&c[2]==='1027'),true)
+ eq(database.calls.some(c=>c[0]==='limit'&&c[1]===2),true,'exactly the two newest snapshots are read')
+})
+Deno.test('an unchanged flag set is a recorded zero, not a missing observation',async()=>{
+ const r=await readMarketAlertEvidence(listingDb([HASH_A,HASH_A]),listingRule(),now)
+ eq(r.observation.value,0)
+ eq(r.observation.id,`cmc-new-listing-flags:1027:${listingDay()}:${HASH_A}:${HASH_A}`)
+ eq((r.overview as any).changed,false)
+})
+Deno.test('a baseline, a lost inspection and an uninspected row assert nothing at all',async()=>{
+ // One snapshot is a baseline: past flags are never reconstructed.
+ await assertRejects(()=>readMarketAlertEvidence(listingDb([HASH_A],{rows:1}),listingRule(),now),Error,'source_coverage_unavailable')
+ await assertRejects(()=>readMarketAlertEvidence(captureDb(()=>({data:[]})),listingRule(),now),Error,'source_coverage_unavailable')
+ // Losing coverage on either side is not a change.
+ await assertRejects(()=>readMarketAlertEvidence(listingDb([null,HASH_A]),listingRule(),now),Error,'metric_coverage_unavailable')
+ await assertRejects(()=>readMarketAlertEvidence(listingDb([HASH_B,null]),listingRule(),now),Error,'metric_coverage_unavailable')
+ await assertRejects(()=>readMarketAlertEvidence(listingDb([null,null]),listingRule(),now),Error,'metric_coverage_unavailable')
+ // A malformed recorded hash is not a hash.
+ await assertRejects(()=>readMarketAlertEvidence(listingDb(['nope',HASH_A]),listingRule(),now),Error,'metric_coverage_unavailable')
+})
+Deno.test('a lane that stopped capturing, an unreadable table and a contract subject each assert nothing',async()=>{
+ await assertRejects(()=>readMarketAlertEvidence(listingDb([HASH_B,HASH_A],{age:49*3600000}),listingRule(),now),Error,'fresh_source_unavailable')
+ await assertRejects(()=>readMarketAlertEvidence(captureDb(()=>({data:null,error:{message:'private detail'}})),listingRule(),now),Error,'source_read_failed')
+ await assertRejects(()=>readMarketAlertEvidence(listingDb([HASH_B,HASH_A]),{...listingRule(),entity:{canonical_ref_key:address}},now),Error,'canonical_identity')
+ // 47 hours is still inside the two-daily-pass window.
+ eq((await readMarketAlertEvidence(listingDb([HASH_B,HASH_A],{age:47*3600000}),listingRule(),now)).observation.value,1)
+})

@@ -25,6 +25,27 @@ export function dexEvidenceRows(name:string,body:any,params:Record<string,string
     if(typeof r.txn!=='string'||r.txn.length>200||r.lgid==null)continue
     add('liquidity_event_usd',r.tu,'USD',cmcDexInteger(r.ts),{eventType:typeof r.tp==='string'?r.tp:'Unclassified',venue:r.en??null,transaction:r.txn,logIndex:String(r.lgid),baseAddress:r.t0a,quoteAddress:r.t1a,baseQuantity:r.a0??null,quoteQuantity:r.a1??null,scope:'Reported pool liquidity activity; not a personal trade or executable order-book depth.'})
   }
+  // Probed 2026-09-14: /v1/dex/holders/tag_count carries NO provider clock —
+  // neither the rows nor the response say when the classification was computed.
+  // `observed` is therefore null and the caller must stamp these rows with the
+  // time it captured the response; a row dated by us is our capture time and has
+  // to be labelled as such, never presented as a provider observation time.
+  // (Rows with a null clock are dropped by normalizeCmcInvestigation until a
+  // caller supplies one, which is the safe direction: no invented dates.)
+  if(name==='dexHolderTags')for(const r of d.holders){
+    const count=cmcDexInteger(r.hc)
+    if(typeof r.tag!=='string'||count==null)continue
+    add('holder_tag_count',count,'accounts',null,{tag:r.tag,balance:r.tb??null,ratio:r.hr??null,
+      ratioUnit:'unknown',ratioUnitNote:'Provider-reported holding ratio; fraction versus percent requires explicit source confirmation.',
+      population:'Provider-classified token holder addresses; not people. Undated by the provider: the clock is our capture time.'})
+  }
+  // dexCandles is deliberately absent. A k-line row is a provider aggregate over
+  // a named period, not a fact observed at an instant, and an OHLC close is not
+  // the same quantity as the `price` metric this file already records from
+  // dexToken and discovery. Admitting a candle close would put two differently
+  // dated and differently derived price series under one subject and metric.
+  // Candles reach the app through cmcRows('dexCandles') and the chart lane, where
+  // cmcObservedAt keeps their own period clock.
   if(name==='dexSwaps')for(const r of d.swaps){
     add('swap_event_usd',r.v,'USD',cmcDexInteger(r.ts),{eventType:r.tp||'Unclassified',venue:r.en??null,transaction:r.tx,logIndex:String(r.lgid),baseAddress:r.t0a,quoteAddress:r.t1a,baseQuantity:r.a0??null,quoteQuantity:r.a1??null,
       basePriceUsd:r.t0pu??null,quotePriceUsd:r.t1pu??null,excluded:r.ex===true,sourceExclusionType:r.txtp??null,

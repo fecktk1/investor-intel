@@ -405,7 +405,7 @@ Deno.test('entities are skipped entirely when no org is supplied', async () => {
   eq(admin.reads.includes('entities'), false)
 })
 
-Deno.test('the RPC step is the last resort and reads the contract itself', async () => {
+Deno.test('the RPC step is the last resort, reads the contract itself, and claims no market', async () => {
   reset()
   const admin = fakeAdmin()
   const urls: string[] = []
@@ -427,17 +427,173 @@ Deno.test('the RPC step is the last resort and reads the contract itself', async
   eq(result.identity?.symbol, 'AERO')
   eq(result.identity?.name, 'Aerod')
   eq(result.identity?.decimals, 18)
-  eq(result.status, 'resolved')
+  // The chain named the token; no market source did. That is identity_only, and
+  // it is still indexed and demanded — searchable, with nothing pricing it.
+  eq(result.status, 'identity_only')
+  eq(result.reason, 'no_market_source')
+  eq(result.indexed, { inserted: true, demanded: false })
+  eq(result.demandRecorded, true)
 })
 
 Deno.test('namespaces with no RPC adapter say so rather than guessing', async () => {
   reset()
   const admin = fakeAdmin()
   const { deps } = spyDeps()
-  const result = await resolveAsset(admin, { query: 'wrap.near', userId: 'u12', deps })
+  // Move coin types are Sui and Aptos; neither chain has a metadata adapter we
+  // have verified, so the step is skipped with a reason, not attempted.
+  const result = await resolveAsset(admin, { query: '0x2::sui::SUI', chain: 'sui', userId: 'u12', deps })
   eq(step(result, 'rpc')?.outcome, 'skipped')
   eq(step(result, 'rpc')?.detail, 'no_rpc_adapter')
   eq(result.status, 'unresolved')
+})
+
+// ── The long tail: one adapter per namespace, and identity_only ──────────────
+
+Deno.test('a NEAR token resolves through its adapter as identity_only', async () => {
+  reset()
+  const admin = fakeAdmin()
+  const urls: string[] = []
+  const { deps } = spyDeps({
+    rpcCall: ((url: string, body: unknown) => {
+      urls.push(url)
+      // deno-lint-ignore no-explicit-any
+      const method = (body as any)?.params?.method_name
+      const bytes = (value: unknown) => [...new TextEncoder().encode(JSON.stringify(value))]
+      if (method === 'ft_metadata') {
+        return Promise.resolve({ result: { result: bytes({ spec: 'ft-1.0.0', name: 'Wrapped NEAR fungible token', symbol: 'wNEAR', decimals: 24 }) } })
+      }
+      return Promise.resolve({ result: { result: bytes('1000000') } })
+    }),
+  })
+  const result = await resolveAsset(admin, { query: 'wrap.near', userId: 'near-1', deps })
+
+  eq(step(result, 'rpc')?.outcome, 'hit')
+  eq(step(result, 'rpc')?.detail, 'near:wNEAR')
+  eq(result.status, 'identity_only')
+  eq(result.reason, 'no_market_source')
+  eq(result.identity?.kind, 'contract')
+  eq(result.identity?.chain, 'near')
+  eq(result.identity?.symbol, 'wNEAR')
+  eq(result.identity?.name, 'Wrapped NEAR fungible token')
+  eq(result.identity?.decimals, 24)
+  eq(result.identity?.deployments, [{ chain: 'near', address: 'wrap.near', source: 'rpc' }])
+  eq(result.identity?.route, '/intel/markets/wNEAR?provider=contract&id=near%3Awrap.near')
+  eq([...new Set(urls)], ['https://rpc.mainnet.near.org'])
+  // Indexed and demanded like any other resolution.
+  eq(result.indexed.inserted, true)
+  eq(admin.rpcCalls[0].params.p_asset_key, 'near:wrap.near')
+})
+
+Deno.test('a Cardano policy id is chain-bound and reaches the Cardano adapter', async () => {
+  reset()
+  const admin = fakeAdmin()
+  const policy = '8db269c3ec630e06ae29f74bc39edd1f87c819f1056206e879a1cd61'
+  const assetName = '446a65644d6963726f555344'
+  const { deps } = spyDeps({
+    rpcCall: ((url: string) => {
+      if (!url.endsWith('/asset_info')) return Promise.reject(new Error(`unexpected:${url}`))
+      return Promise.resolve([{
+        policy_id: policy, asset_name: assetName, asset_name_ascii: 'DjedMicroUSD', total_supply: '4231150000000',
+        token_registry_metadata: { name: 'Djed', ticker: 'DJED', decimals: 6 },
+      }])
+    }),
+  })
+  const result = await resolveAsset(admin, { query: `${policy}.${assetName}`, userId: 'ada-1', deps })
+
+  eq(result.kind, 'cardano')
+  eq(result.identity?.chain, 'cardano')
+  eq(result.identity?.symbol, 'DJED')
+  eq(result.identity?.name, 'Djed')
+  eq(result.status, 'identity_only')
+  eq(step(result, 'rpc')?.detail, 'cardano:DJED')
+})
+
+Deno.test('every long-tail namespace reaches an adapter instead of no_rpc_adapter', async () => {
+  // A Tron account id also fits the Solana mint shape, so the paste is
+  // chain-ambiguous until a hint picks one — exactly as the detector intends.
+  // Every other namespace here is unambiguous and carries no hint.
+  const pastes: [string, string, string, string?][] = [
+    ['ton', TON_JETTON, 'toncenter.com'],
+    ['tron', 'TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t', 'trongrid.io', 'tron'],
+    ['xrpl', 'USD.rvYAfWj5gh67oV6fW32ZzP3Aw4Eubs59B', 'xrplcluster.com'],
+    ['stellar', 'USDC-GA5ZSEJYB37JRC5AVCIA5MOP4RHTM335X2KGX3IHOJAPP5RE34K4KZVN', 'horizon.stellar.org'],
+    ['near', 'wrap.near', 'rpc.mainnet.near.org'],
+    ['cardano', '29d222ce763455e3d7a09a665ce554f00ac89d2e99a1a83415e5c0d6', 'api.koios.rest'],
+    ['injective', 'ibc/C4CFF46FD6DE35CA4CF4CE031E643C8FDC9BA4B99AE598E9B0ED98FE3A2319F9', 'lcd.injective.network'],
+  ]
+  for (const [chain, query, host, hint] of pastes) {
+    reset()
+    const urls: string[] = []
+    // Every endpoint answers "nothing here": the step must be a miss with the
+    // real endpoint contacted, never a skip.
+    const { deps } = spyDeps({ rpcCall: ((url: string) => { urls.push(url); return Promise.resolve({}) }) })
+    const result = await resolveAsset(fakeAdmin(), { query, chain: hint ?? null, userId: `tail-${chain}`, deps })
+    eq(step(result, 'rpc')?.outcome, 'miss', `${chain}: ${step(result, 'rpc')?.detail}`)
+    eq(step(result, 'rpc')?.detail, 'no_chain_metadata', chain)
+    eq(urls.some((u) => u.includes(host)), true, `${chain} did not contact ${host}: ${urls.join(',')}`)
+    eq(result.status, 'unresolved', chain)
+  }
+})
+
+Deno.test('an adapter transport failure is an error entry, never a failed resolution', async () => {
+  reset()
+  const admin = fakeAdmin()
+  const { deps } = spyDeps({ rpcCall: (() => Promise.reject(new Error('rpc_http_503'))) })
+  const result = await resolveAsset(admin, { query: TON_JETTON, userId: 'ton-2', deps })
+  eq(step(result, 'rpc')?.outcome, 'error')
+  eq(step(result, 'rpc')?.detail, 'rpc_http_503')
+  eq(result.status, 'unresolved')
+  eq(result.identity?.chain, 'ton')
+})
+
+Deno.test('a per-call failure inside an adapter keeps the fields the other calls returned', async () => {
+  reset()
+  // NEAR and Tron issue their calls in parallel and swallow a single failure, so
+  // one endpoint hiccup does not erase an identity the others supplied.
+  const { deps } = spyDeps({
+    rpcCall: ((_url: string, body: unknown) => {
+      // deno-lint-ignore no-explicit-any
+      if ((body as any)?.params?.method_name === 'ft_total_supply') return Promise.reject(new Error('near_timeout'))
+      const bytes = [...new TextEncoder().encode(JSON.stringify({ name: 'Wrapped NEAR', symbol: 'wNEAR', decimals: 24 }))]
+      return Promise.resolve({ result: { result: bytes } })
+    }),
+  })
+  const result = await resolveAsset(fakeAdmin(), { query: 'wrap.near', userId: 'near-3', deps })
+  eq(step(result, 'rpc')?.outcome, 'hit')
+  eq(result.identity?.symbol, 'wNEAR')
+  eq(result.status, 'identity_only')
+})
+
+Deno.test('a market source keeps the status resolved, and a CMC identity is never identity-only', async () => {
+  reset()
+  // A DEX snapshot answered: this asset has a market, so it stays `resolved`.
+  const withMarket = fakeAdmin({
+    memecoin_latest_tokens: [{ chain: 'base', token_address: USDC_BASE, symbol: 'DEGEN', name: 'Degen', liquidity_usd: 50_000 }],
+  })
+  const priced = await resolveAsset(withMarket, { query: USDC_BASE, chain: 'base', userId: 'mix-1', deps: spyDeps().deps })
+  eq(priced.status, 'resolved')
+  eq(priced.reason, null)
+
+  reset()
+  // An org entity supplied a CoinMarketCap id and no market source answered.
+  // A CMC id always has a canonical market route, so it is not identity-only.
+  const withEntity = fakeAdmin({
+    entities: [{
+      org_id: 'org-1', chain_namespace: 'eip155', chain_id: '8453', contract_address: USDC_BASE,
+      display_symbol: 'AERO', provider_ids: { coinmarketcap: '29270' },
+    }],
+  })
+  const cmc = await resolveAsset(withEntity, { query: USDC_BASE, chain: 'base', orgId: 'org-1', userId: 'mix-2', deps: spyDeps().deps })
+  eq(cmc.identity?.kind, 'cmc')
+  eq(cmc.status, 'resolved')
+})
+
+Deno.test('intel-asset-resolve maps identity_only to HTTP 200', async () => {
+  // The Edge Function answers 400 for `invalid`, 429 for `rate_limited` and 200
+  // for everything else. This pins that identity_only is not special-cased into
+  // a failure code — a searchable asset must not reach the client as an error.
+  const source = await Deno.readTextFile(new URL('../../intel-asset-resolve/index.ts', import.meta.url))
+  eq(source.includes("result.status === 'invalid' ? 400 : result.status === 'rate_limited' ? 429 : 200"), true)
 })
 
 Deno.test('ABI decoding handles dynamic strings, bytes32 names and uints', () => {

@@ -19,7 +19,7 @@ import { marketChain, marketCanonicalIdentity, marketIdentityChoices, verifiedNa
 import {readNativeChainPerformance} from '../_shared/intel/chain-performance-read.ts'
 import { marketScreenResponse } from '../_shared/intel/markets-screen.ts'
 import {resolveMarketAsset} from '../_shared/intel/market-asset-resolver.ts'
-import {contractCandles,parseContractProviderId} from '../_shared/intel/contract-market-asset.ts'
+import {parseContractProviderId} from '../_shared/intel/contract-market-asset.ts'
 import {loadAssetHistory,historyPlan,unavailableHistory} from '../_shared/intel/asset-history.ts'
 import {realizedVolatility,maxDrawdown,distanceFromHigh,timeUnderWaterDays} from '../_shared/intel/risk-metrics.ts'
 import {marketCoverage,type MarketIdentityKind} from '../_shared/intel/market-coverage.ts'
@@ -29,7 +29,8 @@ import type {MarketAssetsContext} from '../_shared/market-assets/types.ts'
 import { fetchCoingeckoOhlc } from '../_shared/market-assets/coingecko-provider.ts'
 import { getChain } from '../_shared/chains.ts'
 import {positionDepthQuotes} from '../_shared/intel/position-depth.ts'
-import {loadCmcChart,CHART_WINDOWS} from '../_shared/intel/cmc-chart.ts'
+import {loadCmcChart,CHART_WINDOWS,CHART_INTERVALS,isSubHourInterval} from '../_shared/intel/cmc-chart.ts'
+import {contractCandleLadder} from '../_shared/intel/cmc-kline-chart.ts'
 import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
 import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
@@ -176,10 +177,12 @@ async function fetchCandles(admin: any, sym: string, timeframe = '7D'): Promise<
 // Never use a same-symbol market as a substitute price history.
 async function assetCandles(admin: any, canonical: any, verified: boolean, timeframe: string, interval='auto',context:MarketAssetsContext={}) {
  return chooseMarketCandles(canonical,id=>loadCmcChart(admin,id,timeframe,interval,Date.now(),undefined,context),async()=>{
-  // A contract identity's only genuine history is its own pool. Try it BEFORE
-  // the CEX/CoinGecko ladder — a same-ticker market is never a substitute.
+  // A contract identity's only genuine history is its own on-chain trading. Try
+  // it BEFORE the CEX/CoinGecko ladder — a same-ticker market is never a
+  // substitute. Inside that rung the CoinMarketCap k-line aggregate (every pool
+  // on a verified CMC DEX chain) comes before the single GeckoTerminal pool.
   if (canonical?.source_provider === 'contract') {
-    const pool = await contractCandles(canonical, timeframe, interval, { supabase: admin, jobName: 'intel-markets' })
+    const pool = await contractCandleLadder(admin, canonical, timeframe, interval, context)
     if (pool.candles.length || !verified) return pool
   }
   if (verified) {
@@ -230,11 +233,21 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
 // deno-lint-ignore no-explicit-any
 async function marketDetail(admin: any, sym: string, opts: { timeframe?: string; interval?:string; candlesOnly?: boolean; quotesOnly?:boolean; sourceProvider?:string; providerId?:string;orgId?:string|null;userId?:string } = {}): Promise<Response> {
   const timeframe = opts.timeframe || '7D'
-  if(!CHART_WINDOWS[timeframe]||!['auto','1H','4H','1D','1W'].includes(opts.interval||'auto'))return json({error:'invalid_chart_range'},400)
+  const interval = opts.interval || 'auto'
+  // The four sub-hour intervals exist ONLY for the CoinMarketCap k-line source,
+  // which is keyed by a contract address. A CMC-listed or CoinGecko asset asking
+  // for one is not a range we can sample, so it still answers invalid_chart_range
+  // rather than being quietly served hourly bars under a one-minute label. The
+  // first test is on the REQUESTED provider (a contract identity is always
+  // addressed as `provider=contract`), the second on the RESOLVED row, so a
+  // request that resolves to something else cannot slip through.
+  if(!CHART_WINDOWS[timeframe]||(interval!=='auto'&&!CHART_INTERVALS[interval]))return json({error:'invalid_chart_range'},400)
+  if(isSubHourInterval(interval)&&opts.sourceProvider!=='contract')return json({error:'invalid_chart_range'},400)
   const resolved=await resolveMarketAsset(admin,sym,opts.sourceProvider,opts.providerId)
   if(resolved.ambiguous)return json({error:'ambiguous_asset',symbol:sym},409)
   if(resolved.error)return json({error:'identity_unavailable'},503)
   if(!resolved.data)return json({error:'asset_not_found',symbol:sym},404)
+  if(isSubHourInterval(interval)&&resolved.data.source_provider!=='contract')return json({error:'invalid_chart_range'},400)
   const context={supabase:admin,orgId:opts.orgId,userId:opts.userId,kind:'request' as const,waitForFresh:opts.quotesOnly===true}
   const cmcId=marketCmcIdentity(resolved.data)
   const cmc=cmcId&&!opts.candlesOnly?await resolveCmcAsset(admin,cmcId,undefined,context):null
@@ -251,7 +264,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   const cexVerified=hasVerifiedCexIdentity(resolved.data,identityMapping.data) && (identityMatch.confidence==='high'||!!verifiedNativeMarketSymbol(resolved.data))
   // Lightweight path for chart timeframe cycling — candles only, no full assembly.
   if (opts.candlesOnly) {
-    const c = await assetCandles(admin, resolved.data, cexVerified, timeframe,opts.interval,context)
+    const c = await assetCandles(admin, resolved.data, cexVerified, timeframe,interval,context)
     return json({ ...c, timeframe,chartAsset:marketCanonicalIdentity(resolved.data).canonicalAssetKey||`market:${resolved.data.source_provider}:${resolved.data.provider_id}` })
   }
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR, maR] = await Promise.all([
@@ -297,7 +310,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // deno-lint-ignore no-explicit-any
   const rollups: Record<string, any> = {}
   for (const r of (rollR.data || [])) rollups[r.timeframe] = r
-  const chart = await assetCandles(admin, canonical, cexVerified, timeframe,opts.interval,context)
+  const chart = await assetCandles(admin, canonical, cexVerified, timeframe,interval,context)
   const { candles, bestPair, bestProvider } = chart
   const prof = profR.data, sig = sigR.data
   const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null

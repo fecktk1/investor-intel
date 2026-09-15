@@ -187,7 +187,10 @@ function classify(value: string): DetectedIdentifier {
   if (NEAR_NAMED_RE.test(value)) return detected('near', value, [candidate('near', 'near', value, 1)])
   if (NEAR_IMPLICIT_RE.test(value)) return detected('near', value, [candidate('near', 'near', value, 1)])
 
-  if (CARDANO_RE.test(value)) return detected('cardano', value, [candidate('cardano', null, value, 1)])
+  // A Cardano policy id (optionally `.assetName`) is chain-bound now that the
+  // registry carries the chain, so the resolver can reach its RPC adapter and
+  // index the asset under chain 'cardano' instead of an unknown chain.
+  if (CARDANO_RE.test(value)) return detected('cardano', value, spread(['cardano'], value))
 
   if (SOLANA_RE.test(value)) return detected('solana', value, [candidate('solana', 'solana', value, 1)])
 

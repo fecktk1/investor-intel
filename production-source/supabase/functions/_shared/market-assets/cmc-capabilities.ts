@@ -1,4 +1,6 @@
-import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY} from './cmc-dex.ts'
+import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexNumber,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_HOLDER_TAGS} from './cmc-dex.ts'
+/** Re-exported from cmc-dex.ts, where the response validators also need it. */
+export {CMC_HOLDER_TAGS}
 // Reviewed against official CMC endpoint references 2026-09-09. Access is a
 // separate fact from a successful live response. DEX additions were probed with
 // the owner's Startup key on September 12; unverified DEX endpoints stay closed.
@@ -13,15 +15,15 @@ const ids = ['id','slug','symbol','skip_invalid']
 const rwa = ['rwa_id','rwa_slug','symbol','asset_type','start','limit','sort','sort_dir','skip_invalid']
 const dexDiscovery=['platformIds','interval','pageSize','nextPageIndex']
 const dexBatchKeys=['addresses','tokens']
-/** Reviewed exact-contract DEX response schemas. Registry paths added on
- * 2026-09-15 have no exact-identity validator yet; the transport must not call
- * their responses malformed, and they never become an observation clock. */
-export const CMC_DEX_SCHEMA_VALIDATED=new Set<string>([...CMC_DEX_DISCOVERY,'dexPlatforms','dexToken','dexHolderCount','dexHolderHistory','dexSecurity','dexLiquidityEvents','dexPools','dexSwaps'])
+/** Reviewed exact-contract DEX response schemas. Every registered DEX path now
+ * has an exact-contract or exact-request validator in cmc-dex.ts, so the
+ * transport calls a response that does not match its request malformed. Only
+ * dexCandles ever becomes an observation clock (see cmcObservedAt). */
+export const CMC_DEX_SCHEMA_VALIDATED=new Set<string>([...CMC_DEX_DISCOVERY,'dexPlatforms','dexToken','dexHolderCount','dexHolderHistory','dexSecurity','dexLiquidityEvents','dexPools','dexSwaps',
+  'dexHolderTags','dexHolders','dexCandles','dexSearch','dexBatch','dexPriceBatch'])
 /** Single-contract DEX capabilities: exactly one verified platform + address. */
 const dexContract=(name:string)=>name.startsWith('dex')&&!isDexDiscovery(name)&&!['dexPlatforms','dexSearch','dexBatch','dexPriceBatch'].includes(name)
 const klineIntervals=['1min','5min','15min','30min','1h','4h','1d','1w']
-/** Holder classifications returned by /v1/dex/holders/tag_count on 2026-09-14. They are CMC's labels, never people. */
-export const CMC_HOLDER_TAGS=['tag_dev','tag_sniper','tag_kol','tag_whale','tag_bot','tag_insider','tag_initial_bundler','tag_smart_money']
 // Sampling interval fixes both observation spacing and the maximum window.
 const historySpans:Record<string,[number,number]>={daily:[86400000,366],hourly:[3600000,744],'5m':[300000,576]}
 function numericCeiling(name:string,key:string):number {
@@ -101,6 +103,14 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   dexHolderTags: cap('/v1/dex/holders/tag_count','structure',['platform','tokenAddress'],{demand:false,tier:'startup',rows:'holders',ttl:3600,stale:21600,required:['tokenAddress']}),
   dexHolders: cap('/v1/dex/holders/list','structure',['platform','tokenAddress','tag','limit','lastId'],{demand:false,method:'POST',tier:'startup',rows:'holders',ttl:3600,stale:21600,required:['tokenAddress']}),
   dexCandles: cap('/v1/k-line/candles','history',['platform','address','interval','from','to','unit','limit','pm'],{demand:false,tier:'startup',ttl:300,stale:900,required:['address']}),
+  // Cost note for the three lookup/batch paths below. A single one-address probe
+  // on 2026-09-14 reported credit_count 1 for each (evidence file
+  // docs/investor-intel/evidence/cmc-cost-probe-2026-09-14.json), so they are
+  // registered cost:'one'. What is NOT probed is whether a full 50-member batch
+  // or a wide search page still costs one credit: the per-member curve is
+  // unmeasured. estimateCmcCredits is therefore a floor, not a promise, and the
+  // transport reconciles the actual credit_count at run time
+  // (cmc_request_reconcile) — never treat the estimate as the charge.
   dexSearch: cap('/v1/dex/search','metadata',['q','platform','limit'],{demand:false,tier:'startup',ttl:900,required:['q']}),
   dexBatch: cap('/v1/dex/tokens/batch-query','metadata',['platform','addresses'],{demand:false,method:'POST',tier:'startup',ttl:900,required:['addresses']}),
   dexPriceBatch: cap('/v1/dex/token/price/batch','market',['tokens'],{demand:false,method:'POST',tier:'startup',ttl:120,stale:900,required:['tokens']}),
@@ -270,11 +280,40 @@ export function cmcRows(name:string,body:any): {rows:Record<string,any>[];total:
       .map((r:any)=>({o:Number(r[0]),h:Number(r[1]),l:Number(r[2]),c:Number(r[3]),v:Number(r[4]),t:Number(r[5]),traders:r[6]==null?null:Number(r[6])}))
     return {rows,total:rows.length,hasMore:false}
   }
-  if(name==='dexHolders'){
-    // Probed 2026-09-14: rows live under data.holders (walletAddress, balance, percent, tags, fundingSource, ...).
+  if(name==='dexHolderTags'){
+    // Probed 2026-09-14: data.holders rows are exactly {tag,hc,tb,hr} — tag, holder
+    // account count, tagged balance, holding ratio. They carry no USD quote, so the
+    // generic tail's empty quote:{} would be an invented (and empty) market fact.
     const raw=Array.isArray(data)?data:Array.isArray(data?.holders)?data.holders:[]
-    return {rows:raw.filter((v:any)=>v&&typeof v==='object'&&!Array.isArray(v)).slice(0,250),total:null,hasMore:false,
-      nextCursor:isCmcDexCursor(data?.lastId)?data.lastId:null}
+    const rows=raw.filter((v:any)=>v&&typeof v==='object'&&!Array.isArray(v)).slice(0,CMC_HOLDER_TAGS.length)
+      .map((r:any)=>({tag:typeof r.tag==='string'?r.tag:null,hc:cmcDexNumber(r.hc),tb:cmcDexNumber(r.tb),hr:cmcDexNumber(r.hr)}))
+    return {rows,total:rows.length,hasMore:false}
+  }
+  if(name==='dexHolders'){
+    // Probed 2026-09-14/15: rows live under data.holders. Only these fields survive;
+    // every other provider key (name, symbol, price, totalSupply, risk flags, the
+    // separate buyCount/sellCount, avg prices) is dropped rather than carried.
+    // An address is a classified account, never a person: no row here may be given
+    // a label that names or describes a human being.
+    // Provider key -> retained field, as documented for /v1/dex/holders/list:
+    //   walletAddress->walletAddress, balance->balance, percent->percent,
+    //   tags->tags, fundingSource->fundingSource, buyUsd->buyVolumeUsd,
+    //   sellUsd->sellVolumeUsd, realizedPnl->realizedPnlUsd,
+    //   firstActiveTime->firstSeenAt, lastActiveTime->lastSeenAt.
+    // UNKNOWN provider names, left null until a probe names them: unrealizedPnlUsd
+    // (no unrealised field is documented) and txCount (the response documents
+    // separate buyCount and sellCount, which are deliberately NOT summed here).
+    const raw=Array.isArray(data)?data:Array.isArray(data?.holders)?data.holders:[]
+    const rows=raw.filter((v:any)=>v&&typeof v==='object'&&!Array.isArray(v)).slice(0,250).map((r:any)=>({
+      walletAddress:typeof r.walletAddress==='string'?r.walletAddress:null,
+      balance:r.balance??null,percent:r.percent??null,
+      tags:Array.isArray(r.tags)?r.tags.filter((t:any)=>typeof t==='string').slice(0,CMC_HOLDER_TAGS.length):null,
+      fundingSource:typeof r.fundingSource==='string'?r.fundingSource:null,
+      buyVolumeUsd:cmcDexNumber(r.buyVolumeUsd??r.buyUsd),sellVolumeUsd:cmcDexNumber(r.sellVolumeUsd??r.sellUsd),
+      realizedPnlUsd:cmcDexNumber(r.realizedPnlUsd??r.realizedPnl),unrealizedPnlUsd:cmcDexNumber(r.unrealizedPnlUsd??r.unrealizedPnl),
+      txCount:cmcDexNumber(r.txCount??r.txnCount),
+      firstSeenAt:r.firstSeenAt??r.firstActiveTime??null,lastSeenAt:r.lastSeenAt??r.lastActiveTime??null}))
+    return {rows,total:null,hasMore:false,nextCursor:isCmcDexCursor(data?.lastId)?data.lastId:null}
   }
   if(isDexDiscovery(name)){
     const raw=name==='dexMeme'?['newCreations','aboutGraduates','graduates'].flatMap(stage=>(Array.isArray(data?.[stage])?data[stage]:[]).map((r:any)=>({...r,discoveryStage:stage}))):data?.leaderboardList??[]

@@ -9,11 +9,12 @@ import {finite,instant} from './investigation-evidence.ts'
 export async function readMarketAlertEvidence(db:any,rule:any,now=Date.now()){
  const entity=rule.entity,subject=entity?.canonical_ref_key
  if(typeof subject!=='string'||!subject)throw Error('alert_canonical_identity_unavailable')
- const metric=rule.trigger_type==='price_move'?'price_change_24h_pct':rule.trigger_type==='volume_spike'?'volume_change_24h_pct':rule.trigger_type==='liquidity_drop'?'liquidity_usd':rule.trigger_type==='metadata_notice'?'metadata_notice':rule.trigger_type==='liquidation_cascade'?'liquidation_cascade_ratio':rule.trigger_type==='attention_entry'?'attention_persistence_hours':null
+ const metric=rule.trigger_type==='price_move'?'price_change_24h_pct':rule.trigger_type==='volume_spike'?'volume_change_24h_pct':rule.trigger_type==='liquidity_drop'?'liquidity_usd':rule.trigger_type==='metadata_notice'?'metadata_notice':rule.trigger_type==='liquidation_cascade'?'liquidation_cascade_ratio':rule.trigger_type==='attention_entry'?'attention_persistence_hours':rule.trigger_type==='listing_flag_change'?'listing_flag_change':null
  if(!metric)throw Error('alert_metric_unsupported')
  if(rule.trigger_type==='metadata_notice')return await readMetadataNotice(db,rule,subject,now)
  if(rule.trigger_type==='liquidation_cascade')return await readLiquidationCascade(db,rule,subject,now)
  if(rule.trigger_type==='attention_entry')return await readAttentionEntry(db,rule,subject,now)
+ if(rule.trigger_type==='listing_flag_change')return await readListingFlagChange(db,rule,subject,now)
  if(researchCmcId({canonicalKey:subject})){
   if(metric!=='price_change_24h_pct')throw Error('alert_metric_coverage_unavailable')
   const result=await readCachedAssetQuote(db,{canonicalKey:subject},now)
@@ -161,6 +162,54 @@ async function readAttentionEntry(db:any,rule:any,subject:string,now:number){
    periodSeconds:null,observedAt:at,recordedAt:at,expiresAt:new Date(newest+ATTENTION_MAX_AGE_MS).toISOString(),
    sampleAt:at,clockBasis:'provider_observation',metadata:{list,requiredHours:hours,captures:streak,rank,capturedAt:at},
    coverage:'Consecutive hourly provider captures in which the asset was present in the named list. The provider does not publish how the list is ordered, and attention is not a valuation.'}}
+}
+
+/** New listings are captured ONCE A DAY with bounded per-row due diligence, so
+ * the evidence is the pair of newest retained snapshots of that exact asset and
+ * the question is only whether the recorded security flags CHANGED between them.
+ * The provider publishes no effective time for a flag change: the newer
+ * snapshot's capture is the clock, and the coverage note says so.
+ *
+ * Value 1 means the two snapshots recorded different flag sets; 0 means they
+ * recorded the same one. A snapshot that was never inspected carries no hash,
+ * and a comparison against a missing hash is refused rather than reported as a
+ * change — losing coverage is not an event.
+ *
+ * The observation id carries BOTH hashes and the newer snapshot's date, so the
+ * same pair read again is the SAME observation (the database answers
+ * 'same_observation' and nothing fires) and a re-armed rule cannot double-fire
+ * on one change. */
+export const LISTING_FLAG_MAX_AGE_MS=48*60*60*1000
+async function readListingFlagChange(db:any,rule:any,subject:string,now:number){
+ const cmcId=researchCmcId({canonicalKey:subject})
+ if(!cmcId)throw Error('alert_canonical_identity_unavailable')
+ const {data,error}=await db.from('intel_new_listing_snapshots')
+  .select('provider_id,snapshot_date,symbol,chain,contract_address,security_hash,security_state,captured_at')
+  .eq('provider','coinmarketcap').eq('provider_id',cmcId)
+  .lte('captured_at',new Date(now).toISOString()).order('snapshot_date',{ascending:false}).limit(2)
+ if(error)throw Error('alert_source_read_failed')
+ const rows=(Array.isArray(data)?data:data?[data]:[]).filter((r:any)=>r&&r.provider_id===cmcId&&instant(r.captured_at)!=null&&(instant(r.captured_at) as number)<=now)
+  .sort((a:any,b:any)=>String(b.snapshot_date??'').localeCompare(String(a.snapshot_date??'')))
+ if(!rows.length)throw Error('alert_source_coverage_unavailable')
+ const current=rows[0],previous=rows[1]
+ const captured=instant(current.captured_at) as number
+ if(captured<=now-LISTING_FLAG_MAX_AGE_MS)throw Error('alert_fresh_source_unavailable')
+ // A first snapshot is a baseline, never a change. Past flags are not reconstructed.
+ if(!previous)throw Error('alert_source_coverage_unavailable')
+ const hash=(value:unknown)=>typeof value==='string'&&/^[0-9a-f]{64}$/.test(value)?value:null
+ const after=hash(current.security_hash),before=hash(previous.security_hash)
+ if(!after||!before)throw Error('alert_metric_coverage_unavailable')
+ const value=after===before?0:1
+ const at=new Date(captured).toISOString(),snapshotDate=String(current.snapshot_date??'').slice(0,10)
+ return {metric:'listing_flag_change',unit:'flags',
+  overview:{symbol:current.symbol??rule.entity?.display_symbol??null,chain:current.chain??null,contractAddress:current.contract_address??null,
+   snapshotDate,previousSnapshotDate:String(previous.snapshot_date??'').slice(0,10),securityHash:after,previousSecurityHash:before,
+   securityState:current.security_state??null,changed:value===1},
+  observation:{id:`cmc-new-listing-flags:${cmcId}:${snapshotDate}:${before}:${after}`,subject,provider:'coinmarketcap',
+   sourceRef:`intel_new_listing_snapshots:coinmarketcap:${cmcId}`,metric:'listing_flag_change',value,unit:'flags',periodSeconds:null,
+   observedAt:at,recordedAt:at,expiresAt:new Date(captured+LISTING_FLAG_MAX_AGE_MS).toISOString(),sampleAt:at,clockBasis:'provider_observation',
+   metadata:{snapshotDate,previousSnapshotDate:String(previous.snapshot_date??'').slice(0,10),securityHash:after,previousSecurityHash:before,chain:current.chain??null},
+   coverage:'Whether the security flags CoinMarketCap reported for this contract differ between the two newest daily captures. The provider publishes no time at which a flag changed, so the newer capture dates it, and a changed flag set is not a safety verdict.'}}
 }
 
 export function marketAlertFailure(error:unknown){

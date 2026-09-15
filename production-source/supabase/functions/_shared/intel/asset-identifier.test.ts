@@ -95,6 +95,18 @@ Deno.test('a hint that cannot hold the format is a mismatch, never a silent subs
   eq(kinds('0xdAC17F958D2ee523a2206206994597C13D831ec7', 'not-a-chain').invalid, 'unknown_chain_hint')
 })
 
+Deno.test('a Cardano policy id is bound to the Cardano chain, not left chainless', () => {
+  for (const sample of SAMPLES.cardano) {
+    const result = kinds(sample)
+    eq(result.candidates.length, 1)
+    eq(result.candidates[0].namespace, 'cardano')
+    eq(result.candidates[0].chain, 'cardano')
+    eq(result.candidates[0].confidence, 1)
+  }
+  eq(kinds(SAMPLES.cardano[0], 'cardano').candidates[0].chain, 'cardano')
+  eq(kinds(SAMPLES.cardano[0], 'ethereum').invalid, 'chain_hint_mismatch')
+})
+
 Deno.test('CoinMarketCap ids carry no chain', () => {
   const prefixed = kinds('cmc:1027')
   eq(prefixed.candidates[0].namespace, 'cmc')

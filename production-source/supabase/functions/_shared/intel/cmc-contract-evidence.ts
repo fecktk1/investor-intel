@@ -4,7 +4,13 @@ import {instant,type Observation} from './investigation-evidence.ts'
 import {projectDexEvidence} from './cmc-contract-projection.ts'
 import {loadCmcOperatingSettings,cmcPolicyEnvironment} from '../market-assets/cmc-operating-settings.ts'
 
-export const CMC_CONTRACT_METRICS=['price','holder_count','liquidity_event_usd','swap_event_usd'] as const
+// `holder_tag_count` joined on 2026-09-15 with the holder-tag lane (CMC plan
+// proposal 20). Its rows are the ONLY retained contract metric whose clock is
+// ours: /v1/dex/holders/tag_count publishes no observation time, so
+// `normalizeCmcInvestigation` stamps the fetch time and labels it
+// `timeMeaning:'capture time, not provider time'`. Read it as "when we asked",
+// never as "when the classification changed".
+export const CMC_CONTRACT_METRICS=['price','holder_count','liquidity_event_usd','swap_event_usd','holder_tag_count'] as const
 export function contractEvidenceSubject(key:string):string|null {
  const i=researchIdentity({canonicalKey:key})
  return i.chain&&i.tokenAddress?canonicalAssetKey(i.chain,i.tokenAddress):null
@@ -18,7 +24,10 @@ export async function readCmcContractEvidence(db:any,key:string,now:number,purpo
  const policy=cmcPolicyEnvironment(await loadCmcOperatingSettings(db,now),key=>{try{return Deno.env.get(key)}catch{return undefined}},now)
  if(policy('CMC_ALLOW_HISTORICAL_RETENTION')!=='true'||purpose==='research'&&policy('CMC_ALLOW_AI_PROCESSING')!=='true')return {...base,status:'restricted',reason:'Current source permission does not allow this retained evidence use.',sources:[]}
  const results=await Promise.all(CMC_CONTRACT_METRICS.map(async metric=>{
-  const maximum=metric==='price'?1:metric==='holder_count'?31:50,limit=maximum*2+1
+  // One capture writes one row per tag, all sharing a single stamped clock, so
+  // eight rows is exactly the newest tag distribution. The tag HISTORY is not
+  // this surface's job: `readHolderTags` serves it from the capture table.
+  const maximum=metric==='price'?1:metric==='holder_count'?31:metric==='holder_tag_count'?8:50,limit=maximum*2+1
   try{
    const {data,error}=await db.from('intel_market_observations').select('observation').eq('subject',subject).eq('provider','coinmarketcap').eq('metric',metric)
     .gte('observed_at',new Date(now-31*86400000).toISOString()).lte('observed_at',new Date(now).toISOString()).gt('retain_until',new Date(now).toISOString())

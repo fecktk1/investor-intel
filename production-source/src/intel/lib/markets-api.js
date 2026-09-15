@@ -163,12 +163,15 @@ export async function resolveAsset(supabase, query, chain = null, { orgId, signa
   // sends the whole result, so a non-2xx body is a resolution — not a transport
   // failure. Reading it is what keeps "this is not an identifier" distinct from
   // "the resolver did not answer". 'rate_limited' becomes an unresolved result
-  // whose reason names the limit, so every caller handles four statuses.
+  // whose reason names the limit, so every caller handles five statuses.
   const normalize = payload => {
     if (!payload || typeof payload.status !== 'string') return null
     const base = { ...payload, query: payload.query ?? String(query ?? ''), detected: Array.isArray(payload.detected) ? payload.detected : [], candidates: Array.isArray(payload.candidates) ? payload.candidates : [], provenance: Array.isArray(payload.provenance) ? payload.provenance : [] }
     if (base.status === 'rate_limited') return { ...base, status: 'unresolved', reason: base.reason || 'rate_limited' }
-    return ['resolved', 'ambiguous', 'unresolved', 'invalid'].includes(base.status) ? base : { ...base, status: 'unresolved', reason: base.reason || 'resolver_unavailable' }
+    // 'identity_only' is a resolution, not a failure: the chain named the asset
+    // and no market source answered. Dropping it into 'unresolved' would hide a
+    // real, indexed, searchable asset behind "nothing answered".
+    return ['resolved', 'identity_only', 'ambiguous', 'unresolved', 'invalid'].includes(base.status) ? base : { ...base, status: 'unresolved', reason: base.reason || 'resolver_unavailable' }
   }
   try {
     const { data, error } = await supabase.functions.invoke('intel-asset-resolve', {

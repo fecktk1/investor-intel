@@ -5,7 +5,23 @@ import {CHAIN_COINGECKO} from '../chains.ts'
 import type {MarketAssetsContext} from '../market-assets/types.ts'
 
 export const CHART_WINDOWS:Record<string,number>={'1H':3600000,'12H':43200000,'24H':86400000,'3D':259200000,'7D':604800000,'1M':2592000000,'3M':7776000000,'6M':15552000000,'1Y':31536000000}
-export const CHART_INTERVALS:Record<string,number>={'1H':3600000,'4H':14400000,'1D':86400000,'1W':604800000}
+/** The APP interval vocabulary. The four sub-hour keys were added for the
+ * CoinMarketCap k-line source (`cmc-kline-chart.ts`), which is the only source
+ * that can sample below an hour, and they are accepted by `intel-markets` for a
+ * CONTRACT identity only. CMC OHLCV samples hourly at best, so `cmcChartPlan`
+ * still refuses everything outside `CMC_OHLCV_INTERVALS`.
+ *
+ * '1M' HERE IS ONE MINUTE. `CHART_WINDOWS['1M']` is one month. The two maps
+ * describe different things and are never interchangeable — a caller that reads
+ * a range key out of this map, or an interval key out of CHART_WINDOWS, is a
+ * bug, not a fallback. */
+export const CHART_INTERVALS:Record<string,number>={'1M':60000,'5M':300000,'15M':900000,'30M':1800000,'1H':3600000,'4H':14400000,'1D':86400000,'1W':604800000}
+/** Intervals `/v2/cryptocurrency/ohlcv/historical` can genuinely sample. */
+export const CMC_OHLCV_INTERVALS=['1H','4H','1D','1W']
+/** Intervals only the k-line source serves. Sub-MINUTE is refused by the
+ * registry (`cmc-capabilities.ts`, `klineIntervals`) and has no app key. */
+export const SUB_HOUR_INTERVALS=['1M','5M','15M','30M']
+export const isSubHourInterval=(interval:unknown)=>SUB_HOUR_INTERVALS.includes(String(interval))
 const HOUR=3600000,DAY=86400000
 const NATIVE_IDS:Record<string,string>={bitcoin:'1',ethereum:'1027',solana:'5426',binancecoin:'1839','avalanche-2':'5805'}
 /** Reuse verified provider IDs. L2 native ETH is ETH; governance tickers never enter this mapping. */
@@ -16,7 +32,10 @@ export function cmcFallbackCoverage(result:{sourceReason?:string|null;sourceStat
  return `CMC ${interval} candles are unavailable: ${reason&&reasons[reason]?reasons[reason]:result?'no complete periods were returned':'this asset has no verified CMC identity'}. Showing CoinGecko observations at their original spacing; volume is unavailable.`
 }
 export function cmcChartPlan(id:string,range='1M',interval='auto',now=Date.now()){
- if(!/^[1-9][0-9]{0,9}$/.test(id)||!CHART_WINDOWS[range]||(interval!=='auto'&&!CHART_INTERVALS[interval])||!Number.isFinite(now))throw new Error('invalid_chart_parameters')
+ // A sub-hour interval is a valid APP interval but not a valid OHLCV sampling:
+ // the provider has no period shorter than one hour, so it is refused here
+ // rather than silently answered with hourly bars under a one-minute label.
+ if(!/^[1-9][0-9]{0,9}$/.test(id)||!CHART_WINDOWS[range]||(interval!=='auto'&&!CMC_OHLCV_INTERVALS.includes(interval))||!Number.isFinite(now))throw new Error('invalid_chart_parameters')
  const duration=CHART_WINDOWS[range],selected=interval==='auto'?(duration<=7*DAY?'1H':'1D'):interval
  const step=CHART_INTERVALS[selected],base=step<DAY?HOUR:DAY
  // Startup intraday history is one month. Keep older requested periods as visible gaps.

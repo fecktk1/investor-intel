@@ -15,13 +15,24 @@
 //   6 dexscreener    token-pairs / multichain search (also resolves EVM chain ambiguity)
 //   7 geckoterminal  token info                      (logo / description)
 //   8 birdeye        token metadata                  (symbol / name / logo / decimals)
-//   9 rpc            eth_call or getAccountInfo      (last resort: the chain itself)
+//   9 rpc            eth_call, getAccountInfo or a   (last resort: the chain itself)
+//                    per-namespace adapter
+//
+// Step 9 covers EVM (a batched eth_call for name/symbol/decimals/totalSupply)
+// and Solana (getAccountInfo) inline; TON, Tron, XRPL, Stellar, NEAR, Cardano
+// and Injective are one module each under rpc-adapters/. A namespace with no
+// adapter is `no_rpc_adapter`: a skipped step with a reason, never a guess.
 //
 // Steps never throw: each appends { step, outcome, ms, detail? } to provenance.
 // The ladder stops as soon as an identity carries symbol AND name and at least
 // one market source answered — except that step 4 always runs once for a
 // namespace CoinMarketCap lists, so the canonical id and the full deployment set
 // are known even when a cheaper source already answered.
+//
+// A chain that answers with a complete identity while no market source does is
+// reported as `identity_only`, not `resolved`: the asset is real, searchable and
+// indexed, and nothing on the platform prices it. That is the honest end state
+// for the long tail — the namespaces with an RPC adapter and no market provider.
 //
 // Demand is recorded once per resolved asset. Who searched is never stored.
 //
@@ -41,6 +52,13 @@ import { searchTokens as searchTokensLive, getTokenPairs as getTokenPairsLive } 
 import { getTokenInfo as getTokenInfoLive } from '../memecoin/geckoterminal.ts'
 import { getTokenMetadata as getTokenMetadataLive } from '../birdeye-client.ts'
 import { canonicalAddress, detectIdentifier, MAX_IDENTIFIER_LENGTH, type DetectedIdentifier, type IdentifierCandidate } from './asset-identifier.ts'
+import { rpcAdapterFor } from './rpc-adapters/index.ts'
+import { decodeAbiString, decodeAbiUint } from './rpc-adapters/evm-abi.ts'
+import { readBoundedText } from './bounded-request.ts'
+
+// Re-exported from their own module so an adapter can decode TRC-20 returns
+// without importing the resolver back. The surface is unchanged.
+export { decodeAbiString, decodeAbiUint }
 
 /** The longest identifier any supported namespace produces. */
 export const MAX_QUERY_LENGTH = MAX_IDENTIFIER_LENGTH
@@ -83,7 +101,9 @@ export type ChainCandidate = {
   route: string
 }
 
-export type ResolveStatus = 'resolved' | 'ambiguous' | 'unresolved' | 'invalid' | 'rate_limited'
+/** `identity_only`: the chain answered with an identity and no market source
+ *  did. The asset is indexed and searchable; nothing prices it. */
+export type ResolveStatus = 'resolved' | 'identity_only' | 'ambiguous' | 'unresolved' | 'invalid' | 'rate_limited'
 
 export type ResolveResult = {
   status: ResolveStatus
@@ -105,8 +125,13 @@ export type ResolverDeps = {
   getTokenPairs: typeof getTokenPairsLive
   getTokenInfo: typeof getTokenInfoLive
   getTokenMetadata: typeof getTokenMetadataLive
-  /** Single JSON-RPC POST. Injected so tests never reach a public endpoint. */
+  /** One chain request. `body === null` is a GET (Horizon, the Injective LCD
+   *  and toncenter's decoded reads are GET endpoints); anything else is a JSON
+   *  POST. Injected so tests never reach a public endpoint. */
   rpcCall: (url: string, body: unknown, timeoutMs: number) => Promise<unknown>
+  /** Optional per-adapter endpoint overrides. Reads the function's environment
+   *  by default and never throws when the permission is not granted. */
+  env: (key: string) => string | undefined
   /** Record creation + quote demand for a resolved identity. */
   indexAsset: typeof indexResolvedAssetLive
   now: () => number
@@ -291,6 +316,7 @@ export async function resolveAsset(
     getTokenInfo: getTokenInfoLive,
     getTokenMetadata: getTokenMetadataLive,
     rpcCall: defaultRpcCall,
+    env: defaultEnv,
     indexAsset: indexResolvedAssetLive,
     now: () => Date.now(),
     ...(input.deps || {}),
@@ -680,50 +706,56 @@ async function stepRpc(state: State, deps: ResolverDeps): Promise<{ outcome: Ste
     addDeployment(state, 'solana', state.address, 'rpc')
     return { outcome: 'hit', detail: 'mint_exists' }
   }
-  return { outcome: 'skipped', detail: 'no_rpc_adapter' }
+
+  // Every other namespace: one adapter module, dispatched by namespace. The
+  // adapter answers null for "not a token here" and may throw only for a
+  // transport failure, which is recorded as an error rather than being allowed
+  // to end the ladder.
+  const adapter = rpcAdapterFor(def?.namespace)
+  if (!adapter) return { outcome: 'skipped', detail: 'no_rpc_adapter' }
+  let meta
+  try {
+    meta = await adapter({ address: state.address, rpcCall: deps.rpcCall, timeoutMs: RPC_TIMEOUT_MS, env: deps.env })
+  } catch (e) {
+    return { outcome: 'error', detail: message(e) }
+  }
+  if (!meta) return { outcome: 'miss', detail: 'no_chain_metadata' }
+  absorb(state, { symbol: meta.symbol, name: meta.name, decimals: meta.decimals })
+  addDeployment(state, chain, state.address, 'rpc')
+  // An RPC answer is an identity, never a market: marketAnswered stays false, so
+  // finish() reports identity_only unless a market source also answered.
+  return { outcome: 'hit', detail: meta.symbol ? `${def?.namespace}:${meta.symbol}` : 'contract_exists' }
 }
+
+/** The maximum body any chain endpoint may return. Metadata reads are small;
+ *  this stops one endpoint from spending the isolate's memory. */
+const MAX_RPC_BYTES = 512_000
 
 async function defaultRpcCall(url: string, body: unknown, timeoutMs: number): Promise<unknown> {
   const res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
+    ...(body == null
+      ? { method: 'GET', headers: { Accept: 'application/json' } }
+      : { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) }),
     signal: AbortSignal.timeout(timeoutMs),
     redirect: 'error',
   })
   if (!res.ok) throw new Error(`rpc_http_${res.status}`)
-  return await res.json()
-}
-
-/** Minimal ABI decoding: a dynamic string, or the bytes32 form older tokens use. */
-export function decodeAbiString(result: unknown): string | null {
-  if (typeof result !== 'string' || !/^0x[0-9a-fA-F]*$/.test(result)) return null
-  const hex = result.slice(2)
-  if (!hex.length) return null
-  const bytes = (slice: string) => {
-    const out: number[] = []
-    for (let i = 0; i + 1 < slice.length; i += 2) out.push(parseInt(slice.slice(i, i + 2), 16))
-    return new Uint8Array(out)
-  }
-  const clean = (value: string) => {
-    const trimmed = [...value].filter((ch) => ch.charCodeAt(0) > 31 && ch.charCodeAt(0) !== 65533).join('').trim()
-    return trimmed ? trimmed.slice(0, 120) : null
-  }
-  if (hex.length === 64) return clean(new TextDecoder().decode(bytes(hex)))
-  if (hex.length < 128) return null
-  const offset = Number(BigInt('0x' + hex.slice(0, 64)))
-  if (!Number.isFinite(offset) || offset * 2 + 64 > hex.length) return null
-  const length = Number(BigInt('0x' + hex.slice(offset * 2, offset * 2 + 64)))
-  if (!Number.isFinite(length) || length > 1024) return null
-  return clean(new TextDecoder().decode(bytes(hex.slice(offset * 2 + 64, offset * 2 + 64 + length * 2))))
-}
-
-export function decodeAbiUint(result: unknown): number | null {
-  if (typeof result !== 'string' || !/^0x[0-9a-fA-F]+$/.test(result)) return null
+  const text = await readBoundedText(res, MAX_RPC_BYTES)
   try {
-    const value = BigInt(result)
-    return value <= BigInt(Number.MAX_SAFE_INTEGER) ? Number(value) : null
-  } catch { return null }
+    return JSON.parse(text)
+  } catch {
+    throw new Error('rpc_invalid_json')
+  }
+}
+
+/** Deno.env is not readable under every permission set; an unreadable variable
+ *  is simply unset, which leaves the adapter on its keyless default. */
+function defaultEnv(key: string): string | undefined {
+  try {
+    return Deno.env.get(key) || undefined
+  } catch {
+    return undefined
+  }
 }
 
 function cmcContext(input: ResolveInput) {
@@ -783,6 +815,14 @@ async function finish(admin: any, state: State, query: string, deps: ResolverDep
     return { ...base, status: 'unresolved', identity, candidates: [], reason: 'no_source_answered', demandRecorded: false, indexed: NOT_INDEXED }
   }
 
+  // A contract identity that no market source answered for: the chain (or a
+  // metadata-only provider) named it, and nothing prices it. It is still a real
+  // asset, so it is indexed, demanded and searchable — it simply must not be
+  // reported as `resolved`, which the app reads as "this asset has a market".
+  // A CoinMarketCap identity is never identity-only: a CMC id always has a
+  // canonical market route, whichever step supplied it.
+  const identityOnly = identity.kind === 'contract' && !state.marketAnswered && !!chain && !!address && !!state.symbol
+
   const demandKey = identity.kind === 'cmc' ? `cmc:${identity.providerId}` : `${chain}:${address}`
   const demandRecorded = await recordDemand(admin, demandKey, identity)
 
@@ -801,7 +841,12 @@ async function finish(admin: any, state: State, query: string, deps: ResolverDep
   })
 
   return {
-    ...base, status: 'resolved', identity, candidates: [], reason: null, demandRecorded,
+    ...base,
+    status: identityOnly ? 'identity_only' : 'resolved',
+    identity,
+    candidates: [],
+    reason: identityOnly ? 'no_market_source' : null,
+    demandRecorded,
     indexed: { inserted: indexed.indexed, demanded: indexed.demanded },
   }
 }
