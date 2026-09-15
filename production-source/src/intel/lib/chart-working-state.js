@@ -30,13 +30,17 @@ export function workingViewRange(range,now,savedAt=null) {
 /**
  * The range button a saved window belongs under: the narrowest offered window
  * that still holds it, so the chart loads the history the view actually needs.
- * `windows` is the range vocabulary, mapped to milliseconds.
+ * `windows` is the range vocabulary, mapped to milliseconds. A fitted view runs
+ * a few bars past its range (the renderer leaves room at the right edge), so a
+ * window up to a tenth wider than a preset still belongs to that preset rather
+ * than jumping to the next one.
  */
+export const RANGE_PRESET_SLACK=1.1
 export function workingRangePreset(range,windows) {
  const width=span(range)
  const keys=width==null?[]:Object.keys(windows||{})
  if(!keys.length)return null
- return keys.filter(key=>windows[key]>=width).sort((a,b)=>windows[a]-windows[b])[0]||keys.sort((a,b)=>windows[b]-windows[a])[0]
+ return keys.filter(key=>windows[key]*RANGE_PRESET_SLACK>=width).sort((a,b)=>windows[a]-windows[b])[0]||keys.sort((a,b)=>windows[b]-windows[a])[0]
 }
 
 /**
