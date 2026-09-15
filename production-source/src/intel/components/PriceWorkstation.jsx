@@ -83,8 +83,11 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  useEffect(()=>{if(!source)callbacks.current.onFailure?.()},[source])
 
- const drawings=useChartDrawings({width:geometry.width,height:geometry.height,scale,readOnly,initialItems:initialState.drawings||[],bars,intervalMs:chartSource?.intervalMs??source?.grid?.step??null,context:persistence,
-  project:anchor=>{const x=api.current?.timeScale().logicalToCoordinate(continuousChartLogical(gridRef.current,anchor.t)),y=main.current?.priceToCoordinate(anchor.price);return x==null||y==null?null:{x,y}},
+ // One projection for the whole workstation: the drawing surface on screen and
+ // the share image both have to put an anchor on the same candle.
+ const project=anchor=>{const x=api.current?.timeScale().logicalToCoordinate(continuousChartLogical(gridRef.current,anchor.t)),y=main.current?.priceToCoordinate(anchor.price);return x==null||y==null?null:{x,y}}
+
+ const drawings=useChartDrawings({width:geometry.width,height:geometry.height,scale,readOnly,initialItems:initialState.drawings||[],bars,intervalMs:chartSource?.intervalMs??source?.grid?.step??null,context:persistence,project,
 
   unproject:point=>{const logical=api.current?.timeScale().coordinateToLogical(point.x),t=continuousChartTime(gridRef.current,logical),price=main.current?.coordinateToPrice(point.y);return t!=null&&Number.isFinite(price)&&price>0?{t:Math.round(t),price}:null}})
 
@@ -351,20 +354,18 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  // so a layout saved last year and one saved today still fingerprint the same.
  const captureLayout=()=>validateChartLayout(chartState())
 
- // What the share image is composed from: the renderer's own screenshot, which
- // already carries the indicator panes, the drawings overlay serialized as it
- // stands, and the brand mark. Pixels only; the layout and the verified capture
- // still travel the saved-version path.
- const captureFrame=range=>{
-  const chart=api.current,element=host.current
-  if(!chart||!element)throw new Error('chart_not_ready')
-  const surface=root.current?.querySelector('.intel-drawing-surface'),background=palette?.background||'#14171C'
-  const shown=bars.filter(b=>b.t>=range.from&&b.t<=range.to)
-  return {chart:{canvas:chart.takeScreenshot(),width:element.clientWidth,height:totalHeight},
-   overlay:surface?{svg:new XMLSerializer().serializeToString(surface).replaceAll('var(--bg-1)',background),width:geometry.width,height:totalHeight}:null,
-   background,wordmark:import.meta.env.BASE_URL+WATERMARK_SOURCE,
-   name:assetName||persistence?.asset||'',symbol:assetSymbol||'',
-   first:shown[0]?.o??shown[0]?.c??null,last:shown.at(-1)?.c??null,interval:chartSource?.intervalMs??source?.grid?.step??null}
+ // The live handles the share image is made from. The capture itself, the
+ // portrait resize and the drawings projection all live in the share chunk,
+ // which is the only code that wants them; this stays a plain handover so the
+ // chart carries no capture code of its own. Pixels only: the layout and the
+ // verified capture still travel the saved-version path. Replay hides the
+ // drawing surface, so a replay chart shares no drawings.
+ const captureFrame=options=>{
+  if(!api.current||!host.current)throw new Error('chart_not_ready')
+  return {...options,chart:api.current,project,element:host.current,height:totalHeight,
+   bars,drawings:replay?[]:drawings.items,intervalMs:chartSource?.intervalMs??source?.grid?.step??null,
+   background:palette?.background||'#14171C',wordmark:import.meta.env.BASE_URL+WATERMARK_SOURCE,
+   name:assetName||persistence?.asset||'',symbol:assetSymbol||''}
  }
 
  const restoreLayout=input=>{
