@@ -246,7 +246,10 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   // The bars kept run from the lookback the indicators need to the end of the
   // window; the workstation fits its view to the window and leaves the earlier
   // bars to the left of it, where a pan can reach them.
-  const lookbackMs = lookback * (coverage?.chartSource?.intervalMs || 0)
+  // The width survives a reload of the same period (coverage is cleared while a
+  // wider lookback is fetched), so the warm-up already on the chart stays put.
+  const stepRef = useRef(0); if (coverage?.chartSource?.intervalMs) stepRef.current = coverage.chartSource.intervalMs
+  const lookbackMs = lookback * (coverage?.chartSource?.intervalMs || stepRef.current || 0)
   const allBars = useMemo(() => normalizeBars((loadCandles ? series : candles || []).slice(-10000)).bars.filter(c => !timeWindow || (c.t >= timeWindow.from - lookbackMs && c.t <= timeWindow.to)), [loadCandles,series,candles,timeWindow?.from,timeWindow?.to,lookbackMs])
   const replay=replayAt!=null,stops=useMemo(()=>replayStops(allBars,knownOnly),[allBars,knownOnly])
   const replayResult=useMemo(()=>replay?chartReplay(allBars,inputMarkers,replayAt,knownOnly):null,[allBars,inputMarkers,replayAt,knownOnly,replay])

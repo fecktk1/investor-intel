@@ -70,13 +70,36 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  const analysisNow=useMemo(()=>Date.now(),[bars])
  const selectedStructure=structureSelection?.bars===bars&&structureOpen?structureSelection.finding:null
 
- const sourceBounds=useRef(null),plottedGrid=useRef(null),initialView=useRef(initialState.range)
+ const sourceBounds=useRef(null),plottedGrid=useRef(null),initialView=useRef(initialState.range),viewportFrame=useRef(0)
+ useEffect(()=>()=>cancelAnimationFrame(viewportFrame.current),[])
  const autoScaleRef=useRef(autoScale);autoScaleRef.current=autoScale
  // A manual price scale is a LOCKED RANGE, and the range itself is not part of
  // any saved state. Restoring "auto scale off" on its own handed the renderer no
  // price range at all, so a restored chart painted nothing until Reset view. A
  // chart that comes back with a manual scale is therefore scaled to its bars
  // once, on the frame after its window is placed, and locked there.
+ // The renderer takes new data in over its next few frames, and a range set
+ // before it has caught up is measured against the series it replaced: bars
+ // added at the front (an indicator's warm-up) moved the view by their count a
+ // second time, three frames after it had been placed correctly. So a window
+ // placed onto new data is HELD for a quarter of a second: any frame that finds
+ // it moved places it again, and the last placement is measured against the
+ // bars actually on the chart. Measured live on 2026-09-15 before this hold: a
+ // one-month view of 180 four-hour bars opened at bar 123 instead of bar 64.
+ const placeWindow=(chart,range,hold=true)=>{
+  if(!chart||!range)return
+  const scale=chart.timeScale(),until=performance.now()+250
+  scale.setVisibleLogicalRange(range)
+  cancelAnimationFrame(viewportFrame.current)
+  if(!hold)return
+  const keep=()=>{
+   if(api.current!==chart)return
+   const current=scale.getVisibleLogicalRange()
+   if(current&&Math.abs(current.from-range.from)>0.01)scale.setVisibleLogicalRange(range)
+   if(performance.now()<until)viewportFrame.current=requestAnimationFrame(keep)
+  }
+  viewportFrame.current=requestAnimationFrame(keep)
+ }
  const lockScaleAfterFit=(chart,manual)=>{
   if(!manual||!chart)return
   const scale=chart.priceScale('right');scale.applyOptions({autoScale:true})
@@ -281,11 +304,14 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
    if(sourceBounds.current!==bounds){fitted.current=false;sourceBounds.current=bounds}
    else if(fitted.current){
     const nextRange=refreshedChartViewport(oldRange,oldGrid,source.grid,previousWindow.current,timeWindow,!readOnly&&!replay)
-    if(nextRange)chart.timeScale().setVisibleLogicalRange(nextRange)
+    // Bars added at the FRONT (an indicator's warm-up) are the case the renderer
+    // catches up on late, so that placement is held; bars added at the end (the
+    // minute refresh) are placed once, as before, and never fight a pan.
+    if(nextRange)placeWindow(chart,nextRange,!!oldGrid&&source.grid.start!==oldGrid.start)
    }
    previousWindow.current=timeWindow?{...timeWindow}:null
    plottedGrid.current=source.grid
-   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;lockScaleAfterFit(chart,!autoScaleRef.current);refreshGeometry();emitWorkspace()}})})}
+   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){placeWindow(chart,{from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){placeWindow(chart,{from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;lockScaleAfterFit(chart,!autoScaleRef.current);refreshGeometry();emitWorkspace()}})})}
 
    refreshGeometry()
 
