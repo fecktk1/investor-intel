@@ -179,6 +179,9 @@ Deno.test('venue rows keep only reported figures and never invent a derivatives 
   eq(both[0].volume24h, 4e9)
   const derivatives = venueRowsFromDerivatives([{ exchange_id: 302, exchange_slug: 'okx', num_market_pairs: 300, quote: { volume_24h: 2e9, open_interest: 7e8 } }])
   eq(derivatives.length, 1); eq(derivatives[0].kind, 'derivatives'); eq(derivatives[0].numMarketPairs, 300)
+  // The live derivatives list names its volume `derivative_volume` (2026-09-15 capture).
+  const live = venueRowsFromDerivatives([{ exchange_id: 270, exchange_slug: 'binance', num_market_pairs: 796, quote: { derivative_volume: 68150584812.34, open_interest: 32127744122.77 } }])
+  eq(live[0].volume24h, 68150584812.34); eq(live[0].openInterest, 32127744122.77)
 })
 
 Deno.test('exchange selection takes the largest venues and drops a delisted one', async () => {

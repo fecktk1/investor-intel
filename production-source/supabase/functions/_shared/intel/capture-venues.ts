@@ -301,7 +301,9 @@ export async function captureExchangeReserves(
 const firstNumber = (row: any, quote: any, keys: string[]): number | null =>
   keys.map((key) => num(quote?.[key] ?? row?.[key])).find((v) => v != null) ?? null
 
-const DERIVATIVE_VOLUME_KEYS = ['derivative_volume_24h', 'derivatives_volume_24h', 'futures_volume_24h', 'volume_24h']
+// `derivative_volume` is the key the live `/v5/exchange/derivatives/list` quote
+// carries (read from the 2026-09-15 seed capture, which stored null volumes).
+const DERIVATIVE_VOLUME_KEYS = ['derivative_volume', 'derivative_volume_24h', 'derivatives_volume_24h', 'futures_volume_24h', 'volume_24h']
 const OPEN_INTEREST_KEYS = ['open_interest', 'open_interest_usd', 'total_open_interest']
 
 export interface VenueShareRow { kind: 'spot' | 'derivatives'; exchangeId: number; slug: string | null; volume24h: number | null; openInterest: number | null; numMarketPairs: number | null; observedAt: string | null }
