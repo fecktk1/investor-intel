@@ -1001,6 +1001,10 @@
       "full": "Tela cheia",
       "exit": "Sair da tela cheia",
       "covering": "O navegador recusou a tela cheia, então o gráfico cobre esta janela. Pressione Escape ou escolha «Sair da tela cheia» para voltar."
+    },
+    "working": {
+      "saving": "Salvando",
+      "saved": "Salvo"
     }
   },
   "charts": {
@@ -2884,7 +2888,8 @@
     "read_failed": "Não foi possível concluir a leitura do ativo.",
     "research_heading": "Contexto de mercado",
     "sections": "Nesta página do ativo",
-    "workspace": "Preço, posição e pesquisa"
+    "workspace": "Preço, posição e pesquisa",
+    "restoring_chart": "Restaurando o gráfico que você deixou…"
   },
   "coverage": {
     "available_count": "{{available}} de {{total}} seções disponíveis",

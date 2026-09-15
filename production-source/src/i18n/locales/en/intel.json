@@ -1816,6 +1816,10 @@
       "full": "Full screen",
       "exit": "Exit full screen",
       "covering": "Full screen was refused by the browser, so the chart covers this window instead. Press Escape or choose Exit full screen to return."
+    },
+    "working": {
+      "saving": "Saving",
+      "saved": "Saved"
     }
   },
   "charts": {
@@ -2884,7 +2888,8 @@
     "read_failed": "The asset read could not be completed.",
     "research_heading": "Market context",
     "sections": "On this asset page",
-    "workspace": "Price, position and research"
+    "workspace": "Price, position and research",
+    "restoring_chart": "Restoring the chart you left…"
   },
   "coverage": {
     "available_count": "{{available}} of {{total}} sections available",

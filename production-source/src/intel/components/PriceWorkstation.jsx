@@ -56,7 +56,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  const [screenHeight,setScreenHeight]=useState(()=>typeof window==='undefined'?900:window.innerHeight)
  const height=chartSizeHeight(size,baseHeight,screenHeight)
 
- const callbacks=useRef({onCursorChange,onViewportChange,onFailure});callbacks.current={onCursorChange,onViewportChange,onFailure}
+ const callbacks=useRef({onCursorChange,onViewportChange,onFailure,onWorkspaceChange});callbacks.current={onCursorChange,onViewportChange,onFailure,onWorkspaceChange}
 
  const [ready,setReady]=useState(0),[mode,setMode]=useState(initialState.mode||(bars.every(b=>b.o!=null)?'candles':'line')),[scale,setScale]=useState(initialState.scale||'linear'),[autoScale,setAutoScale]=useState(initialState.autoScale??true)
 
@@ -87,7 +87,31 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   unproject:point=>{const logical=api.current?.timeScale().coordinateToLogical(point.x),t=continuousChartTime(gridRef.current,logical),price=main.current?.coordinateToPrice(point.y);return t!=null&&Number.isFinite(price)&&price>0?{t:Math.round(t),price}:null}})
 
- useEffect(()=>{onWorkspaceChange?.({mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings:drawings.items,replay:replay?{at:cursorTime,knownOnly}:undefined})},[mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings.items,replay,cursorTime,knownOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+ // The chart's working draft: everything a member would expect to find again, in
+ // the exact shape `validateChartLayout` accepts, so the same contract guards the
+ // named layout and the automatic one. Built on demand from the live chart rather
+ // than mirrored into state, so pan and zoom cost no render.
+ const studyParams=list=>list.map(s=>({...s,params:Object.fromEntries(Object.entries(s.params||{}).filter(([,v])=>v!=null).map(([k,v])=>[k,Number(v)]))}))
+ const chartState=()=>{
+  const range=api.current?.timeScale().getVisibleLogicalRange(),grid=gridRef.current
+  if(!grid)return null
+  return {schemaVersion:1,...(replay?{replay:{at:cursorTime,knownOnly}}:{}),asset:persistence?.asset,interval:persistence?.interval?.toLowerCase()||'auto',
+   range:{from:Math.max(0,continuousChartTime(grid,range?.from)??grid.start),to:continuousChartTime(grid,range?.to)??grid.end},
+   mode,scale,autoScale,volume,timezone,theme,visibility,
+   studies:studyParams(studies),drawings:drawings.items}
+ }
+ const workingState=()=>{
+  const base=chartState()
+  // Full screen is a gesture the browser grants only on a press, so a working
+  // state remembers the taller chart rather than a screen it cannot re-enter.
+  return base&&{...base,preset,size:size==='fullscreen'?'tall':size}
+ }
+ const draftRef=useRef(null);draftRef.current=workingState
+ // Nothing is reported before the first fit: a draft read from a chart that has
+ // not placed its window yet would describe a window the member never saw.
+ const emitWorkspace=useCallback(()=>{if(!fitted.current)return;const draft=draftRef.current?.();if(draft)callbacks.current.onWorkspaceChange?.(draft)},[])
+ const visibilityKey=JSON.stringify(visibility)
+ useEffect(()=>{emitWorkspace()},[mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings.items,replay,cursorTime,knownOnly,visibilityKey,emitWorkspace]) // eslint-disable-line react-hooks/exhaustive-deps
 
  // The browser owns full screen: leaving it by its own Escape, its own control
  // or a navigation must bring the workstation back rather than strand it.
@@ -155,7 +179,9 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  const gestureFrame=useRef(null)
 
- const refreshAfterGesture=()=>{if(gestureFrame.current!=null)return;gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=null;refreshGeometry();const actual=api.current?.priceScale('right').options().autoScale;if(typeof actual==='boolean')setAutoScale(actual)})})}
+ // A pan or zoom settles here rather than on every frame, which is also where the
+ // moved window is reported to the working state.
+ const refreshAfterGesture=()=>{if(gestureFrame.current!=null)return;gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=null;refreshGeometry();const actual=api.current?.priceScale('right').options().autoScale;if(typeof actual==='boolean')setAutoScale(actual);emitWorkspace()})})}
 
  useEffect(()=>()=>cancelAnimationFrame(gestureFrame.current),[])
 
@@ -222,7 +248,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
    }
    previousWindow.current=timeWindow?{...timeWindow}:null
    plottedGrid.current=source.grid
-   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;refreshGeometry()}})})}
+   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;refreshGeometry();emitWorkspace()}})})}
 
    refreshGeometry()
 
@@ -320,13 +346,9 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  const pan=direction=>{const s=api.current?.timeScale(),r=s?.getVisibleLogicalRange();if(r){const delta=(r.to-r.from)*0.25*direction;s.setVisibleLogicalRange({from:r.from+delta,to:r.to+delta})}}
 
- const captureLayout=()=>{
-
-  const range=api.current?.timeScale().getVisibleLogicalRange(),grid=gridRef.current
-
-  return validateChartLayout({schemaVersion:1,...(replay?{replay:{at:cursorTime,knownOnly}}:{}),asset:persistence.asset,interval:persistence.interval?.toLowerCase()||'auto',range:{from:Math.max(0,continuousChartTime(grid,range?.from)??grid.start),to:continuousChartTime(grid,range?.to)??grid.end},mode,scale,autoScale,volume,timezone,theme,visibility,studies:studies.map(s=>({...s,params:Object.fromEntries(Object.entries(s.params||{}).filter(([,v])=>v!=null).map(([k,v])=>[k,Number(v)]))})),drawings:drawings.items})
-
- }
+ // A NAMED layout keeps the exact shape it has always had: no size and no preset,
+ // so a layout saved last year and one saved today still fingerprint the same.
+ const captureLayout=()=>validateChartLayout(chartState())
 
  const restoreLayout=input=>{
 
@@ -336,7 +358,8 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   cancelAnimationFrame(fitFrame.current);fitted.current=true
 
-  fitFrame.current=requestAnimationFrame(()=>{const grid=gridRef.current;if(api.current&&grid)api.current.timeScale().setVisibleLogicalRange({from:continuousChartLogical(grid,layout.range.from),to:continuousChartLogical(grid,layout.range.to)})})
+  // A restored layout becomes the working state the member goes on from.
+  fitFrame.current=requestAnimationFrame(()=>{const grid=gridRef.current;if(api.current&&grid)api.current.timeScale().setVisibleLogicalRange({from:continuousChartLogical(grid,layout.range.from),to:continuousChartLogical(grid,layout.range.to)});emitWorkspace()})
 
   setLayoutNote(layout.range.to<(source?.grid.start??0)||layout.range.from>(source?.grid.end??Infinity)?t('chart.workstation.layout_outside',{defaultValue:'This saved view is outside the loaded price period. Choose a longer period to load its market history.'}):t('chart.workstation.layout_restored',{defaultValue:'Saved view, drawings and indicators restored.'}))
 
@@ -371,7 +394,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    <button type="button" onClick={cycleSize}>{size==='fullscreen'?t('chart.size.exit',{defaultValue:'Exit full screen'}):size==='tall'?t('chart.size.full',{defaultValue:'Full screen'}):t('chart.size.taller',{defaultValue:'Taller chart'})}</button>
 
-   <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true)}}>Reset view</button>
+   <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true);emitWorkspace()}}>Reset view</button>
 
    {persistence&&!readOnly&&<ChartLayoutLaunch context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<SnapshotSave triggerLabel={t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})} context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><AssetNavigator triggerLabel="Assets" context={persistence}/><AlertEditor triggerLabel="Create alert" context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
   </div>

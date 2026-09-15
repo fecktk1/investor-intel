@@ -1,7 +1,8 @@
 import {useContractChartEvidence} from '../lib/useContractChartEvidence'
 import { useScreenParams } from '../lib/useScreenParams'
 import { mergeLinkedAssetMarkers } from '../lib/chart-history'
-import React, { useEffect, useState, useCallback } from 'react'
+import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import { useChartWorkingState, workingCandleInterval, workingInitialState, workingRangePreset } from '../lib/chart-working-state'
 import { useParams, Link, useLocation, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { ArrowLeft, TrendingUp, TrendingDown, Activity } from 'lucide-react'
@@ -105,24 +106,39 @@ export default function MarketAssetPage() {
   const { profile } = projectProfile
   const liveQuote=useMarketQuote({supabase,orgId:org?.id,userId:user?.id,detail:initialDetail})
   const d=initialDetail?{...initialDetail,...liveQuote.quote,chain:marketNativeChain(initialDetail.sourceProvider,initialDetail.providerId)||initialDetail.chain}:null
-  const [chartOptions,setChartOptions]=useScreenParams('chart_', {range:'7D',interval:'auto'})
   // Every width is selectable for every identity now: the backend ladder decides
   // which source can serve it and states the width it actually served.
   const candleIntervalChoices=candleIntervals()
-  const candleInterval=candleIntervalChoices.includes(chartOptions.interval)?chartOptions.interval:'auto'
-  const setCandleInterval=interval=>setChartOptions(previous=>({...previous,interval}))
   const sym = String(d?.symbol || routeSymbol).toUpperCase()
   const marketKey = d?.sourceProvider && d?.providerId != null ? `market:${d.sourceProvider}:${d.providerId}` : null
   const network = useMarketPortfolioIdentity({ identityChoices: d?.identityChoices, defaultKey: d?.canonicalAssetKey, marketKey, explicitKey: query.get('network') })
   const historyTo = useLiveHistoryEnd(org?.id)
-  const historyRange=Object.hasOwn(CHART_RANGE_MS,chartOptions.range)?chartOptions.range:'7D'
-  const setHistoryRange=range=>setChartOptions(previous=>({...previous,range}))
   // A market-only asset has a valid research workspace. A network match that is
   // still pending or failed does not: do not open temporary private workspaces.
   const canonicalKey = network.canonicalAssetKey || (!network.choices.length && !network.invalidExplicit ? marketKey : null)
   const chartPending = !canonicalKey && network.loading
   const selectedNetwork=network.choices.find(choice=>choice.canonicalAssetKey===canonicalKey)
   const riskAddress=canonicalKey?.startsWith('eip155:')&&/^0x[0-9a-f]{40}$/i.test(canonicalKey.split(':')[2]||'')?canonicalKey.split(':')[2]:canonicalKey?.startsWith('solana:')&&!canonicalKey.includes(':native:')?canonicalKey.slice(7):null
+  // The chart this member last left on this asset, read BEFORE the chart is built
+  // so the workstation paints once, already carrying their drawings, indicators,
+  // window and candle width. The stored period and width become the defaults the
+  // controls start from, so choosing another one still writes it to the address
+  // and still wins.
+  const workspaceContext = canonicalKey && user?.id && org?.id ? { supabase, userId: user.id, orgId: org.id, asset: canonicalKey } : null
+  const workspace = useChartWorkingState(workspaceContext)
+  const restoredState = workspace.working?.state || null
+  const restoredSavedAt = workspace.working?.updatedAt ? Date.parse(workspace.working.updatedAt) : null
+  const [chartOptions,setChartOptions]=useScreenParams('chart_', {
+    range: workingRangePreset(restoredState?.range, CHART_RANGE_MS) || '7D',
+    interval: workingCandleInterval(restoredState?.interval, candleIntervalChoices) || 'auto',
+  })
+  const candleInterval=candleIntervalChoices.includes(chartOptions.interval)?chartOptions.interval:'auto'
+  const setCandleInterval=interval=>setChartOptions(previous=>({...previous,interval}))
+  const historyRange=Object.hasOwn(CHART_RANGE_MS,chartOptions.range)?chartOptions.range:'7D'
+  const setHistoryRange=range=>setChartOptions(previous=>({...previous,range}))
+  // The window keeps its width and ends at now, so a day or two away simply moves
+  // the drawings left; a window the member had scrolled back to is left where it is.
+  const restoredLayout = useMemo(() => workingInitialState(restoredState, Date.now(), restoredSavedAt), [restoredState, restoredSavedAt])
   const historyFrom = historyTo - CHART_RANGE_MS[historyRange]
   const position = useAssetPortfolioContext({ canonicalAssetKey: network.canonicalAssetKey, from: historyFrom, to: historyTo })
   const research = useAssetThesisHistory({ canonicalKey, from: historyFrom, to: historyTo })
@@ -291,8 +307,8 @@ export default function MarketAssetPage() {
           {network.invalidExplicit && <p role="status" className="text-sm text-[var(--fg-4)]">{t('asset.invalid_network', { defaultValue: 'This network is not a verified representation of this asset. Choose a listed network.' })}</p>}
           {network.error && <p role="status" className="text-sm text-[var(--fg-4)]">{t('asset.network_unavailable', { defaultValue: 'Your portfolio network match is unavailable.' })} <button onClick={network.retry} className="underline underline-offset-4">{t('common.retry', { defaultValue: 'Retry' })}</button></p>}
         </div>}
-        {chartPending ? <div role="status" className="min-h-[420px] flex items-center justify-center text-sm text-[var(--fg-4)]">{t('asset.matching_chart_network', { defaultValue: 'Matching your portfolio network…' })}</div> : <TokenChart key={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} assetKey={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} candles={d.candles} persistence={canonicalKey ? {supabase,userId:user?.id,orgId:org?.id,asset:canonicalKey} : null} readOnly={!canonicalKey}
-          requestKey={candleInterval}
+        {chartPending || workspace.loading ? <div role="status" className="min-h-[420px] flex items-center justify-center text-sm text-[var(--fg-4)]">{chartPending ? t('asset.matching_chart_network', { defaultValue: 'Matching your portfolio network…' }) : t('asset.restoring_chart', { defaultValue: 'Restoring the chart you left…' })}</div> : <TokenChart key={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} assetKey={`${user?.id}:${org?.id}:${canonicalKey || marketKey}:${position.portfolioId}`} candles={d.candles} persistence={canonicalKey ? {supabase,userId:user?.id,orgId:org?.id,asset:canonicalKey,interval:candleInterval} : null} readOnly={!canonicalKey}
+          requestKey={candleInterval} initialLayout={restoredLayout} workingRevision={workspace.working?.revision || 0}
           rangeExtra={<label className="intel-event-meta">Candle interval <select aria-label="Candle interval" value={candleInterval} onChange={e=>setCandleInterval(e.target.value)}>{candleIntervalChoices.map(choice=><option key={choice} value={choice}>{candleIntervalLabel(choice)}</option>)}</select><span> The chart names its source and the width it served under Price coverage.</span></label>}
           markers={[...mergeLinkedAssetMarkers(position.markers, research.markers),...publicEvidence.markers,...tapeMarkers]} timeWindow={{ from: historyFrom, to: historyTo }} showDensityToggles defaultRange={historyRange} onRangeChange={setHistoryRange}
           historyLoading={research.loading || position.loading || research.loadingMore || position.loadingMore}
