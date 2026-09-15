@@ -245,8 +245,14 @@ export async function readAirdrops(db: any, params: { status?: unknown; days?: u
     // deno-lint-ignore no-explicit-any
     .map(({ _start: _drop, ...row }: any) => row)
   const seen = page.rows.map((row) => str(row?.last_seen_at, 40)).filter((v): v is string => !!v).sort()
+  // What the provider's whole list holds, window or not, so an empty calendar
+  // can say "the list has N entries and the newest ended on D" instead of
+  // looking like a list nobody captured (the live list answered six airdrops
+  // from 2022 to an ONGOING/UPCOMING request on 2026-09-15).
+  const ended = all.map((row) => row.endDate).filter((v): v is string => !!v).sort()
   return {
     view: 'airdrops', status, days, rows,
+    recorded: { total: all.length, outsideWindow: all.length - inWindow.length, newestEndDate: ended.at(-1) ?? null },
     lanes: {
       past: inWindow.filter((row) => row.lane === 'past').length,
       live: inWindow.filter((row) => row.lane === 'live').length,
