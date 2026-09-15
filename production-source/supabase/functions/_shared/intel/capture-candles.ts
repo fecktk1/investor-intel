@@ -56,11 +56,21 @@ export const HISTORY_EPOCH_MS = Date.UTC(2010, 0, 1)
 export const BACKFILL_ASSETS_PER_RUN = 10
 /** Catalogue assets the lane seeds itself with. */
 export const BACKFILL_TOP_N = 100
-/** Daily points one CoinMarketCap OHLCV page asks for. At one credit per 100
- * points this is about 10 credits a page. */
-export const OHLCV_PAGE_DAYS = 1000
-/** Pages one asset may take from CoinMarketCap in a single pass. */
-export const OHLCV_MAX_PAGES = 8
+/** Daily points one CoinMarketCap OHLCV page asks for.
+ *
+ * 250 IS THE REGISTRY'S OWN CEILING, not a preference: `numericCeiling` in
+ * `cmc-capabilities.ts` caps `count` at 250 for this capability, so a page that
+ * asks for more is refused by `cmcParams` with `invalid_parameter:count` BEFORE
+ * any request is made. A page therefore covers 249 days and asks for 250 points
+ * (a window carries one extra point, the way `cmcChartPlan` builds its pages).
+ * At one credit per 100 points that is 3 credits a page. */
+export const OHLCV_PAGE_DAYS = 249
+/** Points one page asks for: the registry's ceiling for `ohlcv`. */
+export const OHLCV_PAGE_COUNT = 250
+/** Pages one asset may take from CoinMarketCap in a single pass. 2010 to today
+ * is about 6,100 days, which is 25 pages of 249; 26 leaves a page of headroom so
+ * a full walk is never cut short by the page ceiling alone. */
+export const OHLCV_MAX_PAGES = 26
 /** Credits ONE backfill run may spend, whatever the standing budget allows. Ten
  * assets at a thousand-day page each is about 100; the rest is headroom for an
  * asset with a decade of history. */
@@ -183,17 +193,42 @@ async function binancePair(db: any, symbol: string): Promise<string | null> {
   return page.rows[0]?.provider_symbol ? String(page.rows[0].provider_symbol) : null
 }
 
-/**
- * The complete daily history of ONE asset, written once.
+/** How a pass relates to what is already stored.
  *
- * `from` is where the walk starts. On a resumed pass the caller passes the day
- * after what is already stored, so a run never repeats work it has already paid
- * for.
+ *   full    nothing is stored: the venue walks forward from the epoch and the
+ *           paid rung buys everything the venue could not reach.
+ *   resume  a PARTIAL asset: the venue resumes FORWARD from the day after the
+ *           newest stored candle (its own walk pages forward, so a truncated
+ *           one leaves its gap at the new end), while the paid rung pages
+ *           BACKWARD from the OLDEST stored candle, because that gap is at the
+ *           old end and is exactly what an interrupted run still owes.
+ *   append  a finished asset's daily top-up: FORWARD ONLY. It must never walk
+ *           older years, so a complete asset costs about one credit a day when
+ *           no venue lists it and nothing at all when one does.
+ */
+export type BackfillMode = 'full' | 'resume' | 'append'
+
+export interface BackfillWindow {
+  mode?: BackfillMode
+  /** Day the FORWARD walk starts from. */
+  from?: number
+  /** Oldest day already stored, for a backward resume. */
+  oldest?: number | null
+}
+
+/**
+ * The daily history of ONE asset.
+ *
+ * A pass never re-asks for a period already stored: the forward walk starts the
+ * day after the newest stored candle, and the backward walk ends at the oldest.
  */
 // deno-lint-ignore no-explicit-any
 export async function backfillAssetHistory(db: any, asset: { assetKey: string; symbol: string | null; cmcId: string | null },
   ctx: MarketAssetsContext, now: number, creditBudget: number, deps: CandleLaneDeps,
-  from = HISTORY_EPOCH_MS): Promise<AssetHistoryResult> {
+  window: BackfillWindow = {}): Promise<AssetHistoryResult> {
+  const mode: BackfillMode = window.mode ?? 'full'
+  const from = Number.isFinite(window.from) ? Math.max(HISTORY_EPOCH_MS, window.from as number) : HISTORY_EPOCH_MS
+  const storedOldest = Number.isFinite(window.oldest) ? (window.oldest as number) : null
   const recordedAt = new Date(now).toISOString()
   const yesterday = Math.floor(now / DAY) * DAY - DAY
   const result: AssetHistoryResult = { assetKey: asset.assetKey, source: null, rows: 0, credits: 0, oldest: null, newest: null, complete: false, reason: null }
@@ -205,7 +240,7 @@ export async function backfillAssetHistory(db: any, asset: { assetKey: string; s
   let venueComplete = false, venueReason: string | null = null
   let cmcComplete = false, cmcReason: string | null = null
 
-  // 1. The free venue, for every year it lists.
+  // 1. The free venue, walking FORWARD in every mode.
   const pair = await binancePair(db, String(asset.symbol || '').toUpperCase())
   if (pair) {
     const history = await (deps.exchange ?? binanceDailyHistory)(ctx, pair, Math.max(from, BINANCE_EPOCH_MS), yesterday + DAY - 1, now).catch(() => null)
@@ -222,22 +257,34 @@ export async function backfillAssetHistory(db: any, asset: { assetKey: string; s
     } else venueReason = history?.reason ?? 'no_completed_candles'
   } else venueReason = 'no_binance_pair'
 
-  // 2. CoinMarketCap OHLCV for the years before the venue listed it, or for the
-  //    whole history when no venue lists it at all.
-  const cmcTo = venueOldest != null ? venueOldest : yesterday + DAY
-  const start = Math.max(HISTORY_EPOCH_MS, from)
+  // 2. CoinMarketCap OHLCV for the years the venue cannot reach.
+  //
+  // `append` is forward only: its window starts where the forward walk started,
+  // so a finished asset can never be charged for a decade it already holds.
+  // `resume` is the opposite: it ends at the OLDEST stored day and starts at the
+  // epoch, because that is the gap an interrupted run still owes. Resuming a
+  // partial asset forward would leave the window empty, mark it COMPLETE and
+  // silently abandon the older years.
+  const paidStart = mode === 'append' ? from : HISTORY_EPOCH_MS
+  const paidEnd = mode === 'resume'
+    ? Math.min(...[storedOldest, venueOldest, yesterday + DAY].filter((value): value is number => value != null))
+    : venueOldest != null ? venueOldest : yesterday + DAY
   if (!asset.cmcId) cmcReason = 'no_cmc_listing'
-  else if (cmcTo <= start) cmcComplete = true  // the venue already covers every day asked for
+  else if (paidEnd <= paidStart) cmcComplete = true  // nothing is owed that the venue has not already covered
   else if (creditBudget <= 0) cmcReason = 'credit_budget'
   else {
-    const pages = ohlcvHistoryPages(asset.cmcId, from, cmcTo)
+    const pages = ohlcvHistoryPages(asset.cmcId, paidStart, paidEnd)
     let spent = 0, stopped = false
     for (const params of pages) {
       const cost = estimateCmcCredits('ohlcv', { count: String(params.count) })
       if (spent + cost > creditBudget) { cmcReason = 'credit_budget'; stopped = true; break }
-      spent += cost
       // deno-lint-ignore no-explicit-any
       const response: any = await deps.request('ohlcv', params, ctx).catch(() => null)
+      // CREDITS ARE COUNTED ONLY FOR A REQUEST THAT REACHED THE PROVIDER. A page
+      // the local validator refused, or a call that threw, never left this
+      // process and must not be recorded as spent: the estimate is a floor the
+      // transport reconciles, not a charge this lane may invent.
+      if (response?.payload || response?.provenance?.fetchedAt) spent += cost
       if (!response?.payload) { cmcReason = text(response?.reason, 60) || 'provider_unavailable'; stopped = true; break }
       const recorded = Date.parse(response.provenance?.fetchedAt || '')
       const bars = cmcOhlcvBars(response.payload, asset.cmcId, Number.isFinite(recorded) ? recorded : null, DAY)
@@ -349,15 +396,18 @@ async function saveState(db: any, assetKey: string, patch: Record<string, unknow
 /** One asset's pass, with its state row updated from the outcome. */
 // deno-lint-ignore no-explicit-any
 async function runOne(db: any, row: any, ctx: MarketAssetsContext, now: number, budget: number, deps: CandleLaneDeps,
-  resume = false): Promise<AssetHistoryResult> {
+  mode: BackfillMode = 'full'): Promise<AssetHistoryResult> {
   const assetKey = String(row?.asset_key || '')
   const cmcId = String(row?.provider || '') === CAPTURE_PROVIDER && /^[1-9][0-9]{0,9}$/.test(String(row?.provider_id || '')) ? String(row.provider_id) : null
-  // A resumed pass starts the day AFTER what is already stored, so the run never
-  // pays twice for the same period. `resume` is explicit rather than inferred
-  // from the state, because the daily append resumes an asset that is COMPLETE.
+  // The FORWARD walk starts the day after what is already stored, so no pass
+  // ever re-asks for a stored period. The mode is passed by the CALLER, not
+  // inferred from the state: the daily append resumes an asset that is COMPLETE,
+  // and a partial asset's paid rung owes the OLDER years, not the newer ones.
   const storedNewest = Date.parse(String(row?.newest_candle || ''))
-  const from = Number.isFinite(storedNewest) && (resume || String(row?.state) === 'partial') ? storedNewest + DAY : HISTORY_EPOCH_MS
-  const outcome = await backfillAssetHistory(db, { assetKey, symbol: text(row?.symbol, 50), cmcId }, ctx, now, budget, deps, from)
+  const storedOldest = Date.parse(String(row?.oldest_candle || ''))
+  const from = Number.isFinite(storedNewest) && mode !== 'full' ? storedNewest + DAY : HISTORY_EPOCH_MS
+  const outcome = await backfillAssetHistory(db, { assetKey, symbol: text(row?.symbol, 50), cmcId }, ctx, now, budget, deps,
+    { mode, from, oldest: Number.isFinite(storedOldest) ? storedOldest : null })
   const attempts = (Number(row?.attempts) || 0) + 1
   const held = String(row?.state || 'pending')
   const stored = Number(row?.candles) || 0
@@ -415,7 +465,9 @@ export async function captureCandleBackfill(db: any, ctxFor: (name: string, maxC
     const assets: AssetHistoryResult[] = []
     let rows = 0
     for (const row of queue.rows) {
-      const outcome = await runOne(db, row, ctx, at, budget - credits, deps)
+      // A partial asset resumes: its paid rung pages BACKWARD from the oldest
+      // day already stored, which is the gap an interrupted run still owes.
+      const outcome = await runOne(db, row, ctx, at, budget - credits, deps, String(row?.state) === 'partial' ? 'resume' : 'full')
       credits += outcome.credits
       rows += outcome.rows
       assets.push(outcome)
@@ -465,7 +517,8 @@ export async function backfillOneAsset(db: any, assetKey: string, ctxFor: (name:
     const ceiling = policy.maxCredits ?? BACKFILL_CREDIT_CEILING
     const alreadySpent = await spentCredits(db)
     const budget = planAllows(plan, 'startup') ? Math.max(0, Math.min(BACKFILL_RUN_CREDITS, ceiling - alreadySpent)) : 0
-    const outcome = await runOne(db, row, ctxFor('candle-history', OHLCV_MAX_PAGES + 2), at, budget, deps)
+    const outcome = await runOne(db, row, ctxFor('candle-history', OHLCV_MAX_PAGES + 2), at, budget, deps,
+      String(row?.state) === 'partial' ? 'resume' : 'full')
     return {
       job, rows: outcome.rows, credits: outcome.credits, assetKey: key, source: outcome.source,
       complete: outcome.complete, creditCeiling: ceiling, creditsSpentToDate: alreadySpent + outcome.credits,
@@ -509,9 +562,10 @@ export async function captureCandleDaily(db: any, ctxFor: (name: string, maxCall
       // With the paid budget gone it is left for the next run rather than
       // recorded as having no candle for the day.
       if (remaining <= 0 && !row?.symbol) { skippedForBudget += 1; continue }
-      // The append resumes from the day AFTER the newest stored candle, so it
-      // asks only for what is missing and never re-pays for a stored period.
-      const outcome = await runOne(db, row, ctx, at, Math.max(0, remaining), deps, true)
+      // FORWARD ONLY. The append asks for the days AFTER the newest stored
+      // candle and never walks older years, so a Binance asset costs nothing and
+      // an asset no venue lists costs about one credit a day.
+      const outcome = await runOne(db, row, ctx, at, Math.max(0, remaining), deps, 'append')
       credits += outcome.credits
       rows += outcome.rows
       if (outcome.rows) appended += 1
