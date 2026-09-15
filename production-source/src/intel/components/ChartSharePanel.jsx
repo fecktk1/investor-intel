@@ -55,7 +55,7 @@ export default function ChartSharePanel({context,captureLayout,captureFrame=null
  {error&&!open&&<span role="alert">{error}</span>}
  {open&&preview&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby={heading} onCancel={e=>{e.preventDefault();close()}}>
   <div className="intel-investigation-analysis-heading"><h2 id={heading}>{t('chart.share.dialog_title',{defaultValue:'Share this chart'})}</h2><button type="button" onClick={close}>{t('common.close',{defaultValue:'Close'})}</button></div>
-  {captureFrame&&<ChartShareImage capture={()=>captureFrame(preview.range)} layout={preview} source={chartSource}/>}
+  {captureFrame&&<ChartShareImage capture={options=>captureFrame({...options,range:preview.range})} layout={preview} source={chartSource}/>}
   <h3 className="eyebrow">{t('chart.share.link_option',{defaultValue:'Or share a link'})}</h3>
   <p className="intel-analysis-caption">{t('chart.share.intro',{defaultValue:'A link points at a saved version of this chart, so a reader sees exactly what you saw, drawings and indicators included, and cannot change it. Save that version first, then choose an audience, an expiry and the notes to include.'})}</p>
   <ChartShareCard layout={preview} source={chartSource} capturedAt={seriesCapture?.proof?.issuedAt??null} latestObservation={latestObservation}/>

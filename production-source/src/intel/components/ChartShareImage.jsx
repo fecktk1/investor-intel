@@ -2,6 +2,7 @@ import React,{useEffect,useRef,useState} from 'react'
 import {useTranslation} from 'react-i18next'
 import {fmtPct,fmtPrice} from '../lib/market-format'
 import {watermarkNeedsInvert} from '../lib/chart-watermark'
+import {chartShareFrame} from '../lib/chart-share-frame'
 
 /** The image half of the share flow: a posting image of the chart on screen.
  *
@@ -46,8 +47,13 @@ export default function ChartShareImage({capture,layout=null,source=null}) {
   const id=++generation.current
   setBusy(true);setError(null);setNotice(null)
   try{
-   const frame=capture()
-   const {chartShareImageBlob}=await import('../lib/chart-share-image')
+   // The portrait panel is far taller than the chart on screen, so portrait asks
+   // the chart for a capture at the panel's own aspect: it fills the frame
+   // instead of floating in a band of black.
+   const {chartShareImageBlob,chartShareImageLayout}=await import('../lib/chart-share-image')
+   const {plot}=chartShareImageLayout(target)
+   const frame=chartShareFrame(await capture({aspect:target==='portrait'?plot.width/plot.height:null}))
+   if(!alive.current||generation.current!==id)return
    const base=import.meta.env.BASE_URL
    const blob=await chartShareImageBlob({...frame,brandmark:`${base}logo-color.png`,mark:`${base}apple-touch-icon.png`,invert:watermarkNeedsInvert(frame.background),header:headerFor(frame)},{size:target})
    if(!alive.current||generation.current!==id)return
