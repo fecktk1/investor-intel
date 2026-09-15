@@ -41,7 +41,30 @@ export const archiveCanAnswer = (interval: unknown) => (ARCHIVE_INTERVALS as rea
  * says so rather than quietly losing the oldest years. */
 export const ARCHIVE_ROW_CAP = 9_000
 
-export const CANDLE_COLUMNS = 'asset_key,provider,interval,candle_time,open,high,low,close,volume,source_ref,recorded_at'
+export const CANDLE_COLUMNS = 'asset_key,provider,candle_interval,candle_time,open,high,low,close,volume,source_ref,recorded_at'
+
+/** Two sources may both hold the same period for one asset: a venue filled the
+ * years it lists and CoinMarketCap OHLCV filled the years before that. Both rows
+ * are kept, because they are two measurements and neither is a correction of the
+ * other, and the READ picks one with a stated precedence: an actual traded venue
+ * beats an aggregate, and the aggregate beats nothing. The rule is deterministic,
+ * so the same window always renders the same series. */
+export const ARCHIVE_PROVIDER_RANK: Record<string, number> = {
+  binance: 0, coinbase: 1, kraken: 2, kucoin: 3, coinmarketcap: 4, coinmarketcap_kline: 5, coingecko: 6,
+}
+export const archiveProviderRank = (provider: unknown) => ARCHIVE_PROVIDER_RANK[String(provider)] ?? 99
+
+/** One row per period, chosen by that precedence. */
+// deno-lint-ignore no-explicit-any
+export function preferArchiveProvider(rows: any[]): any[] {
+  const byTime = new Map<string, any>()
+  for (const row of rows) {
+    const key = String(row?.candle_time ?? '')
+    const held = byTime.get(key)
+    if (!held || archiveProviderRank(row?.provider) < archiveProviderRank(held.provider)) byTime.set(key, row)
+  }
+  return [...byTime.values()]
+}
 
 const num = (v: unknown): number | null => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
 
@@ -77,13 +100,13 @@ export async function readArchiveCandles(db: any, assetKey: string, interval: st
   const step = stored === '1h' ? 3_600_000 : DAY
   try {
     const { data, error } = await db.from('market_asset_candles').select(CANDLE_COLUMNS)
-      .eq('asset_key', assetKey).eq('interval', stored)
+      .eq('asset_key', assetKey).eq('candle_interval', stored)
       .gte('candle_time', new Date(from).toISOString())
       .lte('candle_time', new Date(to).toISOString())
       .order('candle_time', { ascending: true }).limit(cap)
     if (error) return { bars: [], reason: String(error.message || error.code || error).slice(0, 200), truncated: false, rows: 0 }
     const rows = Array.isArray(data) ? data : data ? [data] : []
-    const bars = normalizeBars(rows.map((row) => archiveBar(row, step)).filter((bar): bar is Bar => !!bar)).bars
+    const bars = normalizeBars(preferArchiveProvider(rows).map((row) => archiveBar(row, step)).filter((bar): bar is Bar => !!bar)).bars
     return { bars, reason: null, truncated: rows.length >= cap, rows: rows.length }
   } catch (e) { return { bars: [], reason: ((e as Error)?.message || 'archive_read_failed').slice(0, 200), truncated: false, rows: 0 } }
 }

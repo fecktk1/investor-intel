@@ -26,6 +26,7 @@
 // are both injectable, so the module tests without a network or a database.
 
 import { getProvider } from '../exchange-market/provider-registry.ts'
+import type { ProviderId } from '../exchange-market/types.ts'
 import { normalizeBars, type Bar } from './chart-analysis.ts'
 import { candlePlan, candleCoverage, EXCHANGE_INTERVALS, VENUE_CANDLES, type CandlePlan } from './candle-ladder.ts'
 
@@ -36,7 +37,7 @@ export const VENUE_CANDIDATES = 3
 
 export interface ExchangeCandleDeps {
   // deno-lint-ignore no-explicit-any
-  provider?: (id: string) => any
+  provider?: (id: ProviderId) => any
   // deno-lint-ignore no-explicit-any
   tickers?: (db: any, symbol: string) => Promise<any[]>
 }
@@ -67,7 +68,9 @@ export function exchangeBars(klines: any[], now: number): Bar[] {
     if (k?.committed === false || closedAt > now) return []
     const c = Number(k?.close)
     if (!Number.isFinite(c)) return []
-    const value = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : null }
+    // `Number(null)` is 0, so an absent value must be rejected BEFORE conversion:
+    // a volume the venue did not report is not a period with no trades.
+    const value = (v: unknown) => { if (v == null || v === '') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
     const volume = value(k?.volumeBase)
     return [{
       t, closedAt, o: value(k?.open), h: value(k?.high), l: value(k?.low), c,
@@ -133,7 +136,7 @@ export async function loadExchangeCandles(db: any, symbol: string, range = '7D',
     // deno-lint-ignore no-explicit-any
     let klines: any[] | null = null
     try {
-      const provider = (deps.provider ?? getProvider)(venue)
+      const provider = (deps.provider ?? getProvider)(venue as ProviderId)
       // deno-lint-ignore no-explicit-any
       klines = provider ? await provider.getKlines(providerSymbol, providerInterval, plan.limit, { supabase: db, jobName: 'intel-markets-candles', kind: 'request' } as any) : null
     } catch { klines = null }

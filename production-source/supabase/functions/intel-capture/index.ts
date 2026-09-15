@@ -40,9 +40,11 @@ import { LISTING_CAPTURE_OPS } from '../_shared/intel/capture-listings.ts'
 import { LISTING_CAPTURE_VIEWS } from '../_shared/intel/capture-listings-read.ts'
 import { MEME_CAPTURE_OPS } from '../_shared/intel/capture-meme.ts'
 import { MEME_CAPTURE_VIEWS } from '../_shared/intel/capture-meme-read.ts'
+import { CANDLE_CAPTURE_OPS } from '../_shared/intel/capture-candles.ts'
+import { CANDLE_CAPTURE_VIEWS } from '../_shared/intel/capture-candles-read.ts'
 
-const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS }
-const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS }
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS }
+const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS, ...CANDLE_CAPTURE_VIEWS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 function json(body: unknown, status = 200) {
@@ -110,7 +112,10 @@ Deno.serve(async (req) => {
       liquidations: () => captureLiquidations(admin, ctxFor('liquidations', 1), now, deps),
       attention: () => captureAttention(admin, ctxFor('attention', 4), now, plan, deps),
       airdrops: () => captureAirdrops(admin, ctxFor('airdrops', 2), now, plan, deps),
-      ...Object.fromEntries(Object.entries(LANE_OPS).map(([name, run]) => [name, () => run(admin, ctxFor, now, plan, deps)])),
+      // Lane ops take the request BODY as a sixth argument. Every lane before
+      // the candle history one ignores it; `history_backfill` reads `assetKey`
+      // from it so one named asset can be filled by hand.
+      ...Object.fromEntries(Object.entries(LANE_OPS).map(([name, run]) => [name, () => (run as (...args: unknown[]) => Promise<JobResult>)(admin, ctxFor, now, plan, deps, body)])),
     }
 
     const sequence = op === 'all_hourly' ? [...HOURLY_SEQUENCE] : [op]

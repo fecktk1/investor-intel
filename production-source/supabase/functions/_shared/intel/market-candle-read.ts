@@ -26,14 +26,18 @@
 
 import { autoInterval, candleCoverage, candlePlan, candleSourceOrder, CANDLE_RANGE_MS, intervalLabel, isArchiveRange, sourceLabel, VENUE_CANDLES, KLINE_INTERVAL_KEYS, CMC_INTERVAL_KEYS } from './candle-ladder.ts'
 import { archiveCanAnswer, archiveSeries, mergeCandles } from './candle-archive.ts'
-import type { Bar } from './chart-analysis.ts'
+import { normalizeBars, type Bar } from './chart-analysis.ts'
 
 /** The widest width vocabulary any venue offers, used to resolve `auto` before a
  * source has been chosen. Binance carries all eight. */
 const ALL_WIDTHS = VENUE_CANDLES.binance.intervals
 
+/** What a rung hands back. `candles` is deliberately loose: the four rungs are
+ * older modules with their own bar shapes, and every one of them is put through
+ * `normalizeBars` here rather than trusted to match a type. */
 export interface SourceResult {
-  candles: Bar[]
+  // deno-lint-ignore no-explicit-any
+  candles: any[]
   source?: string
   bestProvider?: string | null
   bestPair?: string | null
@@ -49,11 +53,13 @@ export interface SourceResult {
   [key: string]: unknown
 }
 
+// deno-lint-ignore no-explicit-any
+type RungAnswer = { candles?: any[]; [key: string]: any }
 export interface CandleLadderDeps {
-  exchange?: (range: string, interval: string) => Promise<SourceResult>
-  cmc?: (id: string, range: string, interval: string) => Promise<SourceResult>
-  kline?: (range: string, interval: string) => Promise<SourceResult>
-  coingecko?: (range: string, interval: string) => Promise<SourceResult>
+  exchange?: (range: string, interval: string) => Promise<RungAnswer>
+  cmc?: (id: string, range: string, interval: string) => Promise<RungAnswer>
+  kline?: (range: string, interval: string) => Promise<RungAnswer>
+  coingecko?: (range: string, interval: string) => Promise<RungAnswer>
   archive?: (assetKey: string, interval: string, from: number, to: number) => Promise<{ bars: Bar[]; reason: string | null; truncated: boolean; incomplete?: number }>
 }
 
@@ -119,9 +125,10 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
     // Each rung is planned against its OWN width vocabulary, so a rung that
     // cannot sample the requested width is asked for the nearest width it can
     // and the substitution is reported rather than hidden.
-    let result: SourceResult | null = null
-    try { result = await call(range, requested) } catch { result = null }
-    if (!result) { reasons.push(`${rung}:provider_unavailable`); continue }
+    let answered: RungAnswer | null = null
+    try { answered = await call(range, requested) } catch { answered = null }
+    if (!answered) { reasons.push(`${rung}:provider_unavailable`); continue }
+    const result: SourceResult = { ...answered, candles: answered.candles ?? [] }
     lastResult = result
     if (result.sourceReason) reasons.push(`${rung}:${result.sourceReason}`)
     if (result.candles?.length) { answer = result; answeredBy = rung; break }
@@ -139,7 +146,9 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
 
   // ── The archive, under the live window ──
   let archived = 0, archiveTo: number | null = null, archiveReason: string | null = null, archiveTruncated = false
-  let candles = answer?.candles || []
+  // Every rung's bars go through the same normaliser, so one shape reaches the
+  // merge, the coverage sentence and the response.
+  let candles: Bar[] = answer?.candles?.length ? normalizeBars(answer.candles).bars : []
   const archiveWanted = isArchiveRange(range) && archiveCanAnswer(served) && !!identity.assetKey && !!deps.archive
   if (archiveWanted) {
     const window = { from: now - CANDLE_RANGE_MS[range], to: now }
