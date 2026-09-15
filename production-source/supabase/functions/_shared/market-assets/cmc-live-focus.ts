@@ -62,12 +62,17 @@ export function liveFocusGroups(subjects:(string|{subject:string})[]) {
  * batch into one `crypto_ids` subscription; each contract takes one frame per
  * on-chain channel. UNVERIFIED until probed after G2: the `params` key spelling
  * (`platform_id`) and whether several addresses may share one on-chain frame. */
+/** Probed on 2026-09-15 against wss://pro-stream.coinmarketcap.com/v1: `platform_id` and `address`
+ * are the right names and the transaction, liquidity and aggregate channels acknowledge them as
+ * sent; `onchain@unique_trader` alone answers error 2401 "Param 'interval' is required", so it
+ * carries the window it is asked to count over. */
+export const LIVE_UNIQUE_TRADER_INTERVAL='1h'
 export function liveSubscribeMessages(subjects:(string|{subject:string})[],onchainEnabled=false) {
   const {market,contract}=liveFocusGroups(subjects)
   const frames:{id:number;method:'subscribe';channel:string;params:Record<string,unknown>}[]=[]
   if(market.length)frames.push({id:1,method:'subscribe',channel:LIVE_MARKET_CHANNEL,params:{crypto_ids:market.map(s=>s.cryptoId)}})
   if(onchainEnabled)for(const s of contract)for(const channel of LIVE_ONCHAIN_CHANNELS)
-    frames.push({id:frames.length+1,method:'subscribe',channel,params:{platform_id:s.platformId,address:s.address}})
+    frames.push({id:frames.length+1,method:'subscribe',channel,params:channel==='onchain@unique_trader'?{platform_id:s.platformId,address:s.address,interval:LIVE_UNIQUE_TRADER_INTERVAL}:{platform_id:s.platformId,address:s.address}})
   return frames
 }
 const WINDOW_SECONDS:Record<string,number>={'1m':60,'5m':300,'15m':900,'30m':1800,'1h':3600,'4h':14400,'12h':43200,'24h':86400,'7d':604800}
@@ -125,13 +130,15 @@ function decodeOnchain(channel:string,message:any,subjects:string[],now:number):
   }
   const uniqueTraders=integer(d.ut)
   if(uniqueTraders==null)return {kind:'invalid'}
-  return {kind:'traders',subject,uniqueTraders,window:text(d.win,16),timestamp:timestamp!,windowStart:integer(d.ot)}
+  return {kind:'traders',subject,uniqueTraders,window:text(d.win,16)??text(message?.params?.interval,16),timestamp:timestamp!,windowStart:integer(d.ot)}
 }
 export function decodeCmcLive(raw:string,subjects:string[],now:number) {
   if(raw.length>65536)throw new Error('live_message_too_large')
   const message=JSON.parse(raw)
-  if(message.type==='error')return {kind:'error',code:Number(message.status?.error_code)||null}
-  if(message.type==='ack')return {kind:'ack',accepted:Number(message.code)===0}
+  // A refusal or an acknowledgement names the subscription it answers by id, so
+  // one refused channel can be recorded without discarding the accepted ones.
+  if(message.type==='error')return {kind:'error',code:Number(message.status?.error_code)||null,id:integer(message.id),detail:text(message.status?.error_detail,200)}
+  if(message.type==='ack')return {kind:'ack',accepted:Number(message.code)===0,id:integer(message.id),channel:text(message.channel,64)}
   if(message.type==='pong'||message.type==='welcome')return {kind:'control'}
   if(message.type!=='data')return {kind:'ignored'}
   if(LIVE_ONCHAIN_CHANNELS.includes(message.channel))return decodeOnchain(message.channel,message,subjects,now)
