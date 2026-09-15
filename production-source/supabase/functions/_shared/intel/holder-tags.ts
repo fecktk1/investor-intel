@@ -230,7 +230,10 @@ export async function captureHolderTags(
       // No pagination: `cmcRows` reports `nextCursor` from `data.lastId` and this
       // lane deliberately ignores it. One page per tag, stated as one page.
       const seen = new Set<string>()
-      for (const holder of cmcRows('dexHolders', page.payload).rows) {
+      // The provider ignores `limit` and returns the whole tag (253 rows for one
+      // KOL tag on 2026-09-15); the requested page size is applied here, so the
+      // stored cohort stays the one page this lane states it keeps.
+      for (const holder of cmcRows('dexHolders', page.payload, Object.fromEntries(Object.entries(holderParams).map(([k, v]) => [k, String(v)]))).rows) {
         const wallet = cohortAddress(holder.walletAddress, identity.platform)
         if (!wallet || seen.has(wallet)) continue
         seen.add(wallet)

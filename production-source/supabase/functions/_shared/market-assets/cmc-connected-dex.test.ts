@@ -1,5 +1,5 @@
 import {assertEquals as eq,assertThrows,assert} from 'jsr:@std/assert'
-import {cmcDexIdentity,validateCmcDexResponse,CMC_HOLDER_TAGS} from './cmc-dex.ts'
+import {cmcDexIdentity,validateCmcDexResponse,CMC_HOLDER_TAGS,CMC_DEX_HOLDER_RESPONSE_MAX} from './cmc-dex.ts'
 import {cmcParams,cmcRows} from './cmc-capabilities.ts'
 import {normalizeCmcInvestigation} from '../intel/investigation-normalize.ts'
 const address='0x'+'a'.repeat(40),sol='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',at=Date.parse('2026-09-12T03:00:00Z'),stamp=new Date(at).toISOString(),expiry=new Date(at+900000).toISOString()
@@ -48,16 +48,18 @@ Deno.test('holder tag counts accept only the eight published tags, once each, fo
  eq(validateCmcDexResponse('dexHolderTags',{data:[row]},params),false)
  eq(validateCmcDexResponse('dexHolderTags',{data:{holders:[row]}},{platform:'plasma',tokenAddress:address}),false)
 })
-Deno.test('holder pages stay inside the requested page and only carry addresses valid for the requested chain',()=>{
+Deno.test('holder pages carry only addresses valid for the requested chain',()=>{
  const params={platform:'ethereum',tokenAddress:address,tag:'tag_whale',limit:'2'}
  const holder={walletAddress:'0x'+'b'.repeat(40),tokenAddress:address,balance:'12',percent:'0.4',tags:['tag_whale'],fundingSource:'cex'}
  assert(validateCmcDexResponse('dexHolders',{data:{holders:[holder],lastId:'abc=='}},params))
  assert(validateCmcDexResponse('dexHolders',{data:{holders:[]}},params))
- // A page longer than the one that was asked for is not that page.
- eq(validateCmcDexResponse('dexHolders',{data:{holders:[holder,holder,holder]}},params),false)
- // A Solana mint is not an address on Ethereum, and an unbounded page is refused.
+ // The endpoint ignores `limit` and returns the whole tag, so a longer answer is
+ // still this answer; the requested limit is applied by cmcRows instead, and a
+ // request with no limit at all is not thereby unbounded.
+ assert(validateCmcDexResponse('dexHolders',{data:{holders:[holder,holder,holder]}},params))
+ assert(validateCmcDexResponse('dexHolders',{data:{holders:[holder]}},{platform:'ethereum',tokenAddress:address,tag:'tag_whale'}))
+ // A Solana mint is not an address on Ethereum.
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,walletAddress:sol}]}},params),false)
- eq(validateCmcDexResponse('dexHolders',{data:{holders:[holder]}},{platform:'ethereum',tokenAddress:address,tag:'tag_whale'}),false)
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,tokenAddress:'0x'+'c'.repeat(40)}]}},params),false)
  // Tags may legitimately be one comma string; a number is still not a tag list.
  assert(validateCmcDexResponse('dexHolders',{data:{holders:[{...holder,tags:'tag_whale'}]}},params))
@@ -79,10 +81,10 @@ Deno.test('every documented holder container, wallet key and string number is on
   {data:{holders:[{walletAddress:wallet,...base}],nextId:12345}},  // numeric cursor alias
  ]
  for(const body of containers)assert(validateCmcDexResponse('dexHolders',body,params),JSON.stringify(body).slice(0,120))
- // Identity and size stay strict across every container.
+ // Identity stays strict across every container; the absolute ceiling still bites.
  eq(validateCmcDexResponse('dexHolders',{data:{list:[{address:sol,...base}]}},params),false)
- eq(validateCmcDexResponse('dexHolders',{data:[{holderAddress:wallet},{holderAddress:wallet},{holderAddress:wallet}]},params),false)
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[{walletAddress:wallet,tokenAddress:'0x'+'c'.repeat(40),...base}]}},params),false)
+ eq(validateCmcDexResponse('dexHolders',{data:Array.from({length:CMC_DEX_HOLDER_RESPONSE_MAX+1},()=>({holderAddress:wallet}))},params),false)
  eq(validateCmcDexResponse('dexHolders',{data:{holders:[{...base}]}},params),false)
  eq(validateCmcDexResponse('dexHolders',{data:{rows:[{walletAddress:wallet}]}},params),false)
  // The row mapping reads the same aliases the validator accepted, and parses the
@@ -99,6 +101,32 @@ Deno.test('every documented holder container, wallet key and string number is on
  eq(cmcRows('dexHolders',{data:[{holderAddress:wallet,...base}]}).rows[0].walletAddress,wallet)
  eq(cmcRows('dexHolders',{data:[{holderAddress:wallet}]}).nextCursor,null)
  eq(cmcRows('dexHolders',{data:{rows:[]}}).rows,[])
+})
+Deno.test('an unpaginated whole-tag answer validates and is truncated to the requested limit',()=>{
+ // 2026-09-15 05:00 UTC: the provider ignores `limit` — tag_smart_money returned 29
+ // rows and tag_kol returned 253, both for a requested limit of 50. The 253-row
+ // answer must cache, and only the 50 rows that were asked for may be kept.
+ const params={platform:'base',tokenAddress:address,tag:'tag_kol',limit:'50'}
+ const live=(i:number)=>({name:'Wallet '+i,tags:['tag_kol'],price:'0.0034',symbol:'TKN',balance:'19994.0838',logoUrl:'x',percent:'0.000020',
+  tokenLogo:'x',platformId:199,publicName:'','spotOpenTs':'1700000000',blockHeight:'1',fundingTime:'1700000000',tokenSymbol:'TKN',
+  totalSupply:'1E+9',tokenAddress:address,fundingSource:'binance',nativeBalance:'0E-18',walletAddress:'0x'+String(i).padStart(40,'a'),
+  stableCoinFlag:0,firstActiveTime:'1700000000',spotClearanceTs:'0',platformCryptoId:1,dexerPlatformName:'Base',memePumpInnerFlag:0,addressExplorerUrl:'x'})
+ const body={data:{holders:Array.from({length:253},(_,i)=>live(i))}}
+ assert(validateCmcDexResponse('dexHolders',body,params))
+ eq(cmcRows('dexHolders',body,params).rows.length,50)
+ // Without params the registry ceiling of 250 still bounds what is kept.
+ eq(cmcRows('dexHolders',body).rows.length,250)
+ eq(cmcRows('dexHolders',body,{...params,limit:'400'}).rows.length,250)
+ const row=cmcRows('dexHolders',body,params).rows[0]
+ eq(row.walletAddress,'0x'+'0'.padStart(40,'a'))
+ eq(row.fundingSource,'binance')
+ eq(row.tags,['tag_kol'])
+ // PROVIDER FACT: this endpoint returns no volume, PnL or transaction-count field,
+ // so those stay null rather than being synthesised from anything else.
+ for(const absent of ['buyVolumeUsd','sellVolumeUsd','realizedPnlUsd','unrealizedPnlUsd','txCount','lastSeenAt'])eq(row[absent],null,absent)
+ eq(row.firstSeenAt,'1700000000')
+ // Nothing that names or describes a person survives the whitelist.
+ for(const dropped of ['name','publicName','symbol','price','totalSupply','addressExplorerUrl','stableCoinFlag','quote'])eq(dropped in row,false,dropped)
 })
 Deno.test('tag counts read the string numerics the live capture actually returned',()=>{
  // Verbatim from the first real capture (base 0x8d01…): every number a string,
