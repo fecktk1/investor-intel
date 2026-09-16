@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { RadialGauge, RadialBars, HeatStrip } from '../charts'
 import { formatPct } from '../lib/market-format'
+import BreadthSpread from './BreadthSpread'
 
 // Market context figures for the Markets screen rail: breadth, dominance and
 // chain heat. Plain figures — no cards, no chips, no boxes — laid out in one
@@ -165,6 +166,9 @@ export default function MarketsCharts({ snapshot = null, macro = null, macroErro
           state={drawdownSeries.length ? 'ready' : 'empty'}
           onSelect={series => { setNote(''); if (series?.href) onOpenAsset?.(series.href) }}
         />
+        {/* Up/down breadth counts assets; this one number weighs them. It reads
+            the shared daily listing capture, not the page on screen. */}
+        <BreadthSpread />
       </div>
       <p role="status" className="text-[12px] text-[var(--fg-4)] min-h-[1.2em]">{note}</p>
     </section>

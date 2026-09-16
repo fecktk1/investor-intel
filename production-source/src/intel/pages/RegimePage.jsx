@@ -5,6 +5,7 @@ import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
 import RegimeRibbon from '../components/RegimeRibbon'
 import RegimeDayPanel from '../components/RegimeDayPanel'
 import NetworkHealthStrip from '../components/NetworkHealthStrip'
+import BreadthSpread from '../components/BreadthSpread'
 import { captureReasonText } from '../lib/capture-api'
 import { PolarClock } from '../charts'
 
@@ -61,6 +62,9 @@ export default function RegimePage() {
       />
 
       <RegimeRibbon onLoad={setRead} />
+
+      {/* Breadth in one number. Owns its read of the daily listing capture. */}
+      <BreadthSpread />
 
       <RegimeDayPanel coverageFrom={read.payload?.coverage?.from || null} />
 

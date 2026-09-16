@@ -11,6 +11,8 @@
 // `truncated`. An empty table is an empty series with `asOf: null` — never an
 // error, and never a fabricated zero point.
 
+import { capWeightedMinusMedian } from './breadth-spread.ts'
+
 const MAX_POINTS = 400
 const REGIME_RANGES: Record<string, number> = { '7d': 7, '30d': 30, '90d': 90, '1y': 365 }
 // One hourly row per day of range, with headroom for a catch-up backfill.
@@ -23,7 +25,7 @@ const LIQUIDATION_TOTAL_IDS = 3, LIQUIDATION_TOTAL_CAP = 6200
 const ATTENTION_LISTS = ['trending', 'most_visited', 'gainers', 'losers'] as const
 const ATTENTION_HOURS_MAX = 168, ATTENTION_CAP = 3000, ATTENTION_STAMP_CAP = 2000
 
-export const CAPTURE_VIEWS = ['regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations', 'attention'] as const
+export const CAPTURE_VIEWS = ['regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations', 'attention', 'breadth'] as const
 export type CaptureView = typeof CAPTURE_VIEWS[number]
 
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
@@ -324,6 +326,41 @@ export async function readAttention(db: any, params: { providerId?: unknown; hou
   }
 }
 
+// ─── breadth ──────────────────────────────────────────────────────────────────
+/** The daily rank capture holds the catalogue's top 1,000 by rank. */
+const BREADTH_CAP = 1000
+
+/** Breadth in one number (`breadth-spread.ts`): the capitalisation-weighted 24h
+ * return minus the median 24h return, over the newest DAILY listing capture.
+ *
+ * It reads `intel_rank_history` rows the zero-credit `rank_daily` job already
+ * wrote for everyone, so opening it never calls a provider and every reader of a
+ * given day sees the same figure. The market capitalisation and the 24h change of
+ * a row come from the same catalogue row, so they share one clock; `asOf` is the
+ * newest of those clocks and `coverage` spans all of them. */
+export async function readBreadth(db: any, _params: Record<string, unknown> = {}, _now: Date | number = Date.now()): Promise<ViewResult> {
+  const empty = (reason: string | null): ViewResult => ({
+    view: 'breadth', snapshotDate: null, capWeightedReturnPct: null, medianReturnPct: null, spreadPts: null,
+    included: 0, excludedNoReturn: 0, excludedNoMarketCap: 0, total: 0, top: [], asOf: null, coverage: emptyCoverage(), reason,
+  })
+  const latest = await readRows(() => db.from('intel_rank_history').select('snapshot_date')
+    .eq('source', 'listings_latest').order('snapshot_date', { ascending: false }).limit(1))
+  const snapshotDate = str(latest.rows[0]?.snapshot_date, 10)
+  if (!snapshotDate) return empty(latest.reason)
+  const page = await readRows(() => db.from('intel_rank_history').select('provider_id,symbol,rank,market_cap,change_24h_pct,observed_at')
+    .eq('snapshot_date', snapshotDate).eq('source', 'listings_latest').order('rank', { ascending: true }).limit(BREADTH_CAP))
+  const spread = capWeightedMinusMedian(page.rows.map((row: any) => ({
+    symbol: row?.symbol, providerId: row?.provider_id, marketCap: row?.market_cap, returnPct: row?.change_24h_pct,
+  })))
+  const stamps = page.rows.map((row: any) => str(row?.observed_at, 40)).filter((v): v is string => !!v).sort()
+  return {
+    view: 'breadth', snapshotDate, universe: 'coinmarketcap_listings_latest', ...spread,
+    asOf: stamps.at(-1) ?? null,
+    coverage: { from: stamps[0] ?? null, to: stamps.at(-1) ?? null, count: page.rows.length, truncated: page.rows.length >= BREADTH_CAP },
+    reason: page.reason,
+  }
+}
+
 /** Single entry point used by the Edge Function; an unknown view is reported as
  * a reason on an empty result, never as a thrown error. */
 export async function readCaptureView(db: any, view: string, params: Record<string, unknown> = {}, now: Date | number = Date.now()): Promise<ViewResult> {
@@ -335,6 +372,7 @@ export async function readCaptureView(db: any, view: string, params: Record<stri
     case 'index_constituents': return await readIndexConstituents(db, params as any, now)
     case 'liquidations': return await readLiquidations(db, params as any, now)
     case 'attention': return await readAttention(db, params as any, now)
+    case 'breadth': return await readBreadth(db, params, now)
     default: return { view: String(view || ''), series: [], asOf: null, coverage: emptyCoverage(), reason: 'unsupported_view' }
   }
 }

@@ -1,6 +1,6 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  readCaptureView, readRegime, readRegimeAt, readRankMap, readRwaUniverse, readIndexConstituents, readLiquidations, readAttention,
+  readCaptureView, readRegime, readRegimeAt, readRankMap, readRwaUniverse, readIndexConstituents, readLiquidations, readAttention, readBreadth,
   samplePoints, CAPTURE_VIEWS,
 } from './capture-read.ts'
 
@@ -275,4 +275,31 @@ Deno.test('samplePoints keeps the first and last observation', () => {
   const sampled = samplePoints(rows, 400)
   eq(sampled.length, 400); eq(sampled[0], 0); eq(sampled.at(-1), 999)
   eq(samplePoints([1, 2, 3], 400), [1, 2, 3])
+})
+
+Deno.test('breadth reads the newest daily listing capture once and states both sides over one population', async () => {
+  const row = (date: string, id: string, cap: number | null, change: number | null, rank: number) => ({
+    provider: 'coinmarketcap', source: 'listings_latest', snapshot_date: date, provider_id: id, symbol: `S${id}`, rank,
+    market_cap: cap, change_24h_pct: change, observed_at: `${date}T00:0${rank % 10}:00.000Z`,
+  })
+  const today = daysAgo(0), yesterday = daysAgo(1)
+  const db = fakeDb({ intel_rank_history: [
+    row(yesterday, '1', 900, -50, 1),
+    row(today, '1', 900, 1, 1), row(today, '2', 100, 11, 2), row(today, '3', null, 40, 3), row(today, '4', 50, null, 4),
+    { ...row(today, '5', 10, 99, 5), source: 'listings_historical' },
+  ] })
+  const r = await readBreadth(db, {}, NOW) as Record<string, any>
+  eq(r.snapshotDate, today)
+  eq(r.included, 2)
+  eq(r.excludedNoMarketCap, 1)
+  eq(r.excludedNoReturn, 1)
+  eq(r.total, 4, 'the historical backfill row is a different source and is not read')
+  eq(Math.round(r.capWeightedReturnPct * 1e9) / 1e9, 2)
+  eq(r.medianReturnPct, 6)
+  eq(Math.round(r.spreadPts * 1e9) / 1e9, -4)
+  eq(r.coverage.count, 4)
+  eq(r.asOf, `${today}T00:04:00.000Z`)
+  const empty = await readCaptureView(fakeDb(), 'breadth', {}, NOW) as Record<string, any>
+  eq(empty.spreadPts, null)
+  eq(empty.snapshotDate, null)
 })

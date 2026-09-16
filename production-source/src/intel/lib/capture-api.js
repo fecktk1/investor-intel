@@ -22,7 +22,7 @@ import { supabase } from '../../lib/supabase'
 // the lane views merged in intel-capture/index.ts (LANE_VIEWS: venues,
 // categories, fx).
 export const CAPTURE_VIEWS = [
-  'regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations', 'attention',
+  'regime', 'regime_at', 'rank_map', 'rwa_universe', 'index_constituents', 'liquidations', 'attention', 'breadth',
   'exchange_reserves', 'venue_share',
   'categories', 'category_disagreement', 'airdrops', 'network_stats',
   'fx',
