@@ -2,6 +2,7 @@ import React, { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Gauge } from 'lucide-react'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
+import CaptureReceipts from '../components/CaptureReceipts'
 import RegimeRibbon from '../components/RegimeRibbon'
 import RegimeDayPanel from '../components/RegimeDayPanel'
 import NetworkHealthStrip from '../components/NetworkHealthStrip'
@@ -40,6 +41,9 @@ export function hourlyFearGreed(series = []) {
   }))
 }
 
+// The capture lanes whose newest run the receipt drawer describes.
+const CAPTURE_RECEIPT_LANES = ['regime', 'network_stats']
+
 export default function RegimePage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const [read, setRead] = useState({ payload: null, unavailable: null, loading: true })
@@ -59,6 +63,7 @@ export default function RegimePage() {
         title={t('regime.page_title', { defaultValue: 'Market regime' })}
         subtitle={t('regime.page_sub', { defaultValue: 'What the market has looked like, read from the captures that were actually recorded. Every figure names the clock of the observation behind it.' })}
       />
+      <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />
 
       <RegimeRibbon onLoad={setRead} />
 

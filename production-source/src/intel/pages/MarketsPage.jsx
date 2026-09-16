@@ -25,6 +25,7 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import RegimeBanner from '../components/RegimeBanner'
 import RankMovers from '../components/RankMovers'
 import RecentlyDiscovered from '../components/RecentlyDiscovered'
+import FigureProvenance from '../components/FigureProvenance'
 import { IntelMetricCard, IntelPageHeader, IntelPageShell, IntelTabs } from '../components/IntelPrimitives'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
@@ -388,6 +389,9 @@ export default function MarketsPage() {
                 <Stat label={t('markets.trackedMarketCap', { defaultValue: 'Tracked market cap' })} value={formatUsd(snap.trackedMarketCap)} sub={`${snap.cexCoveragePct ?? '—'}% ${t('markets.exchangeAvailability', { defaultValue: 'on CEX' })}`} />
                 <Stat label={t('markets.strongestChain', { defaultValue: 'Strongest chain' })} value={snap.strongestChain || '—'} />
               </div>
+              {/* Play 1 and 7: the screen reads the stored catalogue, so its receipt
+                  describes that stored snapshot rather than a provider call. */}
+              <FigureProvenance envelope={marketsData.figureProvenance?.catalogue} receipts={[marketsData.receipt]} />
             </section>
           )}
 

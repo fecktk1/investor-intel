@@ -41,6 +41,7 @@ import DegenMomentum from '../components/DegenMomentum'
 import { loadMarketContextBySymbols, loadDegenToken } from '../lib/markets-api'
 import { useTokenProfile } from '../lib/useTokenProfile'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import FigureProvenance from '../components/FigureProvenance'
 
 const TIMEFRAMES = ['1H', '4H', '1D', '1W']
 const providerLabel = (p) => String(p || '').toLowerCase() === 'alchemy' ? 'Alchemy' : String(p || '').toLowerCase() === 'helius' ? 'Helius' : 'Provider'
@@ -288,6 +289,10 @@ export default function AssetBreakdownPage() {
             ) : chart?.source ? (
               <div className="text-[10px] text-[var(--fg-5)] flex items-center gap-1">{t('breakdown.chart_via', { defaultValue: 'Chart via' })} {chart.source_label || chart.source}{chart.pair_url && <> · <a href={chart.pair_url} target="_blank" rel="noopener noreferrer" className="text-[var(--accent)] hover:underline">{chart.dex_id || t('breakdown.pool', { defaultValue: 'pool' })}</a></>}</div>
             ) : null}
+            {/* Play 1 and 7: what answered this chart and its overview figures,
+                described only as far as the chart response itself proves. */}
+            {chart && <FigureProvenance envelope={chart.figureProvenance?.chart} receipts={chart.receipts} />}
+            {chart?.overview && <FigureProvenance envelope={chart.figureProvenance?.overview} />}
           </div>
           <details id="canonical-profile" className="intel-asset-profile"><summary>{t('asset.project_profile',{defaultValue:'Project profile and source details'})}</summary><ProfilePanel {...projectProfile}/></details>
         </>

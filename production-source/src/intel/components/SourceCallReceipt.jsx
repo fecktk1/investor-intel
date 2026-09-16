@@ -1,10 +1,18 @@
 import React from 'react'
 import {useTranslation} from 'react-i18next'
+import {receiptFreshness,providerLabel} from '../lib/source-receipt'
 const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString():null
-/** What actually answered one research read. provider_call_logs and the response
- * cache are service-role only, so this rides in the response body or a reader
- * cannot see it at all. Same <details><summary> idiom as AlertSourceReceipt. */
-export default function SourceCallReceipt({receipt,scope,observedAt}){
+const FRESHNESS_DEFAULTS={fresh:'Fresh: a provider call answered this read',cached:'Cached: inside its refresh limit',stale:'Stale: past its refresh limit',unavailable:'Unavailable: nothing usable answered this read'}
+const CALL_DEFAULTS={live:'Live provider call',cache:'Shared cache','negative-cache':'Shared failure record',error:'Failed call'}
+/** What actually answered one read. provider_call_logs and the response cache
+ * are service-role only, so this rides in the response body or a reader cannot
+ * see it at all. Same <details><summary> idiom as AlertSourceReceipt.
+ *
+ * Props are backward compatible: `receipt`, `scope` and `observedAt` behave as
+ * before. A receipt may be a CmcReceipt (one transport read) or a SourceReceipt
+ * (a stored copy or a recorded capture run); both render here. Optional
+ * `scopeKey` renders the scope sentence in the reader's language. */
+export default function SourceCallReceipt({receipt,scope,scopeKey,observedAt}){
  const {t}=useTranslation('intel',{useSuspense:false})
  if(!receipt)return null
  const absent=t('receipt.not_reported',{defaultValue:'not reported'})
@@ -13,18 +21,41 @@ export default function SourceCallReceipt({receipt,scope,observedAt}){
  // because the cache row does not retain the originating charge.
  const credits=receipt.creditCount==null?absent:String(receipt.creditCount)
  const params=Object.entries(receipt.parameters||{})
- return <details className="intel-source-call-receipt"><summary>{t('receipt.summary',{defaultValue:'Source call receipt'})}</summary>
+ const freshness=receiptFreshness(receipt)
+ const freshnessText=t(`receipt_state.${freshness}`,{defaultValue:FRESHNESS_DEFAULTS[freshness]})
+ const origin=receipt.origin==='live'?t('receipt.origin_live',{defaultValue:'Live provider call'})
+  // A negative-cache hit is a remembered FAILURE, not a stored figure, and must
+  // never read like "Shared cache".
+  :receipt.origin==='negative-cache'?t('receipt_state.origin_negative_cache',{defaultValue:'Shared failure record, no call made'})
+  :receipt.origin==='capture'?t('receipt_state.origin_capture',{defaultValue:'Recorded capture, no call made for this view'})
+  :receipt.origin==='stored'?t('receipt_state.origin_stored',{defaultValue:'Stored copy, no call made for this view'})
+  :t('receipt.origin_cache',{defaultValue:'Shared cache, no call made'})
+ const keyMode=receipt.keyMode==='keyed'?t('receipt_state.key_keyed',{defaultValue:'Keyed provider account'})
+  :receipt.keyMode==='keyless'?t('receipt_state.key_keyless',{defaultValue:'Keyless public endpoint'}):absent
+ // A stored copy or a capture is measured against the cadence its store is
+ // refreshed on; a transport read against its own refresh limit.
+ const cadence=receipt.cadenceSeconds!=null&&(receipt.origin==='capture'||receipt.origin==='stored')
+ const call=receipt.captureCall&&CALL_DEFAULTS[receipt.captureCall]?t(`receipt_state.call_${receipt.captureCall.replace('-','_')}`,{defaultValue:CALL_DEFAULTS[receipt.captureCall]}):null
+ const scopeText=scopeKey?t(`figure_scope.${scopeKey}`,{defaultValue:scope||''}):scope
+ return <details className="intel-source-call-receipt" data-freshness={freshness}><summary>{t('receipt.summary',{defaultValue:'Source call receipt'})}</summary>
   <dl className="intel-event-facts">
-   <dt>{t('receipt.capability',{defaultValue:'Capability'})}</dt><dd className="break-all">{receipt.capability} · {receipt.endpoint}</dd>
+   {receipt.provider&&<><dt>{t('receipt_state.provider',{defaultValue:'Provider'})}</dt><dd>{providerLabel(receipt.provider,t)}</dd></>}
+   <dt>{t('receipt.capability',{defaultValue:'Capability'})}</dt><dd className="break-all">{receipt.endpoint?`${receipt.capability} · ${receipt.endpoint}`:receipt.capability}</dd>
    <dt>{t('receipt.parameters',{defaultValue:'Parameters'})}</dt><dd className="break-all">{params.length?params.map(([k,v])=>`${k}=${v}`).join(' · '):t('common.none',{defaultValue:'None'})}</dd>
-   <dt>{t('receipt.origin',{defaultValue:'Answered by'})}</dt><dd>{receipt.origin==='live'?t('receipt.origin_live',{defaultValue:'Live provider call'}):t('receipt.origin_cache',{defaultValue:'Shared cache, no call made'})}</dd>
+   <dt>{t('receipt.origin',{defaultValue:'Answered by'})}</dt><dd>{origin}</dd>
+   <dt>{t('receipt_state.freshness',{defaultValue:'Freshness'})}</dt><dd>{freshnessText}</dd>
+   <dt>{t('receipt_state.key_mode',{defaultValue:'Provider key'})}</dt><dd>{keyMode}</dd>
+   {call&&<><dt>{t('receipt_state.capture_call',{defaultValue:'Capture run call'})}</dt><dd>{call}</dd></>}
+   {receipt.callCount!=null&&<><dt>{t('receipt_state.call_count',{defaultValue:'Calls to this endpoint in the run'})}</dt><dd>{receipt.callCount}</dd></>}
    <dt>{t('receipt.http_status',{defaultValue:'HTTP status'})}</dt><dd>{receipt.httpStatus==null?absent:receipt.httpStatus}</dd>
    <dt>{t('receipt.credits',{defaultValue:'Credits charged'})}</dt><dd>{credits}</dd>
    {receipt.cacheAgeSeconds!=null&&<><dt>{t('receipt.age',{defaultValue:'Age against refresh limit'})}</dt>
-    <dd>{receipt.ttlSeconds==null?t('receipt.age_seconds',{defaultValue:'{{age}}s',age:receipt.cacheAgeSeconds}):t('receipt.age_of_ttl',{defaultValue:'{{age}}s of {{ttl}}s',age:receipt.cacheAgeSeconds,ttl:receipt.ttlSeconds})}</dd></>}
+    <dd>{cadence?t('receipt_state.age_of_cadence',{defaultValue:'{{age}}s of a {{cadence}}s cadence',age:receipt.cacheAgeSeconds,cadence:receipt.cadenceSeconds})
+     :receipt.ttlSeconds==null?t('receipt.age_seconds',{defaultValue:'{{age}}s',age:receipt.cacheAgeSeconds}):t('receipt.age_of_ttl',{defaultValue:'{{age}}s of {{ttl}}s',age:receipt.cacheAgeSeconds,ttl:receipt.ttlSeconds})}</dd></>}
+   {receipt.capturedAt&&receipt.capturedAt!==receipt.fetchedAt&&<><dt>{t('receipt_state.captured',{defaultValue:'Captured'})}</dt><dd><time dateTime={receipt.capturedAt}>{time(receipt.capturedAt)}</time></dd></>}
    {receipt.fetchedAt&&<><dt>{t('research.fetched',{defaultValue:'Retrieved'})}</dt><dd><time dateTime={receipt.fetchedAt}>{time(receipt.fetchedAt)}</time></dd></>}
    {observedAt&&<><dt>{t('research.observed',{defaultValue:'Observed'})}</dt><dd><time dateTime={observedAt}>{time(observedAt)}</time></dd></>}
   </dl>
-  {scope&&<p className="intel-analysis-caption">{scope}</p>}
+  {scopeText&&<p className="intel-analysis-caption">{scopeText}</p>}
  </details>
 }
