@@ -1,7 +1,8 @@
+// deno-lint-ignore-file no-explicit-any
 import { strict as assert } from 'node:assert'
 import { readRwaIssuerLegitimacy } from './capture-rwa-issuer-read.ts'
-import { ALIAS_ASSERTIONS, ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES } from './rwa-issuer-aliases.ts'
-import { CONCENTRATION_TABLE, ENTITY_TABLE, FILING_TABLE, RESTRICTION_TABLE, SIGNAL_TABLE } from './capture-rwa-issuer.ts'
+import { ALIAS_ASSERTIONS, ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES, ALIAS_V2_REVIEWED_AT, ALIAS_V2_REVIEW_EXPIRES, assertionsAsOf } from './rwa-issuer-aliases.ts'
+import { CONCENTRATION_TABLE, DRIFT_TABLE, ENTITY_TABLE, FILING_TABLE, RESTRICTION_TABLE, RWA_ISSUER_CAPTURE_SCHEDULE, SIGNAL_TABLE } from './capture-rwa-issuer.ts'
 
 const at = Date.parse(ALIAS_REVIEWED_AT) + 1000
 const USTB = ALIAS_ASSERTIONS.find((a) => a.subjectLabel === 'USTB')!
@@ -49,8 +50,11 @@ Deno.test('the board lists deliberate non-mappings even when every table is empt
   assert.ok(unmapped.some((u) => u.subjectLabel === 'Ondo' && /returned 0 records/.test(u.evidence)))
   // Mapped subjects are still listed, from the alias map, with no invented data.
   const subjects = result.subjects as { subjectLabel: string; admission: { timeline: unknown[] } }[]
-  assert.equal(subjects.length, ALIAS_ASSERTIONS.length)
+  assert.equal(subjects.length, assertionsAsOf(at).length)
   assert.equal(subjects[0].admission.timeline.length, 0)
+  // Nothing captured is a stated state with its schedule, not a blank board.
+  assert.ok((result.subjects as { captured: boolean }[]).every((s) => s.captured === false))
+  assert.deepEqual(result.schedule, RWA_ISSUER_CAPTURE_SCHEDULE)
 })
 
 Deno.test('a failed table read states its reason and never empties the rest of the board', async () => {
@@ -131,4 +135,62 @@ Deno.test('asking for one subject narrows the board without hiding the refusals'
   const result = await readRwaIssuerLegitimacy(db, { subject: USTB.subject }, at)
   assert.equal((result.subjects as unknown[]).length, 1)
   assert.ok((result.unmapped as unknown[]).length >= 5)
+})
+
+Deno.test('an expired assertion withholds every legal fact but keeps the token facts', async () => {
+  const entity = { entity_key: `cik:${CIK}`, cik: CIK, legal_name: 'Invesco Short Duration US Government Securities Fund', jurisdiction: 'DE', registration_status: 'ISSUED', entity_status: 'ACTIVE', source_url: 'https://data.sec.gov/x', fetched_at: '2026-09-16T14:00:00.000Z' }
+  const filing = { cik: CIK, accession_number: '0002004367-26-000008', filing_date: '2026-07-14', submission_type: 'D/A', entity_name: 'Invesco', jurisdiction_of_inc: 'DELAWARE', federal_exemptions: ['06c'], minimum_investment_accepted: 100000, has_non_accredited_investors: false, total_amount_sold: 1, total_investors: 1, source_url: 'https://www.sec.gov/y', fetched_at: '2026-09-16T14:00:00.000Z' }
+  const signal = { entity_key: `cik:${CIK}`, signal_type: 'sanctions_name_pointer', level: 'no_match', status: null, source_url: 'https://www.treasury.gov/x', scope: 'A name screen is a pointer and not a determination.', fetched_at: '2026-09-16T14:00:00.000Z' }
+  const drift = { cik: CIK, from_accession: 'a', to_accession: 'b', field: 'minimum_investment', kind: 'term', from_value: '0', to_value: '100000', held_until: '2024-01-02', changed_by: '2026-05-05', scope: 'x' }
+  const db = fakeDb({ [ENTITY_TABLE]: [entity], [FILING_TABLE]: [filing], [SIGNAL_TABLE]: [signal], [DRIFT_TABLE]: [drift], [CONCENTRATION_TABLE]: [concentrationRow()] })
+
+  const current = (await readRwaIssuerLegitimacy(db, {}, at)).subjects as Record<string, any>[]
+  const live = current.find((s) => s.subject === USTB.subject)!
+  assert.equal(live.identity.registrationStatus, 'ISSUED')
+  assert.equal(live.admission.timeline.length, 1)
+  assert.equal(live.signals.length, 1)
+  assert.equal(live.collisions.length, 1)
+
+  const later = await readRwaIssuerLegitimacy(db, {}, Date.parse(ALIAS_REVIEW_EXPIRES) + 1000)
+  const lapsed = (later.subjects as Record<string, any>[]).find((s) => s.subject === USTB.subject)!
+  assert.equal(lapsed.state, 'expired')
+  assert.equal(lapsed.legalFactsWithheld, true)
+  assert.equal(lapsed.identity.legalName, null)
+  assert.equal(lapsed.identity.jurisdiction, null)
+  assert.equal(lapsed.identity.registrationStatus, null)
+  assert.equal(lapsed.identity.cik, null)
+  assert.deepEqual(lapsed.signals, [])
+  assert.deepEqual(lapsed.admission.timeline, [])
+  assert.equal(lapsed.admission.current, null)
+  assert.deepEqual(lapsed.admission.termDrift, [])
+  assert.deepEqual(lapsed.collisions, [])
+  assert.deepEqual(later.collisions, [])
+  // What the assertion said, and when it lapsed, is still shown.
+  assert.equal(lapsed.identity.expiresAt, ALIAS_REVIEW_EXPIRES)
+  assert.match(lapsed.identity.evidence, /Probed 2026-09-16/)
+  // Token-level facts do not depend on knowing the legal entity.
+  assert.equal(lapsed.concentration?.holdersCount, 78)
+})
+
+Deno.test('a read after version 2 lists OUSG and the re-probed refusals, and names the next expiry', async () => {
+  const atV2 = Date.parse(ALIAS_V2_REVIEWED_AT) + 1000
+  const result = await readRwaIssuerLegitimacy(fakeDb({}), {}, atV2)
+  const subjects = result.subjects as { subjectLabel: string; state: string }[]
+  assert.deepEqual(subjects.map((s) => s.subjectLabel), ['USTB', 'BUIDL', 'OUSG'])
+  const unmapped = result.unmapped as { subjectLabel: string; version: string }[]
+  assert.deepEqual(unmapped.map((u) => u.subjectLabel), ['Ondo', 'Paxos', 'Tether Holdings', 'Matrixdock', 'Comtech Gold', 'USDY'])
+  const review = result.review as { expiresAt: string; expired: boolean; versions: { version: string }[] }
+  // The next mapping to lapse is version 1, even though version 2 is newer.
+  assert.equal(review.expiresAt, ALIAS_REVIEW_EXPIRES)
+  assert.equal(review.expired, false)
+  assert.equal(review.versions.length, 2)
+
+  // Between the two expiries only OUSG is still asserted.
+  const between = await readRwaIssuerLegitimacy(fakeDb({}), {}, Date.parse(ALIAS_REVIEW_EXPIRES) + 1000)
+  assert.deepEqual((between.subjects as { subjectLabel: string; state: string }[]).map((s) => `${s.subjectLabel}:${s.state}`), ['USTB:expired', 'BUIDL:expired', 'OUSG:mapped'])
+  assert.equal((between.review as { expiresAt: string }).expiresAt, ALIAS_V2_REVIEW_EXPIRES)
+  // A replay before version 2 does not show a mapping that did not exist yet.
+  const before = await readRwaIssuerLegitimacy(fakeDb({}), {}, at)
+  assert.equal((before.subjects as unknown[]).length, 2)
+  assert.equal(ALIAS_ASSERTIONS.length, 3)
 })

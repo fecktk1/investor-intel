@@ -1,7 +1,8 @@
 import { strict as assert } from 'node:assert'
 import {
-  ALIAS_ASSERTIONS, ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES, NAME_COLLISIONS, UNMAPPED, VERIFIED_ENTITIES,
-  aliasProblems, aliasState, collisionsFor, resolveAlias, unmappedRecord,
+  ALIAS_ASSERTIONS, ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES, ALIAS_V2_REVIEWED_AT, ALIAS_V2_REVIEW_EXPIRES, ALIAS_V2_VERSION, ALIAS_VERSION, ALIAS_VERSIONS,
+  NAME_COLLISIONS, UNMAPPED, VERIFIED_ENTITIES,
+  aliasProblems, aliasState, assertionsAsOf, collisionsFor, currentAssertions, resolveAlias, unmappedAsOf, unmappedRecord,
 } from './rwa-issuer-aliases.ts'
 
 const at = Date.parse(ALIAS_REVIEWED_AT) + 1000
@@ -95,4 +96,60 @@ Deno.test('a verified register record is not by itself a claim that a token belo
   // posture this map is supposed to have.
   assert.ok(UNMAPPED.length >= ALIAS_ASSERTIONS.length)
   assert.ok(NAME_COLLISIONS.length > 0)
+})
+
+// ── rwa-issuer-alias-2 ──────────────────────────────────────────────────────
+
+const OUSG = 'token:eip155:1:0x1b19c19393e2d034d8ff31ff34c81252fcbbee92'
+const atV2 = Date.parse(ALIAS_V2_REVIEWED_AT) + 1000
+
+Deno.test('version 2 maps OUSG to its SEC filer only inside its own window, on the issuer published statement', () => {
+  const mapping = resolveAlias(OUSG, atV2)!
+  assert.equal(mapping.version, ALIAS_V2_VERSION)
+  assert.equal(mapping.entity.cik, '0001957431')
+  assert.equal(mapping.entity.lei ?? null, null)
+  assert.equal(mapping.basis, 'issuer_published_identifier')
+  assert.match(mapping.evidence, /The issuer of OUSG, Ondo I LP/)
+  assert.match(mapping.evidence, /0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92/)
+  // It did not exist during version 1, and it expires with version 2.
+  assert.equal(resolveAlias(OUSG, at), null)
+  assert.equal(resolveAlias(OUSG, Date.parse(ALIAS_V2_REVIEW_EXPIRES)), null)
+  assert.equal(Date.parse(ALIAS_V2_REVIEW_EXPIRES) - Date.parse(ALIAS_V2_REVIEWED_AT), 7 * 86_400_000)
+})
+
+Deno.test('a replay lists only the mappings that existed then, and an expired version stops resolving on its own date', () => {
+  assert.deepEqual(assertionsAsOf(at).map((a) => a.subjectLabel), ['USTB', 'BUIDL'])
+  assert.deepEqual(assertionsAsOf(atV2).map((a) => a.subjectLabel), ['USTB', 'BUIDL', 'OUSG'])
+  // Between the two expiries, version 1 has lapsed and version 2 has not.
+  const between = Date.parse(ALIAS_REVIEW_EXPIRES) + 1000
+  assert.deepEqual(currentAssertions(between).map((a) => a.subjectLabel), ['OUSG'])
+  assert.equal(aliasState('token:eip155:1:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e', between), 'expired')
+  assert.equal(aliasState(OUSG, between), 'mapped')
+})
+
+Deno.test('version 2 re-probes every refusal without editing version 1, and records USDY as a new refusal', () => {
+  const ondo = 'cmc-issuer:688ca4ccabae9b5b9fb3167a'
+  // Version 1 words are untouched for replay.
+  assert.equal(unmappedRecord(ondo, at)!.version, ALIAS_VERSION)
+  assert.match(unmappedRecord(ondo, at)!.evidence, /SARL MOGABURE/)
+  // As of version 2 the newest probe is read, and the answer is still no.
+  const latest = unmappedRecord(ondo, atV2)!
+  assert.equal(latest.version, ALIAS_V2_VERSION)
+  assert.equal(latest.reason, 'name_not_an_identifier')
+  // A register record for an Ondo entity exists now, and is still not attached
+  // to an issuer string that spans several issuers.
+  assert.match(latest.evidence, /984500Z0Q6A5E8BE2B61/)
+  assert.equal(aliasState(ondo, atV2), 'deliberately_unmapped')
+  assert.equal(ALIAS_ASSERTIONS.some((a) => a.entity.lei === '984500Z0Q6A5E8BE2B61'), false)
+
+  const usdy = 'token:eip155:1:0x96f6ef951840721adbf46ac996b59e0235cb985c'
+  assert.equal(aliasState(usdy, at), 'unknown')
+  assert.equal(aliasState(usdy, atV2), 'deliberately_unmapped')
+  assert.equal(unmappedRecord(usdy, atV2)!.reason, 'issuer_changed_over_time')
+
+  const board = unmappedAsOf(atV2)
+  assert.deepEqual(board.map((u) => u.subjectLabel), ['Ondo', 'Paxos', 'Tether Holdings', 'Matrixdock', 'Comtech Gold', 'USDY'])
+  assert.ok(board.every((u) => u.version === ALIAS_V2_VERSION))
+  assert.equal(unmappedAsOf(at).length, 5)
+  assert.deepEqual(ALIAS_VERSIONS.map((v) => v.version), [ALIAS_VERSION, ALIAS_V2_VERSION])
 })

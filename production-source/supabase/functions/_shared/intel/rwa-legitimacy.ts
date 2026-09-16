@@ -15,6 +15,16 @@
 //     into `unavailable`, and whatever else was read stays visible.
 //   * VALID ZEROS STAY ZEROS. A zero share, a zero minimum investment and a
 //     zero investor count are measurements and are rendered as such.
+//
+// WHERE THE GUARD RUNS IN THE PRODUCT. The shipped read view,
+// `capture-rwa-issuer-read.ts`, builds its board from stored rows rather than
+// from the source records `legitimacyView` takes, so it cannot call
+// `legitimacyView` directly. Until 2026-09-16 it therefore did not apply this
+// guard at all: an EXPIRED assertion kept showing its registration status,
+// sanctions pointer, jurisdiction and admission terms, although
+// docs/investor-intel/issuer-review-schedule.md says expiry withholds them.
+// The guard now lives in `identityGate` below, and both `legitimacyView` and the
+// read view decide what to withhold through it, so the two cannot drift apart.
 
 import {
   aliasState, collisionsFor, resolveAlias, unmappedRecord,
@@ -89,6 +99,27 @@ export interface LegitimacyView {
 
 const EMPTY_ADMISSION = { timeline: [], termDrift: [], activityDrift: [], renames: [], current: null }
 
+export interface IdentityGate {
+  state: AliasState
+  /** The assertion IN FORCE at the instant asked, or null. */
+  assertion: AliasAssertion | null
+  /** The newest deliberate non-mapping recorded by then, or null. */
+  unmapped: UnmappedRecord | null
+  /** May anything about a LEGAL PERSON be shown: legal name, jurisdiction,
+   * registration status, sanctions pointer, admission terms, name collisions?
+   * Only for a mapping in force. Token-level facts (holder concentration and
+   * contract restrictions) do not depend on this. */
+  legalFactsAllowed: boolean
+}
+
+/** THE GUARD, as one decision every surface shares. */
+export function identityGate(subject: unknown, at: number): IdentityGate {
+  const state = aliasState(subject, at)
+  const assertion = resolveAlias(subject, at)
+  const legalFactsAllowed = state === 'mapped' && !!assertion
+  return { state, assertion: legalFactsAllowed ? assertion : null, unmapped: legalFactsAllowed ? null : unmappedRecord(subject, at), legalFactsAllowed }
+}
+
 /**
  * One reader-facing view.
  *
@@ -101,8 +132,8 @@ const EMPTY_ADMISSION = { timeline: [], termDrift: [], activityDrift: [], rename
 export function legitimacyView(input: LegitimacyInput): LegitimacyView {
   const at = input.at ?? Date.now()
   const subject = String(input.subject ?? '')
-  const state = aliasState(subject, at)
-  const assertion = resolveAlias(subject, at)
+  const gate = identityGate(subject, at)
+  const { state, assertion } = gate
   const unavailable: UnavailableSource[] = Object.entries(input.reasons ?? {})
     .filter(([, reason]) => !!reason)
     .map(([source, reason]) => ({ source, reason: String(reason) }))
@@ -129,12 +160,12 @@ export function legitimacyView(input: LegitimacyInput): LegitimacyView {
     unavailable,
   }
 
-  if (state !== 'mapped' || !assertion) {
+  if (!gate.legalFactsAllowed || !assertion) {
     // THE GUARD. No legal facts for a subject we have not identified, even when
     // a register record happens to be in hand.
     return {
       ...base,
-      identity: { state, assertion: null, unmapped: unmappedRecord(subject), collisions: [], legalName: null, jurisdiction: null },
+      identity: { state, assertion: null, unmapped: gate.unmapped, collisions: [], legalName: null, jurisdiction: null },
       admission: { ...EMPTY_ADMISSION },
       signals: [],
     }

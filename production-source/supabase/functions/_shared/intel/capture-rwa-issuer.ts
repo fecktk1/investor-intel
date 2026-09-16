@@ -18,9 +18,17 @@
 //                             top-N shares, and read the verified contract source
 //                             for transfer restrictions.
 //
-// AN UNMAPPED SUBJECT IS NEVER CAPTURED. The lane iterates the assertions, not
-// the tokens we happen to track, so there is no path by which a legal fact is
-// stored against a subject whose identity was never asserted.
+// AN UNMAPPED SUBJECT IS NEVER CAPTURED. The lane iterates the assertions IN
+// FORCE at the run's clock (`currentAssertions`), not the tokens we happen to
+// track, so there is no path by which a legal fact is stored against a subject
+// whose identity was never asserted, or whose assertion has expired. Rows
+// captured while a mapping was in force are kept; they are simply not refreshed
+// until a later version restates it.
+//
+// SCHEDULE. Both ops are driven by pg_cron from migration
+// 20260916202000_intel_rwa_capture_cron.sql, once a day each, at the times in
+// RWA_ISSUER_CAPTURE_SCHEDULE below. A test reads that migration and fails if
+// the two disagree.
 //
 // NEVER THROWS. Every failure becomes a named reason on the result, and a source
 // that failed never empties a table: the writes are upserts keyed so a retry
@@ -28,7 +36,7 @@
 
 import { hourBucket } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult, SchedulePolicyRow } from './capture-jobs.ts'
-import { ALIAS_ASSERTIONS, ALIAS_VERSION, type AliasAssertion } from './rwa-issuer-aliases.ts'
+import { ALIAS_VERSION, currentAssertions, type AliasAssertion } from './rwa-issuer-aliases.ts'
 import { fetchLeiRecord } from './rwa-sources/gleif.ts'
 import { fetchFormD, fetchSubmissions, formDFilings } from './rwa-sources/edgar.ts'
 import { concentration, concentrationScope, fetchAddressImplementation, fetchTokenSummary, fetchTopHolders, type BlockscoutChain } from './rwa-sources/blockscout.ts'
@@ -50,6 +58,13 @@ export const DRIFT_TABLE = 'intel_rwa_issuer_admission_drift'
 export const SIGNAL_TABLE = 'intel_rwa_issuer_risk_signals'
 export const CONCENTRATION_TABLE = 'intel_rwa_token_concentration'
 export const RESTRICTION_TABLE = 'intel_rwa_token_restrictions'
+
+/** The pg_cron jobs that run these lanes (UTC). Served by the read view so an
+ * empty board can say when it fills; asserted against the migration by test. */
+export const RWA_ISSUER_CAPTURE_SCHEDULE = {
+  rwa_issuer_registry: { job: 'intel-capture-rwa-issuer-registry-daily', cron: '19 2 * * *', cadence: 'daily', utc: '02:19' },
+  rwa_token_concentration: { job: 'intel-capture-rwa-token-concentration-daily', cron: '53 2 * * *', cadence: 'daily', utc: '02:53' },
+} as const
 
 /** Filings read per subject per run. The admission series is short by nature:
  * the longest real series probed 2026-09-16 was seven filings. */
@@ -122,7 +137,7 @@ export async function captureRwaIssuerRegistry(
   try {
     if (!lanePolicy(deps.policy, RWA_REGISTRY_FEATURE).enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
     const at = options.at ?? now.getTime()
-    const assertions = (options.subjects ?? ALIAS_ASSERTIONS).slice(0, SUBJECTS_PER_RUN)
+    const assertions = (options.subjects ?? currentAssertions(at)).slice(0, SUBJECTS_PER_RUN)
     if (!assertions.length) return { job, rows: 0, credits: 0, skipped: 'no_mapped_subjects' }
 
     // An injected agent wins (tests, a manual run); otherwise the environment,
@@ -235,7 +250,7 @@ export async function captureRwaTokenConcentration(
     if (!lanePolicy(deps.policy, RWA_CONCENTRATION_FEATURE).enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
     const at = options.at ?? now.getTime()
     const capturedAt = hourBucket(at)
-    const tokens = (options.subjects ?? ALIAS_ASSERTIONS).slice(0, SUBJECTS_PER_RUN)
+    const tokens = (options.subjects ?? currentAssertions(at)).slice(0, SUBJECTS_PER_RUN)
       .map((a) => ({ assertion: a, token: tokenSubject(a) }))
       .filter((t): t is { assertion: AliasAssertion; token: { chain: BlockscoutChain; address: string } } => !!t.token)
     if (!tokens.length) return { job, rows: 0, credits: 0, skipped: 'no_mapped_tokens' }
