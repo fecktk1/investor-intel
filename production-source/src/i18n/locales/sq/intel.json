@@ -3502,7 +3502,14 @@
     "col_active": "Aktive",
     "job_active": "Aktive",
     "job_paused": "E ndalur",
-    "profile_promotional": "promocional"
+    "profile_promotional": "promocional",
+    "calibration_label": "Kalibrimi i ritmit",
+    "calibration_title": "Kalibrimi i ritmit",
+    "calibration_missing": "Për këtë lexim nuk u raportua asnjë kalibrim ritmi.",
+    "calibration_line": "Konsum i vëzhguar {{observed}} kredite në orë kundrejt {{affordable}} të përballueshme · shumëzues ritmi ×{{scale}} · {{count}} vëzhgime të llogarisë",
+    "calibration_reason": "Arsyeja: {{reason}}",
+    "calibration_window": "Mbeten {{remaining}} kredite dhe {{hours}} orë deri te rivendosja.",
+    "calibration_projection": "Parashikim me ritmin e kalibruar: {{credits}} kredite"
   },
   "rwa_issuer": {
     "eyebrow": "Burime parësore",
@@ -3570,5 +3577,19 @@
     "unmapped_no_register_record": "asnjë e dhënë në regjistër",
     "unmapped_name_not_an_identifier": "emri nuk identifikon një subjekt të vetëm",
     "unmapped_legal_form_mismatch": "forma juridike nuk përputhet me regjistrin"
+  },
+  "receipt": {
+    "summary": "Fatura e thirrjes së burimit",
+    "capability": "Kërkesa",
+    "parameters": "Parametrat",
+    "origin": "Përgjigjur nga",
+    "origin_live": "Thirrje e drejtpërdrejtë te ofruesi",
+    "origin_cache": "Cache i përbashkët, pa thirrje",
+    "http_status": "Statusi HTTP",
+    "credits": "Kreditë e faturuara",
+    "not_reported": "nuk raportohet",
+    "age": "Mosha kundrejt kufirit të rifreskimit",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s nga {{ttl}} s"
   }
 }

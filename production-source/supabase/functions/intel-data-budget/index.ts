@@ -27,6 +27,7 @@ import {
   monthlyBudgetEstimate, planTargets, PLAN_LEVELS, runCredits, schedulePolicyFromTargets,
   SCHEDULE_FEATURE_CREDIT_BUCKET, type SchedulePolicy,
 } from '../_shared/intel/schedule-policy.ts'
+import { calibrateCadence, calibratedCadenceSeconds, loadAccountObservations } from '../_shared/intel/budget-calibration.ts'
 import { cmcPlan, cmcCreditCeiling, loadCmcOperatingSettings } from '../_shared/market-assets/cmc-transport.ts'
 import { planAllows } from '../_shared/market-assets/cmc-capabilities.ts'
 
@@ -157,6 +158,29 @@ export async function readDataBudget(admin: any, now: Date = new Date()): Promis
   const estimate = monthlyBudgetEstimate(policy, effective)
   const targets = planTargets(effective)
 
+  // What the account is OBSERVED to be spending, from successive readings of
+  // the provider's own credits_used, against what the remaining budget can
+  // afford between now and the reset. This is a cadence multiplier and nothing
+  // else: `cmc_request_reserve` is still the only thing that refuses a call,
+  // and a multiplier of 1 means today's reviewed cadences stand. Reading it
+  // touches one of our own rows and calls no provider.
+  const observed = await loadAccountObservations(admin)
+  if (observed.error) degraded.push({ part: 'calibration', reason: observed.error })
+  const calibration = calibrateCadence({
+    observations: observed.observations, ceiling, now: now.getTime(), error: observed.error,
+    previousScale: observed.previousScale,
+    // Burn measured before either expiry describes a different account, so the
+    // 1 October step is a fresh measurement rather than a panic stretch.
+    boundaries: [settings.CMC_SOURCE_POLICY_EXPIRES_AT ?? null, settings.CMC_HACKATHON_EXPIRES_AT ?? DEFAULT_HACKATHON_EXPIRY],
+  })
+  // Priced through the same estimator, so the calibrated number and the current
+  // one are the same arithmetic over two cadence tables and can be compared.
+  const calibratedEstimate = monthlyBudgetEstimate({
+    ...policy,
+    rows: new Map([...policy.rows].map(([feature, row]) =>
+      [feature, { ...row, cadence_seconds: calibratedCadenceSeconds(row.cadence_seconds, calibration) ?? row.cadence_seconds }])),
+  }, effective)
+
   const features = estimate.lines.map((line) => {
     const row = policy.rows.get(line.feature)
     const minPlan = row?.min_plan ?? null
@@ -215,6 +239,7 @@ export async function readDataBudget(admin: any, now: Date = new Date()): Promis
       ceilingPlan,
       hardCap: num(credits?.hard_cap),
       projectedAtCurrentCadence: estimate.totalCredits,
+      projectedAtCalibratedCadence: calibratedEstimate.totalCredits,
       periodStart,
       periodEnd: (credits?.period_end as string) ?? null,
       monthSeconds: estimate.monthSeconds,
@@ -225,6 +250,7 @@ export async function readDataBudget(admin: any, now: Date = new Date()): Promis
       startup: monthlyBudgetEstimate(schedulePolicyFromTargets('startup'), 'startup').totalCredits,
       basic: monthlyBudgetEstimate(schedulePolicyFromTargets('basic'), 'basic').totalCredits,
     },
+    calibration,
     features,
     jobs,
     cacheReuse,

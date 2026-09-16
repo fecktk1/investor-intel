@@ -27,24 +27,58 @@ export function cmcCreditCeiling(settings:CmcOperatingSettings={}):number {
   const caps=[env('CMC_MONTHLY_CREDIT_CEILING'),settings.CMC_MONTHLY_CREDIT_CEILING].filter(v=>v!=null&&Number.isFinite(Number(v))).map(v=>Math.max(0,Number(v)))
   return Math.min(profileCap,...caps)
 }
-export interface CmcResult<T=any> {
-  payload:T|null; state:'fresh'|'stale'|'unavailable'|'unsupported'|'refreshing'; reason:string|null
-  provenance:{provider:'coinmarketcap';observedAt:string|null;fetchedAt:string|null;expiresAt:string|null;sourceUrl:string}
+/** Everything the provider and the shared cache actually reported about ONE read,
+ * carried on the response itself. provider_call_logs, provider_quota_budgets and
+ * market_data_response_cache are all service-role only, so a receipt that does not
+ * ride in the response body cannot be shown to a reader at all.
+ *
+ * creditCount is the provider's own status.credit_count and is null whenever the
+ * response did not report one — including every cache hit, because the cache row
+ * does not retain the originating charge. estimateCmcCredits is a FLOOR used to
+ * reserve budget, never the amount billed (see cmc-capabilities.ts), so it must
+ * never be substituted here. A reported 0 is a real charge of zero and stays 0.
+ *
+ * keyMode is always 'keyed' today. The field exists so a later keyless lane can
+ * set it; no keyless code path is or may become reachable from this product. */
+export interface CmcReceipt {
+  capability:string; endpoint:string; parameters:Record<string,string>
+  httpStatus:number|null; creditCount:number|null; elapsedMs:number|null
+  origin:'live'|'cache'|'negative-cache'; keyMode:'keyed'|'keyless'
+  cacheAgeSeconds:number|null; ttlSeconds:number|null; staleUntil:string|null
+  fetchedAt:string|null; reservation:string|null
 }
-function empty(name:string,reason:string,state:CmcResult['state']='unavailable'):CmcResult {
-  return {payload:null,state,reason,provenance:{provider:'coinmarketcap',observedAt:null,fetchedAt:null,expiresAt:null,sourceUrl:`https://coinmarketcap.com/api/documentation/pro-api-reference/${CMC_CAPABILITIES[name]?.feature==='rwa'?'real-world-assets':'endpoint-overview'}`}}
+export interface CmcResult<T=any> {
+  // 'fresh' means a live 200 answered THIS read. 'cached' means the shared snapshot
+  // answered it from inside its TTL: a success, and a different fact from 'fresh',
+  // because no call was made and the figure is exactly as old as its receipt says.
+  payload:T|null; state:'fresh'|'cached'|'stale'|'unavailable'|'unsupported'|'refreshing'; reason:string|null
+  provenance:{provider:'coinmarketcap';observedAt:string|null;fetchedAt:string|null;expiresAt:string|null;sourceUrl:string}
+  receipt:CmcReceipt|null
+}
+function empty(name:string,reason:string,state:CmcResult['state']='unavailable',receipt:CmcReceipt|null=null):CmcResult {
+  return {payload:null,state,reason,receipt,provenance:{provider:'coinmarketcap',observedAt:null,fetchedAt:null,expiresAt:null,sourceUrl:`https://coinmarketcap.com/api/documentation/pro-api-reference/${CMC_CAPABILITIES[name]?.feature==='rwa'?'real-world-assets':'endpoint-overview'}`}}
 }
 async function hash(value:string):Promise<string> { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(v=>v.toString(16).padStart(2,'0')).join('') }
 const inflight=new Map<string,Promise<CmcResult>>()
-async function readCache(db:any,key:string,name:string):Promise<CmcResult|null> {
+async function readCache(db:any,key:string,name:string,params:Record<string,string>={},ttlSeconds:number|null=null):Promise<CmcResult|null> {
   try {
     const {data,error}=await db.from('market_data_response_cache').select('response_json,expires_at,stale_until,observed_at,fetched_at,status_code,error_kind,negative_cache').eq('provider','coinmarketcap').eq('cache_key',key).maybeSingle()
     if(error) return empty(name,'cache_unavailable')
     if(!data) return null
-    if(data.negative_cache && Date.parse(data.expires_at)>Date.now()) return empty(name,data.error_kind||'provider_unavailable')
+    const fetched=Date.parse(data.fetched_at),spec=CMC_CAPABILITIES[name]
+    // The cached row carries the ORIGINATING call's HTTP status and its clocks, so
+    // a figure served from cache can still say what answered it and how old it is.
+    // The originating credit charge is NOT retained here — only provider_call_logs
+    // holds it, and that table is service-role only — so a cache hit reports no
+    // credit rather than inventing or estimating one. Read at call time so the
+    // shorten-only policy update below is reflected.
+    const receipt=(origin:'cache'|'negative-cache'):CmcReceipt=>({capability:name,endpoint:spec?.path??'',parameters:params,
+      httpStatus:data.status_code==null||!Number.isFinite(Number(data.status_code))?null:Number(data.status_code),creditCount:null,elapsedMs:null,
+      origin,keyMode:'keyed',cacheAgeSeconds:Number.isFinite(fetched)?Math.max(0,Math.round((Date.now()-fetched)/1000)):null,
+      ttlSeconds:ttlSeconds??spec?.ttl??null,staleUntil:data.stale_until??null,fetchedAt:data.fetched_at||null,reservation:null})
+    if(data.negative_cache && Date.parse(data.expires_at)>Date.now()) return empty(name,data.error_kind||'provider_unavailable','unavailable',receipt('negative-cache'))
     // A deployed shorter policy also applies to older cache rows. Shorten only,
     // with compare-and-set guards so a concurrent refresh cannot be overwritten.
-    const fetched=Date.parse(data.fetched_at),spec=CMC_CAPABILITIES[name]
     if(data.response_json!=null&&Number.isFinite(fetched)&&spec){
       const previousExpiry=data.expires_at,previousStale=data.stale_until||previousExpiry
       const expires=new Date(Math.min(Date.parse(previousExpiry),fetched+spec.ttl*1000)).toISOString()
@@ -56,7 +90,9 @@ async function readCache(db:any,key:string,name:string):Promise<CmcResult|null> 
       }
     }
     if(data.response_json==null || Date.parse(data.stale_until||data.expires_at)<=Date.now()) return null
-    return { payload:data.response_json,state:Date.parse(data.expires_at)>Date.now()?'fresh':'stale',reason:null,
+    // Inside its TTL this is 'cached', never 'fresh': nothing was asked of the
+    // provider on this read, and the receipt states the age that makes that safe.
+    return { payload:data.response_json,state:Date.parse(data.expires_at)>Date.now()?'cached':'stale',reason:null,receipt:receipt('cache'),
       provenance:{provider:'coinmarketcap',observedAt:cmcObservedAt(data.response_json,name),fetchedAt:data.fetched_at||null,expiresAt:data.expires_at,sourceUrl:`https://coinmarketcap.com/api/documentation/pro-api-reference/endpoint-overview`} }
   } catch { return empty(name,'cache_unavailable') }
 }
@@ -72,6 +108,13 @@ async function syncAccount(db:any,key:string,fingerprint:string):Promise<void> {
   if(!plan || !usage || !Number.isFinite(Number(usage.credits_used))) throw new Error('account_unavailable')
   const ok=await rpc(db,'cmc_account_sync',{p_fingerprint:fingerprint,p_limit:Number(plan.credit_limit_monthly),p_used:Number(usage.credits_used),p_reset_at:plan.credit_limit_monthly_reset_timestamp,p_rpm:Number(plan.rate_limit_minute)})
   if(ok!==true) throw new Error('account_unavailable')
+  // The sync above keeps only the NEWEST figures, so nothing in the stack can
+  // see how fast the balance is falling. One advisory append beside the read
+  // that already happened gives the cadence calibrator successive observations
+  // to take a delta from (see _shared/intel/budget-calibration.ts). No second
+  // provider call, and a failure is swallowed on purpose: an account sync must
+  // never fail because a measurement could not be recorded.
+  try { await db.rpc('cmc_account_observe',{p_fingerprint:fingerprint,p_limit:Number(plan.credit_limit_monthly),p_used:Number(usage.credits_used),p_reset_at:plan.credit_limit_monthly_reset_timestamp}) } catch { /* cadence stays the reviewed one */ }
 }
 export async function reserveCmcStream(db:any,maxMessages:number) {
   const settings=await loadCmcOperatingSettings(db)
@@ -111,6 +154,10 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
   if(!db?.rpc) return empty(name,'accounting_unavailable') as CmcResult<T>
   const fingerprint=(await hash(key)).slice(0,24)
   const cacheKey=`cmc:v3:${plan}:${fingerprint}:${name}:${await hash(JSON.stringify(params))}`
+  // The effective TTL for this exact request. Hoisted from the refresh closure so
+  // a cache hit can report the same ceiling its age is measured against; the hot
+  // focus batch refreshes faster than the registry default (see cmc-quote-groups).
+  const ttl=name==='quotes'?quoteRefreshSeconds(params):spec.ttl
   const connected=connectedDemandEnabled(settings,env)
   if((ctx?.kind==='request'||(connected&&ctx?.selectedDemand===true)) && ctx.orgId && ctx.userId) {
     // Authenticated foreground demand is the worker's only refresh input. A
@@ -120,7 +167,7 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
       await db.from('market_data_response_cache').update({capability:name,request_params:params,access_profile:plan,demanded_at:cmcDemandPolicy(name,params,plan,connected)?new Date().toISOString():null,demand_org_id:ctx.orgId,demand_user_id:ctx.userId}).eq('provider','coinmarketcap').eq('cache_key',cacheKey)
     } catch { /* reserve still fails closed if its durable records are unavailable */ }
   }
-  const cached=await readCache(db,cacheKey,name)
+  const cached=await readCache(db,cacheKey,name,params,ttl)
   if(cached && cached.state!=='stale') {
     await logProviderCall(db,{provider:'coinmarketcap',dataType:spec.feature,endpoint:spec.path,cacheStatus:cached.payload?'hit':'negative_hit',calls:0,caller:ctx?.caller})
     return cached as CmcResult<T>
@@ -131,20 +178,28 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
     const promise=(async()=>{
       let reservation:string|null=null,actual:number|null=null,status=0,reason:string|null=null
       const started=Date.now()
+      // Built at return time so it closes over the reconciled credit_count, the
+      // HTTP status and the reservation this call actually used. Never called
+      // unless an HTTP request was really issued, so origin:'live' stays true.
+      const liveReceipt=(fetchedAt:string|null,staleUntil:string|null):CmcReceipt=>({capability:name,endpoint:spec.path,parameters:params,
+        httpStatus:status||null,creditCount:actual,elapsedMs:Date.now()-started,origin:'live',keyMode:'keyed',
+        cacheAgeSeconds:fetchedAt?0:null,ttlSeconds:ttl,staleUntil,fetchedAt,reservation})
       try {
         await syncAccount(db,key,fingerprint)
         const configuredCap=cmcCreditCeiling(settings)
         const claim=await rpc(db,'cmc_request_reserve',{p_fingerprint:fingerprint,p_cache_key:cacheKey,p_endpoint:spec.path,p_feature:spec.feature,
           p_estimated:estimateCmcCredits(name,params),p_cap:configuredCap,p_feature_cap:CMC_FEATURE_CAPS[spec.feature]*configuredCap/12000})
         if(!claim?.allowed) {
-          if(claim?.reason==='cache_ready') return await readCache(db,cacheKey,name)??empty(name,'refreshing','refreshing')
+          if(claim?.reason==='cache_ready') return await readCache(db,cacheKey,name,params,ttl)??empty(name,'refreshing','refreshing')
           // A second Edge isolate can arrive while the first fills this shared
           // snapshot. Wait briefly on the cache, never issue another paid call.
           if(claim?.reason==='refreshing'&&(!cached||ctx?.waitForFresh)){
             for(let attempt=0;attempt<4;attempt++){
               await new Promise(resolve=>setTimeout(resolve,150*(attempt+1)))
-              const ready=await readCache(db,cacheKey,name)
-              if(ready?.state==='fresh')return ready
+              const ready=await readCache(db,cacheKey,name,params,ttl)
+              // The other isolate's live call lands in the shared cache, so what
+              // this waiter sees is 'cached' — that IS the fresh snapshot arriving.
+              if(ready?.state==='cached')return ready
             }
           }
           return cached ? {...cached,reason:claim?.reason||'accounting_unavailable'} : empty(name,claim?.reason||'accounting_unavailable',claim?.reason==='refreshing'?'refreshing':'unavailable')
@@ -170,7 +225,10 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
           // Keep last-good data intact; endpoint failures have a bounded negative
           // TTL only when there is no usable snapshot.
           if(!cached) await db.from('market_data_response_cache').update({response_json:null,negative_cache:true,status_code:status,error_kind:reason,expires_at:new Date(Date.now()+60000).toISOString()}).eq('provider','coinmarketcap').eq('cache_key',cacheKey).eq('refresh_token',reservation)
-          return cached?{...cached,reason}:empty(name,reason)
+          // A denial is still a call that was made and may have been charged, so it
+          // keeps its own receipt. A retained snapshot keeps the cache receipt that
+          // actually describes the figure being returned.
+          return cached?{...cached,reason}:empty(name,reason,'unavailable',liveReceipt(null,null))
         }
         if(body?.data==null && !Array.isArray(body)) throw new Error('malformed_response')
         // Only the reviewed DEX schemas have an exact-identity validator. A newly
@@ -184,23 +242,25 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
           console.warn(JSON.stringify({cmc_malformed:name,sample:JSON.stringify(body).slice(0,800)}))
           throw new Error('malformed_response')
         }
-        const ttl=name==='quotes'?quoteRefreshSeconds(params):spec.ttl
         const fetchedAt=new Date().toISOString(),observedAt=cmcObservedAt(body,name),expiresAt=new Date(Date.now()+ttl*1000).toISOString()
+        const staleUntil=new Date(Date.now()+spec.stale*1000).toISOString()
         const {error}=await db.from('market_data_response_cache').update({response_json:body,status_code:200,negative_cache:false,error_kind:null,
-          fetched_at:fetchedAt,observed_at:observedAt,expires_at:expiresAt,stale_until:new Date(Date.now()+spec.stale*1000).toISOString(),updated_at:fetchedAt,cache_status:'live'})
+          fetched_at:fetchedAt,observed_at:observedAt,expires_at:expiresAt,stale_until:staleUntil,updated_at:fetchedAt,cache_status:'live'})
           .eq('provider','coinmarketcap').eq('cache_key',cacheKey).eq('refresh_token',reservation)
         if(error) throw new Error('cache_unavailable')
         // One shared refresh captures public facts for every viewer. Failure to
         // retain history must be visible to history reads, never fabricate it.
         try {
-          const normalized=await normalizeCmcInvestigation(name,body,params,fetchedAt,expiresAt,new Date(Date.now()+spec.stale*1000).toISOString(),cmcPolicyEnvironment(settings,env))
+          const normalized=await normalizeCmcInvestigation(name,body,params,fetchedAt,expiresAt,staleUntil,cmcPolicyEnvironment(settings,env))
           if(normalized.rows.length){const retained=await db.rpc('intel_record_market_observations',{p_rows:normalized.rows});if(retained.error)throw new Error('retention_unavailable')}
           await retainMarketSourceVersions(db,normalized.sourceRows)
         } catch { console.warn('[cmc-history] observation retention unavailable',name) }
-        return {payload:body,state:'fresh' as const,reason:null,provenance:{provider:'coinmarketcap' as const,observedAt,fetchedAt,expiresAt,sourceUrl:`https://coinmarketcap.com/api/documentation/pro-api-reference/endpoint-overview`}}
+        return {payload:body,state:'fresh' as const,reason:null,receipt:liveReceipt(fetchedAt,staleUntil),provenance:{provider:'coinmarketcap' as const,observedAt,fetchedAt,expiresAt,sourceUrl:`https://coinmarketcap.com/api/documentation/pro-api-reference/endpoint-overview`}}
       } catch(err) {
         reason=err instanceof Error && ['accounting_unavailable','account_unavailable','malformed_response','cache_unavailable','response_too_large'].includes(err.message)?err.message:'provider_unavailable'
-        return cached?{...cached,reason}:empty(name,reason)
+        // Only once an HTTP status exists did a call actually reach the provider;
+        // failing before that (accounting, credentials) is not a 'live' read.
+        return cached?{...cached,reason}:empty(name,reason,'unavailable',status?liveReceipt(null,null):null)
       } finally {
         if(reservation) {
           // Reconciliation failure leaves the reservation charged: never release

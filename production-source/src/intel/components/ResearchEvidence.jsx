@@ -1,5 +1,6 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
+import SourceCallReceipt from './SourceCallReceipt'
 
 export function sourceHref(value) { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : null } catch { return null } }
 const title = key => key.replace(/_/g, ' ').replace(/\busd\b/gi, 'USD')
@@ -24,13 +25,18 @@ export function ResearchStatus({ query, showObserved=true }) {
     {error&&result&&<p role="alert">The latest read failed. Previously loaded evidence keeps its original source time.</p>}
     <p>{unavailableReason || t(`research.reason_${result?.reason || 'unavailable'}`, { defaultValue: result?.reason ? title(result.reason) : 'This source is unavailable.' })}</p>
     {!unavailableReason && <button className="underline underline-offset-4 mt-2" onClick={refresh}>{t('common.retry', { defaultValue: 'Retry' })}</button>}
+    {/* A refused or failed call still has a receipt, and that is exactly when a reader wants it. */}
+    <SourceCallReceipt receipt={result?.receipt} scope={result?.scope} observedAt={result?.provenance?.observedAt}/>
   </div>
   const p = result?.provenance
-  return <div className="intel-source-strip py-3">
-    <a href="https://coinmarketcap.com" target="_blank" rel="noopener noreferrer">CoinMarketCap</a>
-    {result?.state === 'stale' && <strong>{t('research.stale', { defaultValue: 'Delayed data' })}</strong>}
-    {showObserved && p?.observedAt && <span>{t('research.observed', { defaultValue: 'Observed' })} <time dateTime={p.observedAt}>{new Date(p.observedAt).toLocaleString()}</time></span>}
-    {p?.fetchedAt && <span>{t('research.fetched', { defaultValue: 'Retrieved' })} <time dateTime={p.fetchedAt}>{new Date(p.fetchedAt).toLocaleString()}</time></span>}
-    {!loading && !result?.data?.rows?.length && <span>{t('research.no_coverage', { defaultValue: 'No records returned for this selection.' })}</span>}
-  </div>
+  return <>
+    <div className="intel-source-strip py-3">
+      <a href="https://coinmarketcap.com" target="_blank" rel="noopener noreferrer">CoinMarketCap</a>
+      {result?.state === 'stale' && <strong>{t('research.stale', { defaultValue: 'Delayed data' })}</strong>}
+      {showObserved && p?.observedAt && <span>{t('research.observed', { defaultValue: 'Observed' })} <time dateTime={p.observedAt}>{new Date(p.observedAt).toLocaleString()}</time></span>}
+      {p?.fetchedAt && <span>{t('research.fetched', { defaultValue: 'Retrieved' })} <time dateTime={p.fetchedAt}>{new Date(p.fetchedAt).toLocaleString()}</time></span>}
+      {!loading && !result?.data?.rows?.length && <span>{t('research.no_coverage', { defaultValue: 'No records returned for this selection.' })}</span>}
+    </div>
+    <SourceCallReceipt receipt={result?.receipt} scope={result?.scope} observedAt={showObserved ? p?.observedAt : null}/>
+  </>
 }

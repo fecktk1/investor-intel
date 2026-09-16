@@ -18,3 +18,12 @@ export async function requestChartWorkspace(context,body) {
 export async function saveChartLayout(context,{id=null,revision=0,operationId,title,layout}) {
  return requestChartWorkspace(context,{operation:'save',id,revision,operationId,title,layout:validateChartLayout(layout)})
 }
+/** The member's own working state for one asset, or null when they have never left one. */
+export async function readChartWorkingState(context,asset) {
+ const data=await requestChartWorkspace(context,{operation:'working_get',asset})
+ return data?.working??null
+}
+/** Writes the working state back. Last write wins; the revision it produced is returned. */
+export async function saveChartWorkingState(context,{asset,revision=0,state}) {
+ return requestChartWorkspace(context,{operation:'working_save',asset,revision,state:validateChartLayout(state)})
+}

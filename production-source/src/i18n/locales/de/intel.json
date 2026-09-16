@@ -3502,7 +3502,14 @@
     "col_active": "Aktiv",
     "job_active": "Aktiv",
     "job_paused": "Pausiert",
-    "profile_promotional": "Aktionsprofil"
+    "profile_promotional": "Aktionsprofil",
+    "calibration_label": "Taktkalibrierung",
+    "calibration_title": "Taktkalibrierung",
+    "calibration_missing": "Für diesen Abruf wurde keine Taktkalibrierung gemeldet.",
+    "calibration_line": "Gemessener Verbrauch {{observed}} Credits pro Stunde gegenüber {{affordable}} leistbar · Taktfaktor ×{{scale}} · {{count}} Kontobeobachtungen",
+    "calibration_reason": "Grund: {{reason}}",
+    "calibration_window": "{{remaining}} Credits verbleiben, {{hours}} Stunden bis zur Zurücksetzung.",
+    "calibration_projection": "Projiziert beim kalibrierten Takt: {{credits}} Credits"
   },
   "rwa_issuer": {
     "eyebrow": "Primärquellen",
@@ -3570,5 +3577,19 @@
     "unmapped_no_register_record": "kein Eintrag im Register",
     "unmapped_name_not_an_identifier": "der Name identifiziert nicht eine einzelne Entität",
     "unmapped_legal_form_mismatch": "die Rechtsform stimmt nicht mit dem Register überein"
+  },
+  "receipt": {
+    "summary": "Beleg zum Quellenaufruf",
+    "capability": "Abfrage",
+    "parameters": "Parameter",
+    "origin": "Beantwortet von",
+    "origin_live": "Direkter Anbieteraufruf",
+    "origin_cache": "Gemeinsamer Zwischenspeicher, kein Aufruf",
+    "http_status": "HTTP-Status",
+    "credits": "Berechnete Credits",
+    "not_reported": "nicht gemeldet",
+    "age": "Alter gegenüber der Aktualisierungsgrenze",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s von {{ttl}} s"
   }
 }

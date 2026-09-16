@@ -1,6 +1,7 @@
 import { CMC_CAPABILITIES, cmcRows } from '../market-assets/cmc-capabilities.ts'
 import { digest, finite, instant, stableJson, type Observation } from './investigation-evidence.ts'
 import {dexEvidenceRows} from './cmc-dex-evidence.ts'
+import {withFigureScope} from './market-figure-scope.ts'
 import {normalizeMarketSourceVersions} from './market-source-versions.ts'
 export function cmcSubject(id:unknown) { const n=Number(id);return Number.isSafeInteger(n)&&n>0?`market:coinmarketcap:${n}`:null }
 function timestamp(value:unknown) { const t=typeof value==='number'?value<1e12?value*1000:value:instant(value);return t==null?null:new Date(t).toISOString() }
@@ -31,11 +32,16 @@ export async function normalizeCmcInvestigation(name:string,body:any,params:Reco
       ['cmc100History','cmc20History','globalHistory'].includes(name)?`coinmarketcap:${spec.path}:${stableJson({interval:params.interval||'daily'})}`:
       ['dexLiquidityEvents','dexSwaps'].includes(name)?`coinmarketcap:${spec.path}:${stableJson({platform:params.platform,address:params.address,transaction:metadata.transaction,logIndex:metadata.logIndex})}`:
       name==='dexHolderHistory'?`coinmarketcap:${spec.path}:${stableJson({platform:params.platform,tokenAddress:params.tokenAddress,interval:params.interval||'1d'})}`:sourceRef
-    const v=finite(value), key=await digest(stableJson({subject,metric,value:v,unit,observedAt,universe,periodSeconds,sourceRef:observationSourceRef,metadata}))
+    // Every imported figure leaves here carrying a scope string saying what it does
+    // NOT mean. A row whose producer already stated its limits keeps that exact
+    // wording; only an otherwise-silent row is given the sentence for its metric.
+    // Applied before the digest so the scope is part of the observation identity.
+    const scoped=withFigureScope(metric,metadata)
+    const v=finite(value), key=await digest(stableJson({subject,metric,value:v,unit,observedAt,universe,periodSeconds,sourceRef:observationSourceRef,metadata:scoped}))
     observations.push({id:`cmc:${key}`,subject,metric,value:v,unit,provider:'coinmarketcap',sourceRef:observationSourceRef,
       sourceUrl:`https://coinmarketcap.com/api/documentation/pro-api-reference/${spec.feature==='rwa'?'real-world-assets':'endpoint-overview'}`,
       observedAt,recordedAt:fetchedAt,expiresAt,periodSeconds:periodSeconds??null,universe:universe??null,
-      exportAllowed:policy.exportAllowed,aiAllowed:policy.aiAllowed,metadata})
+      exportAllowed:policy.exportAllowed,aiAllowed:policy.aiAllowed,metadata:scoped})
   }
   if(name.startsWith('dex'))for(const r of dexEvidenceRows(name,body,params)){
     const population=`cmc:dex:${r.metadata.chain}:${r.metadata.contract}`

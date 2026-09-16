@@ -269,7 +269,7 @@ export default function MarketAssetPage() {
             {riskAddress&&selectedNetwork?.chain&&<TokenRiskBadge key={canonicalKey} symbol={sym} chain={selectedNetwork.chain} address={riskAddress} />}
           </div>
           {d.bestPair && <p className="page-sub font-mono text-[12px]">{PROVIDER_LABELS[d.bestProvider] || d.bestProvider} · {d.bestPair}</p>}
-          {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'?` · ${d.sourceFreshness}`:''}</p>}
+          {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'&&d.sourceFreshness!=='cached'?` · ${d.sourceFreshness}`:''}</p>}
           {liveQuote.error&&<p role="status" className="intel-event-meta">{liveQuote.error}</p>}
           {/* Money above is converted from the stored USD at display time. When
               the reader asked for a currency the hourly capture cannot supply,

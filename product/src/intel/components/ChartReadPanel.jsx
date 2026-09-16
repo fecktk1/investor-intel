@@ -20,7 +20,7 @@ export default function ChartReadPanel({ result, readingMode, onReadingModeChang
       ['Source pivot', row => time(row.t)], ['Price', row => value(row.price)], ['Confirmed', row => time(row.confirmedAt)], ['Window', row => `${row.window} bars each side`],
     ]} /></div>}
     <InvestigationTable rows={result.studies} pageSize={7} caption="Indicator evidence at the completed close" columns={[
-      ['Study', row => <button type="button" className="intel-text-link" aria-pressed={studyId === row.id} onClick={() => { setStudyId(row.id); setLevelId(null); onInspect?.(null) }}>{row.label}</button>],
+      ['Indicator', row => <button type="button" className="intel-text-link" aria-pressed={studyId === row.id} onClick={() => { setStudyId(row.id); setLevelId(null); onInspect?.(null) }}>{row.label}</button>],
       ['Reading', row => row.readings.map(r => `${r.label}: ${value(r.value)}`).join(' · ') || 'Unavailable'], ['Coverage', row => row.reason || `${row.bars} continuous bars; warmup ${row.warmup}`],
     ]} />
     {selected && <div className="intel-structure-evidence" aria-label="Indicator method evidence"><h4>{selected.label}</h4><p>{selected.definition}</p><p>{selected.warmup} observations needed. {selected.reason || 'Values use the completed bars at this read time.'}</p><details className="intel-chart-readings"><summary>Inspect recent calculated values</summary>{selected.readings.map(row => <InvestigationTable key={row.label} caption={row.label} rows={row.points.map(p => ({ ...p, id: String(p.t) }))} pageSize={10} columns={[

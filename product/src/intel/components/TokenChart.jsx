@@ -8,11 +8,18 @@ import ChartWatchlistAdd from './ChartWatchlistAdd'
 import EvidenceMarkerContext from './EvidenceMarkerContext'
 import JournalMarkerReceipt from './JournalMarkerReceipt'
 import {useChartAlertHistory} from '../lib/useChartAlertHistory'
+import {workingDraftStore} from '../lib/chart-working-state'
+import deferredPanel from './deferred-panel'
 import { chartEventChanges } from '../lib/chart-event-changes'
 import {chartReplay,replayStops} from '../lib/chart-replay'
-import { normalizeBars, regularBarGrid } from '../../../supabase/functions/_shared/intel/chart-analysis'
+import { normalizeBars, regularBarGrid, studyLookbackBars } from '../../../supabase/functions/_shared/intel/chart-analysis'
 const PriceWorkstation = lazy(() => import('./PriceWorkstation'))
 const TokenChartFallback = lazy(() => import('./TokenChartFallback'))
+// Reading the working state is first content and happens before this chart is
+// built. Writing it is not: nothing needs saving until the member changes
+// something, so the saver arrives after the chart and picks the draft store up
+// where the chart already left it.
+const ChartWorkingState = deferredPanel(() => import('./ChartWorkingState'), { label: 'The saved chart state' })
 class WorkstationBoundary extends React.Component {
   state = { failed: false }
   static getDerivedStateFromError() { return { failed: true } }
@@ -20,8 +27,15 @@ class WorkstationBoundary extends React.Component {
   render() { return this.state.failed ? this.props.fallback ?? null : this.props.children }
 }
 
-const RANGES = ['1H', '12H', '24H', '3D', '7D', '1M', '3M', '6M', '1Y']
-export const CHART_RANGE_MS = { '1H': 3600000, '12H': 43200000, '24H': 86400000, '3D': 259200000, '7D': 604800000, '1M': 2592000000, '3M': 7776000000, '6M': 15552000000, '1Y': 31536000000 }
+// RANGE vocabulary, mirroring CHART_WINDOWS in
+// supabase/functions/_shared/intel/cmc-chart.ts. The last three exist because
+// stored daily candles (`market_asset_candles`) carry the years no single
+// provider window can reach; 'ALL' is twenty years, which predates every asset
+// the catalogue carries.
+const RANGES = ['1H', '12H', '24H', '3D', '7D', '1M', '3M', '6M', '1Y', '2Y', '5Y', 'ALL']
+export const CHART_RANGE_MS = { '1H': 3600000, '12H': 43200000, '24H': 86400000, '3D': 259200000, '7D': 604800000, '1M': 2592000000, '3M': 7776000000, '6M': 15552000000, '1Y': 31536000000, '2Y': 63072000000, '5Y': 157680000000, ALL: 630720000000 }
+/** Ranges the stored archive is expected to supply most of. */
+export const ARCHIVE_RANGES = ['1Y', '2Y', '5Y', 'ALL']
 
 // Candle INTERVAL vocabulary, mirroring CHART_INTERVALS in
 // supabase/functions/_shared/intel/cmc-chart.ts.
@@ -30,23 +44,23 @@ export const CHART_RANGE_MS = { '1H': 3600000, '12H': 43200000, '24H': 86400000,
 // maps describe different things and are never interchangeable: reading a range
 // key out of the interval map (or the reverse) is a bug, not a fallback.
 export const CANDLE_INTERVAL_MS = { '1M': 60000, '5M': 300000, '15M': 900000, '30M': 1800000, '1H': 3600000, '4H': 14400000, '1D': 86400000, '1W': 604800000 }
-// The four sub-hour widths are served ONLY by the CoinMarketCap k-line aggregate,
-// which is keyed by a contract address. `intel-markets` answers
-// `invalid_chart_range` for every other identity, so they are offered only where
-// they can actually be sampled rather than being offered and then refused.
 export const SUB_HOUR_INTERVALS = ['1M', '5M', '15M', '30M']
 export const CANDLE_INTERVAL_LABELS = { auto: 'Automatic', '1M': '1 minute', '5M': '5 minutes', '15M': '15 minutes', '30M': '30 minutes', '1H': '1 hour', '4H': '4 hours', '1D': '1 day', '1W': '1 week' }
-/** The intervals an identity may ask for. A contract adds the four sub-hour
- * widths; everything else keeps the hourly-and-wider vocabulary it always had. */
-export const candleIntervals = sourceProvider => (sourceProvider === 'contract'
-  ? ['auto', ...Object.keys(CANDLE_INTERVAL_MS)]
-  : ['auto', ...Object.keys(CANDLE_INTERVAL_MS).filter(key => !SUB_HOUR_INTERVALS.includes(key))])
+/** The intervals an identity may ask for: ALL EIGHT, for every source.
+ *
+ * The four sub-hour widths used to be offered only for a contract identity,
+ * because the CoinMarketCap k-line aggregate was the only source that could
+ * sample them. The free public exchange registry samples them for every pair a
+ * venue lists, so the width is now always selectable and the LADDER decides
+ * which source can serve it. When no source for this asset can sample the width,
+ * the read answers the finest width one of them can and the coverage sentence
+ * names the width that was actually served — it is never relabelled. */
+export const candleIntervals = () => ['auto', ...Object.keys(CANDLE_INTERVAL_MS)]
 /** What "Automatic" actually does, said in the control rather than left implicit:
- * for a contract the k-line planner picks a MINUTE width on a short window
- * (≤ 1H → 1 minute, ≤ 12H → 5 minutes, ≤ 24H → 15 minutes), then hourly and
- * daily. Every other identity is sampled hourly at its shortest. */
-export const candleIntervalLabel = (interval, sourceProvider) => (interval === 'auto' && sourceProvider === 'contract'
-  ? 'Automatic (minute candles on short ranges)'
+ * ≤ 1H → 1 minute, ≤ 12H → 5 minutes, ≤ 24H → 15 minutes, ≤ 7D → 1 hour,
+ * ≤ 1M → 4 hours, ≤ 2Y → 1 day, wider → 1 week. */
+export const candleIntervalLabel = interval => (interval === 'auto'
+  ? 'Automatic (minute candles on short ranges, weekly on the longest)'
   : CANDLE_INTERVAL_LABELS[interval] || interval)
 const LAYERS = [['thesis', 'Thesis'], ['trade', 'Journal trades'], ['portfolio', 'Portfolio'], ['rules', 'Rules'], ['news', 'News'], ['partnerships', 'Partnerships'], ['unlocks', 'Unlocks']]
 const COLORS = { thesis: '#DFA647', trade: '#B4A0DC', portfolio: '#6CC6A2', news: '#A7AFBC', partnerships: '#82ABD2', unlocks: '#E3AEBC' }
@@ -120,21 +134,30 @@ export function MarkerDetails({ events, onClose, t, onMouseEnter, onMouseLeave, 
   </section>
 }
 
-function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, requestKey = '', initialLayout = null, readOnly = false, replayCursor = undefined, onReplayChange }) {
+function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', candlesRange = null, assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, assetName = null, assetSymbol = null, requestKey = '', initialLayout = null, workingRevision = 0, readOnly = false, replayCursor = undefined, onReplayChange }) {
   const { t } = useTranslation('intel')
   const conditions=useChartAlertHistory(readOnly?null:persistence,timeWindow?.from,timeWindow?.to,assetKey)
   const inputMarkers=useMemo(()=>[...providedMarkers,...conditions.markers],[providedMarkers,conditions.markers])
   const historyLoading=suppliedHistoryLoading||conditions.loading,historyError=suppliedHistoryError||conditions.error,historyHasMore=suppliedHistoryHasMore||!!conditions.nextCursor
   const onLoadMoreHistory=()=>{if(suppliedHistoryHasMore)loadSuppliedHistory?.();if(conditions.nextCursor)conditions.loadMore()}
   const chartId = useId().replaceAll(':', '')
-  const [hiddenGroups, setHiddenGroups] = useState(new Set(['news', 'partnerships', 'unlocks']))
+  // Marker layers the member last had hidden come back hidden; a chart with no
+  // working state keeps the quiet default.
+  const [hiddenGroups, setHiddenGroups] = useState(() => Object.keys(initialLayout?.visibility || {}).length
+    ? new Set(Object.entries(initialLayout.visibility).filter(([, visible]) => !visible).map(([group]) => group))
+    : new Set(['news', 'partnerships', 'unlocks']))
   const layers = useMemo(() => [...LAYERS, ...[...new Set(inputMarkers.map(markerGroup))].filter(group => !LAYERS.some(([known]) => known === group)).map(group => [group, textLabel(group)])], [inputMarkers])
   const groups = useMemo(() => showDensityToggles ? new Set(layers.map(([group]) => group).filter(group => !hiddenGroups.has(group))) : null, [layers, hiddenGroups, showDensityToggles])
+  // The page's candles were fetched for one period (`candlesRange`). They seed
+  // that period's cache and nothing else: a restored wider period starts empty
+  // and loads its own series, so the chart never shows one week of bars under a
+  // one-month window, and a share taken then never captures the wrong series.
+  const seededRange = candlesRange || defaultRange
   const [range, setRange] = useState(defaultRange)
-  const [series, setSeries] = useState(candles || [])
+  const [series, setSeries] = useState(seededRange === defaultRange ? candles || [] : [])
   const [tfLoading, setTfLoading] = useState(false)
   const [chartError, setChartError] = useState(null)
-  const [coverage, setCoverage] = useState(priceCoverage)
+  const [coverage, setCoverage] = useState(seededRange === defaultRange ? priceCoverage : null)
   const [refreshTick,setRefreshTick]=useState(0)
   const [selection, setSelection] = useState(null)
   const [allHistory, setAllHistory] = useState(false)
@@ -142,6 +165,27 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   const cacheRef = useRef({})
   const previousRequestKey = useRef(requestKey)
   const workspaceDraft = useRef(initialLayout||{})
+  // The draft the chart reports on every change, held outside React so a pan or
+  // an added drawing costs no render here and the saver can arrive afterwards.
+  const draftStore = useRef(null); if (!draftStore.current) draftStore.current = workingDraftStore()
+  // An indicator needs history BEFORE the window to have a value at the window's
+  // first bar: a 50-period average has none for the first 49. Every load asks the
+  // source for that many extra completed periods, sized from the indicators in
+  // use, and the figure never shrinks: a study removed costs nothing, a study
+  // added past the current allowance loads the period once more.
+  const [lookback, setLookback] = useState(() => studyLookbackBars(initialLayout?.studies || []))
+  useEffect(() => draftStore.current.subscribe(draft => { const next = studyLookbackBars(draft?.studies || []); setLookback(current => next > current ? next : current) }), [])
+  // A NEW PERIOD IS A NEW WINDOW. The draft handed to a workstation that is being
+  // rebuilt keeps the member's drawings, indicators and view, but not the window
+  // of the period they just left: the rebuilt chart would fit to that window over
+  // the new bars and report it straight back as the state, so pressing 7D went on
+  // saving the month it replaced. Dropped during render, because the rebuild can
+  // happen in this same commit.
+  const windowBasis = useRef(`${range}:${requestKey}`)
+  if (windowBasis.current !== `${range}:${requestKey}`) {
+    windowBasis.current = `${range}:${requestKey}`
+    if (workspaceDraft.current?.range) workspaceDraft.current = { ...workspaceDraft.current, range: undefined }
+  }
   const [localReplayAt,setReplayAt]=useState(initialLayout?.replay?.at??null),[knownOnly,setKnownOnly]=useState(initialLayout?.replay?.knownOnly??false)
   const replayAt=replayCursor===undefined?localReplayAt:replayCursor
   const replayBasis=useRef(`${range}:${requestKey}`)
@@ -165,8 +209,9 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   const loaderRef = useRef(loadCandles)
   loaderRef.current = loadCandles
 
-  useEffect(() => { cacheRef.current = {}; setSeries(candles || []); setCoverage(priceCoverage); setChartError(null); setRange(defaultRange); setSelection(null); pinRef.current = false; openedFocus.current = null; setAllHistory(false) }, [assetKey, defaultRange]) // eslint-disable-line
-  useEffect(() => { if (candles) { cacheRef.current[defaultRange] = { candles, ...priceCoverage, checkedAt:Date.now() }; if (range === defaultRange) { setSeries(candles); setCoverage(priceCoverage) } } }, [candles, defaultRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
+  useEffect(() => { cacheRef.current = {}; setSeries(seededRange === defaultRange ? candles || [] : []); setCoverage(seededRange === defaultRange ? priceCoverage : null); setChartError(null); setRange(defaultRange); setSelection(null); pinRef.current = false; openedFocus.current = null; setAllHistory(false) }, [assetKey, defaultRange]) // eslint-disable-line
+  // The page's candles carry no lookback, so they seed only the lookback-free entry.
+  useEffect(() => { if (candles) { cacheRef.current[`${seededRange}:0`] = { candles, ...priceCoverage, checkedAt:Date.now() }; if (range === seededRange && lookback === 0) { setSeries(candles); setCoverage(priceCoverage) } } }, [candles, seededRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
   useEffect(() => { if(previousRequestKey.current!==requestKey){cacheRef.current = {};previousRequestKey.current=requestKey} }, [requestKey])
   useEffect(()=>{
     if(!loadCandles||readOnly||replayAt!=null)return
@@ -179,23 +224,33 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
     if (!loaderRef.current) return
     let alive = true
     setChartError(null)
-    const cached=cacheRef.current[range]
+    const key=`${range}:${lookback}`,cached=cacheRef.current[key]
     if (cached && Date.now()-cached.checkedAt<60000) { setSeries(cached.candles); setCoverage(cached); setTfLoading(false); return }
     setTfLoading(!cached); if(!cached)setCoverage(null)
-    Promise.resolve(loaderRef.current(range)).then(c => { if (alive) { const snapshot = {...(Array.isArray(c) ? { candles: c } : { ...c, candles: c?.candles || [] }),checkedAt:Date.now()}; cacheRef.current[range] = snapshot; setSeries(snapshot.candles); setCoverage(snapshot) } })
+    Promise.resolve(loaderRef.current(range,{lookbackBars:lookback})).then(c => { if (alive) { const snapshot = {...(Array.isArray(c) ? { candles: c } : { ...c, candles: c?.candles || [] }),checkedAt:Date.now()}; cacheRef.current[key] = snapshot; setSeries(snapshot.candles); setCoverage(snapshot) } })
       .catch(() => { if (alive) { const lastGood=cached&&Date.now()-cached.checkedAt<=15*60000;setSeries(lastGood?cached.candles:[]);setCoverage(lastGood?{...cached,state:'stale'}:null);setChartError(lastGood?'Price history could not be refreshed. Showing the last loaded observations.':'Price history is temporarily unavailable. Choose another period or reload to retry.') } })
       .finally(() => { if (alive) setTfLoading(false) })
     return () => { alive = false }
-  }, [range, assetKey, requestKey, refreshTick])
+  }, [range, assetKey, requestKey, refreshTick, lookback])
   useEffect(() => { onRangeChange?.(range) }, [range, onRangeChange])
   useEffect(() => { setViewport(null);setRendererFailed(false) }, [assetKey,range])
+  // A renderer refusal is about the bars it was given. New bars (the range's own
+  // series arriving after a transitional render) get the workstation again.
+  useEffect(() => { setRendererFailed(false) }, [series])
   useEffect(() => {
     const close = e => { if (e.key === 'Escape') closeDetail() }
     document.addEventListener('keydown', close)
     return () => document.removeEventListener('keydown', close)
   }, [])
 
-  const allBars = useMemo(() => normalizeBars((loadCandles ? series : candles || []).slice(-10000)).bars.filter(c => !timeWindow || (c.t >= timeWindow.from && c.t <= timeWindow.to)), [loadCandles,series,candles,timeWindow?.from,timeWindow?.to])
+  // The bars kept run from the lookback the indicators need to the end of the
+  // window; the workstation fits its view to the window and leaves the earlier
+  // bars to the left of it, where a pan can reach them.
+  // The width survives a reload of the same period (coverage is cleared while a
+  // wider lookback is fetched), so the warm-up already on the chart stays put.
+  const stepRef = useRef(0); if (coverage?.chartSource?.intervalMs) stepRef.current = coverage.chartSource.intervalMs
+  const lookbackMs = lookback * (coverage?.chartSource?.intervalMs || stepRef.current || 0)
+  const allBars = useMemo(() => normalizeBars((loadCandles ? series : candles || []).slice(-10000)).bars.filter(c => !timeWindow || (c.t >= timeWindow.from - lookbackMs && c.t <= timeWindow.to)), [loadCandles,series,candles,timeWindow?.from,timeWindow?.to,lookbackMs])
   const replay=replayAt!=null,stops=useMemo(()=>replayStops(allBars,knownOnly),[allBars,knownOnly])
   const replayResult=useMemo(()=>replay?chartReplay(allBars,inputMarkers,replayAt,knownOnly):null,[allBars,inputMarkers,replayAt,knownOnly,replay])
   const workstationBars=replayResult?.bars||allBars,markers=replayResult?.events||inputMarkers,keyLevels=replay?[]:inputKeyLevels,maxDrawdown=replay?null:inputDrawdown
@@ -228,9 +283,10 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
 
   return <section className="intel-chart" aria-label={t('chart.market_history', { defaultValue: 'Price and personal activity history' })}>
     <div className="intel-chart-toolbar">
-      {loadCandles && <div className="intel-range-controls" aria-label={t('chart.time_range', { defaultValue: 'Chart time range' })}>{RANGES.map(r => <button key={r} type="button" aria-pressed={r === range} onClick={() => { setRange(r); setSelection(null) }}>{r}</button>)}</div>}
+      {loadCandles && <div className="intel-range-controls" aria-label={t('chart.time_range', { defaultValue: 'Chart time range' })}>{RANGES.map(r => <button key={r} type="button" aria-pressed={r === range} onClick={() => { setRange(r); setSelection(null) }}>{r === 'ALL' ? t('chart.range_all', { defaultValue: 'All' }) : r}</button>)}</div>}
       {rangeExtra}
       {persistence && !readOnly && <ChartWatchlistAdd key={`${persistence.userId}:${persistence.orgId}:${persistence.asset}`} context={persistence} plotRef={plotRef}/>}
+      {persistence && !readOnly && <ChartWorkingState store={draftStore.current} context={persistence} revision={workingRevision} initial={initialLayout}/>}
       {!replay&&<button className="intel-text-link" type="button" disabled={stops.length<2} onClick={()=>setReplayTime(stops[Math.min(stops.length-1,Math.max(0,Math.floor(stops.length/3)))])}>Replay chart</button>}
       {showDensityToggles && markers.length > 0 && <ResponsiveChartTools label={t('chart.layers', { defaultValue: 'Layers' })}><fieldset className="intel-layer-controls"><legend className="sr-only">{t('chart.layers_title', { defaultValue: 'Chart layers' })}</legend>{layers.map(([group, label]) => <label key={group}><input type="checkbox" checked={!hiddenGroups.has(group)} onChange={() => setHiddenGroups(s => { const next = new Set(s); next.has(group) ? next.delete(group) : next.add(group); return next })}/>{t(`chart.marker_${group}`, { defaultValue: label })}</label>)}</fieldset></ResponsiveChartTools>}
     </div>
@@ -242,7 +298,7 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
       {coverage.provenance?.fetchedAt && <> · Retrieved <time dateTime={coverage.provenance.fetchedAt}>{date(coverage.provenance.fetchedAt)}</time></>}
     </p></details>}
     <div ref={plotRef} className={`intel-chart-plot${!data.length&&!tfLoading&&!loading?" intel-chart-plot-empty":""}`} style={{minHeight:!data.length&&!tfLoading&&!loading?80:height}}>
-      {useWorkstation ? <WorkstationBoundary key={assetKey} onFailure={()=>setRendererFailed(true)}><Suspense fallback={<p role="status">Loading chart controls…</p>}><PriceWorkstation bars={workstationBars} viewKey={`${range}:${requestKey}`} timeWindow={timeWindow ? {from:timeWindow.from,to:replay?Math.min(timeWindow.to,replayAt):timeWindow.to}:null} readOnly={readOnly} seriesCapture={coverage?.capture} replay={replay} knownOnly={knownOnly} chartSource={replay&&coverage?.chartSource?{...coverage.chartSource,observedAt:workstationBars.at(-1)?.t??null}:coverage?.chartSource} height={height} cursorTime={replay?replayAt:cursorTime} onCursorChange={replay?setReplayTime:onCursorChange} persistence={persistence} initialState={workspaceDraft.current} onReplayRestore={state=>{setKnownOnly(state?.knownOnly??false);setReplayTime(state?.at??null)}} onWorkspaceChange={state=>{workspaceDraft.current=state}} visibility={Object.fromEntries(layers.map(([group])=>[group,!hiddenGroups.has(group)]))} onVisibilityChange={state=>setHiddenGroups(new Set(Object.entries(state).filter(([,visible])=>!visible).map(([group])=>group)))} onFailure={()=>setRendererFailed(true)} onViewportChange={v=>setViewport(previous=>previous?.from===v.from&&previous?.to===v.to&&previous?.width===v.width?previous:v)} clusters={clusters} renderMarker={renderMarker} keyLevels={keyLevels} drawdown={drawdownFrom!=null&&drawdownTo!=null?{fromT:drawdownFrom,toT:drawdownTo}:null}/></Suspense></WorkstationBoundary> : data.length > 0 ? <WorkstationBoundary fallback={<p role="alert">The price plot could not load. Recorded activity remains available below. Reload to retry.</p>}><Suspense fallback={<p role="status">Loading price plot…</p>}><TokenChartFallback data={data} height={height} onCursorChange={onCursorChange} chartId={chartId} color={color} first={first} last={last} fmtT={fmtT} fmt={fmt} date={date} t={t} drawdownFrom={drawdownFrom} drawdownTo={drawdownTo} keyLevels={keyLevels} cursorTime={cursorTime} clusters={clusters} priceAt={priceAt} open={open} leave={leave} colors={COLORS}/></Suspense></WorkstationBoundary> : <div className="intel-chart-empty">{t('chart.price_period_unavailable', { defaultValue: 'Price observations are unavailable for this period. Recorded activity remains on its own timeline.' })}</div>}
+      {useWorkstation ? <WorkstationBoundary key={assetKey} onFailure={()=>setRendererFailed(true)}><Suspense fallback={<p role="status">Loading chart controls…</p>}><PriceWorkstation bars={workstationBars} viewKey={`${range}:${requestKey}`} timeWindow={timeWindow ? {from:timeWindow.from,to:replay?Math.min(timeWindow.to,replayAt):timeWindow.to}:null} readOnly={readOnly} assetName={assetName} assetSymbol={assetSymbol} seriesCapture={coverage?.capture} replay={replay} knownOnly={knownOnly} chartSource={replay&&coverage?.chartSource?{...coverage.chartSource,observedAt:workstationBars.at(-1)?.t??null}:coverage?.chartSource} height={height} cursorTime={replay?replayAt:cursorTime} onCursorChange={replay?setReplayTime:onCursorChange} persistence={persistence} initialState={workspaceDraft.current} onReplayRestore={state=>{setKnownOnly(state?.knownOnly??false);setReplayTime(state?.at??null)}} onWorkspaceChange={state=>{workspaceDraft.current=state;if(!replay)draftStore.current.set(state)}} visibility={Object.fromEntries(layers.map(([group])=>[group,!hiddenGroups.has(group)]))} onVisibilityChange={state=>setHiddenGroups(new Set(Object.entries(state).filter(([,visible])=>!visible).map(([group])=>group)))} onFailure={()=>setRendererFailed(true)} onViewportChange={v=>setViewport(previous=>previous?.from===v.from&&previous?.to===v.to&&previous?.width===v.width?previous:v)} clusters={clusters} renderMarker={renderMarker} keyLevels={keyLevels} drawdown={drawdownFrom!=null&&drawdownTo!=null?{fromT:drawdownFrom,toT:drawdownTo}:null}/></Suspense></WorkstationBoundary> : data.length > 0 ? <WorkstationBoundary fallback={<p role="alert">The price plot could not load. Recorded activity remains available below. Reload to retry.</p>}><Suspense fallback={<p role="status">Loading price plot…</p>}><TokenChartFallback data={data} height={height} onCursorChange={onCursorChange} chartId={chartId} color={color} first={first} last={last} fmtT={fmtT} fmt={fmt} date={date} t={t} drawdownFrom={drawdownFrom} drawdownTo={drawdownTo} keyLevels={keyLevels} cursorTime={cursorTime} clusters={clusters} priceAt={priceAt} open={open} leave={leave} colors={COLORS}/></Suspense></WorkstationBoundary> : <div className="intel-chart-empty">{t('chart.price_period_unavailable', { defaultValue: 'Price observations are unavailable for this period. Recorded activity remains on its own timeline.' })}</div>}
       {selection?.length>0 && <MarkerDetails events={visibleSelection || []} onClose={closeDetail} t={t} onSelect={event=>{if(event){pinRef.current=true;onCursorChange?.(event.t);onEventSelect?.([event])}}} onMouseEnter={() => clearTimeout(hoverTimer.current)} onMouseLeave={leave}/>}
     </div>
     {!data.length&&window.visible.length>0&&<div className="intel-event-period"><time dateTime={new Date(first).toISOString()}>{date(first)}</time><time dateTime={new Date(last).toISOString()}>{date(last)}</time></div>}

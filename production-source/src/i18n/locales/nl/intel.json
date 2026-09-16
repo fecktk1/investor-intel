@@ -3502,7 +3502,14 @@
     "col_active": "Actief",
     "job_active": "Actief",
     "job_paused": "Gepauzeerd",
-    "profile_promotional": "promotioneel"
+    "profile_promotional": "promotioneel",
+    "calibration_label": "Cadanskalibratie",
+    "calibration_title": "Cadanskalibratie",
+    "calibration_missing": "Voor deze uitlezing is geen cadanskalibratie gemeld.",
+    "calibration_line": "Gemeten verbruik {{observed}} credits per uur tegenover {{affordable}} haalbaar · cadansfactor ×{{scale}} · {{count}} accountwaarnemingen",
+    "calibration_reason": "Reden: {{reason}}",
+    "calibration_window": "Er resteren {{remaining}} credits en {{hours}} uur tot de reset.",
+    "calibration_projection": "Prognose bij de gekalibreerde cadans: {{credits}} credits"
   },
   "rwa_issuer": {
     "eyebrow": "Primaire bronnen",
@@ -3570,5 +3577,19 @@
     "unmapped_no_register_record": "geen vermelding in het register",
     "unmapped_name_not_an_identifier": "de naam identificeert niet één entiteit",
     "unmapped_legal_form_mismatch": "de rechtsvorm komt niet overeen met het register"
+  },
+  "receipt": {
+    "summary": "Bon van de bronaanroep",
+    "capability": "Aanvraag",
+    "parameters": "Parameters",
+    "origin": "Beantwoord door",
+    "origin_live": "Directe aanroep bij de aanbieder",
+    "origin_cache": "Gedeelde cache, geen aanroep",
+    "http_status": "HTTP-status",
+    "credits": "In rekening gebrachte credits",
+    "not_reported": "niet gerapporteerd",
+    "age": "Leeftijd ten opzichte van de verversingslimiet",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s van {{ttl}} s"
   }
 }

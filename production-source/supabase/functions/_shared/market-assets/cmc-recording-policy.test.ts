@@ -10,7 +10,9 @@ async function scenario(config:Record<string,string>,override?:string){
  try{
   const first=await requestCmc('listings',{limit:1},{supabase:db,kind:'request',userId:'one',orgId:'org-one',maxCalls:1})
   const next=await requestCmc('listings',{limit:1},{supabase:db,kind:'request',userId:'two',orgId:'org-two',maxCalls:1})
-  eq(first.state,'fresh');eq(next.state,'fresh');eq(calls,1)
+  // The second viewer is served by the snapshot the first one filled: one call
+  // for both, and that second read is now named 'cached' rather than 'fresh'.
+  eq(first.state,'fresh');eq(next.state,'cached');eq(calls,1)
   const price=writes.find(r=>r.metric==='price');assert(price,'Expected retained public price');return price
  }finally{globalThis.fetch=original;keys.forEach((k,i)=>saved[i]==null?Deno.env.delete(k):Deno.env.set(k,saved[i]!))}
 }

@@ -1,4 +1,4 @@
-import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexInteger,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_HOLDER_TAGS} from './cmc-dex.ts'
+import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexInteger,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_DEX_MEME_STAGES,CMC_DEX_MEME_LIMIT,CMC_HOLDER_TAGS} from './cmc-dex.ts'
 /** Re-exported from cmc-dex.ts, where the response validators also need it. */
 export {CMC_HOLDER_TAGS}
 // Reviewed against official CMC endpoint references 2026-09-09. Access is a
@@ -95,7 +95,18 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   dexSwaps: cap('/v1/dex/tokens/transactions','structure',['platform','address','limit','lastId'],{demand:false,tier:'startup',rows:'swaps',ttl:120,stale:900,required:['address']}),
   dexTrending: cap('/v1/dex/tokens/trending/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900,rows:'leaderboardList'}),
   dexNew: cap('/v1/dex/new/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900,rows:'leaderboardList'}),
-  dexMeme: cap('/v1/dex/meme/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900}),
+  // /v1/dex/meme/list does NOT share the discovery request shape. Read against
+  // the published DEX token reference on 2026-09-15: the body is
+  // {protocol, exclusive, limit, newCreationFilter, aboutGraduateFilter,
+  // graduateFilter}, and platformIds / interval / pageSize / nextPageIndex are
+  // not accepted. Until 2026-09-15 this entry sent platformIds+interval+pageSize;
+  // the provider answered 200, error_code 0, 1 credit and three EMPTY arrays
+  // every time (36 calls, 252 bytes each, 2026-09-15 03:57-11:37 UTC), because
+  // none of the three fields it actually reads was present. `protocol` (protocol
+  // code) and `exclusive` (Binance exclusive flag) are documented but have NO
+  // published value list, so this platform does not guess at them: they stay
+  // registered and unsent, and only `limit` is defaulted.
+  dexMeme: cap('/v1/dex/meme/list','attention',['protocol','exclusive','limit'],{demand:false,method:'POST',tier:'startup',ttl:300,stale:900}),
   dexGainers: cap('/v1/dex/gainer-loser/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900,rows:'leaderboardList'}),
   // Registered 2026-09-15 and probed the same day on the Startup key: every one of these cost one credit.
   // tag_count returns data.holders [{tag,hc,tb,hr}] with tags tag_dev, tag_sniper, tag_kol, tag_whale, tag_bot,
@@ -127,6 +138,13 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   community: cap('/v1/community/trending/token','attention',['limit'],{tier:'growth',cost:'zero'}),
 }
 export const CMC_FEATURE_CAPS: Record<CmcFeature,number> = { market:6000,metadata:500,history:500,regime:2500,rwa:1500,structure:1000,attention:500 }
+/** A read that produced a usable figure. 'fresh' is a live 200 on this read and
+ * 'cached' is the shared snapshot answering from inside its TTL — both succeeded,
+ * and only the receipt distinguishes them. This lives here, not in the transport,
+ * because the transport imports this file and a value import the other way would
+ * be a cycle. Consumers that used to test state==='fresh' alone must call this,
+ * or a perfectly good cached figure reads as a failure. */
+export const cmcUsable=(state:string|null|undefined)=>state==='fresh'||state==='cached'
 export function planAllows(plan: string, minimum: CmcPlan): boolean {
   const levels = ['basic','builder','startup','growth','professional','enterprise']
   return levels.indexOf(plan) >= levels.indexOf(minimum)
@@ -167,7 +185,16 @@ export function cmcParams(name: string, input: Record<string,unknown> = {}): Rec
   if(name==='exchangeAssets'&&out.id?.includes(','))throw new Error('single_exchange_required')
   if (['id','crypto_id','rwa_id','exchange_id','slug','rwa_slug','exchange_slug','symbol','address'].filter(k=>out[k]).length>1) throw new Error('multiple_identifier_types')
   if(['quotes','metadata','rwaInfo','rwaQuotes'].includes(name)&&out.symbol) throw new Error('stable_identifier_required')
-  if(isDexDiscovery(name)){
+  if(name==='dexMeme'){
+    // The only field this endpoint reads that we are entitled to fill in. A
+    // request without it is what produced the empty boards: the provider answers
+    // 200 with three empty arrays rather than an error, so an absent limit would
+    // be an invisible failure. `protocol`/`exclusive` are never defaulted —
+    // their value lists are unpublished, and a guessed code is a wrong question.
+    out.limit||=String(CMC_DEX_MEME_LIMIT)
+    if(!/^[1-9][0-9]*$/.test(out.limit)||Number(out.limit)>250)throw new Error('invalid_discovery_page_size')
+    for(const key of ['protocol','exclusive'])if(out[key]!=null&&!/^\d+$/.test(out[key]))throw new Error(`invalid_parameter:${key}`)
+  }else if(isDexDiscovery(name)){
     out.platformIds||='1';out.interval||='24h';out.pageSize||='25'
     if(!CMC_DEX_NETWORKS.some(n=>String(n.platformId)===out.platformIds))throw new Error('unverified_dex_platform')
     if(out.interval!=='24h')throw new Error('invalid_discovery_interval')
@@ -250,6 +277,9 @@ export function cmcParams(name: string, input: Record<string,unknown> = {}): Rec
  * caller never supplies JSON. List and numeric shapes are restored per
  * registered capability so the body matches the documented request schema. */
 export function cmcRequestBody(name: string, params: Record<string,string>): Record<string,unknown> {
+  // Every documented field of /v1/dex/meme/list is an int32; a JSON string where
+  // the provider expects a number is another way to be silently ignored.
+  if(name==='dexMeme') return Object.fromEntries(Object.entries(params).map(([k,v])=>[k,Number(v)]))
   if(isDexDiscovery(name)) return {...params,pageSize:Number(params.pageSize)}
   const body: Record<string,unknown>={...params}
   if(params.limit!=null) body.limit=Number(params.limit)
@@ -333,8 +363,12 @@ export function cmcRows(name:string,body:any,params?:Record<string,string>): {ro
     return {rows,total:null,hasMore:false,nextCursor:isCmcDexCursor(page?.cursor)?page!.cursor:null}
   }
   if(isDexDiscovery(name)){
-    const raw=name==='dexMeme'?['newCreations','aboutGraduates','graduates'].flatMap(stage=>(Array.isArray(data?.[stage])?data[stage]:[]).map((r:any)=>({...r,discoveryStage:stage}))):data?.leaderboardList??[]
-    const rows=raw.slice(0,75).map((r:any)=>({...r,canonicalKey:`${CMC_DEX_NETWORKS.find(n=>n.platformId===r.pid)?.chain}:${r.pid===16?r.addr:String(r.addr).toLowerCase()}`,
+    const raw=name==='dexMeme'?CMC_DEX_MEME_STAGES.flatMap(stage=>(Array.isArray(data?.[stage])?data[stage]:[]).map((r:any)=>({...r,discoveryStage:stage}))):data?.leaderboardList??[]
+    // The meme board is three stage arrays of `limit` rows each, so its ceiling
+    // follows the limit that was asked for: a flat 75 would silently drop rows
+    // the validator had already accepted as a legal answer to a wider request.
+    const ceiling=name==='dexMeme'?CMC_DEX_MEME_STAGES.length*(cmcDexInteger(params?.limit)??CMC_DEX_MEME_LIMIT):75
+    const rows=raw.slice(0,ceiling).map((r:any)=>({...r,canonicalKey:`${CMC_DEX_NETWORKS.find(n=>n.platformId===r.pid)?.chain}:${r.pid===16?r.addr:String(r.addr).toLowerCase()}`,
       name:r.n,symbol:r.sym,quote:{price:r.p==null?null:Number(r.p),last_updated:r.pt&&Number.isFinite(Number(r.pt))?new Date(Number(r.pt)<1e12?Number(r.pt)*1000:Number(r.pt)).toISOString():null}}))
     return {rows,total:data.total!=null&&Number.isFinite(Number(data.total))?Number(data.total):null,hasMore:data.hasNextPage===true||!!data.nextPageIndex,nextCursor:isCmcDexCursor(data.nextPageIndex)?data.nextPageIndex:null}
   }

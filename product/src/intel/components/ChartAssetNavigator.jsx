@@ -19,10 +19,12 @@ export function chartAssetCaption(asset){
  const native=CHAINS.find(c=>asset===`native:${c.id}`)
  return native?`${native.label} · Native asset`:asset?.startsWith('solana:')?`Solana · ${asset.slice(7,15)}…${asset.slice(-6)}`:asset||'Chart identity unavailable'
 }
-function ChartAssetNavigatorBody({context}){
+function ChartAssetNavigatorBody({context,autoOpen=false}){
  const watchlists=useWatchlistSelection()
  const [open,setOpen]=useState(false),[tab,setTab]=useState('recent'),[page,setPage]=useState(0),[rows,setRows]=useState([]),[hasMore,setHasMore]=useState(false),[loading,setLoading]=useState(false),[error,setError]=useState(null),[refresh,setRefresh]=useState(0),[clearing,setClearing]=useState(false)
  const dialog=useRef(null),trigger=useRef(null),sequence=useRef(0),alive=useRef(true),visit=useRef(null)
+ // Loaded on demand from the chart tools: the press that fetched this opens it.
+ useEffect(()=>{if(autoOpen)setOpen(true)},[]) // eslint-disable-line react-hooks/exhaustive-deps
  const {userId,orgId,asset,supabase}=context
  useEffect(()=>{
   alive.current=true
@@ -55,4 +57,4 @@ function ChartAssetNavigatorBody({context}){
   <div className="intel-chart-asset-footer"><Link to="/intel/watchlist" onClick={close}>Manage watchlist</Link>{tab==='recent'&&<button type="button" disabled={loading||clearing||!rows.length} onClick={clear}>{clearing?'Clearing…':'Clear recent assets'}</button>}</div>
  </dialog>}</>
 }
-export default function ChartAssetNavigator({context}){return context?.userId&&context?.orgId&&context?.asset?<ChartAssetNavigatorBody key={`${context.userId}:${context.orgId}:${context.asset}`} context={context}/>:null}
+export default function ChartAssetNavigator({context,autoOpen=false}){return context?.userId&&context?.orgId&&context?.asset?<ChartAssetNavigatorBody key={`${context.userId}:${context.orgId}:${context.asset}`} context={context} autoOpen={autoOpen}/>:null}

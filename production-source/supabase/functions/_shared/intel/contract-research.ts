@@ -1,7 +1,7 @@
 import {requestCmc,cmcPlan,type CmcResult} from '../market-assets/cmc-transport.ts'
 import {connectedDemandEnabled,selectedCmcReadPolicy} from '../market-assets/cmc-demand-policy.ts'
 import {cmcDexIdentity,cmcDexParams,isCmcDexCursor,CMC_HOLDER_TAGS} from '../market-assets/cmc-dex.ts'
-import {cmcParams,CMC_CAPABILITIES,planAllows} from '../market-assets/cmc-capabilities.ts'
+import {cmcParams,CMC_CAPABILITIES,planAllows,cmcUsable} from '../market-assets/cmc-capabilities.ts'
 import {cmcPolicyEnvironment,loadCmcOperatingSettings} from '../market-assets/cmc-operating-settings.ts'
 import {normalizeCmcInvestigation} from './investigation-normalize.ts'
 import {marketSourceReference} from './market-source-reference.ts'
@@ -55,10 +55,10 @@ export async function readContractResearch(db:any,input:any,actor:{userId:string
   const rows=!data?[]:capability==='dexToken'?[{name:data.n,symbol:data.sym,price:data.p,priceObservedAt:data.pt,liquidityUsd:data.liqUsd,marketCap:data.mcap}]:
     capability==='dexHolderCount'?[{count:data.count}]:capability==='dexPools'?data.map((r:any)=>({address:r.addr,venue:r.exn,liquidityUsd:r.liqUsd,volume24h:r.v24,token0:{address:r.t0?.addr,symbol:r.t0?.sym},token1:{address:r.t1?.addr,symbol:r.t1?.sym},publishedAt:r.pubAt,observedAt:null})):
     capability==='dexSecurity'?data.map((r:any)=>({exists:r.exist,level:r.securityLevel,items:(r.securityItems||[]).slice(0,50).map((v:any)=>({description:v.des,hit:v.isHit,level:v.riskyLevel,code:v.code}))})):[]
-  sources.push({capability,state:response.state,reason:response.reason,provenance:response.provenance,rows,sourceReference:response.payload?await marketSourceReference(capability,params,response.payload,response.provenance):null,nextCursor:['dexLiquidityEvents','dexSwaps'].includes(capability)?data?.lastId||null:null})
+  sources.push({capability,state:response.state,reason:response.reason,provenance:response.provenance,receipt:response.receipt,rows,sourceReference:response.payload?await marketSourceReference(capability,params,response.payload,response.provenance):null,nextCursor:['dexLiquidityEvents','dexSwaps'].includes(capability)?data?.lastId||null:null})
  }
  const securityHistory=view==='security'?await readMarketSourceVersions(db,identity.subject,'security',Date.now(),'display'):null
- return {schemaVersion:1,canonicalKey:identity.subject,network:identity.label,view,refreshPolicy:selectedCmcReadPolicy(views[view],input.cursor?{lastId:input.cursor}:{},cmcPlan(Date.now(),settings),connected),securityHistory:securityHistory?{...securityHistory,comparison:securityVersionChanges(securityHistory.versions)}:null,state:sources.every(s=>s.state==='fresh')?'fresh':sources.some(s=>s.state==='fresh'||s.state==='stale')?'partial':'unavailable',sources,observations,
+ return {schemaVersion:1,canonicalKey:identity.subject,network:identity.label,view,refreshPolicy:selectedCmcReadPolicy(views[view],input.cursor?{lastId:input.cursor}:{},cmcPlan(Date.now(),settings),connected),securityHistory:securityHistory?{...securityHistory,comparison:securityVersionChanges(securityHistory.versions)}:null,state:sources.every(s=>s.state==='fresh')?'fresh':sources.every(s=>cmcUsable(s.state))?'cached':sources.some(s=>cmcUsable(s.state)||s.state==='stale')?'partial':'unavailable',sources,observations,
   coverage:`Exact ${identity.label} contract. Holder accounts are not people; CMC risk labels are source observations, not a safety guarantee. Public swap and pool activity never change your holdings.`}
 }
 /** The `holder_tags` view (CMC plan proposal 20).

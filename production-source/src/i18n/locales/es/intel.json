@@ -3502,7 +3502,14 @@
     "col_active": "Activo",
     "job_active": "Activo",
     "job_paused": "En pausa",
-    "profile_promotional": "promocional"
+    "profile_promotional": "promocional",
+    "calibration_label": "Calibración de cadencia",
+    "calibration_title": "Calibración de cadencia",
+    "calibration_missing": "No se informó ninguna calibración de cadencia en esta lectura.",
+    "calibration_line": "Consumo observado {{observed}} créditos por hora frente a {{affordable}} asumibles · multiplicador de cadencia ×{{scale}} · {{count}} observaciones de la cuenta",
+    "calibration_reason": "Motivo: {{reason}}",
+    "calibration_window": "Quedan {{remaining}} créditos y {{hours}} horas hasta el reinicio.",
+    "calibration_projection": "Proyección con la cadencia calibrada: {{credits}} créditos"
   },
   "rwa_issuer": {
     "eyebrow": "Fuentes primarias",
@@ -3570,5 +3577,19 @@
     "unmapped_no_register_record": "sin constancia en el registro",
     "unmapped_name_not_an_identifier": "el nombre no identifica a una sola entidad",
     "unmapped_legal_form_mismatch": "la forma jurídica no coincide con el registro"
+  },
+  "receipt": {
+    "summary": "Recibo de la llamada a la fuente",
+    "capability": "Consulta",
+    "parameters": "Parámetros",
+    "origin": "Respondido por",
+    "origin_live": "Llamada en vivo al proveedor",
+    "origin_cache": "Caché compartida, sin llamada",
+    "http_status": "Estado HTTP",
+    "credits": "Créditos cobrados",
+    "not_reported": "no informado",
+    "age": "Antigüedad frente al límite de actualización",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s de {{ttl}} s"
   }
 }

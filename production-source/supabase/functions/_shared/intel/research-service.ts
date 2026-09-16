@@ -3,6 +3,7 @@ import { requestCmc, cmcPlan,loadCmcOperatingSettings } from '../market-assets/c
 import { OrgAuthzError, requireOrgMember } from '../org-authz.ts'
 import { aggregateExchangeDisclosure,exchangeDisclosureReference } from './exchange-disclosure.ts'
 import {marketSourceReference} from './market-source-reference.ts'
+import {capabilityScope} from './market-figure-scope.ts'
 import {normalizeCmcInvestigation} from './investigation-normalize.ts'
 import {retainMarketSourceVersions} from './market-source-versions.ts'
 import {cmcPolicyEnvironment} from '../market-assets/cmc-operating-settings.ts'
@@ -37,5 +38,13 @@ export async function researchSnapshot(db:any,capability:string,params:Record<st
     await retainMarketSourceVersions(db,normalized.sourceRows)
   }
   return {version:1,capability,state:result.state,refreshPolicy:selectedCmcReadPolicy([capability],{...params,...(page.start>1?{start:page.start}:{})},cmcPlan(Date.now(),settings),connected),data:result.payload?(capability==='exchangeAssets'?{...aggregateExchangeDisclosure(result.payload,params.id,page.start,page.limit,page.assetId),sourceReference:await exchangeDisclosureReference(result.payload,params.id,result.provenance,page.assetId)}:cmcRows(capability,result.payload)):{rows:[],total:null,hasMore:false},provenance:result.provenance,reason:result.reason,
-   sourceReference:result.payload&&capability.startsWith('dex')?await marketSourceReference(capability,params,result.payload,result.provenance):null}
+   // The call receipt rides in the body because provider_call_logs and the
+   // response cache are service-role only and a reader can never query them.
+   receipt:result.receipt,scope:capabilityScope(CMC_CAPABILITIES[capability]?.feature),
+   // Any capability can produce a source reference now. A dex read keeps the
+   // existing strict behaviour because the cohort capture verifies its payloadHash
+   // against this exact object; a newly covered capability must never fail a whole
+   // research read just to add one, so its reference is best effort.
+   sourceReference:!result.payload?null:capability.startsWith('dex')?await marketSourceReference(capability,params,result.payload,result.provenance)
+    :await marketSourceReference(capability,params,result.payload,result.provenance).catch(()=>null)}
 }

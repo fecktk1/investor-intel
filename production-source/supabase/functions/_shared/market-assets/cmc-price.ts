@@ -1,5 +1,5 @@
 import { requestCmc } from './cmc-transport.ts'
-import { cmcRows } from './cmc-capabilities.ts'
+import { cmcRows, cmcUsable } from './cmc-capabilities.ts'
 import type { MarketAssetsContext } from './types.ts'
 
 // Stable identities for the common assets the content detector recognizes.
@@ -18,7 +18,9 @@ export async function cmcPriceAssets(tickers:string[],ctx?:MarketAssetsContext,r
   let result
   try { result=await request('quotes',{id:requested.map(t=>CMC_TICKER_IDS[t]).sort((a,b)=>a-b).join(',')},ctx) }
   catch { return [] }
-  if(result.state!=='fresh')return []
+  // A snapshot inside its TTL is as good a price as a live one here; the hard
+  // 15-minute observation bound below is what actually keeps a draft honest.
+  if(!cmcUsable(result.state))return []
   return cmcRows('quotes',result.payload).rows.flatMap(row=>{
     const ticker=requested.find(t=>CMC_TICKER_IDS[t]===Number(row.id)), q=row.quote
     const observed=Date.parse(q?.last_updated||row.last_updated||'')
