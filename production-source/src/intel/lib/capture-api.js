@@ -30,6 +30,9 @@ export const CAPTURE_VIEWS = [
   // (capture-listings-read.ts, LISTING_CAPTURE_VIEWS) and the hourly meme
   // launch-stage lifecycle (capture-meme-read.ts, MEME_CAPTURE_VIEWS).
   'new_listings', 'meme_graduation',
+  // RWA yield provenance and NAV integrity (capture-rwa-yield-read.ts,
+  // RWA_YIELD_CAPTURE_VIEWS). Keyless sources only; no provider credits.
+  'rwa_yield',
 ]
 
 let rememberedClient = null

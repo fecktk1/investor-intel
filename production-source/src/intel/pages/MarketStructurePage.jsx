@@ -4,6 +4,7 @@ import { Network } from 'lucide-react'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
 import RankMap from '../components/RankMap'
 import RwaUniverse from '../components/RwaUniverse'
+import RwaYieldProvenance from '../components/RwaYieldProvenance'
 import IndexConstituents from '../components/IndexConstituents'
 import LiquidationHeat from '../components/LiquidationHeat'
 import LiquidationClock from '../components/LiquidationClock'
@@ -56,6 +57,7 @@ export default function MarketStructurePage() {
       />
       <RankMap onLoad={seed} />
       <RwaUniverse />
+      <RwaYieldProvenance />
       <IndexConstituents />
       <LiquidationHeat ids={liquidationIds} />
       <LiquidationClock ids={liquidationIds} />
