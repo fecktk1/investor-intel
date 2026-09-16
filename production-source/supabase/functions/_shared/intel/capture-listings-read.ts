@@ -11,6 +11,8 @@
 // The table is service-role only; this read runs inside the `intel-capture` Edge
 // Function behind an authenticated Intel membership check.
 
+import { capWithinRuns } from './feed-entity-cap.ts'
+
 const LISTING_DAYS = [7, 30, 90]
 const LISTING_STATUSES = ['flagged', 'all']
 /** One row per listing per day. 100 listings x 90 days is the widest window the
@@ -19,6 +21,20 @@ const LISTING_CAP = 12_000
 /** Rows returned to the caller. The capture universe is a 100-row page a day, so
  * this only ever binds when a long window carries many distinct assets. */
 const LISTING_ROW_MAX = 500
+/** Listings one chain may place ahead of the other chains added on the SAME day.
+ *
+ * ENTITY: the chain. A new-listing board is filled by launch waves, and a wave
+ * is a chain event (a launchpad or bridge opening on one network), so a single
+ * chain can own every row of a day while listings on other chains that day sit
+ * below the fold. The issuer is not the right key: almost every new listing is
+ * its own issuer, so an issuer cap would never bind.
+ *
+ * POLICY: defer, within the day. The board is ordered by the day the provider
+ * added the asset and nobody chose that order, but a reader can see it, so rows
+ * are only reordered among listings added on the same calendar day, where they
+ * were tied anyway. No row is dropped, the cohort counts are computed before the
+ * cap, and a day with one chain in it keeps its original order. */
+const LISTINGS_PER_CHAIN_PER_DAY = 5
 
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
 export interface ViewResult { view: string; asOf: string | null; coverage: Coverage; reason?: string | null; [key: string]: unknown }
@@ -124,7 +140,10 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
     }
   }).sort((a, b) => String(b.dateAdded ?? '').localeCompare(String(a.dateAdded ?? '')) || String(a.providerId).localeCompare(String(b.providerId)))
 
-  const shown = (status === 'flagged' ? rows.filter((row) => (row.flagCount ?? 0) > 0) : rows).slice(0, LISTING_ROW_MAX)
+  const filtered = status === 'flagged' ? rows.filter((row) => (row.flagCount ?? 0) > 0) : rows
+  const shown = capWithinRuns(filtered, (row) => String(row.dateAdded ?? '').slice(0, 10), {
+    entityOf: (row) => row.chain, perEntity: LISTINGS_PER_CHAIN_PER_DAY,
+  }).rows.slice(0, LISTING_ROW_MAX)
   const stamps = all.map((row) => row.capturedAt).filter((v): v is string => !!v).sort()
   return {
     view: 'new_listings', days, status, rows: shown,

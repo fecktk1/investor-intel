@@ -41,6 +41,8 @@
 // The tables are service-role only; this read runs inside the `intel-capture`
 // Edge Function behind an authenticated Intel membership check.
 
+import { capByEntity, capWithinRuns } from './feed-entity-cap.ts'
+
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
 export interface ViewResult { view: string; asOf: string | null; coverage: Coverage; reason?: string | null; [key: string]: unknown }
 
@@ -51,6 +53,24 @@ const MEME_DAYS = [1, 7, 30]
 const SNAPSHOT_CAP = 6000
 const TRANSITION_CAP = 2000
 const RECENT_MAX = 50
+/** How many contracts one launch platform may place ahead of the others.
+ *
+ * ENTITY: the launch platform (`platform_id`, one launchpad on one chain), with
+ * the chain as the fallback key when a row names no platform. A meme board is
+ * flooded by whichever launchpad is busiest that hour, and that is a platform
+ * event rather than a chain event: two launchpads on one chain are two different
+ * sources of contracts. The contract itself is already unique per row.
+ *
+ * POLICIES. The funnel sample is a FIXED-SIZE board drawn from the newest capture
+ * only, whose members are tied on the capture clock, so it backfills: it is never
+ * shorter than it was. `recent` is ordered newest sighting first and says so on
+ * the page, so rows are deferred only among contracts sighted by the SAME
+ * capture and never moved behind an older sighting. */
+const FUNNEL_PER_PLATFORM = 10
+const RECENT_PER_PLATFORM = 15
+/** Unique contracts considered for `recent` before the cap. Bounded so the cap
+ * has rows to defer into without walking the whole window. */
+const RECENT_CANDIDATES = RECENT_MAX * 4
 export const FUNNEL_CONTRACTS = 25
 export const MEME_STAGES = ['newCreations', 'aboutGraduates', 'graduates'] as const
 /** Hour edges of the time-to-graduate histogram. The last bucket is open-ended. */
@@ -99,15 +119,19 @@ const SNAPSHOT_COLUMNS = 'platform_id,chain,contract_address,captured_at,stage,n
 const TRANSITION_COLUMNS = 'chain,contract_address,from_stage,to_stage,at,hours_since_first_seen'
 
 interface Row {
+  platformId: string | null
   chain: string; contractAddress: string; capturedAt: string; stage: string
   name: string | null; symbol: string | null; price: number | null; marketCap: number | null; firstSeenAt: string | null
 }
+
+const platformOf = (row: { platformId: string | null; chain: string }) => row.platformId ? `platform:${row.platformId}` : `chain:${row.chain}`
 
 // deno-lint-ignore no-explicit-any
 const snapshotRow = (row: any): Row | null => {
   const chain = str(row?.chain, 60), contractAddress = str(row?.contract_address, 200), capturedAt = str(row?.captured_at, 40)
   if (!chain || !contractAddress || !capturedAt) return null
   return {
+    platformId: str(row?.platform_id, 40),
     chain, contractAddress, capturedAt, stage: str(row?.stage, 40) ?? '',
     name: str(row?.name, 200), symbol: str(row?.symbol, 50),
     price: num(row?.price), marketCap: num(row?.market_cap), firstSeenAt: str(row?.first_seen_at, 40),
@@ -146,7 +170,7 @@ export async function readMemeGraduation(db: any, params: { days?: unknown; chai
     const members = newest.filter((row) => row.stage === stage)
     return {
       stage, count: members.length,
-      contracts: members.slice(0, FUNNEL_CONTRACTS).map((row) => ({
+      contracts: capByEntity(members, { entityOf: platformOf, perEntity: FUNNEL_PER_PLATFORM, limit: FUNNEL_CONTRACTS, overflow: 'backfill' }).rows.map((row) => ({
         chain: row.chain, contractAddress: row.contractAddress, symbol: row.symbol, name: row.name,
         marketCap: row.marketCap, firstSeenAt: row.firstSeenAt,
       })),
@@ -198,17 +222,19 @@ export async function readMemeGraduation(db: any, params: { days?: unknown; chai
 
   // ── recent: the newest sightings, newest first ──
   const seenContract = new Set<string>()
-  const recent: Record<string, unknown>[] = []
+  const newestSightings: Row[] = []
   for (const row of rows) {
     const key = `${row.chain}|${row.contractAddress}`
     if (seenContract.has(key)) continue
     seenContract.add(key)
-    recent.push({
+    newestSightings.push(row)
+    if (newestSightings.length >= RECENT_CANDIDATES) break
+  }
+  const recent: Record<string, unknown>[] = capWithinRuns(newestSightings, (row) => row.capturedAt, { entityOf: platformOf, perEntity: RECENT_PER_PLATFORM })
+    .rows.slice(0, RECENT_MAX).map((row) => ({
       chain: row.chain, contractAddress: row.contractAddress, symbol: row.symbol, name: row.name,
       stage: row.stage, firstSeenAt: row.firstSeenAt, capturedAt: row.capturedAt, marketCap: row.marketCap,
-    })
-    if (recent.length >= RECENT_MAX) break
-  }
+    }))
 
   return {
     view: 'meme_graduation', days, chain,

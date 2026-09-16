@@ -225,3 +225,17 @@ Deno.test('the view surface exposes exactly the one view and routes through it',
   eq(r.days, 90)
   eq((r.rows as unknown[]).length, 1)
 })
+
+Deno.test('one chain cannot fill a day of listings, and no day is reordered against another', async () => {
+  const wave = Array.from({ length: 8 }, (_, i) => snapshot({ provider_id: `s${i}`, symbol: `S${i}`, chain: 'solana', date_added: `${dayOf(1)}T0${9 - i}:00:00.000Z`, snapshot_date: dayOf(1), captured_at: daysAgo(1) }))
+  const other = snapshot({ provider_id: 'b1', symbol: 'B1', chain: 'eip155:8453', date_added: `${dayOf(1)}T00:30:00.000Z`, snapshot_date: dayOf(1), captured_at: daysAgo(1) })
+  const today = snapshot({ provider_id: 't1', symbol: 'T1', chain: 'solana', date_added: daysAgo(0), snapshot_date: dayOf(0), captured_at: daysAgo(0) })
+  const r = await readNewListings(fakeDb({ intel_new_listing_snapshots: [...wave, other, today] }), { days: 7 }, NOW)
+  // deno-lint-ignore no-explicit-any
+  const out = (r.rows as any[]).map((row) => row.providerId)
+  eq(out.length, 10, 'the cap drops nothing')
+  eq(out[0], 't1', 'the newer day still leads')
+  eq(out.slice(1, 7), ['s0', 's1', 's2', 's3', 's4', 'b1'], 'the other chain moves ahead of the sixth solana listing of the same day')
+  eq(out.slice(7), ['s5', 's6', 's7'])
+  eq((r.cohort as Record<string, unknown>).count, 10, 'the cohort is counted before the cap')
+})

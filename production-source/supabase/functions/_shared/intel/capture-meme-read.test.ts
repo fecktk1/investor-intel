@@ -251,3 +251,21 @@ Deno.test('the view is reachable as meme_graduation', async () => {
   const result = await MEME_CAPTURE_VIEWS.meme_graduation(fakeDb(), { days: 1 }, NOW)
   eq(result.view, 'meme_graduation')
 })
+
+Deno.test('one launch platform cannot fill the funnel sample or the head of recent', async () => {
+  const flood = Array.from({ length: 30 }, (_, i) => ({ ...snapshot(SOL(i), 0, 'newCreations', 1), platform_id: 16 }))
+  const others = Array.from({ length: 5 }, (_, i) => ({ ...snapshot(SOL(60 + i), 0, 'newCreations', 1), platform_id: 99 }))
+  const older = { ...snapshot(SOL(90), 2, 'newCreations', 2), platform_id: 99 }
+  const result = await readMemeGraduation(fakeDb({ intel_meme_stage_snapshots: [...flood, ...others, older] }), { days: 7 }, NOW)
+  const funnel = result.funnel as Record<string, unknown>[]
+  const sample = funnel[0].contracts as Record<string, unknown>[]
+  eq(sample.length, FUNNEL_CONTRACTS, 'the fixed-size sample is never shorter')
+  eq(sample.filter((c) => Number(String(c.contractAddress).slice(-2)) >= 60).length, 5, 'every other-platform contract reaches the sample')
+  eq(funnel[0].count, 35, 'the count is still the true count')
+  const recent = result.recent as Record<string, unknown>[]
+  eq(recent.length, 36)
+  const firstOther = recent.findIndex((r) => Number(String(r.contractAddress).slice(-2)) >= 60)
+  eq(firstOther, 15, 'the other platform follows the flooding platform quota inside the same capture')
+  eq(recent.at(-1)?.contractAddress, SOL(90), 'an older sighting is never moved ahead of a newer capture')
+  eq(recent.slice(0, 35).every((r) => r.capturedAt === ago(0)), true)
+})
