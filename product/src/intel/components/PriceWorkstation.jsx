@@ -1,4 +1,5 @@
 import React,{lazy,Suspense,useCallback,useEffect,useLayoutEffect,useMemo,useRef,useState} from 'react'
+import {useTranslation} from 'react-i18next'
 import {createChart,CandlestickSeries,BarSeries,LineSeries,HistogramSeries,PriceScaleMode} from '../vendor/lightweight-charts-5.2.0/renderer.mjs'
 
 import {STUDY_CATALOG,calculateStudy} from '../../../supabase/functions/_shared/intel/chart-analysis'
@@ -9,13 +10,23 @@ import {useChartStudies} from '../lib/useChartStudies'
 
 import {useChartDrawings} from './ChartDrawings'
 
-import ChartLayoutLibrary from './ChartLayoutLibrary'
-import ChartAssetNavigator from './ChartAssetNavigator'
-import ChartSnapshotSave from './ChartSnapshotSave'
-import ChartAlertEditor from './ChartAlertEditor'
+import ChartLayoutLaunch from './ChartLayoutLaunch'
 import ResponsiveChartTools from './ResponsiveChartTools'
+import ChartIndicatorMenu from './ChartIndicatorMenu'
+import deferredTool from './deferred-tool'
+import deferredPanel from './deferred-panel'
+import ChartWatermark from './ChartWatermark'
+import {WATERMARK_SOURCE} from '../lib/chart-watermark'
+import ChartShareLaunch from './ChartShareLaunch'
+import {chartSizeHeight,isChartSize,nextChartSize} from '../lib/chart-size'
 import {validateChartLayout} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 const ChartStructurePanel=lazy(()=>import('./ChartStructurePanel'))
+const IndicatorDialog=deferredPanel(()=>import('./ChartIndicatorDialog'),{label:'Advanced indicator parameters'})
+// Chart tools whose dialog code arrives on the first press. The triggers below
+// stay eager and in place; only the dialog behind each one is deferred.
+const SnapshotSave=deferredTool(()=>import('./ChartSnapshotSave'),{label:'Snapshot saving'})
+const AssetNavigator=deferredTool(()=>import('./ChartAssetNavigator'),{label:'The asset list'})
+const AlertEditor=deferredTool(()=>import('./ChartAlertEditor'),{label:'Chart conditions'})
 
 
 
@@ -31,10 +42,22 @@ const barTime=(t,timeZone)=>new Date(t).toLocaleString(undefined,{dateStyle:'med
 
 
 
-function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,replay=false,knownOnly=false,readOnly=false,height=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
- const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null)
+// Time-axis marks by the renderer's own tick kind (0 year, 1 month, 2 day, 3
+// time, 4 time with seconds). A multi-year range marks years and months; a day
+// mark keeps the month so a week of daily bars still reads as dates.
+const tickMarkParts=type=>type===0?{year:'numeric'}:type===1?{month:'short',year:'2-digit'}:type===2?{month:'short',day:'numeric'}:{hour:'2-digit',minute:'2-digit',hour12:false}
+function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,seriesCapture=null,assetName=null,assetSymbol=null,replay=false,knownOnly=false,readOnly=false,height:baseHeight=340,cursorTime,onCursorChange,onViewportChange,clusters=[],renderMarker,keyLevels=[],drawdown=null,onFailure,persistence=null,visibility={},onVisibilityChange,initialState={},onWorkspaceChange,onReplayRestore}) {
+ const {t}=useTranslation('intel',{useSuspense:false})
+ const host=useRef(null),api=useRef(null),main=useRef(null),mainData=useRef([]),lastMode=useRef(null),fitted=useRef(false),gridRef=useRef(null),fitFrame=useRef(null),previousWindow=useRef(null),root=useRef(null)
 
- const callbacks=useRef({onCursorChange,onViewportChange,onFailure});callbacks.current={onCursorChange,onViewportChange,onFailure}
+ // Size cycles default to tall to full screen. `covering` records that the
+ // browser refused the Fullscreen API and the workstation is covering the
+ // viewport in place instead, which needs its own Escape.
+ const [size,setSize]=useState(isChartSize(initialState.size)?initialState.size:'default'),[covering,setCovering]=useState(false)
+ const [screenHeight,setScreenHeight]=useState(()=>typeof window==='undefined'?900:window.innerHeight)
+ const height=chartSizeHeight(size,baseHeight,screenHeight)
+
+ const callbacks=useRef({onCursorChange,onViewportChange,onFailure,onWorkspaceChange});callbacks.current={onCursorChange,onViewportChange,onFailure,onWorkspaceChange}
 
  const [ready,setReady]=useState(0),[mode,setMode]=useState(initialState.mode||(bars.every(b=>b.o!=null)?'candles':'line')),[scale,setScale]=useState(initialState.scale||'linear'),[autoScale,setAutoScale]=useState(initialState.autoScale??true)
 
@@ -47,11 +70,55 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
  const analysisNow=useMemo(()=>Date.now(),[bars])
  const selectedStructure=structureSelection?.bars===bars&&structureOpen?structureSelection.finding:null
 
- const sourceBounds=useRef(null),plottedGrid=useRef(null),initialView=useRef(initialState.range)
+ const sourceBounds=useRef(null),plottedGrid=useRef(null),initialView=useRef(initialState.range),viewportFrame=useRef(0)
+ useEffect(()=>()=>cancelAnimationFrame(viewportFrame.current),[])
+ const autoScaleRef=useRef(autoScale);autoScaleRef.current=autoScale
+ // A manual price scale is a LOCKED RANGE, and the range itself is not part of
+ // any saved state. Restoring "auto scale off" on its own handed the renderer no
+ // price range at all, so a restored chart painted nothing until Reset view. A
+ // chart that comes back with a manual scale is therefore scaled to its bars
+ // once, on the frame after its window is placed, and locked there.
+ // The renderer takes new data in over its next few frames, and a range set
+ // before it has caught up is measured against the series it replaced: bars
+ // added at the front (an indicator's warm-up) moved the view by their count a
+ // second time, three frames after it had been placed correctly. So a window
+ // placed onto new data is HELD for a quarter of a second: any frame that finds
+ // it moved places it again, and the last placement is measured against the
+ // bars actually on the chart. Measured live on 2026-09-15 before this hold: a
+ // one-month view of 180 four-hour bars opened at bar 123 instead of bar 64.
+ // `now` places at once as well: right for the first fit, which already runs
+ // two frames after its data, and for an appended bar; wrong in the task that
+ // just replaced the series with a longer history, where the hold alone places
+ // it. The window reported to the working state right after a placement is the
+ // one placed, so a placed-at-once window is what a restore hands back.
+ const placeWindow=(chart,range,{hold=true,now=true}={})=>{
+  if(!chart||!range)return
+  const scale=chart.timeScale(),until=performance.now()+250
+  cancelAnimationFrame(viewportFrame.current)
+  if(now)scale.setVisibleLogicalRange(range)
+  // The renderer answers a read made right after a set with the range it had
+  // BEFORE the set, so a working state reported in the same task as a placement
+  // recorded the window the placement replaced, and a reload brought that old
+  // window back. The state is reported again once the placement has settled.
+  if(!hold){viewportFrame.current=requestAnimationFrame(()=>{viewportFrame.current=requestAnimationFrame(()=>{if(api.current===chart)emitWorkspace()})});return}
+  const keep=()=>{
+   if(api.current!==chart)return
+   const current=scale.getVisibleLogicalRange()
+   if(current&&Math.abs(current.from-range.from)>0.01)scale.setVisibleLogicalRange(range)
+   if(performance.now()<until)viewportFrame.current=requestAnimationFrame(keep)
+   else emitWorkspace()
+  }
+  viewportFrame.current=requestAnimationFrame(keep)
+ }
+ const lockScaleAfterFit=(chart,manual)=>{
+  if(!manual||!chart)return
+  const scale=chart.priceScale('right');scale.applyOptions({autoScale:true})
+  requestAnimationFrame(()=>{if(api.current===chart&&!autoScaleRef.current)scale.applyOptions({autoScale:false})})
+ }
 
- const [palette,setPalette]=useState(null),[studyDialog,setStudyDialog]=useState(false),[draftType,setDraftType]=useState('sma'),[draftParams,setDraftParams]=useState({period:50}),[studyError,setStudyError]=useState(null)
+ const [palette,setPalette]=useState(null),[studyDialog,setStudyDialog]=useState(false)
 
- const dialog=useRef(null),returnFocus=useRef(null),studySeries=useRef([])
+ const returnFocus=useRef(null),studySeries=useRef([])
 
  const ohlc=bars.every(b=>b.o!=null),hasVolume=bars.some(b=>b.v!=null)
  const volumeLabel=bars.some(b=>b.volumeKind==='snapshot')?'Volume snapshot (USD)':bars.some(b=>b.volumeUnit==='USD')?'Volume (USD)':'Volume'
@@ -60,12 +127,105 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  useEffect(()=>{if(!source)callbacks.current.onFailure?.()},[source])
 
- const drawings=useChartDrawings({width:geometry.width,height:geometry.height,scale,readOnly,initialItems:initialState.drawings||[],
-  project:anchor=>{const x=api.current?.timeScale().logicalToCoordinate(continuousChartLogical(gridRef.current,anchor.t)),y=main.current?.priceToCoordinate(anchor.price);return x==null||y==null?null:{x,y}},
+ // One projection for the whole workstation: the drawing surface on screen and
+ // the share image both have to put an anchor on the same candle.
+ const project=anchor=>{const x=api.current?.timeScale().logicalToCoordinate(continuousChartLogical(gridRef.current,anchor.t)),y=main.current?.priceToCoordinate(anchor.price);return x==null||y==null?null:{x,y}}
+
+ const drawings=useChartDrawings({width:geometry.width,height:geometry.height,scale,readOnly,initialItems:initialState.drawings||[],bars,intervalMs:chartSource?.intervalMs??source?.grid?.step??null,context:persistence,project,
 
   unproject:point=>{const logical=api.current?.timeScale().coordinateToLogical(point.x),t=continuousChartTime(gridRef.current,logical),price=main.current?.coordinateToPrice(point.y);return t!=null&&Number.isFinite(price)&&price>0?{t:Math.round(t),price}:null}})
 
- useEffect(()=>{onWorkspaceChange?.({mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings:drawings.items,replay:replay?{at:cursorTime,knownOnly}:undefined})},[mode,scale,autoScale,studies,volume,preset,timezone,theme,drawings.items,replay,cursorTime,knownOnly]) // eslint-disable-line react-hooks/exhaustive-deps
+ // The chart's working draft: everything a member would expect to find again, in
+ // the exact shape `validateChartLayout` accepts, so the same contract guards the
+ // named layout and the automatic one. Built on demand from the live chart rather
+ // than mirrored into state, so pan and zoom cost no render.
+ const studyParams=list=>list.map(s=>({...s,params:Object.fromEntries(Object.entries(s.params||{}).filter(([,v])=>v!=null).map(([k,v])=>[k,Number(v)]))}))
+ // The window the chart ACTUALLY SHOWS, held inside the bars it is plotting.
+ //
+ // A viewport is a pair of LOGICAL INDICES, and the indices left over from the
+ // period before this one extrapolate over a new grid: a month-wide view read
+ // back over seven days of hourly bars reported the month it had replaced, with
+ // an end 23 days in the FUTURE. Unclamped, that window was saved again after
+ // every range change, restored on the next load, and carried into snapshots and
+ // share links as a timeframe no price capture could cover.
+ //
+ // So the window is bounded by the grid: never before its first bar, and never
+ // past its newest bar plus the single bar of right-edge whitespace the renderer
+ // keeps (`rightOffset: 1`). A saved window can only ever describe observed time.
+ const chartWindow=grid=>{
+  const view=api.current?.timeScale().getVisibleLogicalRange()
+  const first=grid.start,last=grid.end+grid.step
+  const edge=value=>Math.min(last,Math.max(first,value))
+  const from=edge(continuousChartTime(grid,view?.from)??first)
+  return {from,to:Math.max(from+1,edge(continuousChartTime(grid,view?.to)??grid.end))}
+ }
+ const chartState=()=>{
+  const grid=gridRef.current
+  if(!grid)return null
+  return {schemaVersion:1,...(replay?{replay:{at:cursorTime,knownOnly}}:{}),asset:persistence?.asset,interval:persistence?.interval?.toLowerCase()||'auto',
+   range:chartWindow(grid),
+   mode,scale,autoScale,volume,timezone,theme,visibility,
+   studies:studyParams(studies),drawings:drawings.items}
+ }
+ const workingState=()=>{
+  const base=chartState()
+  // Full screen is a gesture the browser grants only on a press, so a working
+  // state remembers the taller chart rather than a screen it cannot re-enter.
+  return base&&{...base,preset,size:size==='fullscreen'?'tall':size}
+ }
+ const draftRef=useRef(null);draftRef.current=workingState
+ // Nothing is reported before the first fit: a draft read from a chart that has
+ // not placed its window yet would describe a window the member never saw.
+ const emitWorkspace=useCallback(()=>{if(!fitted.current)return;const draft=draftRef.current?.();if(draft)callbacks.current.onWorkspaceChange?.(draft)},[])
+ const visibilityKey=JSON.stringify(visibility)
+ // `viewKey` is in here so a period or candle-width change alone reports a state,
+ // the same as any other change. It normally reports from the fit that follows,
+ // because the new period clears `fitted` before this runs.
+ useEffect(()=>{emitWorkspace()},[mode,scale,autoScale,studies,volume,preset,timezone,theme,size,drawings.items,replay,cursorTime,knownOnly,visibilityKey,viewKey,emitWorkspace]) // eslint-disable-line react-hooks/exhaustive-deps
+
+ // The browser owns full screen: leaving it by its own Escape, its own control
+ // or a navigation must bring the workstation back rather than strand it.
+ useEffect(()=>{
+  const sync=()=>{if(!document.fullscreenElement&&!covering)setSize(current=>current==='fullscreen'?'default':current)}
+  document.addEventListener('fullscreenchange',sync)
+  return()=>document.removeEventListener('fullscreenchange',sync)
+ },[covering])
+
+ useEffect(()=>{
+  if(size!=='fullscreen')return
+  const read=()=>setScreenHeight(window.innerHeight)
+  read();window.addEventListener('resize',read)
+  return()=>window.removeEventListener('resize',read)
+ },[size])
+
+ const leaveFullscreen=useCallback(()=>{
+  setCovering(false);setSize('default')
+  if(document.fullscreenElement)document.exitFullscreen?.()?.catch?.(()=>{})
+ },[])
+
+ // Escape leaves the in-place cover. A dialog or the indicator list owns Escape
+ // while it is open, so the cover only answers once they have closed.
+ useEffect(()=>{
+  if(!covering)return
+  const key=event=>{if(event.key==='Escape'&&!root.current?.querySelector('dialog[open], .intel-indicator-panel:not([hidden])'))leaveFullscreen()}
+  document.addEventListener('keydown',key)
+  return()=>document.removeEventListener('keydown',key)
+ },[covering,leaveFullscreen])
+
+ const cycleSize=async()=>{
+  const next=nextChartSize(size)
+  if(next!=='fullscreen'){leaveFullscreen();setSize(next);return}
+  setSize('fullscreen')
+  try{
+   const request=root.current?.requestFullscreen
+   if(!request)throw new Error('fullscreen_unavailable')
+   await request.call(root.current)
+   setCovering(false)
+  }catch{setCovering(true)}
+ }
+
+ // The drawing toolbar's crosshair button drives the chart's own crosshair.
+ useEffect(()=>{api.current?.applyOptions({crosshair:{mode:drawings.crosshair?0:2}})},[drawings.crosshair,ready])
 
  const studyResult=useChartStudies(bars,studies,chartSource?.intervalMs??null)
 
@@ -89,7 +249,9 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  const gestureFrame=useRef(null)
 
- const refreshAfterGesture=()=>{if(gestureFrame.current!=null)return;gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=null;refreshGeometry();const actual=api.current?.priceScale('right').options().autoScale;if(typeof actual==='boolean')setAutoScale(actual)})})}
+ // A pan or zoom settles here rather than on every frame, which is also where the
+ // moved window is reported to the working state.
+ const refreshAfterGesture=()=>{if(gestureFrame.current!=null)return;gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=requestAnimationFrame(()=>{gestureFrame.current=null;refreshGeometry();const actual=api.current?.priceScale('right').options().autoScale;if(typeof actual==='boolean')setAutoScale(actual);emitWorkspace()})})}
 
  useEffect(()=>()=>cancelAnimationFrame(gestureFrame.current),[])
 
@@ -113,7 +275,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
    api.current=chart;mainData.current=[];lastMode.current=null;fitted.current=false;sourceBounds.current=null;studySeries.current=[];setReady(v=>v+1)
 
-  }catch{callbacks.current.onFailure?.();return}
+  }catch(error){console.warn('[intel-chart] renderer could not be created',error);callbacks.current.onFailure?.();return}
 
   const resize=new ResizeObserver(entries=>{chart.applyOptions({width:Math.floor(entries[0].contentRect.width)});refreshGeometry()});resize.observe(host.current)
 
@@ -152,15 +314,18 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
    if(sourceBounds.current!==bounds){fitted.current=false;sourceBounds.current=bounds}
    else if(fitted.current){
     const nextRange=refreshedChartViewport(oldRange,oldGrid,source.grid,previousWindow.current,timeWindow,!readOnly&&!replay)
-    if(nextRange)chart.timeScale().setVisibleLogicalRange(nextRange)
+    // Bars added at the FRONT (an indicator's warm-up) are the case the renderer
+    // catches up on late, so that placement is held; bars added at the end (the
+    // minute refresh) are placed once, as before, and never fight a pan.
+    if(nextRange){const front=!!oldGrid&&source.grid.start!==oldGrid.start;placeWindow(chart,nextRange,{hold:front,now:!front})}
    }
    previousWindow.current=timeWindow?{...timeWindow}:null
    plottedGrid.current=source.grid
-   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){chart.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;refreshGeometry()}})})}
+   if(!fitted.current){cancelAnimationFrame(fitFrame.current);fitFrame.current=requestAnimationFrame(()=>{fitFrame.current=requestAnimationFrame(()=>{if(api.current===chart){if(initialView.current){placeWindow(chart,{from:continuousChartLogical(gridRef.current,initialView.current.from),to:continuousChartLogical(gridRef.current,initialView.current.to)});initialView.current=null}else if(timeWindow){placeWindow(chart,{from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)})}else chart.timeScale().fitContent();fitted.current=true;lockScaleAfterFit(chart,!autoScaleRef.current);refreshGeometry();emitWorkspace()}})})}
 
    refreshGeometry()
 
-  }catch{callbacks.current.onFailure?.()}
+  }catch(error){console.warn('[intel-chart] renderer could not draw this series',error);callbacks.current.onFailure?.()}
 
  },[source,mode,ready,ohlc,refreshGeometry,replay,viewKey])
  useEffect(()=>{
@@ -173,10 +338,25 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  },[scale,autoScale,ready,refreshGeometry])
 
- useEffect(()=>{api.current?.applyOptions({localization:{timeFormatter:time=>barTime(Number(time)*1000,timezone)},timeScale:{tickMarkFormatter:(time,type)=>new Date(Number(time)*1000).toLocaleString(undefined,{timeZone:timezone,...(type<=2?{month:'short',day:'numeric'}:{hour:'2-digit',minute:'2-digit',hour12:false})})}})},[timezone,ready])
+ useEffect(()=>{api.current?.applyOptions({localization:{timeFormatter:time=>barTime(Number(time)*1000,timezone)},timeScale:{tickMarkFormatter:(time,type)=>new Date(Number(time)*1000).toLocaleString(undefined,{timeZone:timezone,...tickMarkParts(type)})}})},[timezone,ready])
 
+ // One colour per drawn line: the first study's first line takes the accent,
+ // every other line walks the study palette. The active list uses the same
+ // function, so a name reads in the colour of the line it names.
+ const studyColor=(studyIndex,seriesIndex)=>studyIndex===0&&seriesIndex===0?palette?.accent||studyColors[0]:studyColors[(studyIndex+seriesIndex)%studyColors.length]
+ // The indicator lines are rebuilt AFTER the renderer has taken the price
+ // series in, never in the same task. Removing a study series in the task that
+ // also set the price series to a longer history left the renderer drawing
+ // only the candles it had before: the newest fifty-nine of a month were
+ // missing until the data was set again (measured live on 2026-09-15; with
+ // the removal held back, every candle stayed). Two frames later the renderer
+ // has settled and the rebuild is safe; the delay is not visible.
+ const studyFrame=useRef(0)
  useLayoutEffect(()=>{
   const chart=api.current;if(!chart||!source)return
+  cancelAnimationFrame(studyFrame.current)
+  studyFrame.current=requestAnimationFrame(()=>{studyFrame.current=requestAnimationFrame(()=>{if(api.current!==chart)return
+  const removed=studySeries.current.length>0
   for(const series of studySeries.current)chart.removeSeries(series)
 
   studySeries.current=[]
@@ -191,7 +371,7 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
     if(!line.points.length)continue
 
-   const pane=result.pane==='price'?0:addPane(result.pane),series=chart.addSeries(line.kind==='histogram'?HistogramSeries:LineSeries,{color:studyIndex===0&&seriesIndex===0?palette?.accent||studyColors[0]:studyColors[(studyIndex+seriesIndex)%studyColors.length],lineWidth:1,priceLineVisible:false,lastValueVisible:false,title:line.name,...(['rsi','vwrsi','stoch_rsi'].includes(result.pane)?{autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})}:{})},pane)
+   const pane=result.pane==='price'?0:addPane(result.pane),series=chart.addSeries(line.kind==='histogram'?HistogramSeries:LineSeries,{color:studyColor(studyIndex,seriesIndex),lineWidth:1,priceLineVisible:false,lastValueVisible:false,...(['rsi','vwrsi','stoch_rsi'].includes(result.pane)?{autoscaleInfoProvider:()=>({priceRange:{minValue:0,maxValue:100}})}:{})},pane)
 
     series.setData(studyRendererData(line.points,source.grid));studySeries.current.push(series)
 
@@ -201,8 +381,15 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   if(volume&&hasVolume){const series=chart.addSeries(HistogramSeries,{priceFormat:{type:'volume'},priceLineVisible:false,lastValueVisible:false},addPane('volume'));series.setData(bars.filter(b=>b.v!=null).map(b=>({time:b.t/1000,value:b.v,color:b.c>=(b.o??b.c)?'#6CC6A299':'#D9878899'})));studySeries.current.push(series)}
 
+  // Removing a series while the renderer is still absorbing a longer price
+  // history froze the candles it draws at the count it had before, whatever
+  // the delay (measured live on 2026-09-15: the newest fifty-nine of a month
+  // missing, every time). Setting the price series again after the removal is
+  // what restored them every time, so the rebuild ends with exactly that.
+  if(removed&&main.current&&mainData.current.length)main.current.setData(mainData.current)
   chart.applyOptions({height:height+panes.size*96});chart.panes().forEach((pane,index)=>pane.setStretchFactor(index===0?height:96));refreshGeometry()
-
+  })})
+  return()=>cancelAnimationFrame(studyFrame.current)
  },[studyResult.results,volume,hasVolume,ready,source,height,refreshGeometry,palette]) // eslint-disable-line react-hooks/exhaustive-deps
 
  useEffect(()=>{
@@ -216,22 +403,34 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  },[keyLevels,selectedStructure,ready,mode])
 
- useEffect(()=>{if(studyDialog){returnFocus.current=document.activeElement;dialog.current?.showModal()}},[studyDialog])
+ useEffect(()=>{if(studyDialog)returnFocus.current=document.activeElement},[studyDialog])
 
- const closeStudies=()=>{setStudyDialog(false);setStudyError(null);returnFocus.current?.focus?.()}
+ const closeStudies=()=>{setStudyDialog(false);returnFocus.current?.focus?.()}
 
- const addStudy=()=>{
+ // One admission gate for both entry points: the checkbox list and Advanced.
+ // A refused indicator always answers with a reason rather than nothing.
+ const prepareIndicator=(type,params)=>{
+  const study={id:crypto.randomUUID(),type,params}
+  try{calculateStudy(bars,study)}catch(error){return {study:null,reason:error.message}}
+  if(studies.length>=20)return {study:null,reason:t('chart.indicators.limit_count',{defaultValue:'A chart carries up to 20 indicators. Remove one to add another.'})}
+  const panes=new Set([...studies.map(s=>STUDY_CATALOG[s.type].pane),STUDY_CATALOG[type].pane].filter(p=>p!=='price'))
+  if(panes.size>3)return {study:null,reason:t('chart.indicators.limit_panes',{defaultValue:'Use up to three indicator panes per chart. Remove one to add another.'})}
+  return {study,reason:null}
+ }
 
-  try{const study={id:crypto.randomUUID(),type:draftType,params:draftParams};calculateStudy(bars,study)
+ /** Returns the reason the indicator was refused, or null once it is added. */
+ const addStudy=(type,params)=>{
+  const {study,reason}=prepareIndicator(type,params)
+  if(reason)return reason
+  setStudies(previous=>[...previous,study]);setPreset('Custom');closeStudies();return null
+ }
 
-   if(studies.length>=20)throw new Error('A chart supports up to 20 studies.')
-
-   const panes=new Set([...studies.map(s=>STUDY_CATALOG[s.type].pane),STUDY_CATALOG[draftType].pane].filter(p=>p!=='price'));if(panes.size>3)throw new Error('Use up to three indicator panes per chart. Remove one to add another.')
-
-   setStudies(previous=>[...previous,study]);setPreset('Custom');closeStudies()
-
-  }catch(error){setStudyError(error.message)}
-
+ /** Returns null when the change was applied, or the reason it was refused. */
+ const toggleIndicator=(type,on)=>{
+  if(!on){setStudies(rows=>rows.filter(row=>row.type!==type));setPreset('Custom');return null}
+  const {study,reason}=prepareIndicator(type,{...STUDY_CATALOG[type].defaults})
+  if(reason)return reason
+  setStudies(previous=>[...previous,study]);setPreset('Custom');return null
  }
 
  const xFor=t=>api.current?.timeScale().logicalToCoordinate(continuousChartLogical(source?.grid,t))
@@ -242,12 +441,22 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
  const pan=direction=>{const s=api.current?.timeScale(),r=s?.getVisibleLogicalRange();if(r){const delta=(r.to-r.from)*0.25*direction;s.setVisibleLogicalRange({from:r.from+delta,to:r.to+delta})}}
 
- const captureLayout=()=>{
+ // A NAMED layout keeps the exact shape it has always had: no size and no preset,
+ // so a layout saved last year and one saved today still fingerprint the same.
+ const captureLayout=()=>validateChartLayout(chartState())
 
-  const range=api.current?.timeScale().getVisibleLogicalRange(),grid=gridRef.current
-
-  return validateChartLayout({schemaVersion:1,...(replay?{replay:{at:cursorTime,knownOnly}}:{}),asset:persistence.asset,interval:persistence.interval?.toLowerCase()||'auto',range:{from:Math.max(0,continuousChartTime(grid,range?.from)??grid.start),to:continuousChartTime(grid,range?.to)??grid.end},mode,scale,autoScale,volume,timezone,theme,visibility,studies:studies.map(s=>({...s,params:Object.fromEntries(Object.entries(s.params||{}).filter(([,v])=>v!=null).map(([k,v])=>[k,Number(v)]))})),drawings:drawings.items})
-
+ // The live handles the share image is made from. The capture itself, the
+ // portrait resize and the drawings projection all live in the share chunk,
+ // which is the only code that wants them; this stays a plain handover so the
+ // chart carries no capture code of its own. Pixels only: the layout and the
+ // verified capture still travel the saved-version path. Replay hides the
+ // drawing surface, so a replay chart shares no drawings.
+ const captureFrame=options=>{
+  if(!api.current||!host.current)throw new Error('chart_not_ready')
+  return {...options,chart:api.current,project,element:host.current,height:totalHeight,
+   bars,drawings:replay?[]:drawings.items,intervalMs:chartSource?.intervalMs??source?.grid?.step??null,
+   background:palette?.background||'#14171C',wordmark:import.meta.env.BASE_URL+WATERMARK_SOURCE,
+   name:assetName||persistence?.asset||'',symbol:assetSymbol||''}
  }
 
  const restoreLayout=input=>{
@@ -258,9 +467,10 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   cancelAnimationFrame(fitFrame.current);fitted.current=true
 
-  fitFrame.current=requestAnimationFrame(()=>{const grid=gridRef.current;if(api.current&&grid)api.current.timeScale().setVisibleLogicalRange({from:continuousChartLogical(grid,layout.range.from),to:continuousChartLogical(grid,layout.range.to)})})
+  // A restored layout becomes the working state the member goes on from.
+  fitFrame.current=requestAnimationFrame(()=>{const grid=gridRef.current;if(api.current&&grid)api.current.timeScale().setVisibleLogicalRange({from:continuousChartLogical(grid,layout.range.from),to:continuousChartLogical(grid,layout.range.to)});lockScaleAfterFit(api.current,layout.autoScale===false);emitWorkspace()})
 
-  setLayoutNote(layout.range.to<(source?.grid.start??0)||layout.range.from>(source?.grid.end??Infinity)?'This saved view is outside the loaded price period. Choose a longer period to load its market history.':'Saved view, drawings and studies restored.')
+  setLayoutNote(layout.range.to<(source?.grid.start??0)||layout.range.from>(source?.grid.end??Infinity)?t('chart.workstation.layout_outside',{defaultValue:'This saved view is outside the loaded price period. Choose a longer period to load its market history.'}):t('chart.workstation.layout_restored',{defaultValue:'Saved view, drawings and indicators restored.'}))
 
  }
 
@@ -271,41 +481,76 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
   '--border-default':theme==='gray'?'#464b55':'#343b46','--border-subtle':'#464b55','--signal-green':'#6cc6a2','--signal-red':'#e89a9d','--accent':'#dfa647','--forge-gold':'#dfa647'}
 
 
- return <div className="intel-price-workstation" style={chartTheme}>
+ // The indicators in force, beside the controls rather than as labels on the
+ // plot: each in the colour its line is drawn in, with its parameters, and a
+ // way to take it off the chart. A read-only chart lists them without the
+ // control, because the set is part of what the author saved.
+ const activeStudies=studies.length>0&&<ul className="intel-workstation-active" aria-label={t('chart.indicators.active_list',{defaultValue:'Active indicators'})}>
+  {studies.map((study,index)=>{
+   const spec=STUDY_CATALOG[study.type];if(!spec)return null
+   const params=Object.entries({...spec.defaults,...study.params}).filter(([,value])=>value!=null).map(([key,value])=>`${key} ${value}`).join(', ')
+   const label=params?`${spec.label} · ${params}`:spec.label
+   return <li key={study.id} style={{color:studyColor(index,0)}}><span>{label}</span>
+    {!readOnly&&<button type="button" aria-label={t('chart.indicators.remove_active',{label,defaultValue:'Remove {{label}}'})} onClick={()=>{setStudies(rows=>rows.filter(row=>row.id!==study.id));setPreset('Custom')}}>×</button>}
+   </li>
+  })}
+ </ul>
+
+ return <div className="intel-price-workstation" ref={root} data-size={covering?'covering':size} style={chartTheme}>
 
   <ResponsiveChartTools label="Chart tools">
+  <div className="intel-workstation-head">
   <div className="intel-workstation-toolbar" role="group" aria-label="Chart display controls">
 
+   {/* A read-only workstation is somebody else's saved chart. It can be zoomed,
+       panned, hovered and read, but nothing here may re-render it as a
+       different chart: the view, the scale, the indicator set, the layout
+       preset, the time zone and the volume lane are all part of what the author
+       saved, so they are absent rather than merely disabled. A disabled control
+       still reads as "you could change this", and a disabled select still
+       announced the author's private preset name. */}
+   {!readOnly&&<>
    <label>View<select value={ohlc?mode:'line'} onChange={e=>setMode(e.target.value)}><option value="line">Line</option><option value="candles" disabled={!ohlc}>Candles</option><option value="ohlc" disabled={!ohlc}>OHLC bars</option></select></label>
 
    <label>Scale<select value={scale} onChange={e=>setScale(e.target.value)}><option value="linear">Linear</option><option value="log">Logarithmic</option><option value="percent">Percent</option><option value="indexed">Indexed to 100</option></select></label>
 
-   <label>Layout<select disabled={readOnly} value={preset} onChange={e=>{setPreset(e.target.value);setStudies(presets[e.target.value]);setVolume(e.target.value==='Volume')}}>{Object.keys(presets).map(p=><option key={p}>{p}</option>)}{preset==='Custom'&&<option>Custom</option>}</select></label>
+   <label>Layout<select value={preset} onChange={e=>{setPreset(e.target.value);setStudies(presets[e.target.value]);setVolume(e.target.value==='Volume')}}>{Object.keys(presets).map(p=><option key={p}>{p}</option>)}{preset==='Custom'&&<option>Custom</option>}</select></label>
 
    <label>Time<select value={timezone} onChange={e=>setTimezone(e.target.value)}><option value="UTC">UTC</option>{deviceZone!=='UTC'&&<option value={deviceZone}>Device time</option>}{!['UTC',deviceZone].includes(timezone)&&<option value={timezone}>{timezone}</option>}</select></label>
 
-   <button type="button" disabled={readOnly} onClick={()=>setStudyDialog(true)}>Studies{studies.length?` (${studies.length})`:''}</button>
+   <ChartIndicatorMenu studies={studies} onToggle={toggleIndicator} onAdvanced={()=>setStudyDialog(true)}/>
+   </>}
    <button type="button" aria-expanded={structureOpen} onClick={()=>{setStructureOpen(v=>!v);setStructureSelection(null)}}>Structure</button>
 
-   <label className="intel-workstation-check"><input type="checkbox" checked={volume} disabled={!hasVolume} onChange={e=>setVolume(e.target.checked)}/>{volumeLabel}</label>
+   {!readOnly&&<label className="intel-workstation-check"><input type="checkbox" checked={volume} disabled={!hasVolume} onChange={e=>setVolume(e.target.checked)}/>{volumeLabel}</label>}
 
    <button type="button" aria-pressed={autoScale} onClick={()=>setAutoScale(v=>!v)}>Auto scale</button>
 
-   <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)api.current?.timeScale().setVisibleLogicalRange({from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true)}}>Reset view</button>
+   <button type="button" onClick={cycleSize}>{size==='fullscreen'?t('chart.size.exit',{defaultValue:'Exit full screen'}):size==='tall'?t('chart.size.full',{defaultValue:'Full screen'}):t('chart.size.taller',{defaultValue:'Taller chart'})}</button>
 
-   {persistence&&!readOnly&&<ChartLayoutLibrary context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<ChartSnapshotSave context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>} {persistence&&!replay&&!readOnly&&<><ChartAssetNavigator context={persistence}/><ChartAlertEditor context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
+   <button type="button" onClick={()=>{if(timeWindow&&gridRef.current)placeWindow(api.current,{from:continuousChartLogical(gridRef.current,timeWindow.from),to:continuousChartLogical(gridRef.current,timeWindow.to)});else api.current?.timeScale().fitContent();setAutoScale(true);emitWorkspace()}}>Reset view</button>
+
+   {persistence&&!readOnly&&<ChartLayoutLaunch context={persistence} capture={captureLayout} onLoad={restoreLayout} onStudies={next=>{setStudies(next);setPreset('Custom')}}/>}{persistence&&!readOnly&&<SnapshotSave triggerLabel={t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})} context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} seriesCapture={seriesCapture}/>}{persistence&&!readOnly&&<ChartShareLaunch context={persistence} captureLayout={()=>{const layout=captureLayout();return replay?{...layout,drawings:[],visibility:{}}:layout}} captureFrame={captureFrame} seriesCapture={seriesCapture} chartSource={chartSource} latestObservation={chartSource?.observedAt??bars.at(-1)?.t??null}/>} {persistence&&!replay&&!readOnly&&<><AssetNavigator triggerLabel="Assets" context={persistence}/><AlertEditor triggerLabel="Create alert" context={persistence} getAnchors={()=>[{label:'Selected close',t:current?.t,price:current?.c},...drawings.items.map(d=>({label:d.text?.slice(0,80)||d.tool.replaceAll('_',' '),...d.anchors[0],note:d.text}))]}/></>}
+  </div>
+  {activeStudies}
   </div>
 
   {!replay&&!readOnly&&drawings.controls}
   </ResponsiveChartTools>
 
+  {covering&&<p role="status" className="intel-analysis-caption">{t('chart.size.covering',{defaultValue:'Full screen was refused by the browser, so the chart covers this window instead. Press Escape or choose Exit full screen to return.'})}</p>}
+
   {chartSource&&<p className="intel-analysis-caption intel-chart-source">{chartSource.provider === 'coinmarketcap' ? 'CoinMarketCap' : chartSource.provider === 'coingecko' ? 'CoinGecko' : chartSource.provider} · {chartSource.currency}{chartSource.intervalMs?` · ${spacing(chartSource.intervalMs)}`:''}<span> · {chartSource.timestampMeaning==='close'?'Times mark candle closes':chartSource.timestampMeaning==='open'?'Times mark candle opens':'Source observation times'}{chartSource.observedAt?` · latest observation ${barTime(chartSource.observedAt,timezone)}`:''}</span></p>}
 
   <div className="intel-crosshair-legend" aria-live="off"><time dateTime={current?new Date(current.t).toISOString():undefined}>{current?barTime(current.t,timezone):'No observations'}</time>{[['O',current?.o],['H',current?.h],['L',current?.l],['C',current?.c]].map(([label,v])=><span key={label}>{label} <b>{price(v)}</b></span>)}</div>
 
+  {!replay&&drawings.toolbar}
+
   <div className="intel-workstation-canvas" style={{height:totalHeight}} onPointerMoveCapture={e=>{if(e.buttons)refreshAfterGesture()}} onPointerUpCapture={refreshAfterGesture} onWheelCapture={refreshAfterGesture}>
 
    <div ref={host} style={{height:totalHeight}} role="img" aria-label={`${mode==='line'?'Price':mode==='candles'?'Candlestick':'OHLC'} chart, ${bars.length} observations. Use chart navigation controls or read price data below.`}/>
+
+   <ChartWatermark background={palette?.background}/>
 
    <svg className="intel-workstation-overlay" width={geometry.width} height={totalHeight} aria-label="Chart research markers" style={{pointerEvents:'none'}}>
 
@@ -323,30 +568,16 @@ function PriceWorkstationBody({bars,timeWindow=null,viewKey='',chartSource=null,
 
   <div className="intel-chart-navigation" role="group" aria-label="Chart navigation"><button type="button" onClick={()=>pan(-1)}>Earlier</button><button type="button" onClick={()=>zoom(0.7)}>Zoom in</button><button type="button" onClick={()=>zoom(1.4)}>Zoom out</button><button type="button" onClick={()=>pan(1)}>Later</button><span>{source?.grid.step?`${spacing(source.grid.step)} observation spacing · `:''}Gaps remain empty</span></div>
 
-  {studyResult.loading&&<p role="status" className="intel-analysis-caption">Calculating studies…</p>}{studyResult.error&&<p role="alert">{studyResult.error}</p>}
+  {studyResult.loading&&<p role="status" className="intel-analysis-caption">{t('chart.indicators.calculating',{defaultValue:'Calculating indicators…'})}</p>}{studyResult.error&&<p role="alert">{studyResult.error}</p>}
 
   {studyResult.results.filter(r=>r.reason).map(r=><p className="intel-analysis-caption" key={r.id}>{STUDY_CATALOG[r.type].label}: {r.reason}</p>)}
   {structureOpen&&<Suspense fallback={<p role="status">Loading structure tools…</p>}><ChartStructurePanel bars={bars} at={replay?cursorTime:analysisNow} knownOnly={replay&&knownOnly} intervalMs={chartSource?.intervalMs??null} timezone={timezone} source={`${chartSource?.provider||'Source unavailable'} · ${chartSource?.currency||'Currency unavailable'}`} readOnly={readOnly||replay} savedNotes={replay?[]:drawings.items} onInspect={finding=>{setStructureSelection(finding?{bars,finding}:null);if(finding)onCursorChange?.(finding.confirmedAt)}} onKeep={drawings.add}/></Suspense>}
 
-  <details className="intel-chart-readings"><summary>Read price data and study definitions</summary><div className="intel-table-scroll"><table><thead><tr><th>Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody>{bars.slice(-30).map(b=><tr key={b.t}><th>{barTime(b.t,timezone)}</th>{[b.o,b.h,b.l,b.c,b.v].map((v,i)=><td key={i}>{price(v)}</td>)}</tr>)}</tbody></table></div><p className="intel-analysis-caption">Latest 30 loaded observations · {timezone}. Studies use observed bars; missing bars are not synthesized.</p>{studyResult.results.map(r=><p key={r.id}>{STUDY_CATALOG[r.type].label}: {r.definition} Warm-up: {r.warmup} observations.{r.coverage?.resets>0&&` Reset after ${r.coverage.resets} missing-period boundaries; ${r.coverage.latestBars} bars in the latest continuous segment.`}</p>)}</details>
+  <details className="intel-chart-readings"><summary>{t('chart.workstation.readings_summary',{defaultValue:'Read price data and indicator definitions'})}</summary><div className="intel-table-scroll"><table><thead><tr><th>Time</th><th>Open</th><th>High</th><th>Low</th><th>Close</th><th>Volume</th></tr></thead><tbody>{bars.slice(-30).map(b=><tr key={b.t}><th>{barTime(b.t,timezone)}</th>{[b.o,b.h,b.l,b.c,b.v].map((v,i)=><td key={i}>{price(v)}</td>)}</tr>)}</tbody></table></div><p className="intel-analysis-caption">{t('chart.workstation.readings_note',{observations:30,timezone,defaultValue:'Latest {{observations}} loaded observations · {{timezone}}. Indicators use observed bars; missing bars are not synthesized.'})}</p>{studyResult.results.map(r=><p key={r.id}>{STUDY_CATALOG[r.type].label}: {r.definition} Warm-up: {r.warmup} observations.{r.coverage?.resets>0&&` Reset after ${r.coverage.resets} missing-period boundaries; ${r.coverage.latestBars} bars in the latest continuous segment.`}</p>)}</details>
 
   {!replay&&drawings.list}{!replay&&!readOnly&&drawings.editor}{layoutNote&&<p role="status" className="intel-analysis-caption">{layoutNote}</p>}
 
-  {studyDialog&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby="chart-study-title" onCancel={e=>{e.preventDefault();closeStudies()}}><div className="intel-investigation-analysis-heading"><h2 id="chart-study-title">Chart studies</h2><button type="button" onClick={closeStudies}>Close</button></div>
-
-   <label>Study<select className="select" value={draftType} onChange={e=>{setDraftType(e.target.value);setDraftParams({...STUDY_CATALOG[e.target.value].defaults});setStudyError(null)}}>{Object.entries(STUDY_CATALOG).map(([id,s])=><option key={id} value={id}>{s.label}</option>)}</select></label>
-
-   <p className="intel-analysis-caption">{STUDY_CATALOG[draftType].definition}</p><div className="intel-study-parameters">{Object.keys(STUDY_CATALOG[draftType].defaults).map(key=><label key={key}>{key.charAt(0).toUpperCase()+key.slice(1)}<input type="number" min="1" max={key==='multiplier'?10:500} step={key==='multiplier'?0.25:1} value={draftParams[key]??''} onChange={e=>setDraftParams(p=>({...p,[key]:e.target.value}))}/></label>)}</div>
-
-   <label>Chart appearance<select value={theme} onChange={e=>setTheme(e.target.value)}><option value="app">Follow app theme</option><option value="dark">Charcoal</option><option value="light">Light</option><option value="gray">Neutral gray</option></select></label>
-
-   {draftType==='vwap'&&<label>Optional anchor (UTC)<input type="datetime-local" onChange={e=>setDraftParams(p=>({...p,anchor:e.target.value?Date.parse(`${e.target.value}Z`):undefined}))}/></label>}
-
-   {studyError&&<p role="alert">{studyError}</p>}<button type="button" className="btn btn--primary" onClick={addStudy}>Add study</button>
-
-   {studies.length>0&&<ul className="intel-study-list">{studies.map(s=><li key={s.id}><span>{STUDY_CATALOG[s.type].label} · {Object.entries(s.params||STUDY_CATALOG[s.type].defaults).filter(([,v])=>v!=null).map(([k,v])=>`${k}: ${v}`).join(', ')}</span><button type="button" onClick={()=>{setStudies(rows=>rows.filter(r=>r.id!==s.id));setPreset('Custom')}}>Remove</button></li>)}</ul>}
-
-  </dialog>}
+  {studyDialog&&<IndicatorDialog studies={studies} theme={theme} onTheme={setTheme} onAdd={addStudy} onRemove={id=>{setStudies(rows=>rows.filter(row=>row.id!==id));setPreset('Custom')}} onClose={closeStudies}/>}
 
  </div>
 

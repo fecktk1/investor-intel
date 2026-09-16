@@ -160,3 +160,39 @@ export function calculateStudies(bars:Bar[],studies:Study[],options:{intervalMs?
  if(bars.length>MAX_CHART_BARS||studies.length>20)throw new Error('study_budget_exceeded')
  return studies.map(study=>calculateStudy(bars,study,options))
 }
+/** Warm-up ladder for a chart read. A chart asks for extra completed periods
+ * before the visible window so every study has a value at the FIRST visible bar,
+ * the way a trading terminal fetches history behind the window it draws. The
+ * count is quantized UP to these rungs so changing a period from 50 to 52 reuses
+ * the same request instead of refetching the whole chart. */
+export const LOOKBACK_LADDER=[0,60,120,250,500,1000]
+/** The most warm-up any chart may ask for. Provider pages cost credits, so the
+ * request is bounded rather than growing with an arbitrary study parameter. */
+export const MAX_LOOKBACK_BARS=1000
+/** Completed periods ONE study needs before its first value, exactly the number
+ * `calculateStudySegment` reports as `warmup`. A study whose parameters are not
+ * valid periods contributes 0 rather than throwing a chart read away, and an
+ * unknown type contributes 0 because nothing will be drawn for it. */
+function studyWarmup(study:Study):number {
+ const spec=study&&Object.hasOwn(STUDY_CATALOG,String(study.type))?STUDY_CATALOG[study.type]:null;if(!spec)return 0
+ const p={...spec.defaults,...study.params},n=(key='period',min=1)=>period(p[key],spec.defaults[key]??14,min)
+ try{
+  if(study.type==='sma'||study.type==='ema'||study.type==='bollinger'||study.type==='atr')return n()
+  if(study.type==='dema')return 2*n()-1
+  if(study.type==='rsi'||study.type==='vwrsi')return n()+1
+  if(study.type==='macd')return n('slow')+n('signal')-1
+  if(study.type==='stoch_rsi')return n()+n('stochastic')+n('k')+n('d')-2
+  // OBV, VWAP and the previous-week series each need one earlier bar: the first
+  // value is a comparison with the bar before it, not an average over a window.
+  if(study.type==='obv'||study.type==='vwap'||study.type==='weekly')return 1
+  if(study.type==='ichimoku')return Math.max(n('span'),n('kijun'))+n('shift')
+  return 0
+ }catch{return 0}
+}
+/** Extra completed periods a set of studies needs BEFORE the first visible bar,
+ * quantized up to `LOOKBACK_LADDER` and never above `MAX_LOOKBACK_BARS`. */
+export function studyLookbackBars(studies:Study[]):number {
+ const needed=(Array.isArray(studies)?studies:[]).reduce((most,study)=>Math.max(most,studyWarmup(study)),0)
+ if(!(needed>0))return 0
+ return LOOKBACK_LADDER.find(rung=>rung>=needed)??MAX_LOOKBACK_BARS
+}

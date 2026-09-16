@@ -1,85 +1,205 @@
 import React,{useEffect,useReducer,useRef,useState} from 'react'
-import {validateDrawing} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
-import {drawingHistory,drawingReducer,drawingGeometry,translateDrawing} from '../lib/chart-drawings'
-const tools=[['select','Select / move'],['trendline','Trend line'],['arrow','Arrow'],['horizontal','Horizontal level'],['ray','Ray'],['rectangle','Price zone'],['price_range','Price range'],['fibonacci','Fibonacci'],['text','Text note']]
-const countFor=tool=>['horizontal','text'].includes(tool)?1:2
-const stamp=t=>Number.isFinite(t)?new Date(t).toISOString().slice(0,23):''
-const make=(tool,anchor,end=anchor)=>({id:crypto.randomUUID(),tool,anchors:countFor(tool)===1?[anchor]:[anchor,end],text:'',color:'#DFA647',width:2,...(tool==='fibonacci'?{ratios:[0,0.236,0.382,0.5,0.618,0.786,1]}:{})})
-const drawingError=e=>({invalid_drawing_anchor:'Enter a valid date and a price greater than zero for every anchor.',invalid_drawing_style:'Choose a color and a line width from 1 to 5.',invalid_fibonacci_ratios:'Use up to 20 different Fibonacci ratios between -5 and 5.'}[e.message]||e.message)
-export function useChartDrawings({project,unproject,width,height,scale,initialItems=[],readOnly=false}) {
- const [history,dispatch]=useReducer(drawingReducer,initialItems,drawingHistory),[tool,setTool]=useState('select'),[selected,setSelected]=useState(null),[preview,setPreview]=useState(null),[editor,setEditor]=useState(null),[error,setError]=useState(null)
- const drag=useRef(null),pendingAnchor=useRef(null),surface=useRef(null),dialog=useRef(null),returnFocus=useRef(null)
- useEffect(()=>{if(editor){returnFocus.current=document.activeElement;if(!dialog.current.open)dialog.current.showModal()}},[!!editor]) // eslint-disable-line react-hooks/exhaustive-deps
- const commit=drawing=>{try{const next=validateDrawing(drawing);if(history.items.length>=200&&!history.items.some(d=>d.id===next.id))throw new Error('A chart supports up to 200 drawings. Remove one before adding another.');dispatch({type:'put',drawing:next});setError(null);return true}catch(e){setError(drawingError(e));return false}}
- const coordinates=event=>{const box=surface.current.getBoundingClientRect();return unproject({x:event.clientX-box.left,y:event.clientY-box.top})}
+import {useTranslation} from 'react-i18next'
+import {validateDrawing,drawingAnchorCount} from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
+import {drawingHistory,drawingReducer,translateDrawing} from '../lib/chart-drawings'
+import {DRAWING_TOOLBAR,drawingShortcutTool,drawingToolLabel,drawingStripRows} from '../lib/chart-drawing-tools'
+import {resolveAnchor} from '../lib/chart-drawing-snap'
+import deferredPanel from './deferred-panel'
+
+// The strip itself arrives with the chart's first paint cycle rather than in
+// front of it: the placeholder reserves exactly the rows the strip will take at
+// this width (one or two, never scrolling), so nothing moves when it renders.
+function DrawingToolbarPlaceholder() {
+ const shell=useRef(null),[rows,setRows]=useState(1)
+ useEffect(()=>{setRows(drawingStripRows(shell.current?.clientWidth||0))},[])
+ return <div ref={shell} className="intel-draw-bar" role="toolbar" aria-busy="true" aria-label="Chart drawing tools" style={{minHeight:`${rows*30+6}px`}}/>
+}
+const ChartDrawingToolbar=deferredPanel(()=>import('./ChartDrawingToolbar'),{label:'The chart drawing tools',fallback:()=><DrawingToolbarPlaceholder/>})
+
+// Deferred so the price chart's first paint carries the toolbar strip and the
+// chart. The surface is an overlay on top of the plot, so nothing shifts when it
+// arrives; the editor opens only when a member edits a drawing by hand.
+const DrawingSurface=deferredPanel(()=>import('./ChartDrawingSurface'),{label:'The chart drawing surface'})
+const DrawingEditor=deferredPanel(()=>import('./ChartDrawingEditor'),{label:'The drawing editor'})
+
+const DRAWABLE=DRAWING_TOOLBAR.filter(entry=>!entry.toggle&&entry.id!=='select').map(entry=>entry.id)
+const countFor=drawingAnchorCount
+const FIB=[0,0.236,0.382,0.5,0.618,0.786,1]
+const make=(tool,anchor,end=anchor)=>{
+ const count=countFor(tool)
+ return {id:crypto.randomUUID(),tool,anchors:count===1?[anchor]:count===3?[anchor,end,end]:[anchor,end],text:'',color:'#DFA647',width:2,
+  ...(tool==='fibonacci'?{ratios:FIB}:{}),...(tool==='tweet'?{url:''}:{})}
+}
+const drawingError=(t,e)=>({
+ invalid_drawing:t('chart.draw.error_drawing',{defaultValue:'This drawing is incomplete. Place every anchor before saving it.'}),
+ invalid_drawing_anchor:t('chart.draw.error_anchor',{defaultValue:'Enter a valid date and a price greater than zero for every anchor.'}),
+ invalid_drawing_style:t('chart.draw.error_style',{defaultValue:'Choose a color, a line width from 1 to 5 and a line style.'}),
+ invalid_fibonacci_ratios:t('chart.draw.error_ratios',{defaultValue:'Use up to 20 different Fibonacci ratios between -5 and 5.'}),
+ invalid_tweet_url:t('chart.draw.error_url',{defaultValue:'Paste the address of a public post on x.com, for example https://x.com/name/status/1234567890.'}),
+ drawing_limit:t('chart.draw.error_limit',{defaultValue:'A chart supports up to 200 drawings. Remove one before adding another.'}),
+ empty_text:t('chart.draw.error_text',{defaultValue:'Enter the annotation text.'}),
+ empty_ratio:t('chart.draw.error_ratio_blank',{defaultValue:'Enter a number for every retracement ratio.'}),
+}[e.message]||e.message)
+
+// The live drawing under the pointer lives outside React state, so a pointer move
+// re-renders only the drawing surface instead of the whole price workstation.
+function previewStore() {
+ let value=null
+ const listeners=new Set()
+ return {get:()=>value,set:next=>{if(next===value)return;value=next;for(const listener of listeners)listener()},subscribe:listener=>{listeners.add(listener);return()=>listeners.delete(listener)}}
+}
+
+export function useChartDrawings({project,unproject,width,height,scale,initialItems=[],readOnly=false,bars=[],intervalMs=null,context=null}) {
+ const {t}=useTranslation('intel',{useSuspense:false})
+ const [history,dispatch]=useReducer(drawingReducer,initialItems,drawingHistory)
+ const [tool,setToolState]=useState('select'),[selected,setSelected]=useState(null),[editor,setEditor]=useState(null),[error,setError]=useState(null)
+ const [lock,setLock]=useState(false),[magnet,setMagnet]=useState(false),[crosshair,setCrosshair]=useState(true)
+ const store=useRef(null);if(!store.current)store.current=previewStore()
+ const preview=store.current
+ const drag=useRef(null),pending=useRef(null),pendingThird=useRef(null),surface=useRef(null),returnFocus=useRef(null)
+ useEffect(()=>{if(editor)returnFocus.current=document.activeElement},[!!editor]) // eslint-disable-line react-hooks/exhaustive-deps
+ const commit=drawing=>{
+  try{
+   const next=validateDrawing(drawing)
+   if(history.items.length>=200&&!history.items.some(d=>d.id===next.id))throw new Error('drawing_limit')
+   dispatch({type:'put',drawing:next});setError(null);return true
+  }catch(e){setError(drawingError(t,e));return false}
+ }
+ // Every anchor is read through the chart's own coordinate conversion, so it stays
+ // on its time and price when the chart scrolls, zooms, resizes or goes fullscreen.
+ const anchorAt=event=>{
+  if(!surface.current)return null
+  const box=surface.current.getBoundingClientRect(),point={x:event.clientX-box.left,y:event.clientY-box.top}
+  const raw=unproject(point)
+  return raw?{point,anchor:resolveAnchor(raw,point,{bars,intervalMs,magnet,project})}:null
+ }
+ const release=event=>{if(!lock&&!event?.shiftKey)setToolState('select')}
+ const cancel=()=>{drag.current=null;pending.current=null;pendingThird.current=null;preview.set(null);setToolState('select')}
+ const setTool=next=>{drag.current=null;pending.current=null;pendingThird.current=null;preview.set(null);setToolState(next)}
  const start=(event,drawing=null,anchorIndex=null)=>{
   if(readOnly||event.button!==0)return
-  event.stopPropagation();const point=coordinates(event);if(!point)return
-  if(drawing){setSelected(drawing.id);drag.current={drawing,anchorIndex,start:point,origin:{x:event.clientX,y:event.clientY}};setPreview(drawing)}
+  event.stopPropagation()
+  const resolved=anchorAt(event);if(!resolved)return
+  const {anchor}=resolved
+  if(drawing){setSelected(drawing.id);drag.current={drawing,anchorIndex,start:anchor,origin:{x:event.clientX,y:event.clientY}};preview.set(drawing)}
+  else if(pendingThird.current){
+   const draft={...pendingThird.current,anchors:[...pendingThird.current.anchors.slice(0,2),anchor]}
+   pendingThird.current=null;preview.set(null)
+   if(commit(draft))setSelected(draft.id)
+   release(event);return
+  }
   else if(tool!=='select'){
-   const first=pendingAnchor.current||point;const draft=make(tool,first,point)
-   drag.current={drawing:draft,new:true,start:first,origin:{x:event.clientX,y:event.clientY},secondTap:!!pendingAnchor.current};setPreview(draft)
+   const held=pending.current
+   const draft=held?{...held.drawing,anchors:countFor(held.drawing.tool)===3?[held.start,anchor,anchor]:[held.start,anchor]}:make(tool,anchor)
+   drag.current={drawing:draft,new:true,start:held?held.start:anchor,origin:{x:event.clientX,y:event.clientY},secondTap:!!held}
+   preview.set(draft)
   }else{setSelected(null);return}
-  surface.current.setPointerCapture(event.pointerId)
+  surface.current.setPointerCapture?.(event.pointerId)
  }
  const move=event=>{
-  const action=drag.current,point=coordinates(event)
-  if(!point)return
-  if(!action){if(pendingAnchor.current&&tool!=='select')setPreview(make(tool,pendingAnchor.current,point));return}
+  const action=drag.current,resolved=anchorAt(event)
+  if(!resolved)return
+  const {anchor}=resolved
+  if(!action){
+   if(pendingThird.current)preview.set({...pendingThird.current,anchors:[...pendingThird.current.anchors.slice(0,2),anchor]})
+   else if(pending.current)preview.set({...pending.current.drawing,anchors:countFor(pending.current.drawing.tool)===3?[pending.current.start,anchor,anchor]:[pending.current.start,anchor]})
+   return
+  }
   try{
-   const drawing=action.new?{...action.drawing,anchors:countFor(action.drawing.tool)===1?[point]:[action.start,point]}:action.anchorIndex!=null?{...action.drawing,anchors:action.drawing.anchors.map((a,i)=>i===action.anchorIndex?point:a)}:translateDrawing(action.drawing,action.start,point,scale)
-   setPreview(validateDrawing(drawing));action.current=drawing
+   const count=countFor(action.drawing.tool)
+   const drawing=action.new
+    ?{...action.drawing,anchors:count===1?[anchor]:count===3?[action.start,anchor,anchor]:[action.start,anchor]}
+    :action.anchorIndex!=null?{...action.drawing,anchors:action.drawing.anchors.map((a,i)=>i===action.anchorIndex?anchor:a)}
+    :translateDrawing(action.drawing,action.start,anchor,scale)
+   preview.set(drawing.tool==='tweet'?drawing:validateDrawing(drawing));action.current=drawing
   }catch{/* A pointer outside the valid price/time domain leaves the last valid preview. */}
  }
  const finish=event=>{
   const action=drag.current;if(!action)return
-  const drawing=action.current||action.drawing,travel=Math.hypot(event.clientX-action.origin.x,event.clientY-action.origin.y)
+  const drawing=action.current||action.drawing,count=countFor(drawing.tool)
+  const travel=Math.hypot(event.clientX-action.origin.x,event.clientY-action.origin.y)
   drag.current=null;surface.current.releasePointerCapture?.(event.pointerId)
-  if(action.new&&countFor(drawing.tool)===2&&travel<4&&!action.secondTap){pendingAnchor.current=action.start;return}
-  pendingAnchor.current=null;setPreview(null)
-  if(drawing.tool==='text'&&action.new)setEditor(drawing)
-  else {commit(drawing);setSelected(drawing.id)}
-  if(action.new)setTool('select')
+  if(action.new&&count>=2&&travel<4&&!action.secondTap){pending.current={drawing,start:action.start};preview.set(drawing);return}
+  pending.current=null
+  if(action.new&&count===3){pendingThird.current=drawing;preview.set(drawing);return}
+  preview.set(null)
+  if(action.new&&(drawing.tool==='text'||drawing.tool==='tweet'))setEditor(drawing)
+  else{commit(drawing);setSelected(drawing.id)}
+  if(action.new)release(event)
  }
- const cancel=()=>{drag.current=null;pendingAnchor.current=null;setPreview(null);setTool('select')}
- useEffect(()=>{if(tool==='select')return;const escape=e=>{if(e.key==='Escape'){e.preventDefault();cancel()}};document.addEventListener('keydown',escape);return()=>document.removeEventListener('keydown',escape)},[tool])
- const editNew=()=>{const anchor=unproject({x:width/2,y:height/2});if(anchor){const end=unproject({x:width*0.7,y:height*0.4})||anchor;setEditor(make(tool==='select'?'trendline':tool,anchor,end))}}
+ const remove=id=>{dispatch({type:'delete',id});setSelected(current=>current===id?null:current)}
+ const restyle=patch=>{const drawing=history.items.find(d=>d.id===selected);if(drawing)commit({...drawing,...patch})}
+ const resize=(drawing,box)=>{const current=history.items.find(d=>d.id===drawing.id);if(current)commit({...current,box})}
+ // The style row and a post card stay while the pointer works on them; a press
+ // anywhere else on the page, the chart itself included, is the member walking
+ // away from the drawing and clears the selection. The drawing surface takes no
+ // pointer events while idle, so this cannot be left to the surface.
+ useEffect(()=>{
+  if(readOnly||!selected)return
+  const away=event=>{
+   const target=event.target
+   if(target?.closest?.('.intel-draw-options,.intel-draw-tweet,.intel-drawing-surface,.intel-draw-bar,.intel-chart-study-dialog,dialog'))return
+   setSelected(null)
+  }
+  document.addEventListener('pointerdown',away,true);return()=>document.removeEventListener('pointerdown',away,true)
+ },[readOnly,selected])
+ useEffect(()=>{
+  if(readOnly)return
+  const key=event=>{
+   const target=event.target
+   if(target?.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(target?.tagName||''))return
+   if(event.key==='Escape'){cancel();if(!editor)setSelected(null);return}
+   if((event.key==='Delete'||event.key==='Backspace')&&selected&&!editor){event.preventDefault();remove(selected);return}
+   const next=drawingShortcutTool(event)
+   if(!next)return
+   event.preventDefault()
+   if(next==='crosshair')setCrosshair(value=>!value)
+   else setTool(next)
+  }
+  document.addEventListener('keydown',key);return()=>document.removeEventListener('keydown',key)
+ }) // eslint-disable-line react-hooks/exhaustive-deps
+ const editNew=()=>{
+  const anchor=unproject({x:width/2,y:height/2})
+  if(!anchor)return
+  const end=unproject({x:width*0.7,y:height*0.4})||anchor
+  setEditor(make(DRAWABLE.includes(tool)?tool:'trendline',anchor,end))
+ }
  const closeEditor=()=>{setEditor(null);setError(null);returnFocus.current?.focus?.()}
- const saveEditor=()=>{try{if(editor.tool==='text'&&!editor.text.trim())throw new Error('Enter the annotation text.');let value=editor;if(editor.tool==='fibonacci'&&typeof editor.ratios==='string'){const parts=editor.ratios.split(',');if(parts.some(s=>!s.trim()))throw new Error('Enter a number for every retracement ratio.');value={...editor,ratios:parts.map(s=>Number(s.trim()))}}const drawing=validateDrawing(value);if(commit(drawing)){setSelected(drawing.id);closeEditor()}}catch(e){setError(drawingError(e))}}
+ const saveEditor=()=>{
+  try{
+   if(editor.tool==='text'&&!editor.text.trim())throw new Error('empty_text')
+   let value=editor
+   if(editor.tool==='fibonacci'&&typeof editor.ratios==='string'){
+    const parts=editor.ratios.split(',')
+    if(parts.some(part=>!part.trim()))throw new Error('empty_ratio')
+    value={...editor,ratios:parts.map(part=>Number(part.trim()))}
+   }
+   const drawing=validateDrawing(value)
+   if(commit(drawing)){setSelected(drawing.id);closeEditor()}
+  }catch(e){setError(drawingError(t,e))}
+ }
  const selectedDrawing=history.items.find(d=>d.id===selected)
- const rendered=preview?(history.items.some(d=>d.id===preview.id)?history.items.map(d=>d.id===preview.id?preview:d):[...history.items,preview]):history.items
- const controls=<div className="intel-drawing-toolbar" role="group" aria-label="Chart drawings">
-  <label>Draw<select value={tool} onChange={e=>{cancel();setTool(e.target.value)}}>{tools.map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-  <button type="button" onClick={editNew}>Add by coordinates</button>
-  <button type="button" disabled={!history.past.length} onClick={()=>{cancel();dispatch({type:'undo'})}}>Undo</button>
-  <button type="button" disabled={!history.future.length} onClick={()=>{cancel();dispatch({type:'redo'})}}>Redo</button>
-  {selectedDrawing&&<><button type="button" onClick={()=>setEditor(selectedDrawing)}>Edit drawing</button><button type="button" onClick={()=>{dispatch({type:'delete',id:selected});setSelected(null)}}>Delete drawing</button></>}
-  {history.items.length>0&&<button type="button" onClick={()=>{cancel();dispatch({type:'clear'});setSelected(null)}}>Clear drawings</button>}
-  {tool!=='select'&&<span role="status">{countFor(tool)===1?'Tap a position.':'Drag, or tap two positions.'} Escape cancels.</span>}
-  {error&&!editor&&<span role="alert">{error}</span>}
- </div>
- const overlay=<svg ref={surface} className="intel-workstation-overlay intel-drawing-surface" width={width} height={height} role="group" aria-label="Saved and unsaved chart drawings" style={{pointerEvents:tool==='select'?'none':'all',touchAction:tool==='select'?'auto':'none'}} onPointerDown={e=>start(e)} onPointerMove={move} onPointerUp={finish} onPointerCancel={cancel} onKeyDown={e=>{if(e.key==='Escape')cancel()}}>
-  {rendered.map(drawing=>{
-   const geometry=drawingGeometry(drawing,project,width,height);if(!geometry)return null
-   const selectedNow=selected===drawing.id
-   return <g key={drawing.id} role={readOnly?'img':'button'} tabIndex={readOnly?undefined:0} aria-label={`${tools.find(([key])=>key===drawing.tool)?.[1]}${drawing.text?`: ${drawing.text}`:''}`} onPointerDown={e=>start(e,drawing)} onKeyDown={e=>{if(readOnly)return;if(e.key==='Enter'){e.preventDefault();setSelected(drawing.id);setEditor(drawing)}if(e.key==='Delete'){dispatch({type:'delete',id:drawing.id})}}} style={{pointerEvents:!readOnly&&tool==='select'?'all':'none',cursor:readOnly?'default':'move'}}>
-    {geometry.lines.map((line,i)=><g key={`line:${i}`}><line {...line} stroke="transparent" strokeWidth={14}/><line {...line} stroke={drawing.color} strokeWidth={drawing.width}/></g>)}
-    {geometry.rectangles.map((rect,i)=><rect key={`rect:${i}`} {...rect} fill={`${drawing.color}12`} stroke={drawing.color} strokeWidth={drawing.width}/>)}
-    {geometry.labels.map((label,i)=><text key={`label:${i}`} x={label.x} y={label.y} fill={drawing.color} fontFamily="Inter, sans-serif" fontSize={12}>{label.text.split('\n').slice(0,drawing.tool==='text'?3:1).map((line,j)=><tspan key={j} x={label.x} dy={j?15:0}>{line.slice(0,100)}</tspan>)}</text>)}
-    {selectedNow&&geometry.anchors.map((anchor,i)=><circle key={`anchor:${i}`} cx={anchor.x} cy={anchor.y} r={6} fill="var(--bg-1)" stroke={drawing.color} strokeWidth={2} onPointerDown={e=>start(e,drawing,i)}/>)}
-   </g>
-  })}
- </svg>
- const editorView=editor&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby="chart-drawing-title" onCancel={e=>{e.preventDefault();closeEditor()}}>
-  <div className="intel-investigation-analysis-heading"><h2 id="chart-drawing-title">Drawing coordinates and notes</h2><button type="button" onClick={closeEditor}>Close</button></div>
-  <label>Tool<select value={editor.tool} onChange={e=>{const next=e.target.value;setEditor(d=>({...d,tool:next,anchors:countFor(next)===1?[d.anchors[0]]:[d.anchors[0],d.anchors[1]||d.anchors[0]],...(next==='fibonacci'&&!d.ratios?{ratios:[0,0.236,0.382,0.5,0.618,0.786,1]}:{})}))}}>{tools.filter(([key])=>key!=='select').map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
-  {editor.anchors.map((anchor,i)=><div key={i} className="intel-drawing-anchor-fields"><label>Anchor {i+1} time (UTC)<input type="datetime-local" step="0.001" value={stamp(anchor.t)} onChange={e=>setEditor(d=>({...d,anchors:d.anchors.map((a,j)=>j===i?{...a,t:Date.parse(`${e.target.value}Z`)}:a)}))}/></label><label>Anchor {i+1} price<input type="number" min="0" step="any" value={Number.isFinite(anchor.price)?anchor.price:''} onChange={e=>setEditor(d=>({...d,anchors:d.anchors.map((a,j)=>j===i?{...a,price:Number(e.target.value)}:a)}))}/></label></div>)}
-  <label>Your annotation<textarea className="textarea" rows={3} maxLength={2000} value={editor.text} onChange={e=>setEditor(d=>({...d,text:e.target.value}))}/></label>
-  {editor.tool==='fibonacci'&&<label>Retracement ratios, separated by commas<input value={Array.isArray(editor.ratios)?editor.ratios.join(', '):editor.ratios||''} onChange={e=>setEditor(d=>({...d,ratios:e.target.value}))}/></label>}
-  <div className="intel-study-parameters"><label>Color<input type="color" value={editor.color} onChange={e=>setEditor(d=>({...d,color:e.target.value}))}/></label><label>Line width<input type="number" min="1" max="5" value={editor.width} onChange={e=>setEditor(d=>({...d,width:Number(e.target.value)}))}/></label></div>
-  {error&&<p role="alert">{error}</p>}<button className="btn btn--primary" type="button" onClick={saveEditor}>Apply drawing</button>
-  <p className="intel-analysis-caption">Coordinates stay attached to their time and price when you resize or zoom. Save the layout to keep them across visits.</p>
- </dialog>
- const list=history.items.length>0&&<details className="intel-chart-readings"><summary>Read and edit {history.items.length} drawings</summary><ul className="intel-study-list">{history.items.map(d=><li key={d.id}><span>{tools.find(([key])=>key===d.tool)?.[1]} · {d.text||d.anchors.map(a=>`${new Date(a.t).toISOString()} · ${a.price}`).join(' → ')}</span>{!readOnly&&<button type="button" onClick={()=>setEditor(d)}>Edit</button>}</li>)}</ul></details>
- return {items:history.items,add:drawing=>readOnly?false:commit(drawing),reset:items=>{cancel();setSelected(null);dispatch({type:'reset',items})},controls,overlay,editor:editorView,list,error}
+ const hint=error&&!editor?error:tool==='select'?null
+  :pendingThird.current?t('chart.draw.hint_third',{defaultValue:'Set the channel width, then press to keep it. Escape cancels.'})
+  :countFor(tool)===1?t('chart.draw.hint_one',{defaultValue:'Press a position on the chart. Escape cancels.'})
+  :t('chart.draw.hint_two',{defaultValue:'Drag, or press two positions. Escape cancels.'})
+ const toolbar=!readOnly&&<ChartDrawingToolbar tool={tool} crosshair={crosshair} lock={lock} magnet={magnet} hint={hint}
+  canUndo={!!history.past.length} canRedo={!!history.future.length} canClear={!!history.items.length} canDelete={!!selectedDrawing}
+  onTool={setTool} onCrosshair={()=>setCrosshair(value=>!value)} onLock={()=>setLock(value=>!value)} onMagnet={()=>setMagnet(value=>!value)}
+  onCoordinates={editNew} onUndo={()=>{setTool('select');dispatch({type:'undo'})}} onRedo={()=>{setTool('select');dispatch({type:'redo'})}}
+  onDelete={()=>selected&&remove(selected)} onClear={()=>{setTool('select');dispatch({type:'clear'});setSelected(null)}}/>
+ const overlay=<DrawingSurface store={preview} surfaceRef={surface} items={history.items} selected={selected} tool={tool} readOnly={readOnly} width={width} height={height}
+  project={project} intervalMs={intervalMs} context={context} onStart={start} onMove={move} onFinish={finish} onCancel={cancel}
+  onEdit={setEditor} onDelete={remove} onSelect={setSelected} onStyle={restyle} onResize={resize}/>
+ const editorView=editor&&<DrawingEditor editor={editor} tools={DRAWABLE} error={error} onChange={setEditor} onClose={closeEditor} onApply={saveEditor}/>
+ // A shared, read-only chart offers its drawings to read, never to edit.
+ const list=history.items.length>0&&<details className="intel-chart-readings"><summary>{readOnly?t('chart.draw.read_list_readonly',{defaultValue:'Read {{count}} drawings',count:history.items.length}):t('chart.draw.read_list',{defaultValue:'Read and edit {{count}} drawings',count:history.items.length})}</summary>
+  <ul className="intel-study-list">{history.items.map(drawing=><li key={drawing.id}>
+   <span>{drawingToolLabel(t,drawing.tool)} · {drawing.text||drawing.url||drawing.anchors.map(a=>`${new Date(a.t).toISOString()} · ${a.price}`).join(' → ')}</span>
+   {!readOnly&&<button type="button" onClick={()=>setEditor(drawing)}>{t('chart.draw.edit_short',{defaultValue:'Edit'})}</button>}
+  </li>)}</ul></details>
+ return {items:history.items,add:drawing=>readOnly?false:commit(drawing),reset:items=>{cancel();setSelected(null);dispatch({type:'reset',items})},
+  // The toolbar now runs along the top edge of the plot; the price workstation's
+  // display-controls row keeps no drawing controls of its own.
+  controls:null,toolbar,overlay,editor:editorView,list,error,crosshair,selected:selectedDrawing?.id??null}
 }

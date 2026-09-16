@@ -67,6 +67,16 @@
   --accent: #dfa647; --forge-gold: #dfa647; --ember-accent: #dfa647;
   --ok: #6cc6a2; --signal-green: #6cc6a2; --signal-red: #e89a9d; --signal-yellow: #dfa647; --signal-blue: #82abd2;
   --intel-comparison-fourth: #b4a0dc;
+  /* Categorical series palette (src/intel/charts/theme.js): fourteen hue steps
+     at two lightness levels. Distinguishable from one another and readable on
+     --bg-1; the light block below restates every one of them. */
+  --intel-series-01: #e8a08d; --intel-series-02: #44cf8c; --intel-series-03: #e88de8; --intel-series-04: #cfc644;
+  --intel-series-05: #8db7e8; --intel-series-06: #cf444e; --intel-series-07: #8de8b1; --intel-series-08: #9e44cf;
+  --intel-series-09: #e8dd8d; --intel-series-10: #44aacf; --intel-series-11: #e88d9c; --intel-series-12: #44cf59;
+  --intel-series-13: #ae8de8; --intel-series-14: #cf9c44; --intel-series-15: #8dd2e8; --intel-series-16: #cf447e;
+  --intel-series-17: #8de88d; --intel-series-18: #4459cf; --intel-series-19: #e8bf8d; --intel-series-20: #44cdcf;
+  --intel-series-21: #e88dc5; --intel-series-22: #c2e88d; --intel-series-23: #8d9ce8; --intel-series-24: #cf7544;
+  --intel-series-25: #8de8d2; --intel-series-26: #cf44b8; --intel-series-27: #9ccf44; --intel-series-28: #447acf;
   --border-default: #343b46; --border-subtle: #343b46; --intel-border-soft: #343b46;
   --intel-sidebar-bg: #14171c; --intel-header-bg: #14171c; --intel-bg-elevated: #1d222a;
   --intel-radius-sm: 0px; --intel-radius-md: 0px; --intel-radius-lg: 0px;
@@ -82,6 +92,13 @@
   --intel-sidebar-bg: #f6f5f1; --intel-header-bg: #f6f5f1; --intel-bg-elevated: #eeede8;
   --ok: #16724d; --signal-green: #16724d; --signal-red: #b23439; --signal-yellow: #865b16; --signal-blue: #2c638c;
   --intel-comparison-fourth: #75508e;
+  --intel-series-01: #9b3c22; --intel-series-02: #12683f; --intel-series-03: #9b229b; --intel-series-04: #686212;
+  --intel-series-05: #225a9b; --intel-series-06: #681218; --intel-series-07: #229b52; --intel-series-08: #4a1268;
+  --intel-series-09: #9b8d22; --intel-series-10: #125168; --intel-series-11: #9b2236; --intel-series-12: #12681f;
+  --intel-series-13: #4e229b; --intel-series-14: #684912; --intel-series-15: #227f9b; --intel-series-16: #681236;
+  --intel-series-17: #229b22; --intel-series-18: #121f68; --intel-series-19: #9b6422; --intel-series-20: #126768;
+  --intel-series-21: #9b226c; --intel-series-22: #689b22; --intel-series-23: #22369b; --intel-series-24: #683012;
+  --intel-series-25: #229b7f; --intel-series-26: #68125a; --intel-series-27: #496812; --intel-series-28: #123368;
   color-scheme: light;
 }
 .intel-root .page-title, .intel-brand-title { font-family: 'Intel Display', sans-serif; font-weight: 600; letter-spacing: .015em; }
@@ -331,22 +348,57 @@
 .intel-asset-profile summary { font-size: 13px; color: var(--fg-3); cursor: pointer; padding: 10px 0; }
 .intel-chart-interval { display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--fg-3); }
 .intel-chart-interval .select { width: auto; min-width: 110px; }
+/* Chart size: full screen through the browser where it is allowed, and the same
+   reading surface covering the window in place where it is refused. */
+.intel-price-workstation:fullscreen { padding: 16px 20px; overflow: auto; background: var(--bg-1); }
+.intel-price-workstation[data-size="covering"] { position: fixed; inset: 0; z-index: 90; padding: 16px 20px; overflow: auto; background: var(--bg-1); }
 .intel-workstation-toolbar { display: flex; align-items: end; gap: 8px 16px; flex-wrap: wrap; padding: 4px 0 10px; }
 .intel-workstation-toolbar label:not(.intel-workstation-check) { display: grid; gap: 3px; font-size: 11px; color: var(--fg-3); }
 .intel-workstation-toolbar select, .intel-chart-study-dialog input, .intel-chart-study-dialog select { background: var(--bg-1); color: var(--fg-1); border: 1px solid var(--border-default); border-radius: 3px; padding: 6px 9px; font-family: Inter, sans-serif; font-size: 12px; min-height: 32px; }
 .intel-workstation-toolbar button, .intel-chart-navigation button { font-size: 12px; border-bottom: 1px solid var(--border-default); min-height: 32px; padding: 5px 2px; }
 .intel-workstation-toolbar button[aria-pressed="true"] { border-color: var(--accent); color: var(--fg-1); }
 .intel-workstation-check { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; min-height: 32px; }
+/* The controls on the left, the indicators in force on the right, each in the
+   colour of its line. On a narrow screen the list wraps under the controls. */
+.intel-workstation-head { display: flex; align-items: flex-start; flex-wrap: wrap; gap: 4px 24px; }
+.intel-workstation-head > .intel-workstation-toolbar { flex: 1 1 520px; min-width: 0; }
+.intel-workstation-active { list-style: none; margin: 0 0 0 auto; padding: 6px 0 0; display: flex; flex-direction: column; gap: 2px; flex: 0 1 auto; max-width: min(100%, 380px); font-size: 12px; }
+.intel-workstation-active li { display: flex; align-items: center; gap: 8px; min-height: 26px; }
+.intel-workstation-active li span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.intel-workstation-head .intel-workstation-active button { min-height: 24px; padding: 0 6px; border: 0; color: inherit; font-size: 15px; line-height: 1; opacity: .75; }
+.intel-workstation-head .intel-workstation-active button:hover, .intel-workstation-head .intel-workstation-active button:focus-visible { opacity: 1; }
+/* Indicators: a plain disclosure on a hairline, never a floating card. */
+.intel-indicator-menu { position: relative; }
+.intel-indicator-menu > button[aria-expanded="true"] { border-color: var(--accent); color: var(--fg-1); }
+.intel-indicator-panel { position: absolute; z-index: 40; top: calc(100% + 6px); left: 0; width: min(360px, calc(100vw - 32px)); max-height: min(60vh, 460px); overflow: auto; background: var(--bg-1); border: 1px solid var(--border-default); padding: 12px 14px 14px; }
+.intel-indicator-hint { font-size: 11px; color: var(--fg-4); margin: 0 0 10px; }
+.intel-indicator-family { border: 0; padding: 0; margin: 0; }
+.intel-indicator-family + .intel-indicator-family { margin-top: 12px; }
+.intel-indicator-family legend { width: 100%; padding: 0 0 5px; margin-bottom: 4px; font-size: 10px; letter-spacing: .12em; text-transform: uppercase; color: var(--fg-4); border-bottom: 1px solid var(--border-default); }
+.intel-indicator-row { display: grid; grid-template-columns: auto 1fr; align-items: baseline; column-gap: 9px; padding: 5px 0; font-size: 12px; min-height: 30px; }
+.intel-indicator-row input { align-self: center; accent-color: var(--accent); }
+.intel-indicator-name { color: var(--fg-1); }
+.intel-indicator-parameters { grid-column: 2; font-size: 11px; color: var(--fg-4); font-variant-numeric: tabular-nums; }
+.intel-indicator-notice { margin: 10px 0 0; font-size: 12px; color: var(--signal-red); }
+.intel-indicator-panel .intel-indicator-advanced { width: 100%; margin-top: 12px; padding: 10px 0 0; border: 0; border-top: 1px solid var(--border-default); text-align: left; font-size: 12px; color: var(--fg-1); min-height: 32px; text-decoration: underline; text-underline-offset: 4px; }
+.intel-indicator-panel :is(input, button):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .intel-crosshair-legend { min-height: 30px; display: flex; gap: 14px; align-items: center; flex-wrap: wrap; color: var(--fg-3); font-size: 11px; padding-bottom: 6px; }
 .intel-crosshair-legend span { font-family: 'Geist Mono', monospace; font-variant-numeric: tabular-nums; }
 .intel-crosshair-legend b { color: var(--fg-1); font-weight: 400; }
 .intel-workstation-canvas { position: relative; width: 100%; }
 .intel-workstation-canvas > div:first-child { position: relative; z-index: 0; }
 .intel-workstation-overlay { position: absolute; z-index: 1; top: 0; left: 0; overflow: hidden; }
+/* Brand mark on every price surface: centred, quiet, never in the way. It
+   scales with the plot, and inverts to a dark wordmark on a light chart. */
+.intel-chart-watermark { position: absolute; z-index: 1; inset: 0; display: grid; place-items: center; pointer-events: none; user-select: none; overflow: hidden; }
+.intel-chart-watermark img { width: min(38%, 300px); max-width: 100%; height: auto; opacity: .07; }
+.intel-chart-watermark--invert img { filter: invert(1); opacity: .09; }
+.intel-compare-plot-surface { position: relative; min-width: 0; }
 .intel-chart-navigation { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; padding-top: 4px; }
 .intel-chart-navigation span { margin-left: auto; font-size: 11px; color: var(--fg-4); }
 .intel-chart-readings { padding-top: 8px; font-size: 12px; }
 .intel-chart-replay { padding: 10px 0; border-block: 1px solid var(--border-default); }
+.intel-chart-replay select { background: var(--bg-1); color: var(--fg-1); border: 1px solid var(--border-default); border-radius: 3px; padding: 4px 8px; font-family: Inter, sans-serif; font-size: 12px; min-height: 30px; }
 .intel-replay-clock { display: flex; align-items: center; flex-wrap: wrap; gap: 10px; font-size: 12px; margin-top: 8px; }
 .intel-replay-clock input { flex: 1; min-width: 120px; accent-color: var(--accent); }
 .intel-chart-readings summary { width: fit-content; color: var(--fg-3); cursor: pointer; }
@@ -359,13 +411,62 @@
 .intel-study-parameters { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; }
 .intel-study-list { padding: 0; list-style: none; margin-top: 20px; }
 .intel-study-list li { display: flex; align-items: center; justify-content: space-between; gap: 20px; border-top: 1px solid var(--border-default); padding: 12px 0; font-size: 12px; }
-.intel-drawing-toolbar { display:flex; align-items:center; flex-wrap:wrap; gap:8px 16px; border-top:1px solid var(--border-default); padding:6px 0; color:var(--fg-3); font-size:11px; }
-.intel-drawing-toolbar label { display:flex; align-items:center; gap:8px; }
-.intel-drawing-toolbar select { color:var(--fg-1); background:var(--bg-1); padding:5px 7px; border:1px solid var(--border-default); }
-.intel-drawing-toolbar button { min-height:30px; }
-.intel-drawing-toolbar button:disabled { opacity:.4; }
-.intel-drawing-toolbar span { color:var(--accent); margin-left:auto; }
 .intel-drawing-anchor-fields { display:grid; grid-template-columns:2fr 1fr; gap:12px; }
+/* Drawing toolbar: a horizontal strip along the top edge of the plot. It never
+   scrolls in any direction; what will not fit in two rows moves into "More". */
+.intel-draw-bar { position:relative; display:flex; align-items:center; flex-wrap:wrap; row-gap:2px; padding:3px 0; border-top:1px solid var(--border-default); border-bottom:1px solid var(--border-default); overflow:visible; }
+.intel-draw-group { display:flex; align-items:center; }
+.intel-draw-group+.intel-draw-group::before { content:""; align-self:center; flex:0 0 auto; width:1px; height:18px; margin:0 4px; background:var(--border-default); }
+.intel-draw-tool { display:flex; align-items:center; justify-content:center; width:30px; height:28px; flex:0 0 auto; color:var(--fg-4); background:none; border:0; cursor:pointer; }
+.intel-draw-tool:hover:not(:disabled) { color:var(--fg-1); }
+.intel-draw-tool:disabled { opacity:.35; cursor:default; }
+.intel-draw-tool[aria-pressed="true"] { color:var(--accent); background:color-mix(in srgb, var(--accent) 16%, transparent); box-shadow:inset 0 -2px 0 var(--accent); }
+.intel-draw-tool:focus-visible, .intel-draw-more-toggle:focus-visible, .intel-draw-more-item:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+.intel-draw-tool-name { position:absolute; width:1px; height:1px; overflow:hidden; clip-path:inset(50%); white-space:nowrap; }
+.intel-draw-more { position:relative; }
+.intel-draw-more-toggle { display:flex; align-items:center; gap:5px; min-height:28px; padding:0 8px; color:var(--fg-3); background:none; border:0; font-size:11px; cursor:pointer; }
+.intel-draw-more-toggle:hover, .intel-draw-more-toggle[aria-expanded="true"] { color:var(--fg-1); }
+.intel-draw-more-panel { position:absolute; top:100%; right:0; z-index:6; display:flex; flex-direction:column; min-width:190px; padding:3px 0; background:var(--bg-1); border:1px solid var(--border-default); }
+.intel-draw-more-item { display:flex; align-items:center; gap:9px; min-height:28px; padding:0 12px; color:var(--fg-2); background:none; border:0; font-size:12px; text-align:left; cursor:pointer; }
+.intel-draw-more-item:hover:not(:disabled) { color:var(--fg-1); background:var(--bg-2); }
+.intel-draw-more-item:disabled { opacity:.35; cursor:default; }
+.intel-draw-more-item[aria-pressed="true"] { color:var(--accent); }
+.intel-draw-bar-hint { flex:1 1 100%; color:var(--accent); font-size:11px; padding-top:1px; }
+.intel-draw-layer { position:absolute; top:0; left:0; z-index:2; pointer-events:none; overflow:hidden; }
+.intel-draw-options { position:absolute; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:5px 8px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); color:var(--fg-3); font-size:11px; }
+.intel-draw-options label { display:flex; align-items:center; gap:5px; }
+/* A post card's row hangs from the card's bottom edge, outside the size the
+   member gave the card, so it never covers the words and never squeezes them. */
+.intel-draw-tweet .intel-draw-options-inline { position:absolute; left:-1px; right:-1px; top:100%; margin-top:-1px; padding:8px 14px 10px; background:var(--bg-1); border:1px solid var(--accent); border-top:1px solid var(--border-default); border-radius:0 0 16px 16px; }
+.intel-draw-options select { color:var(--fg-1); background:var(--bg-1); border:1px solid var(--border-default); padding:2px 4px; font-size:11px; }
+.intel-draw-options button { color:var(--fg-2); text-decoration:underline; text-underline-offset:3px; font-size:11px; }
+.intel-draw-swatches { display:flex; gap:4px; }
+.intel-draw-swatch { width:14px; height:14px; border:1px solid var(--border-default); cursor:pointer; }
+.intel-draw-swatch[aria-pressed="true"] { outline:1px solid var(--fg-1); outline-offset:1px; }
+/* A post from X on the chart, laid out the way a post reads on X: round avatar,
+   name over handle, the words at reading size, the time as the link, the X mark
+   in the corner. Sized by the member from the corner handle. */
+.intel-draw-tweet { position:absolute; width:300px; max-width:calc(100% - 8px); box-sizing:border-box; display:flex; flex-direction:column; gap:8px; padding:12px 14px 10px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); border-radius:16px; color:var(--fg-1); font-size:14px; line-height:1.4; box-shadow:0 8px 24px rgba(0,0,0,.28); }
+.intel-draw-tweet[data-selected="true"] { border-color:var(--accent); box-shadow:0 0 0 1px var(--accent), 0 8px 24px rgba(0,0,0,.28); }
+.intel-draw-tweet-head { display:flex; align-items:center; gap:10px; }
+.intel-draw-tweet-avatar { flex:0 0 40px; width:40px; height:40px; border-radius:50%; display:inline-flex; align-items:center; justify-content:center; overflow:hidden; background:var(--bg-3); color:var(--fg-1); font-weight:600; font-size:16px; }
+.intel-draw-tweet-avatar img { width:40px; height:40px; object-fit:cover; display:block; }
+.intel-draw-tweet-who { display:flex; flex-direction:column; min-width:0; flex:1 1 auto; line-height:1.25; }
+.intel-draw-tweet-author { color:var(--fg-1); font-weight:600; font-size:14px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.intel-draw-tweet-handle { color:var(--fg-4); font-size:13px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.intel-draw-tweet-mark { flex:0 0 auto; color:var(--fg-1); display:inline-flex; align-self:flex-start; }
+.intel-draw-tweet-body { flex:1 1 auto; min-height:0; overflow:auto; }
+.intel-draw-tweet-text { margin:0; white-space:pre-wrap; overflow-wrap:anywhere; font-size:14px; }
+.intel-draw-tweet-note { margin:8px 0 0; padding-left:10px; border-left:2px solid var(--intel-draw-tweet-note, var(--accent)); color:var(--fg-2); font-size:13px; overflow-wrap:anywhere; }
+.intel-draw-tweet-foot { display:flex; align-items:center; gap:8px; }
+.intel-draw-tweet-foot a { color:var(--fg-4); font-size:13px; text-decoration:none; }
+.intel-draw-tweet-foot a:hover, .intel-draw-tweet-foot a:focus-visible { text-decoration:underline; text-underline-offset:3px; color:var(--fg-2); }
+.intel-draw-tweet-resize { position:absolute; right:0; bottom:0; width:18px; height:18px; padding:0; border:0; background:transparent; cursor:nwse-resize; touch-action:none; }
+.intel-draw-tweet-resize::after { content:""; position:absolute; right:5px; bottom:5px; width:8px; height:8px; border-right:2px solid var(--accent); border-bottom:2px solid var(--accent); }
+@media (max-width: 640px) {
+ .intel-draw-group+.intel-draw-group::before { margin:0 2px; }
+
+}
 .intel-layout-list { list-style:none; margin:12px 0; padding:0; }
 .intel-layout-list li { border-top:1px solid var(--border-default); padding:12px 0; }
 .intel-layout-list strong { font-size:13px; font-weight:500; }
@@ -375,6 +476,12 @@
 .intel-snapshot-annotations { border: 0; padding: 10px 0; font-size: 12px; }
 .intel-snapshot-annotations label { display: flex; align-items: start; gap: 10px; border-top: 1px solid var(--border-default); padding-top: 10px; }
 .intel-snapshot-annotations span { white-space: pre-wrap; overflow-wrap: anywhere; }
+/* The share card reads as a page section on rails, not as a boxed preview. */
+.intel-share-card { margin: 14px 0; padding: 12px 0; border-block: 1px solid var(--border-default); }
+.intel-share-card .eyebrow { margin: 0 0 10px; font-size: 10px; letter-spacing: .14em; text-transform: uppercase; color: var(--accent); }
+.intel-share-card dl { margin: 0; }
+.intel-share-card dt { color: var(--fg-4); font-size: 11px; }
+.intel-share-card dd { margin: 2px 0 9px; font-size: 12px; overflow-wrap: anywhere; }
 @media (max-width: 640px) { .intel-workstation-toolbar { gap: 8px 12px; } .intel-crosshair-legend { gap: 8px; } .intel-chart-navigation span { width: 100%; margin: 0; } .intel-study-parameters { grid-template-columns: repeat(2,minmax(0,1fr)); } }
 
 .intel-liquidation-history{margin-top:1.5rem;border-top:1px solid var(--border-default);padding-top:1rem}.intel-liquidation-plot{width:100%;max-height:280px}.intel-liquidation-plot line{stroke:var(--border-default)}.intel-liquidation-plot text{fill:var(--fg-4);font:11px Inter,sans-serif}.intel-liquidation-plot circle{fill:var(--accent)}
@@ -517,8 +624,14 @@
 .intel-saved-reader-heading h2 { font-family:var(--font-body,Inter,sans-serif); font-weight:500; font-size:22px; line-height:1.4; margin-bottom:6px; overflow-wrap:anywhere; }
 .intel-saved-reader-heading>button { flex:none; }
 @media(max-width:640px) {
- .intel-saved-index table { min-width:620px; }
- .intel-saved-index th:first-child { width:300px; }
+ /* A phone shares the width instead of forcing a 620px table: a forced minimum
+    inside the scroll container widened the mobile layout viewport to 600px
+    (measured 2026-09-15), so the whole page scrolled sideways. */
+ .intel-saved-index table { min-width:0; }
+ .intel-saved-index th:first-child { width:50%; }
+ .intel-saved-index th:nth-child(2),.intel-saved-index th:nth-child(3) { width:auto; }
+ .intel-saved-index td,.intel-saved-index th { padding:10px 6px; }
+ .intel-saved-index td:first-child,.intel-saved-index th:first-child { padding-left:0; }
  .intel-saved-reader-heading h2 { font-size:18px; }
  .intel-saved-reader-heading { gap:12px; }
 }
@@ -554,7 +667,11 @@
 .intel-compare-readings table { width: 100%; border-collapse: collapse; }
 .intel-compare-readings caption { text-align: left; padding: 8px 0; font-family: 'Geist Mono',monospace; font-size: 11px; }
 .intel-compare-readings th, .intel-compare-readings td { text-align: left; border-bottom: 1px solid var(--border-default); padding: 9px 12px; vertical-align: top; white-space: nowrap; }
-.intel-compare-readings td:nth-child(2), .intel-compare-readings td:nth-child(3) { font-family: 'Geist Mono',monospace; text-align: right; }
+/* The header follows its column: the second and third columns are figures, so
+   the two cells above them are right-aligned with them rather than left behind
+   at the far side of the column. */
+.intel-compare-readings :is(th,td):nth-child(2), .intel-compare-readings :is(th,td):nth-child(3) { text-align: right; }
+.intel-compare-readings td:nth-child(2), .intel-compare-readings td:nth-child(3) { font-family: 'Geist Mono',monospace; }
 .intel-compare-readings small { display: block; font-weight: 400; color: var(--fg-4); margin-top: 4px; }
 .intel-compare-inputs { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 20px; }
 .intel-compare-inputs fieldset { min-width: 0; display: grid; gap: 8px; border-top: 1px solid var(--border-default); padding-top: 10px; }
