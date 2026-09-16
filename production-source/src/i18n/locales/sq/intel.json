@@ -441,7 +441,9 @@
     "rwa_yield_col_deviation": "Çmimi vs VNA",
     "rwa_yield_market_note": "Vlera neto e aktiveve është shifra e publikuar nga vetë fondi, e lexuar on chain. Çmimi i tregut vjen nga katalogu ynë me bazë CoinGecko dhe përputhet sipas identifikuesit të ofruesit të atij katalogu, me emrin e fondit të riverifikuar, kurrë sipas një tiketi. Këto janë dy burime të ndryshme me dy orë të ndryshme.",
     "rwa_yield_market_limit": "CoinMarketCap nuk publikon asnjë identifikues për këto fonde të tokenizuara të bonove dhe kredisë, prandaj ana e tregut nuk mund të vijë prej saj.",
-    "rwa_not_captured": "Ende nuk është ruajtur asnjë kapje e universit të RWA-ve. Kapja është planifikuar çdo orë, 7 minuta pas orës së plotë (UTC)."
+    "rwa_not_captured": "Ende nuk është ruajtur asnjë kapje e universit të RWA-ve. Kapja është planifikuar çdo orë, 7 minuta pas orës së plotë (UTC).",
+    "rwa_yield_not_captured": "Ende nuk është regjistruar asnjë kapje yield-i. Feed-et e vlerës neto të aktiveve lexohen çdo gjashtë orë, në {{times}} UTC. Ndërkohë nuk vlerësohet asgjë.",
+    "rwa_yield_cadence": "Feed-et e vlerës neto të aktiveve lexohen çdo gjashtë orë, në {{times}} UTC. Kjo tabelë është kapja e {{asOf}}."
   },
   "asset_attention": {
     "eyebrow": "Vëmendja",

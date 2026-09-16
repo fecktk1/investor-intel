@@ -441,7 +441,9 @@
     "rwa_yield_col_deviation": "Kurs vs. NAV",
     "rwa_yield_market_note": "Der Nettoinventarwert ist die eigene veröffentlichte Zahl des Fonds, on chain gelesen. Der Marktpreis stammt aus unserem CoinGecko-basierten Katalog und wird über dessen Provider-ID zugeordnet, wobei der Fondsname erneut geprüft wird, niemals über ein Kürzel. Das sind zwei verschiedene Quellen mit zwei verschiedenen Uhren.",
     "rwa_yield_market_limit": "CoinMarketCap veröffentlicht für diese tokenisierten Staatsanleihen- und Kreditfonds keine Kennung, daher kann die Marktseite nicht von dort kommen.",
-    "rwa_not_captured": "Es wurde noch keine Erfassung des RWA-Universums gespeichert. Die Erfassung ist stündlich um 7 Minuten nach der vollen Stunde (UTC) geplant."
+    "rwa_not_captured": "Es wurde noch keine Erfassung des RWA-Universums gespeichert. Die Erfassung ist stündlich um 7 Minuten nach der vollen Stunde (UTC) geplant.",
+    "rwa_yield_not_captured": "Es wurde noch keine Rendite-Erfassung aufgezeichnet. Die Nettoinventarwert-Feeds werden alle sechs Stunden gelesen, um {{times}} UTC. In der Zwischenzeit wird nichts geschätzt.",
+    "rwa_yield_cadence": "Die Nettoinventarwert-Feeds werden alle sechs Stunden gelesen, um {{times}} UTC. Diese Tabelle ist die Erfassung von {{asOf}}."
   },
   "asset_attention": {
     "eyebrow": "Aufmerksamkeit",

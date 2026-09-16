@@ -441,7 +441,9 @@
     "rwa_yield_col_deviation": "Precio vs VL",
     "rwa_yield_market_note": "El valor liquidativo es la cifra que publica el propio fondo, leída en cadena. El precio de mercado procede de nuestro catálogo basado en CoinGecko y se empareja por el identificador de proveedor de ese catálogo, verificando de nuevo el nombre del fondo, nunca por el símbolo. Son dos fuentes distintas con dos relojes distintos.",
     "rwa_yield_market_limit": "CoinMarketCap no publica ningún identificador para estos fondos tokenizados de letras y crédito, así que el lado de mercado no puede venir de ahí.",
-    "rwa_not_captured": "Todavía no se ha guardado ninguna captura del universo RWA. La captura está programada cada hora, 7 minutos después de la hora en punto (UTC)."
+    "rwa_not_captured": "Todavía no se ha guardado ninguna captura del universo RWA. La captura está programada cada hora, 7 minutos después de la hora en punto (UTC).",
+    "rwa_yield_not_captured": "Todavía no se ha registrado ninguna captura de rendimiento. Los feeds de valor liquidativo se leen cada seis horas, a las {{times}} UTC. Mientras tanto no se estima nada.",
+    "rwa_yield_cadence": "Los feeds de valor liquidativo se leen cada seis horas, a las {{times}} UTC. Esta tabla es la captura de {{asOf}}."
   },
   "asset_attention": {
     "eyebrow": "Atención",

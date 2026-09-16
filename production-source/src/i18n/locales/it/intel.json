@@ -441,7 +441,9 @@
     "rwa_yield_col_deviation": "Prezzo vs NAV",
     "rwa_yield_market_note": "Il valore patrimoniale netto è la cifra pubblicata dal fondo stesso, letta on chain. Il prezzo di mercato proviene dal nostro catalogo basato su CoinGecko ed è abbinato tramite l'identificativo di provider di quel catalogo, con il nome del fondo verificato di nuovo, mai tramite un ticker. Sono due fonti diverse con due orologi diversi.",
     "rwa_yield_market_limit": "CoinMarketCap non pubblica alcun identificativo per questi fondi tokenizzati di titoli di stato e credito, quindi il lato di mercato non può venire da lì.",
-    "rwa_not_captured": "Non è ancora stata salvata alcuna acquisizione dell’universo RWA. L’acquisizione è pianificata ogni ora, 7 minuti dopo l’ora esatta (UTC)."
+    "rwa_not_captured": "Non è ancora stata salvata alcuna acquisizione dell’universo RWA. L’acquisizione è pianificata ogni ora, 7 minuti dopo l’ora esatta (UTC).",
+    "rwa_yield_not_captured": "Non è ancora stata registrata alcuna acquisizione di rendimento. I feed del valore patrimoniale netto vengono letti ogni sei ore, alle {{times}} UTC. Nel frattempo non viene stimato nulla.",
+    "rwa_yield_cadence": "I feed del valore patrimoniale netto vengono letti ogni sei ore, alle {{times}} UTC. Questa tabella è l’acquisizione delle {{asOf}}."
   },
   "asset_attention": {
     "eyebrow": "Attenzione",

@@ -567,7 +567,9 @@
     "rwa_yield_col_deviation": "Price vs NAV",
     "rwa_yield_market_note": "The net asset value is the fund's own published figure read on chain. The market price comes from our CoinGecko-sourced catalogue, matched on that catalogue's provider id with the fund name re-verified, never on a ticker. These are two different sources with two different clocks.",
     "rwa_yield_market_limit": "CoinMarketCap publishes no identifier for these tokenised treasury and credit funds, so the market side cannot come from it.",
-    "rwa_not_captured": "No RWA universe capture has been stored yet. The capture is scheduled every hour at 7 minutes past the hour (UTC)."
+    "rwa_not_captured": "No RWA universe capture has been stored yet. The capture is scheduled every hour at 7 minutes past the hour (UTC).",
+    "rwa_yield_not_captured": "No yield capture has been recorded yet. Net asset value feeds are read every six hours, at {{times}} UTC. Nothing is estimated in the meantime.",
+    "rwa_yield_cadence": "Net asset value feeds are read every six hours, at {{times}} UTC. This table is the capture of {{asOf}}."
   },
   "asset_attention": {
     "eyebrow": "Attention",

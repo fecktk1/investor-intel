@@ -441,7 +441,9 @@
     "rwa_yield_col_deviation": "Preço vs VPL",
     "rwa_yield_market_note": "O valor patrimonial líquido é o número publicado pelo próprio fundo, lido on chain. O preço de mercado vem do nosso catálogo baseado no CoinGecko e é associado pelo identificador de provedor desse catálogo, com o nome do fundo verificado novamente, nunca pelo ticker. São duas fontes diferentes com dois relógios diferentes.",
     "rwa_yield_market_limit": "A CoinMarketCap não publica identificador para esses fundos tokenizados de letras e crédito, então o lado de mercado não pode vir dela.",
-    "rwa_not_captured": "Nenhuma captura do universo de RWA foi salva ainda. A captura está programada a cada hora, 7 minutos após a hora cheia (UTC)."
+    "rwa_not_captured": "Nenhuma captura do universo de RWA foi salva ainda. A captura está programada a cada hora, 7 minutos após a hora cheia (UTC).",
+    "rwa_yield_not_captured": "Nenhuma captura de rendimento foi registrada ainda. Os feeds de valor patrimonial líquido são lidos a cada seis horas, às {{times}} UTC. Nada é estimado nesse meio-tempo.",
+    "rwa_yield_cadence": "Os feeds de valor patrimonial líquido são lidos a cada seis horas, às {{times}} UTC. Esta tabela é a captura de {{asOf}}."
   },
   "asset_attention": {
     "eyebrow": "Atenção",

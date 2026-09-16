@@ -441,7 +441,9 @@
     "rwa_yield_col_deviation": "Koers vs IW",
     "rwa_yield_market_note": "De intrinsieke waarde is het eigen gepubliceerde cijfer van het fonds, on chain gelezen. De marktprijs komt uit onze op CoinGecko gebaseerde catalogus en wordt gekoppeld op de provider-id van die catalogus, waarbij de fondsnaam opnieuw wordt geverifieerd, nooit op een ticker. Dit zijn twee verschillende bronnen met twee verschillende klokken.",
     "rwa_yield_market_limit": "CoinMarketCap publiceert geen identificatie voor deze getokeniseerde staats- en kredietfondsen, dus de marktkant kan daar niet vandaan komen.",
-    "rwa_not_captured": "Er is nog geen vastlegging van het RWA-universum opgeslagen. De vastlegging is elk uur gepland, 7 minuten na het hele uur (UTC)."
+    "rwa_not_captured": "Er is nog geen vastlegging van het RWA-universum opgeslagen. De vastlegging is elk uur gepland, 7 minuten na het hele uur (UTC).",
+    "rwa_yield_not_captured": "Er is nog geen rendementsopname vastgelegd. De feeds van de intrinsieke waarde worden elke zes uur gelezen, om {{times}} UTC. Er wordt in de tussentijd niets geschat.",
+    "rwa_yield_cadence": "De feeds van de intrinsieke waarde worden elke zes uur gelezen, om {{times}} UTC. Deze tabel is de opname van {{asOf}}."
   },
   "asset_attention": {
     "eyebrow": "Aandacht",

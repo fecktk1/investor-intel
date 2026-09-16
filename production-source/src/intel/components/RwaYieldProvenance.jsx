@@ -48,6 +48,25 @@ export function realizedCell(row) {
   return { kind: 'state', state: String(row?.realizedState || 'insufficient_history') }
 }
 
+/** The capture times (UTC) the read view serves for the yield lane, with the
+ * times the migration schedules as a fallback for an older payload. Same
+ * pattern as captureTimes() on the issuer legitimacy board. */
+export function yieldCaptureTimes(schedule) {
+  return schedule?.rwa_yield?.utc || '01:29, 07:29, 13:29, 19:29'
+}
+
+/** Nothing captured yet: the read found no capture hour at all. A panel in this
+ * state says when it fills instead of rendering as blank. */
+export function yieldNotCaptured(payload) {
+  return !payload?.asOf && !(Array.isArray(payload?.rows) && payload.rows.length)
+}
+
+/** A capture instant as a readable UTC minute. */
+const utcMinute = value => {
+  const text = String(value || '')
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) ? `${text.slice(0, 10)} ${text.slice(11, 16)} UTC` : text
+}
+
 export default function RwaYieldProvenance() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
@@ -73,6 +92,8 @@ export default function RwaYieldProvenance() {
   )
   const summary = read.payload?.summary || {}
   const benchmarks = Array.isArray(read.payload?.benchmarks) ? read.payload.benchmarks : []
+  // When the capture lane runs, as the read view reports it.
+  const times = yieldCaptureTimes(read.payload?.schedule)
 
   const stateLabel = state => t(`structure.rwa_yield_state_${state}`, {
     defaultValue: {
@@ -125,7 +146,11 @@ export default function RwaYieldProvenance() {
       )}
 
       {state === 'empty' && (
-        <p role="status">{t('structure.rwa_yield_empty', { defaultValue: 'No yield capture has been recorded yet. Nothing is estimated in the meantime.' })}</p>
+        <p role="status">
+          {yieldNotCaptured(read.payload)
+            ? t('structure.rwa_yield_not_captured', { times, defaultValue: 'No yield capture has been recorded yet. Net asset value feeds are read every six hours, at {{times}} UTC. Nothing is estimated in the meantime.' })
+            : t('structure.rwa_yield_empty', { defaultValue: 'No yield capture has been recorded yet. Nothing is estimated in the meantime.' })}
+        </p>
       )}
 
       {state === 'ready' && (
@@ -216,6 +241,14 @@ export default function RwaYieldProvenance() {
               </tbody>
             </table>
           </div>
+
+          <p className="intel-analysis-caption">
+            {t('structure.rwa_yield_cadence', {
+              times,
+              asOf: utcMinute(read.payload?.asOf),
+              defaultValue: 'Net asset value feeds are read every six hours, at {{times}} UTC. This table is the capture of {{asOf}}.',
+            })}
+          </p>
 
           <p className="intel-analysis-caption">
             {t('structure.rwa_yield_integrity', {
