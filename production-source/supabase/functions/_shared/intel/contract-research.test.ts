@@ -1,6 +1,7 @@
 import { assertEquals as eq, assert, assertRejects } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import { readContractResearch } from './contract-research.ts'
 import { HOLDER_COHORT_TABLE, HOLDER_TAG_TABLE } from './holder-tags.ts'
+import { SWAP_FLOW_CAPTURE_TABLE, SWAP_FLOW_TABLE } from './swap-flow.ts'
 
 const CANONICAL = `eip155:8453:0x${'ab'.repeat(20)}`
 const ADDRESS = `0x${'ab'.repeat(20)}`
@@ -65,13 +66,29 @@ const holders = { data: { holders: [
   { walletAddress: evm(2), balance: 50, percent: 0.5, buyUsd: 10, sellUsd: 50, realizedPnl: -40, fundingSource: 'cex' },
 ] } }
 
+/** Two pages of swap tape: the first hands back a cursor, the second does not,
+ * so a sweep that follows the cursor ends by exhausting the provider.
+ *
+ * `page` keeps every swap DISTINCT across the two pages. The sweep dedupes on
+ * transaction plus log index, so a fixture that repeated them would be testing
+ * the dedupe rather than the walk; the deliberate overlap has its own test in
+ * swap-flow.test.ts. */
+const MAKER_ONE = evm(0xaa), MAKER_TWO = evm(0xbb), QUOTE = `0x${'cd'.repeat(20)}`
+const swapPage = (makers: string[], lastId: string | null, page = 0) => ({ data: {
+  swaps: makers.map((ma, index) => ({ tx: `0xfeed${page}${index}`, lgid: page * 10 + index, v: 100, tp: 'buy', en: 'Aerodrome',
+    t0a: ADDRESS, t1a: QUOTE, a0: 5, a1: 1, t0pu: 20, t1pu: 100, ma, ts: 1_700_000_000 + index })),
+  ...(lastId ? { lastId } : {}) } })
+
 function fakeRequest() {
   const calls: string[] = []
+  let swapPages = 0
   // deno-lint-ignore no-explicit-any
   const request = ((name: string) => {
     calls.push(name)
     const now = new Date().toISOString()
-    const payload = name === 'dexHolderTags' ? board : name === 'dexHolders' ? holders : null
+    const payload = name === 'dexHolderTags' ? board : name === 'dexHolders' ? holders
+      : name === 'dexSwaps' ? (swapPages++ === 0 ? swapPage([MAKER_ONE, MAKER_TWO], 'cursor-1', 0) : swapPage([MAKER_ONE], null, 1))
+      : null
     return Promise.resolve({ payload, state: payload ? 'fresh' : 'unavailable', reason: null,
       provenance: { fetchedAt: now, expiresAt: new Date(Date.now() + HOUR).toISOString() } })
   // deno-lint-ignore no-explicit-any
@@ -196,6 +213,105 @@ Deno.test('two stored captures compare, and a stamp we do not hold is a missing 
   eq(missing.comparison.from, null)
   eq(missing.comparison.reason, 'one_side_missing')
   eq(missing.comparison.to, newer, 'with no capturedAt the newest capture is the other side')
+})
+
+Deno.test('the maker-flow view takes a sweep to render and nothing else', async () => {
+  const db = fakeDb(STARTUP)
+  // `capturedAt` belongs to both capture-backed views; the holder-tag slider's
+  // second side and its tag belong to that view alone.
+  await assertRejects(() => read(db, { view: 'maker_flow', compareWith: hour(Date.now()) }), Error, 'invalid_contract_research_request')
+  await assertRejects(() => read(db, { view: 'maker_flow', tag: 'tag_dev' }), Error, 'invalid_contract_research_request')
+  await assertRejects(() => read(db, { view: 'maker_flow', capturedAt: 'yesterday' }), Error, 'invalid_contract_research_request')
+  // The tape view keeps its own cursor; the sweep view does not take one.
+  await assertRejects(() => read(db, { view: 'maker_flow', cursor: 'abc' }), Error, 'invalid_contract_research_request')
+  const ok = await read(db, { view: 'maker_flow', capturedAt: hour(Date.now()) })
+  eq(ok.view, 'maker_flow')
+})
+
+Deno.test('below Startup the maker-flow view answers plan_below_startup without a call', async () => {
+  const { request, calls } = fakeRequest()
+  const result = await read(fakeDb({}), { view: 'maker_flow', refresh: true }, request)
+  eq(result.state, 'unsupported')
+  eq(result.reason, 'plan_below_startup')
+  eq(result.swapFlow, null)
+  eq(result.capture, null)
+  eq(calls.length, 0, 'no call is spent discovering the entitlement')
+  // An honest unsupported state is never an empty list dressed up as an answer.
+  assert(String(result.message).includes('No call was made'))
+})
+
+Deno.test('a maker-flow refresh sweeps the cursor and stores one row per account', async () => {
+  const db = fakeDb(STARTUP)
+  const { request, calls } = fakeRequest()
+  const result = await read(db, { view: 'maker_flow', refresh: true }, request)
+  eq(calls, ['dexSwaps', 'dexSwaps'], 'the sweep follows the provider cursor until it runs out')
+  eq(result.capture.pages, 2)
+  eq(result.capture.credits, 2)
+  eq(result.capture.exhausted, true)
+  eq(result.capture.stopReason, 'provider_exhausted')
+  eq(result.state, 'fresh')
+
+  // Two accounts across three swaps: one of them made two of them.
+  const stored = db.tables[SWAP_FLOW_TABLE]
+  eq(stored.length, 2)
+  eq([...new Set(stored.map((r: any) => r.maker_address))].sort(), [MAKER_ONE, MAKER_TWO].sort())
+  eq(stored.find((r: any) => r.maker_address === MAKER_ONE).swaps, 2)
+  eq(db.tables[SWAP_FLOW_CAPTURE_TABLE][0].swaps_seen, 3)
+  eq(db.tables[SWAP_FLOW_CAPTURE_TABLE][0].swaps_with_maker, 3)
+
+  // The swept swaps also became retained evidence on the shared path, carrying
+  // the maker. This lane opens no private door into the evidence table.
+  const recorded = db.rpcs.filter((r) => r.name === 'intel_record_market_observations')
+  assert(recorded.length, 'swap observations were recorded')
+  const rows = recorded[0].args.p_rows
+  eq([...new Set(rows.map((r: any) => r.metric))], ['swap_event_usd'])
+  eq(rows[0].metadata.maker, MAKER_ONE)
+  assert(String(rows[0].metadata.scope).includes('not a person'))
+
+  // A second sweep inside the same hour is a skip, not a second set of credits.
+  const again = await read(db, { view: 'maker_flow', refresh: true }, request)
+  eq(again.capture.skipped, 'within_cadence')
+  eq(again.capture.credits, 0)
+  eq(calls.length, 2, 'no further provider call')
+})
+
+Deno.test('a retained maker-flow read makes no provider call and reports the stored sweep', async () => {
+  const captured = hour(Date.now() - 5 * HOUR)
+  const db = fakeDb(STARTUP, {
+    [SWAP_FLOW_TABLE]: [
+      { chain: 'eip155:8453', contract_address: ADDRESS, captured_at: captured, maker_address: MAKER_ONE,
+        acquired_count: 2, acquired_usd: 300, acquired_qty: 10, disposed_count: 1, disposed_usd: 100, disposed_qty: 4,
+        unclassified_count: 0, unclassified_usd: null, swaps: 3, excluded_count: 0,
+        first_event_at: '2026-09-16T08:00:00.000Z', last_event_at: '2026-09-16T09:00:00.000Z' },
+    ],
+    [SWAP_FLOW_CAPTURE_TABLE]: [
+      { chain: 'eip155:8453', contract_address: ADDRESS, captured_at: captured, pages: 1, swaps_seen: 25,
+        swaps_with_maker: 20, makers: 1, oldest_event_at: '2026-09-16T08:00:00.000Z',
+        newest_event_at: '2026-09-16T09:00:00.000Z', exhausted: false, stop_reason: 'page_ceiling', credits: 1 },
+    ],
+  })
+  const { request, calls } = fakeRequest()
+  const result = await read(db, { view: 'maker_flow' }, request)
+  eq(calls.length, 0, 'navigation never spends a credit')
+  eq(result.capture, null)
+  eq(result.state, 'stale', 'a sweep older than this hour is stale')
+  eq(result.swapFlow.accumulating[0].makerAddress, MAKER_ONE)
+  eq(result.swapFlow.accumulating[0].netUsd, 200)
+  eq(result.swapFlow.summary.accumulating, 1)
+  // A bounded sweep never claims a first touch.
+  eq(result.swapFlow.firstTouch.complete, false)
+  eq(result.flowCaptures.captures.length, 1)
+  assert(result.coverage.includes('not a person') || result.coverage.includes('NOT a person'))
+  assert(result.coverage.includes('not advice'))
+})
+
+Deno.test('a maker-flow cache-only read never sweeps, even when refresh is asked for', async () => {
+  const db = fakeDb(STARTUP)
+  const { request, calls } = fakeRequest()
+  const result = await read(db, { view: 'maker_flow', refresh: true }, request, true)
+  eq(calls.length, 0)
+  eq(result.capture, null)
+  eq(result.state, 'unavailable', 'nothing swept yet is an honest empty, not an error')
 })
 
 Deno.test('an unverified contract identity is refused before any setting is read', async () => {

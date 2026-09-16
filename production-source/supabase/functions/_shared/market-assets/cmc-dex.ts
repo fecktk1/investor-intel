@@ -22,6 +22,20 @@ export const isDexDiscovery=(name:string)=>CMC_DEX_DISCOVERY.includes(name as an
 export const cmcDexNetwork=(platform:string)=>CMC_DEX_NETWORKS.find(n=>n.platform===platform)
 export const cmcDexSameAddress=(a:unknown,b:unknown,platform:string)=>typeof a==='string'&&typeof b==='string'&&(platform==='solana'?a===b:a.toLowerCase()===b.toLowerCase())
 export const cmcDexAddress=(address:unknown,platform:string)=>typeof address==='string'&&(platform==='solana'?/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address):/^0x[0-9a-fA-F]{40}$/.test(address))
+/** One public on-chain account, in the canonical form every DEX surface in this
+ * repository uses: lower-case for EVM, exact base58 for Solana. An address that
+ * is not valid for the requested chain is null: an unusable identity is not an
+ * account, and it is never repaired into one.
+ *
+ * An address is an ACCOUNT, never a person. Nothing in this repository resolves
+ * one to a name, an ENS record, an exchange, a social handle or an entity, and
+ * no caller may link two addresses together on the strength of having seen them
+ * in the same response. */
+export function cmcDexCanonicalAddress(value:unknown,platform:string):string|null {
+ if(!cmcDexAddress(value,platform))return null
+ const address=String(value)
+ return platform==='solana'?address:address.toLowerCase()
+}
 /** Verified chain aliases only; new chains require matching platform evidence. */
 export function cmcDexIdentity(value:unknown) {
   if(typeof value!=='string')return null
@@ -207,7 +221,18 @@ export function validateCmcDexResponse(name:string,body:any,params:Record<string
   if(name==='dexHolderHistory')return Array.isArray(d)&&d.length<=Number(params.limit)&&d.every(r=>same(r.tokenAddress,address)&&r.platform===network.platformId)
   if(name==='dexLiquidityEvents')return !!d&&Array.isArray(d.lcs)&&d.lcs.length<=Number(params.limit)&&d.lcs.every((r:any)=>same(r.t0a,address)||same(r.t1a,address))&&(!d.lastId||isCmcDexCursor(d.lastId))
   if(name==='dexPools')return Array.isArray(d)&&d.length<=Number(params.size)&&d.every(r=>cmcDexAddress(r?.addr,network.platform)&&(same(r.t0?.addr,address)||same(r.t1?.addr,address)))
-  if(name==='dexSwaps')return !!d&&Array.isArray(d.swaps)&&d.swaps.length<=Number(params.limit)&&d.swaps.every((r:any)=>(same(r.t0a,address)||same(r.t1a,address))&&typeof r.tx==='string'&&r.tx.length<=200&&cmcDexInteger(r.lgid)!=null)&&(!d.lastId||isCmcDexCursor(d.lastId))
+  // `ma` is the MAKER ADDRESS of the swap. Probed against the documented
+  // /v1/dex/tokens/transactions body recorded in docs/investor-intel/live-on-chain-tape.md
+  // (the 2026-09-15 BRETT-on-Base session), whose row is
+  // {pid,f,bh,tp,pa,t0a,t1a,vu,q,t0pu,t1pu,tx,ts,qi,ma,ba,a0,a1,tii,t0s,t1s,...}.
+  // It is OPTIONAL here on purpose: the provider does not promise it on every
+  // row, and a swap that names no maker is still a real swap of this contract.
+  // Such a row is kept WITHOUT a maker rather than dropped, because dropping it would
+  // silently shrink the tape and make a volume total disagree with itself.
+  // What is NOT tolerated is a maker that is not a valid account on the chain
+  // that was asked about: that is a malformed answer, and this validator stays
+  // fail-closed about identity exactly as it is for t0a/t1a and the holder page.
+  if(name==='dexSwaps')return !!d&&Array.isArray(d.swaps)&&d.swaps.length<=Number(params.limit)&&d.swaps.every((r:any)=>(same(r.t0a,address)||same(r.t1a,address))&&typeof r.tx==='string'&&r.tx.length<=200&&cmcDexInteger(r.lgid)!=null&&(r.ma==null||cmcDexAddress(r.ma,network.platform)))&&(!d.lastId||isCmcDexCursor(d.lastId))
   // Probed 2026-09-14: /v1/dex/holders/tag_count answered data {holders:[{tag,hc,
   // tb,hr}],platformId,tokenAddress} with exactly the eight CMC_HOLDER_TAGS rows.
   // hc is a holder-account count, tb the tagged balance, hr the holding ratio.

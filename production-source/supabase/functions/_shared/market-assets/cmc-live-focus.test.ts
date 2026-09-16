@@ -67,7 +67,7 @@ Deno.test('subscribe frames batch market identities and address each contract ch
 })
 Deno.test('every on-chain kind decodes with its own shape',()=>{
   eq(decodeCmcLive(swap(),subjects,now),{kind:'swap',subject:base,tx:'0xfeed',side:'buy',amountUsd:1250.5,priceUsd:125.05,timestamp:now,venue:'Uniswap v3',
-    logIndex:'7',excluded:false,baseAddress:evm,quoteAddress:'0x'+'cd'.repeat(20),baseQuantity:10,quoteQuantity:2})
+    logIndex:'7',excluded:false,baseAddress:evm,quoteAddress:'0x'+'cd'.repeat(20),baseQuantity:10,quoteQuantity:2,maker:null})
   eq(decodeCmcLive(liquidity(),subjects,now),{kind:'liquidity',subject:base,eventType:'add',amountUsd:9000,timestamp:now,venue:'Aerodrome',transaction:'0xbeef',
     logIndex:'3',baseAddress:evm,quoteAddress:'0x'+'cd'.repeat(20),baseQuantity:4,quoteQuantity:5})
   eq(decodeCmcLive(agg(),subjects,now),{kind:'agg',subject:base,liquidityUsd:2065408.09,priceUsd:0.0047202,aggregatePriceUsd:0.0047202,timestamp:now})
@@ -78,6 +78,33 @@ Deno.test('every on-chain kind decodes with its own shape',()=>{
   eq(decodeCmcLive(swap({tp:'liquidate'}),subjects,now).kind,'swap')
   eq((decodeCmcLive(swap({tp:'liquidate'}),subjects,now) as any).side,'unclassified','an unknown side is reported, not guessed')
   eq((decodeCmcLive(liquidity({tp:42}),subjects,now) as any).eventType,'Unclassified')
+})
+Deno.test('the streamed maker address is retained, canonicalised and never invented',async()=>{
+  const maker='0x'+'19'.repeat(20)
+  // The provider sends `ma` on onchain@transaction (probed 2026-09-15, BRETT on
+  // Base). It was discarded here until 2026-09-16; it now reaches the event and
+  // the stored observation.
+  const withMaker:any=decodeCmcLive(swap({ma:maker}),subjects,now)
+  eq(withMaker.maker,maker)
+  eq((await liveObservation(withMaker,now)).metadata.maker,maker)
+  // EVM checksum casing folds to one account, so one address is one cohort key.
+  eq((decodeCmcLive(swap({ma:maker.toUpperCase().replace('0X','0x')}),subjects,now) as any).maker,maker)
+  // A Solana maker keeps its exact base58 form; it is not lower-cased.
+  const mint58='So11111111111111111111111111111111111111112'
+  eq((decodeCmcLive(push('onchain@transaction',{tx:'0x1',lgid:1,vu:5,tp:'buy',ma:mint58},{platform_id:16,address:mint}),subjects,now) as any).maker,mint58)
+  // A swap the provider attributed to nobody is STILL a swap: it keeps its value
+  // and its clock and is decoded with a null maker, never dropped.
+  const anonymous:any=decodeCmcLive(swap(),subjects,now)
+  eq([anonymous.kind,anonymous.amountUsd,anonymous.maker],['swap',1250.5,null])
+  // An unreadable maker is absence, not a repaired identity.
+  eq((decodeCmcLive(swap({ma:'0xnope'}),subjects,now) as any).maker,null)
+  eq((decodeCmcLive(swap({ma:42}),subjects,now) as any).maker,null)
+  // The scope keeps the register and now says what a maker is.
+  const scope=String((await liveObservation(withMaker,now)).metadata.scope)
+  eq(scope.startsWith('Reported public swap; not a personal trade.'),true)
+  eq(scope.includes('not a person'),true)
+  // A maker is not part of swap identity: the same swap read twice is one row.
+  eq((await liveObservation(withMaker,now)).id,(await liveObservation(withMaker,now+9000)).id)
 })
 Deno.test('a zero swap, a zero window and a zero trader count are values',async()=>{
   const zero=decodeCmcLive(swap({v:0}),subjects,now) as any
@@ -132,7 +159,8 @@ Deno.test('observations carry the tape metrics, the source channel and the DEX e
   eq(s.expiresAt,new Date(now+LIVE_STALE_MS).toISOString(),'every kind keeps the 20-second expiry')
   eq(s.metadata,{chain:'base',contract:evm,leaseSubject:base,timeMeaning:'Provider stream timestamp',transport:'shared_server_stream',
     eventType:'buy',venue:'Uniswap v3',transaction:'0xfeed',logIndex:'7',baseAddress:evm,quoteAddress:'0x'+'cd'.repeat(20),baseQuantity:10,quoteQuantity:2,
-    basePriceUsd:125.05,excluded:false,scope:'Reported public swap; not a personal trade.'})
+    basePriceUsd:125.05,excluded:false,maker:null,
+    scope:'Reported public swap; not a personal trade. The maker is a public on-chain account, not a person.'})
   const l=await liveObservation(decodeCmcLive(liquidity(),subjects,now),now)
   eq([l.metric,l.unit,l.value,l.subject],['liquidity_event_usd','USD',9000,baseChain])
   eq(l.metadata.leaseSubject,base)
