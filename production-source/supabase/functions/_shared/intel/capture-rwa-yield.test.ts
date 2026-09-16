@@ -131,6 +131,7 @@ const ctxFor = (name: string, maxCalls: number) => ({ jobName: 'test', caller: n
 const deps = (over: Record<string, unknown> = {}) => ({
   request: () => Promise.resolve(null), policy: [],
   fetchText: fakeFetch(directory()), fetchWithHeaders: fakeSec, rpcCall: fakeRpc(),
+  edgarUserAgent: 'TheContentForge-InvestorIntel/1.0 (contact@example.test)',
   ...over,
   // deno-lint-ignore no-explicit-any
 }) as any
@@ -263,6 +264,24 @@ Deno.test('the advertised yield is read from the filing as of its report date', 
   eq(benji.realized_annualized_pct, null)
   // A registered NAV feed publishes no advertised figure anywhere free.
   eq(byKey(writes, YIELD_TABLE).ustb.advertised_reason, 'advertised_not_published')
+})
+
+Deno.test('with no edgar agent configured the fund is still a row that names the missing setting and edgar is never called', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const asked: { url: string; headers: Record<string, string> }[] = []
+  const fetchWithHeaders = (url: string, headers: Record<string, string>) => { asked.push({ url, headers }); return fakeSec(url) }
+  const result = await captureRwaYield(fakeDb({}, writes), ctxFor, NOW, deps({ edgarUserAgent: null, fetchWithHeaders }))
+  eq(result.advertised, 0)
+  eq(asked.length, 0)
+  const benji = byKey(writes, YIELD_TABLE).benji
+  eq(benji.advertised_pct, null)
+  eq(benji.advertised_reason, 'user_agent_required')
+
+  // The agent the lane resolved is the one every edgar request carries.
+  const agent = 'TheContentForge Investor Intel support@thecontentforge.io'
+  await captureRwaYield(fakeDb({}, {}), ctxFor, NOW, deps({ edgarUserAgent: agent, fetchWithHeaders }))
+  assert(asked.length >= 1)
+  for (const call of asked) eq(call.headers['User-Agent'], agent)
 })
 
 Deno.test('a directory that does not answer leaves every feed a row with a stated reason', async () => {

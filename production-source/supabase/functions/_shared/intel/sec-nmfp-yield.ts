@@ -7,7 +7,10 @@
 //
 // EDGAR REQUIRES A DESCRIPTIVE USER-AGENT or it answers 403, and documents a 10
 // requests per second ceiling. This lane makes at most two calls per fund per
-// capture, so the ceiling is never approached.
+// capture, so the ceiling is never approached. The agent is the one resolved by
+// `rwa-sources/edgar-agent.ts` (environment, then the operating profile row) and
+// passed in by the caller; with none, this reader refuses before any call and
+// reports `user_agent_required`, exactly like the issuer registry lane.
 //
 // THE TRAP THIS MODULE EXISTS TO AVOID, found by probing the live filing on
 // 2026-09-16. A single N-MFP3 does NOT carry one seven-day yield. The Franklin
@@ -20,10 +23,16 @@
 // and stores that date alongside the value. A yield without its own date is not
 // a fact we are willing to display.
 
+import { compliantEdgarAgent } from './rwa-sources/edgar-agent.ts'
+
 export const SEC_FULLTEXT_URL = 'https://efts.sec.gov/LATEST/search-index'
 export const SEC_ARCHIVES_BASE = 'https://www.sec.gov/Archives/edgar/data'
-/** EDGAR refuses an anonymous client. A descriptive agent naming the product and
- * a contact address is what its access policy asks for. */
+/** RETIRED AS A FALLBACK on 2026-09-16 and kept only so existing imports still
+ * resolve. EDGAR asks for a descriptive agent with a REAL contact, and this
+ * address is not published anywhere by the product (the published support
+ * address is support@thecontentforge.io, on a different domain), so sending it
+ * would misstate how to reach us. `readAdvertisedYield` no longer sends it: the
+ * agent now arrives from `resolveEdgarUserAgent` through the caller. */
 export const SEC_USER_AGENT = 'TheContentForge Investor Intel (intel@thecontentforge.com)'
 export const SEC_TIMEOUT_MS = 8000
 
@@ -156,10 +165,14 @@ export function newestFilingUrl(payload: unknown, cik?: string | null): { url: s
  * cell that reads as zero. */
 export async function readAdvertisedYield(
   seriesId: string,
-  deps: { fetchText: FetchTextWithHeaders; timeoutMs?: number },
+  deps: { fetchText: FetchTextWithHeaders; timeoutMs?: number; userAgent?: string | null },
 ): Promise<{ yield: AdvertisedYield } | { reason: string }> {
   if (!/^S\d{9}$/.test(String(seriesId || ''))) return { reason: 'invalid_series_id' }
-  const headers = { 'User-Agent': SEC_USER_AGENT, 'Accept-Encoding': 'gzip, deflate' }
+  // Refused BEFORE the call, so a missing setting is a named reason and never an
+  // anonymous request that EDGAR answers with 403.
+  const agent = compliantEdgarAgent(deps.userAgent)
+  if (!agent) return { reason: 'user_agent_required' }
+  const headers = { 'User-Agent': agent, 'Accept-Encoding': 'gzip, deflate' }
   const timeout = deps.timeoutMs ?? SEC_TIMEOUT_MS
   let search: string | null = null
   try {

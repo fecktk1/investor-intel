@@ -37,6 +37,7 @@ import { fetchSdnIndex, screenLegalEntity, type SdnIndex } from './rwa-sources/o
 import { leiRegistrationSignal } from './rwa-sources/gleif.ts'
 import { admissionDrift, admissionSnapshot, admissionTimeline } from './rwa-admission-drift.ts'
 import type { SourceDeps } from './rwa-sources/http.ts'
+import { resolveEdgarUserAgent } from './rwa-sources/edgar-agent.ts'
 
 /** These lanes answer to their own provider row, not CoinMarketCap's. */
 export const RWA_ISSUER_PROVIDER = 'primary-sources'
@@ -56,24 +57,17 @@ export const FILINGS_PER_SUBJECT = 8
 /** Subjects one run will process, so a growing alias map cannot grow the run. */
 export const SUBJECTS_PER_RUN = 10
 
-/** The environment variable carrying the descriptive contact EDGAR requires.
- * REQUIRED SETTING: until it is set, `rwa_issuer_registry` reads nothing from
- * EDGAR and reports `user_agent_required`. See the migration header. */
-export const EDGAR_AGENT_ENV = 'SEC_EDGAR_USER_AGENT'
+/** The setting carrying the descriptive contact EDGAR requires. REQUIRED
+ * SETTING: until it resolves, `rwa_issuer_registry` reads nothing from EDGAR and
+ * reports `user_agent_required`. It is read from the environment first and then
+ * from the operating profile row; see `rwa-sources/edgar-agent.ts`. */
+export { EDGAR_AGENT_ENV } from './rwa-sources/edgar-agent.ts'
 
 /** Recorded for a token that IS a proxy but whose implementation could not be
  * read. It must never fall through to `no_restriction_found`: not having looked
  * is not the same as having looked and found nothing. */
 export const PROXY_UNRESOLVED_SCOPE =
   'This token is a proxy contract and its implementation could not be resolved, so its transfer restrictions were NOT read. Absence of a detected restriction here is not evidence that transfers are unrestricted, that no identity registry applies, or that a holder cannot be frozen. Nothing is asserted about this token\'s restrictions. Read the contract at the block explorer.'
-
-// deno-lint-ignore no-explicit-any
-const _glob = globalThis as any
-function envValue(name: string): string | null {
-  try { const v = _glob?.Deno?.env?.get?.(name); if (v) return String(v) } catch { /* permission-gated */ }
-  const v = _glob?.process?.env?.[name]
-  return v ? String(v) : null
-}
 
 /** This lane's own policy row. `schedulePolicy` in capture-jobs.ts filters on
  * the CoinMarketCap provider, so it would never see these rows. */
@@ -131,7 +125,10 @@ export async function captureRwaIssuerRegistry(
     const assertions = (options.subjects ?? ALIAS_ASSERTIONS).slice(0, SUBJECTS_PER_RUN)
     if (!assertions.length) return { job, rows: 0, credits: 0, skipped: 'no_mapped_subjects' }
 
-    const agent = deps.sources?.userAgent ?? envValue(EDGAR_AGENT_ENV)
+    // An injected agent wins (tests, a manual run); otherwise the environment,
+    // then the operating profile row. None resolves to `user_agent_required`
+    // at the transport, before any EDGAR call is issued.
+    const agent = deps.sources?.userAgent ?? (await resolveEdgarUserAgent(admin)).userAgent
     const sources: SourceDeps = { ...(deps.sources ?? {}), userAgent: agent }
 
     // One SDN read for the whole run. A failure here suppresses only the
