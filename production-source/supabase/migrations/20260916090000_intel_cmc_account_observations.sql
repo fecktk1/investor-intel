@@ -58,3 +58,20 @@ END $$;
 
 REVOKE ALL ON FUNCTION public.cmc_account_observe(text,numeric,numeric,timestamptz) FROM PUBLIC,anon,authenticated;
 GRANT EXECUTE ON FUNCTION public.cmc_account_observe(text,numeric,numeric,timestamptz) TO service_role;
+
+-- The multiplier last applied, so one read can only move the cadence by a bounded step instead of jumping straight
+-- to the ceiling the first time a burst is measured. It is written on the same sentinel row but merged key by key,
+-- never as a whole-config rewrite, so a concurrent cmc_account_observe cannot lose an observation to this write.
+-- A recorded scale is advisory: losing it costs a slower ramp, never a faster cadence.
+CREATE OR REPLACE FUNCTION public.cmc_cadence_scale_record(p_scale numeric)
+RETURNS boolean LANGUAGE plpgsql SECURITY INVOKER SET search_path = public AS $$
+BEGIN
+  IF p_scale IS NULL OR p_scale < 1 OR p_scale > 64 THEN RETURN false; END IF;
+  UPDATE provider_quota_budgets
+    SET config=COALESCE(config,'{}'::jsonb) || jsonb_build_object('scale',p_scale,'scale_at',to_jsonb(now())),updated_at=now()
+    WHERE provider='coinmarketcap' AND data_type='cmc_account_observation';
+  RETURN FOUND;
+END $$;
+
+REVOKE ALL ON FUNCTION public.cmc_cadence_scale_record(numeric) FROM PUBLIC,anon,authenticated;
+GRANT EXECUTE ON FUNCTION public.cmc_cadence_scale_record(numeric) TO service_role;

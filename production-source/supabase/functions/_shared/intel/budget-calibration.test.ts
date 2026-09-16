@@ -34,14 +34,14 @@ Deno.test('with no account observations at all the reviewed cadence is left exac
 
 Deno.test('an unreadable observation row degrades to the conservative cadence under its own name', async () => {
   const failed = await loadAccountObservations(fakeDb(null, { message: 'permission denied' }))
-  assert.deepEqual(failed, { observations: [], error: 'observations_unavailable' })
+  assert.deepEqual(failed, { observations: [], previousScale: null, scaleAt: null, error: 'observations_unavailable' })
   const calibration = calibrateCadence({ observations: failed.observations, ceiling: CEILING, now: NOW, error: failed.error })
   assert.equal(calibration.scale, 1)
   assert.equal(calibration.reason, 'observations_unavailable')
-  assert.deepEqual(await loadAccountObservations(null), { observations: [], error: 'db_unavailable' })
+  assert.deepEqual(await loadAccountObservations(null), { observations: [], previousScale: null, scaleAt: null, error: 'db_unavailable' })
   // A row that exists with no observations yet is a successful read of nothing,
   // which is a different fact from a read that failed.
-  assert.deepEqual(await loadAccountObservations(fakeDb({ observations: [] })), { observations: [], error: null })
+  assert.deepEqual(await loadAccountObservations(fakeDb({ observations: [] })), { observations: [], previousScale: null, scaleAt: null, error: null })
 })
 
 Deno.test('the key fingerprint stored beside the observations is never returned to a caller', async () => {
@@ -50,6 +50,19 @@ Deno.test('the key fingerprint stored beside the observations is never returned 
   assert.equal(read.observations.length, 2)
   assert.ok(!JSON.stringify(read).includes('a1b2c3d4e5f6a1b2c3d4e5f6'))
   assert.deepEqual(Object.keys(read.observations[0]).sort(), ['at', 'limit', 'resetAt', 'used'])
+})
+
+Deno.test('the multiplier last applied is read back, and a stale or accelerating one is not', async () => {
+  const fresh = await loadAccountObservations(fakeDb({ scale: 4, scale_at: at(30), observations: [] }), NOW)
+  assert.equal(fresh.previousScale, 4)
+  assert.equal(fresh.scaleAt, at(30))
+  // Older than the observation freshness window: the next move starts from 1.
+  const stale = await loadAccountObservations(fakeDb({ scale: 4, scale_at: at(600), observations: [] }), NOW)
+  assert.equal(stale.previousScale, null)
+  assert.equal(stale.scaleAt, at(600))
+  // A recorded multiplier below 1 would be an acceleration, and is refused.
+  assert.equal((await loadAccountObservations(fakeDb({ scale: 0.5, scale_at: at(1), observations: [] }), NOW)).previousScale, null)
+  assert.equal((await loadAccountObservations(fakeDb({ observations: [] }), NOW)).previousScale, null)
 })
 
 Deno.test('one observation cannot be a burn rate and refuses to pretend otherwise', () => {
@@ -75,15 +88,25 @@ Deno.test('observations older than the freshness window no longer describe the a
 Deno.test('an account burning faster than its reset window affords stretches the cadence', () => {
   // 4,000 credits in an hour, with 8,000 left and 26 days to the reset: the
   // affordable rate is a small fraction of that, so every cadence stretches.
-  const calibration = calibrateCadence({ observations: [observation(60, 0), observation(0, 4000)], ceiling: CEILING, now: NOW })
-  assert.ok(calibration.scale > 1, `scale was ${calibration.scale}`)
-  assert.equal(calibration.reason, 'burn_over_budget_capped')
-  assert.equal(calibration.scale, MAX_SCALE)
-  assert.equal(calibration.observedCreditsPerSecond, Number((4000 / 3600).toFixed(9)))
-  assert.equal(calibration.remainingCredits, 8000)
-  assert.equal(calibratedCadenceSeconds(300, calibration), 2400)
+  const observations = [observation(60, 0), observation(0, 4000)]
+  // With no multiplier on record the move is measured from 1, so the first read
+  // brakes by one step rather than slamming to the ceiling.
+  const first = calibrateCadence({ observations, ceiling: CEILING, now: NOW })
+  assert.ok(first.scale > 1, `scale was ${first.scale}`)
+  assert.equal(first.scale, 2)
+  assert.equal(first.reason, 'burn_over_budget')
+  assert.equal(first.observedCreditsPerSecond, Number((4000 / 3600).toFixed(9)))
+  assert.equal(first.remainingCredits, 8000)
+  assert.ok(first.affordableCreditsPerSecond! < first.observedCreditsPerSecond!)
+  assert.equal(calibratedCadenceSeconds(300, first), 600)
+  // Once the ramp has reached the ceiling the burn is still over budget, and the
+  // multiplier says so under its own name.
+  const ramped = calibrateCadence({ observations, ceiling: CEILING, now: NOW, previousScale: 8 })
+  assert.equal(ramped.scale, MAX_SCALE)
+  assert.equal(ramped.reason, 'burn_over_budget_capped')
+  assert.equal(calibratedCadenceSeconds(300, ramped), 2400)
   // Stretched, never parked: a feature keeps running at some cadence.
-  assert.ok(calibratedCadenceSeconds(86_400, calibration)! <= MAX_CADENCE_SECONDS)
+  assert.ok(calibratedCadenceSeconds(86_400, ramped)! <= MAX_CADENCE_SECONDS)
 })
 
 Deno.test('an account inside its budget keeps the reviewed cadence and is never made faster', () => {

@@ -162,10 +162,11 @@ export function calibrateCadence(input: CalibrationInput): CadenceCalibration {
 
   const ratio = observed / affordable
   if (ratio <= 1 + HYSTERESIS) return { ...measured, scale: 1, reason: 'burn_within_budget' }
-  // The step ceiling damps SUCCESSIVE moves. With no previous multiplier there
-  // is nothing to damp, and braking immediately is the safer reading.
+  // The step ceiling bounds how far ONE read may move the multiplier. With no
+  // previous multiplier on record the move is measured from 1, so a first read
+  // can never jump straight to the ceiling; successive reads ramp from there.
   const previous = finite(input.previousScale)
-  const step = previous != null && previous >= 1 ? previous * MAX_STEP : Number.POSITIVE_INFINITY
+  const step = (previous != null && previous >= 1 ? previous : 1) * MAX_STEP
   const scale = Math.min(MAX_SCALE, step, Number(ratio.toFixed(2)))
   return { ...measured, scale, reason: scale >= MAX_SCALE ? 'burn_over_budget_capped' : 'burn_over_budget' }
 }
@@ -195,24 +196,47 @@ export function calibratePolicyRows<T extends { cadence_seconds?: number | null 
 
 export const OBSERVATION_DATA_TYPE = 'cmc_account_observation'
 
-/** The bounded ring of account observations. A read failure is reported as a
- * named reason and never as an empty history, because an empty history and an
- * unreadable one lead to the same conservative multiplier for different
- * reasons, and only one of them is worth an operator's attention.
+export interface AccountObservationRead {
+  observations: AccountObservation[]
+  /** The multiplier last applied, so one read can only move it by MAX_STEP.
+   * Null when none is recorded, when the recorded one is below 1 (which would
+   * be an acceleration), or when it is too old to be a continuation: in each
+   * case the next move is measured from 1 again. */
+  previousScale: number | null
+  scaleAt: string | null
+  error: string | null
+}
+
+const emptyRead = (error: string | null): AccountObservationRead => ({ observations: [], previousScale: null, scaleAt: null, error })
+
+/** The bounded ring of account observations, plus the multiplier last applied.
+ * A read failure is reported as a named reason and never as an empty history,
+ * because an empty history and an unreadable one lead to the same conservative
+ * multiplier for different reasons, and only one of them is worth an operator's
+ * attention.
  *
- * The row also holds the key fingerprint that scopes the series. It is read to
- * scope nothing here and is never returned: no caller of this function has any
- * use for it. */
+ * The row also holds the key fingerprint that scopes the series. It scopes
+ * nothing here and is never returned: no caller of this function has any use
+ * for it. */
 // deno-lint-ignore no-explicit-any
-export async function loadAccountObservations(db: any): Promise<{ observations: AccountObservation[]; error: string | null }> {
-  if (!db?.from) return { observations: [], error: 'db_unavailable' }
+export async function loadAccountObservations(db: any, now = Date.now()): Promise<AccountObservationRead> {
+  if (!db?.from) return emptyRead('db_unavailable')
   try {
     const { data, error } = await db.from('provider_quota_budgets').select('config')
       .eq('provider', 'coinmarketcap').eq('data_type', OBSERVATION_DATA_TYPE).maybeSingle()
-    if (error) return { observations: [], error: 'observations_unavailable' }
-    const raw = (data?.config as Record<string, unknown> | undefined)?.observations
-    if (raw == null) return { observations: [], error: null }
-    if (!Array.isArray(raw)) return { observations: [], error: 'observations_malformed' }
+    if (error) return emptyRead('observations_unavailable')
+    const config = (data?.config ?? {}) as Record<string, unknown>
+    // A multiplier recorded long ago describes a burn nobody is measuring any
+    // more, so it is not treated as the step this read continues from.
+    const scaleAt = instant(config.scale_at)
+    const recorded = finite(config.scale)
+    const fresh = scaleAt != null && now - scaleAt <= MAX_OBSERVATION_AGE_SECONDS * 1000
+    const previousScale = fresh && recorded != null && recorded >= 1 ? recorded : null
+    const scaleStamp = scaleAt != null ? new Date(scaleAt).toISOString() : null
+
+    const raw = config.observations
+    if (raw == null) return { observations: [], previousScale, scaleAt: scaleStamp, error: null }
+    if (!Array.isArray(raw)) return { observations: [], previousScale, scaleAt: scaleStamp, error: 'observations_malformed' }
     const observations: AccountObservation[] = []
     for (const entry of raw as Array<Record<string, unknown>>) {
       if (!entry || typeof entry !== 'object') continue
@@ -220,6 +244,6 @@ export async function loadAccountObservations(db: any): Promise<{ observations: 
       if (used == null || limit == null || instant(entry.at) == null || instant(entry.resetAt) == null) continue
       observations.push({ at: new Date(instant(entry.at)!).toISOString(), used, limit, resetAt: new Date(instant(entry.resetAt)!).toISOString() })
     }
-    return { observations, error: null }
-  } catch { return { observations: [], error: 'observations_unavailable' } }
+    return { observations, previousScale, scaleAt: scaleStamp, error: null }
+  } catch { return emptyRead('observations_unavailable') }
 }

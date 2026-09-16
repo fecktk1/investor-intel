@@ -103,8 +103,12 @@ Deno.serve(async (req) => {
     // table remains both the default and the fastest rate anyone approved.
     const calibration = calibrateCadence({
       observations: observed.observations, ceiling: cmcCreditCeiling(settings), now: now.getTime(), error: observed.error,
+      previousScale: observed.previousScale,
       boundaries: [settings.CMC_SOURCE_POLICY_EXPIRES_AT ?? null, settings.CMC_HACKATHON_EXPIRES_AT ?? null],
     })
+    // Record what was applied so the next run's move is bounded relative to it.
+    // Advisory: losing this costs a slower ramp, never a faster cadence.
+    try { await admin.rpc('cmc_cadence_scale_record', { p_scale: calibration.scale }) } catch { /* the reviewed cadence still stands */ }
     const deps: CaptureDeps = { request: requestCmc, policy: calibratePolicyRows(policy, calibration) }
     // A per-job context carries its own call ceiling, so one lane can never
     // consume the budget of another inside the hourly batch.

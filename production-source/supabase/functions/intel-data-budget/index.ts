@@ -163,6 +163,7 @@ export async function readDataBudget(admin: any, now: Date = new Date()): Promis
   if (observed.error) degraded.push({ part: 'calibration', reason: observed.error })
   const calibration = calibrateCadence({
     observations: observed.observations, ceiling, now: now.getTime(), error: observed.error,
+    previousScale: observed.previousScale,
     // Burn measured before either expiry describes a different account, so the
     // 1 October step is a fresh measurement rather than a panic stretch.
     boundaries: [settings.CMC_SOURCE_POLICY_EXPIRES_AT ?? null, settings.CMC_HACKATHON_EXPIRES_AT ?? DEFAULT_HACKATHON_EXPIRY],

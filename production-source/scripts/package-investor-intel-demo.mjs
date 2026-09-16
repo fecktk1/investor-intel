@@ -57,11 +57,11 @@ const shared=[...chartSources.map(file=>[adapters[file]||file,`product/${file}`]
   // ChartWatermark reads this from the package root, so the copied chart would
   // otherwise render a mark that resolves to nothing.
   ['public/logo-light.png','public/logo-light.png'],
-  ...['cmc-capabilities','cmc-dex'].map(name=>[`supabase/functions/_shared/market-assets/${name}.ts`,`server/${name}.ts`]),
+  ...['cmc-capabilities','cmc-dex','cmc-evidence-shape'].map(name=>[`supabase/functions/_shared/market-assets/${name}.ts`,`server/${name}.ts`]),
   ...['inter-400.woff2','barlow-condensed-600.woff2','geist-mono-400.woff2','LICENSE.md'].map(file=>['public/vsx-fonts/'+file,'public/vsx-fonts/'+file]),
 ]
 for(const [source,dest] of shared){const target=path.join(example,dest);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.join(root,source),target)}
-const files=['package.json','package-lock.json','.gitignore','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs',...shared.map(([,dest])=>dest)]
+const files=['package.json','package-lock.json','.gitignore','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...shared.map(([,dest])=>dest)]
 // Validate the entire emitted dependency graph, including the server and tests.
 // A browser-only build cannot detect an omitted server capability dependency.
 const emittedFiles=new Set(files)

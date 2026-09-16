@@ -200,3 +200,47 @@ journeys exists. Both remain open.
    live mode. If the keyless terms turn out to require something different, that string is the one to change.
 5. **`altcoinSeason`, `cmc20` and `dexSecurity`** are mapped but unprobed. If the repository's usual rule — unverified
    endpoints stay closed — is to apply here too, remove them from `KEYLESS_ENDPOINTS`; they are one line each.
+   Partly superseded by the 2026-09-16 re-probe below: all three were probed and all three were refused 429/1022,
+   which is the shared pool refusing rather than a statement about the endpoints.
+
+## 6. Re-probe 2026-09-16, and what it changes
+
+Section 1 above is no longer the whole picture. **The keyless surface answered this network on 2026-09-16.** The
+refusal recorded on 2026-09-15 was the shared anonymous pool throttling, not a permanent block.
+
+First batch, 13:53 to 13:55 UTC, seven probes:
+
+| Path probed (after `/public-api`) | Status | `status` block |
+|---|---|---|
+| `/v1/dex/tokens/transactions?platform=ethereum&address=0x1f98…f984&limit=3` | 200, 2,241 bytes | error_code `"0"`, credit_count 1 |
+| `/v1/dex/holders/count?platform=ethereum&tokenAddress=0x1f98…f984` | 200, 219 bytes | error_code `"0"`, credit_count 1 |
+| `/v1/global-metrics/quotes/latest` | 200, 2,588 bytes | error_code `"0"`, credit_count 1 |
+| `/v3/cryptocurrency/listings/latest?start=1&limit=5` | 200, 8,404 bytes | error_code `"0"`, credit_count 1 |
+| `/v1/cryptocurrency/listings/latest?start=1&limit=5` | 200, 8,162 bytes | error_code `"0"`, credit_count 1 |
+| `/v1/fiat/map?start=1&limit=1` | 403, 168 bytes | error_code `1005`, credit_count 0 |
+| `/v1/cryptocurrency/map?start=1&limit=1` | 200, 338 bytes | error_code `"0"`, credit_count 1 |
+
+Second batch, minutes later, ten probes covering the remaining mapped routes (`quotes`, `metadata`, `dexCandles`,
+`categories`, `fearGreed`, `altcoinSeason`, `cmc100`, `cmc20`, `dexToken`, `dexSecurity`): **every one refused**,
+HTTP 429, error_code 1022, 231 to 243 bytes, no `data` key.
+
+A paced recovery test then answered twice and was refused on the third call inside ninety seconds:
+
+| Time (UTC) | Result |
+|---|---|
+| 13:57:28 | 200, 2,585 bytes, error_code `"0"` |
+| 13:58:13 | 200, 2,585 bytes, error_code `"0"` |
+| 13:58:58 | 429, error_code `1022` |
+
+**Conclusions, none of which loosen anything.**
+
+* The pool grants a small burst per IP and then refuses. A capture must pace itself and must treat a refusal as a
+  result to record, not an error to retry away. `scripts/capture-keyless-evidence.mjs` does exactly that: bounded
+  attempts, generous spacing, and a refusal written with its verbatim `status`.
+* `credit_count` is reported as 1 on a surface that presents no key and debits no account. It is recorded verbatim
+  and is deliberately not the same field as the artefact's `creditsSpent`, which is 0.
+* `error_code` is the **string** `"0"` on success here, which is why success is tested as `Number(code) !== 0`.
+* `/v1/fiat/map` answers 403/1005: the keyless subset does not publish it. It is not mapped and stays unmapped.
+* `/v1/dex/tokens/transactions`, `/v1/cryptocurrency/map` and `/v1/cryptocurrency/listings/latest` answered keyless
+  but are **not** in `KEYLESS_ENDPOINTS` and were not added. A route is mapped when a demo journey needs it, not
+  because a probe succeeded.
