@@ -1,6 +1,6 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  parseTreasuryCurve, parseTreasuryAverage, parseSofr, parseEstr, readBenchmarkRates,
+  parseTreasuryCurve, parseTreasuryAverage, parseSofr, parseEstr, readBenchmarkRates, treasuryCurveUrls,
 } from './rwa-benchmark-rates.ts'
 
 /** Two dated entries in the Treasury feed's real envelope shape, deliberately
@@ -130,4 +130,38 @@ Deno.test('one failing source is a named failure and never removes the rates tha
   const narrowed = await readBenchmarkRates({ fetchText: () => Promise.resolve(CURVE_XML) }, ['us_treasury_bill_3m'])
   eq(narrowed.calls, 1)
   eq(narrowed.rates.us_treasury_bill_3m?.ratePct, 4.11)
+})
+
+// Found live on 2026-09-16: without a month the curve feed answers "No results
+// found", so every bill-backed fund stored benchmark_unavailable.
+const EMPTY_CURVE = '<?xml version="1.0" encoding="utf-8" standalone="yes" ?> <feed><title>No results found.</title></feed>'
+
+Deno.test('the treasury curve is always asked for a month, and the previous month only in the first week', () => {
+  const mid = treasuryCurveUrls(Date.parse('2026-09-16T12:00:00Z'))
+  eq(mid.length, 1)
+  eq(mid[0].endsWith('&field_tdr_date_value_month=202609'), true)
+  const early = treasuryCurveUrls(Date.parse('2026-01-03T12:00:00Z'))
+  eq(early.map((u) => u.slice(-6)), ['202601', '202512'])
+})
+
+Deno.test('an empty new month falls back to the previous month and records no failure', async () => {
+  const asked: string[] = []
+  const result = await readBenchmarkRates({
+    now: Date.parse('2026-10-02T12:00:00Z'),
+    fetchText: (url) => { asked.push(url); return Promise.resolve(url.endsWith('202610') ? EMPTY_CURVE : CURVE_XML) },
+  }, ['us_treasury_bill_3m'])
+  eq(asked.map((u) => u.slice(-6)), ['202610', '202609'])
+  eq(result.calls, 2)
+  eq(result.rates.us_treasury_bill_3m?.ratePct, 4.11)
+  eq(result.failures, [])
+})
+
+Deno.test('an empty month late in the month is one call and a named failure', async () => {
+  const result = await readBenchmarkRates({
+    now: Date.parse('2026-09-16T12:00:00Z'),
+    fetchText: () => Promise.resolve(EMPTY_CURVE),
+  }, ['us_treasury_bill_3m'])
+  eq(result.calls, 1)
+  eq(result.rates.us_treasury_bill_3m, undefined)
+  eq(result.failures, [{ key: 'us_treasury_bill_3m', reason: 'no_entries' }])
 })

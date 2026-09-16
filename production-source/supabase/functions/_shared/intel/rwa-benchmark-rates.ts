@@ -207,8 +207,25 @@ export function parseEstr(payload: unknown): BenchmarkRate | { reason: string } 
 
 // ─── The bounded read ─────────────────────────────────────────────────────────
 
-const SOURCES: { key: BenchmarkKey; url: string; parse: (raw: string) => BenchmarkRate | { reason: string } }[] = [
-  { key: 'us_treasury_bill_3m', url: TREASURY_CURVE_URL, parse: parseTreasuryCurve },
+/** The Treasury curve feed answers "No results found" unless it is asked for a
+ * month (`field_tdr_date_value_month=YYYYMM`), and that empty answer is slow.
+ * Found on 2026-09-16 when the rwa_yield lane first ran: every bill-backed fund
+ * stored `benchmark_unavailable`. Ask for the current UTC month; in the first
+ * week of a month the new month may have no business day published yet, so the
+ * previous month is the fallback. */
+export function treasuryCurveUrls(now: number): string[] {
+  const d = new Date(now)
+  const month = (y: number, m: number) => `${TREASURY_CURVE_URL}&field_tdr_date_value_month=${y}${String(m + 1).padStart(2, '0')}`
+  const urls = [month(d.getUTCFullYear(), d.getUTCMonth())]
+  if (d.getUTCDate() <= 7) {
+    const prev = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() - 1, 1))
+    urls.push(month(prev.getUTCFullYear(), prev.getUTCMonth()))
+  }
+  return urls
+}
+
+const SOURCES: { key: BenchmarkKey; url: string | ((now: number) => string[]); parse: (raw: string) => BenchmarkRate | { reason: string } }[] = [
+  { key: 'us_treasury_bill_3m', url: treasuryCurveUrls, parse: parseTreasuryCurve },
   { key: 'us_treasury_bill_avg', url: `${TREASURY_AVG_URL}?filter=security_desc:eq:Treasury%20Bills&sort=-record_date&page%5Bsize%5D=1`, parse: parseTreasuryAverage },
   { key: 'sofr', url: SOFR_URL, parse: parseSofr },
   { key: 'estr', url: `${ESTR_URL}?lastNObservations=1&format=jsondata`, parse: parseEstr },
@@ -222,7 +239,8 @@ export interface BenchmarkReadResult {
   calls: number
 }
 
-/** Read every benchmark once. At most one call per source, and a source that
+/** Read every benchmark once. At most one call per source (two for the Treasury
+ * curve in the first week of a month), and a source that
  * fails contributes a named failure instead of removing the others. `only`
  * narrows the read to the benchmarks a run actually needs. */
 export async function readBenchmarkRates(
@@ -234,23 +252,31 @@ export async function readBenchmarkRates(
   const rates: Partial<Record<BenchmarkKey, BenchmarkRate>> = {}
   const failures: BenchmarkReadFailure[] = []
   let calls = 0
+  const nowMs = deps.now ?? Date.now()
   for (const source of wanted) {
-    calls += 1
-    let raw: string | null = null
-    try { raw = await deps.fetchText(source.url, deps.timeoutMs ?? BENCHMARK_TIMEOUT_MS) } catch (e) {
-      failures.push({ key: source.key, reason: ((e as Error)?.message || 'fetch_failed').slice(0, 120) })
-      continue
+    // A source is one URL, or an ordered list of candidates (the Treasury curve
+    // tries the current month, then the previous one early in a month). Only the
+    // last candidate's failure is recorded; an earlier empty month is expected.
+    const candidates = typeof source.url === 'function' ? source.url(nowMs) : [source.url]
+    let failure: string | null = null
+    for (const url of candidates) {
+      calls += 1
+      let raw: string | null = null
+      try { raw = await deps.fetchText(url, deps.timeoutMs ?? BENCHMARK_TIMEOUT_MS) } catch (e) {
+        failure = ((e as Error)?.message || 'fetch_failed').slice(0, 120)
+        continue
+      }
+      if (!raw) { failure = 'source_unavailable'; continue }
+      const parsed = source.parse(raw)
+      if ('reason' in parsed) { failure = parsed.reason; continue }
+      // The publisher does not get to decide our currency table. A parser that
+      // returned the wrong currency for its key is a defect, not a data point.
+      if (parsed.currency !== BENCHMARK_CURRENCY[source.key]) { failure = 'currency_mismatch'; continue }
+      rates[source.key] = parsed
+      failure = null
+      break
     }
-    if (!raw) { failures.push({ key: source.key, reason: 'source_unavailable' }); continue }
-    const parsed = source.parse(raw)
-    if ('reason' in parsed) { failures.push({ key: source.key, reason: parsed.reason }); continue }
-    // The publisher does not get to decide our currency table. A parser that
-    // returned the wrong currency for its key is a defect, not a data point.
-    if (parsed.currency !== BENCHMARK_CURRENCY[source.key]) {
-      failures.push({ key: source.key, reason: 'currency_mismatch' })
-      continue
-    }
-    rates[source.key] = parsed
+    if (failure) failures.push({ key: source.key, reason: failure })
   }
   return { rates, failures, fetchedAt, calls }
 }
