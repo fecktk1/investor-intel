@@ -15,10 +15,17 @@ import { isUsableStory, cleanSourceName, isPressRelease, storyHash } from '../_s
 import { reconcileCoverage } from '../_shared/intel/coverage.ts'
 import { assembleAssetMiniPack } from '../_shared/intel/asset-mini-pack.ts'
 import { h32 } from '../_shared/core-intel/hashing.ts'
+import { capRankedBoard } from '../_shared/intel/feed-entity-cap.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
 const TRUST: Record<string, number> = { curated: 0.85, macro: 0.7, gemini: 0.5, org_rss: 0.45 }
+
+// One asset can dominate a news cycle and produce several separately-hashed
+// stories, which previously spent a whole run's model budget on three angles of
+// one subject. The cap spreads the budget across subjects; because it backfills,
+// a quiet day still generates a full run rather than a short one.
+const STORY_CARDS_PER_SYMBOL = 2
 
 function uniqSymbols(values: unknown[]): string[] {
   const out: string[] = []
@@ -125,7 +132,8 @@ Deno.serve(async (req) => {
     // Skip stories that already have a fresh shared card for the current enriched
     // source set. Keep evidence_hash as story_hash so dashboard lookup stays stable.
     const top = []
-    for (const c of cards.slice(0, limit * 3)) top.push({ ...c, ...await buildStoryEvidence(admin, c) })
+    const candidates = capRankedBoard(cards, { entityOf: (c) => c.symbol || null, perEntity: STORY_CARDS_PER_SYMBOL, limit: limit * 3 })
+    for (const c of candidates) top.push({ ...c, ...await buildStoryEvidence(admin, c) })
     const { data: existing } = await admin.from('intel_shared_artifacts').select('evidence_hash, source_set_hash')
       .eq('artifact_type', 'story_card').in('evidence_hash', top.map((c) => c.story_hash)).gt('stale_after', new Date().toISOString())
     const haveFresh = new Set((existing || []).map((e: any) => `${e.evidence_hash}:${e.source_set_hash || ''}`))

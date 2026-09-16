@@ -775,6 +775,18 @@
     "medium": "Confiance moyenne",
     "low": "Confiance faible"
   },
+  "evidence": {
+    "corroborated": "Corroboré",
+    "research_lead": "Piste de recherche",
+    "corroborated_why": "Le prix, la capitalisation boursière et le volume ont tous évolué dans le même sens sur la même fenêtre.",
+    "conflicting_why": "Le prix, la capitalisation boursière et le volume ne concordent pas entre eux : il s'agit donc d'une piste de recherche et non d'un mouvement corroboré.",
+    "incomplete_why": "Les trois valeurs (prix, capitalisation boursière et volume) n'ont pas toutes pu être mesurées sur une même fenêtre : il s'agit donc d'une piste de recherche et non d'un mouvement corroboré.",
+    "unmeasured_why": "Aucune variation datée du prix, de la capitalisation boursière ou du volume n'a pu être mesurée : il s'agit donc d'une piste de recherche et non d'un mouvement corroboré.",
+    "reason_cap_undated": "Cette source publie la capitalisation boursière sans heure d'observation propre : aucune variation datée ne peut en être déduite.",
+    "reason_cap_single": "Une seule lecture datée de la capitalisation boursière est conservée, et une variation en exige deux.",
+    "reason_not_market_move": "Cette alerte signale un événement enregistré et non un mouvement de marché : le prix, la capitalisation boursière et le volume n'ont rien à corroborer ici.",
+    "reason_narrative_no_cap": "Un score de narratif comporte des composantes de prix et de volume mais pas de capitalisation boursière : le test complet ne peut pas lui être appliqué."
+  },
   "sources": {
     "none": "Aucune source rapportée",
     "missing": "Impossible à vérifier",

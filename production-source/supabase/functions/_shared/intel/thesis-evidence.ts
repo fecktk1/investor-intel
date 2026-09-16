@@ -9,6 +9,7 @@
 
 import { h32, norm } from '../core-intel/hashing.ts'
 import { materialityVerdict } from '../core-intel/materiality.ts'
+import type { MetricAgreement } from './metric-agreement.ts'
 
 // ── Types ───────────────────────────────────────────────────
 export type EvidenceSection =
@@ -375,6 +376,11 @@ export interface StatusInput {
   triggeredRules?: { confirmation?: number; invalidation?: number; totalConfirmation?: number }
   lastReviewedAt?: string | null
   nextReviewAt?: string | null
+  /** The evidentiary standard's verdict for the market move behind this thesis
+   * (see metric-agreement.ts). OMITTED means the caller did not run the test, and
+   * every suggestion below is then exactly what it was before the test existed:
+   * an absent verdict is never read as a failed one. */
+  metricAgreement?: MetricAgreement | null
   now?: Date
 }
 export type EngineStatus = 'strengthening' | 'weakening' | 'needs_review' | 'confirmed' | 'partially_confirmed' | 'invalidated' | 'active'
@@ -388,6 +394,16 @@ export function computeThesisStatus(input: StatusInput): {
   const ev = input.evidenceCounts || {}
   const tr = input.triggeredRules || {}
   const drivers: string[] = []
+  // ── Multi-metric concurrence ──
+  // An ABSENT verdict means the caller never ran the evidentiary standard, and
+  // every suggestion below then behaves exactly as it did before this test
+  // existed. A supplied verdict other than 'corroborated' marks the move as a
+  // research lead, and a research lead may not be presented as a fully
+  // confirmed thesis. Nothing here removes a status: 'partially_confirmed' is
+  // the vocabulary this engine already had for "some of it holds".
+  const agreement = input.metricAgreement ?? null
+  const corroborated = agreement == null || agreement === 'corroborated'
+  const say = (perf: number | null) => reason(drivers, ev, perf, now, agreement)
 
   // price vs benchmark since baseline (benchmark-adjusted)
   let relPerf: number | null = null
@@ -403,14 +419,18 @@ export function computeThesisStatus(input: StatusInput): {
   // 1) invalidation rule triggered → suggest invalidated (user must confirm)
   if ((tr.invalidation || 0) > 0) {
     drivers.push(`${tr.invalidation} invalidation rule(s) triggered`)
-    return { engine_suggested_status: 'invalidated', status_reason: reason(drivers, ev, relPerf, now), needs_user_review: true }
+    // Invalidation is NOT gated on corroboration. A thesis that broke should be
+    // surfaced on the weaker evidence too: the standard exists to restrain
+    // claims of success, not to suppress a warning.
+    return { engine_suggested_status: 'invalidated', status_reason: say(relPerf), needs_user_review: true }
   }
   // 2) confirmation rules
   if ((tr.confirmation || 0) > 0) {
     const total = tr.totalConfirmation || tr.confirmation || 0
     const all = total > 0 && (tr.confirmation || 0) >= total
     drivers.push(`${tr.confirmation}/${total || '?'} confirmation rule(s) triggered`)
-    return { engine_suggested_status: all ? 'confirmed' : 'partially_confirmed', status_reason: reason(drivers, ev, relPerf, now), needs_user_review: true }
+    if (!corroborated) drivers.push(`market metrics ${agreement}: treated as a research lead`)
+    return { engine_suggested_status: all && corroborated ? 'confirmed' : 'partially_confirmed', status_reason: say(relPerf), needs_user_review: true }
   }
   // 3) evidence + price tilt
   const net = (ev.supports || 0) + (ev.confirms || 0) - (ev.weakens || 0) - (ev.invalidates || 0)
@@ -418,23 +438,28 @@ export function computeThesisStatus(input: StatusInput): {
   const stanceBear = norm(input.stance) === 'bearish'
   let directional = 0
   if (relPerf != null) directional = stanceBear ? -relPerf : relPerf   // bear thesis wins when relPerf negative
-  const score = net + (directional != null ? Math.sign(directional) * (Math.abs(directional) >= 0.1 ? 1 : 0) : 0)
+  // A price move whose own metrics point opposite ways is not evidence of
+  // direction, so its tilt is withheld from the score. Only that one input is
+  // withheld: the reader's evidence counts are untouched and still decide.
+  const contradicted = agreement === 'conflicting'
+  const score = net + (!contradicted && directional != null ? Math.sign(directional) * (Math.abs(directional) >= 0.1 ? 1 : 0) : 0)
   if (net !== 0) drivers.push(`evidence net ${net > 0 ? '+' : ''}${net}`)
   if (relPerf != null) drivers.push(`vs benchmark ${(relPerf * 100).toFixed(1)}%`)
+  if (contradicted && relPerf != null) drivers.push('price tilt withheld: price, market capitalisation and volume disagree')
 
-  if (score >= 2) return { engine_suggested_status: 'strengthening', status_reason: reason(drivers, ev, relPerf, now), needs_user_review: (ev.weakens || 0) + (ev.invalidates || 0) > 0 }
-  if (score <= -2) return { engine_suggested_status: 'weakening', status_reason: reason(drivers, ev, relPerf, now), needs_user_review: true }
+  if (score >= 2) return { engine_suggested_status: 'strengthening', status_reason: say(relPerf), needs_user_review: (ev.weakens || 0) + (ev.invalidates || 0) > 0 }
+  if (score <= -2) return { engine_suggested_status: 'weakening', status_reason: say(relPerf), needs_user_review: true }
 
   // 4) overdue review
   if (input.nextReviewAt && new Date(input.nextReviewAt).getTime() < now.getTime()) {
     drivers.push('review cadence overdue')
-    return { engine_suggested_status: 'needs_review', status_reason: reason(drivers, ev, relPerf, now), needs_user_review: true }
+    return { engine_suggested_status: 'needs_review', status_reason: say(relPerf), needs_user_review: true }
   }
-  return { engine_suggested_status: 'active', status_reason: reason(drivers, ev, relPerf, now), needs_user_review: false }
+  return { engine_suggested_status: 'active', status_reason: say(relPerf), needs_user_review: false }
 }
 
-function reason(drivers: string[], ev: Record<string, unknown>, relPerf: number | null, now: Date) {
-  return { drivers, evidence_counts: ev, price_vs_benchmark: relPerf, computed_at: now.toISOString() }
+function reason(drivers: string[], ev: Record<string, unknown>, relPerf: number | null, now: Date, metricAgreement: MetricAgreement | null = null) {
+  return { drivers, evidence_counts: ev, price_vs_benchmark: relPerf, metric_agreement: metricAgreement, computed_at: now.toISOString() }
 }
 
 // Optional: signal-shift dimension via the shared materiality helper.

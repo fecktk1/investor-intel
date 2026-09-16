@@ -1590,6 +1590,18 @@
     "medium": "Medium confidence",
     "low": "Low confidence"
   },
+  "evidence": {
+    "corroborated": "Corroborated",
+    "research_lead": "Research lead",
+    "corroborated_why": "Price, market capitalisation and volume all moved the same way over the same window.",
+    "conflicting_why": "Price, market capitalisation and volume do not agree with each other, so this is a lead to research rather than a corroborated move.",
+    "incomplete_why": "Fewer than all three of price, market capitalisation and volume could be measured over one window, so this is a lead to research rather than a corroborated move.",
+    "unmeasured_why": "No dated change in price, market capitalisation or volume could be measured, so this is a lead to research rather than a corroborated move.",
+    "reason_cap_undated": "This source publishes market capitalisation without an observation time of its own, so no dated change can be derived from it.",
+    "reason_cap_single": "Only one dated market capitalisation reading is retained, and a change needs two.",
+    "reason_not_market_move": "This alert reports a recorded event rather than a market move, so price, market capitalisation and volume have nothing to agree about.",
+    "reason_narrative_no_cap": "A narrative score carries price and volume components but no market capitalisation, so the full test cannot be run on it."
+  },
   "sources": {
     "none": "No sources reported",
     "missing": "Could not verify",

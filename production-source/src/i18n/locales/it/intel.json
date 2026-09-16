@@ -775,6 +775,18 @@
     "medium": "Media confidenza",
     "low": "Bassa confidenza"
   },
+  "evidence": {
+    "corroborated": "Corroborato",
+    "research_lead": "Spunto di ricerca",
+    "corroborated_why": "Prezzo, capitalizzazione di mercato e volume si sono mossi tutti nella stessa direzione nella stessa finestra.",
+    "conflicting_why": "Prezzo, capitalizzazione di mercato e volume non concordano tra loro, quindi questo è uno spunto di ricerca e non un movimento corroborato.",
+    "incomplete_why": "Non è stato possibile misurare tutti e tre i valori (prezzo, capitalizzazione di mercato e volume) in un'unica finestra, quindi questo è uno spunto di ricerca e non un movimento corroborato.",
+    "unmeasured_why": "Non è stato possibile misurare alcuna variazione datata di prezzo, capitalizzazione di mercato o volume, quindi questo è uno spunto di ricerca e non un movimento corroborato.",
+    "reason_cap_undated": "Questa fonte pubblica la capitalizzazione di mercato senza un proprio orario di osservazione, quindi non se ne può ricavare una variazione datata.",
+    "reason_cap_single": "È conservata una sola lettura datata della capitalizzazione di mercato, e per una variazione ne servono due.",
+    "reason_not_market_move": "Questo avviso riporta un evento registrato e non un movimento di mercato, quindi prezzo, capitalizzazione di mercato e volume non hanno nulla da corroborare.",
+    "reason_narrative_no_cap": "Un punteggio di narrativa contiene componenti di prezzo e volume ma non la capitalizzazione di mercato, quindi il test completo non può essere applicato."
+  },
   "sources": {
     "none": "Nessuna fonte riportata",
     "missing": "Impossibile verificare",

@@ -1,6 +1,11 @@
 import React,{useState,useRef,useEffect} from 'react'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
 export const MARKET_TRIGGERS=['price_move','volume_spike','liquidity_drop']
+// Triggers whose value is an oscillating LEVEL and which therefore now reach the
+// same armed/re-arm machine the market triggers use (migration 20260916093000).
+// They are NOT market triggers: they keep their own threshold field and their
+// own explanatory caption, and only the behaviour controls are shared.
+export const CONDITION_TRIGGERS=[...MARKET_TRIGGERS,'supply_shock','narrative_heat']
 const thresholdFields={price_move:['threshold_pct','Rolling 24-hour change (%)'],volume_spike:['threshold_pct','Rolling 24-hour volume change (%)'],liquidity_drop:['min_liquidity_usd','Liquidity below (USD)'],wallet_activity:['min_usd','Recorded activity minimum (USD)'],narrative_heat:['momentum_delta','Narrative momentum increase (points)'],holder_shift:['threshold_pct','Holder change (%)'],unlock:['window_days','Upcoming unlock window (days)'],supply_shock:['threshold_pct','Supply change (%)']}
 export const marketAlertForm=config=>({title:config?.title||'',note:config?.note||'',condition:config?.condition||'crossing',direction:config?.direction||'either',repeat:config?.repeat||'rearm',hysteresis:config?.hysteresis_pct??0,sustain:config?.sustain_minutes??15,threshold:config?.min_liquidity_usd??config?.threshold_pct??10})
 export function marketAlertConfig(form){
@@ -17,10 +22,10 @@ export function MarketAlertFields({form,setForm,trigger,disabled=false}){
   <label>Repeat<select disabled={disabled} value={form.repeat} onChange={e=>set('repeat',e.target.value)}><option value="rearm">{form.condition==='legacy_level'?'Repeat after cooldown':'Rearm after reset'}</option><option value="once">Only once, then pause</option></select></label>
   {form.condition!=='legacy_level'&&<label>Reset margin (%)<input disabled={disabled} type="number" min="0" max="50" step="any" value={form.hysteresis} onChange={e=>set('hysteresis',e.target.value)}/></label>}
   {form.condition==='sustained'&&<label>Observed duration (minutes)<input disabled={disabled} type="number" min="15" max="1440" step="1" required value={form.sustain} onChange={e=>set('sustain',e.target.value)}/></label>}
- </div><p className="intel-analysis-caption">{trigger==='liquidity_drop'?'Absolute reported liquidity below your level; this is not executable order-book depth.':'Reported rolling 24-hour change; the baseline is the source’s rolling window, not your entry or activation price.'} Checks run every 15 minutes. Crossings need two compatible samples; a gap over 20 minutes establishes a new baseline. The path between samples is unknown.</p></>
+ </div><p className="intel-analysis-caption">{trigger==='liquidity_drop'?'Absolute reported liquidity below your level; this is not executable order-book depth.':trigger==='supply_shock'?'Signed supply change between consecutive retained snapshots, compared on its size, so a contraction and an expansion of the same size both match. The reset margin is a margin on that size.':trigger==='narrative_heat'?'Narrative momentum and risk are scores recalculated on their own cadence, not market observations. A stage change stays a one-off transition and is never debounced by the reset margin.':'Reported rolling 24-hour change; the baseline is the source’s rolling window, not your entry or activation price.'} {trigger==='supply_shock'?'Consecutive snapshots up to 48 hours apart stay comparable.':trigger==='narrative_heat'?'Calculations up to 6 hours apart stay comparable.':'Checks run every 15 minutes. Crossings need two compatible samples; a gap over 20 minutes establishes a new baseline.'} Leaving the evaluation on “Threshold match at a check” keeps this rule’s existing behaviour exactly. The path between samples is unknown.</p></>
 }
 export default function MarketAlertControls({rule,context,onChanged}){
- const market=MARKET_TRIGGERS.includes(rule.trigger_type),thresholdField=thresholdFields[rule.trigger_type]
+ const market=CONDITION_TRIGGERS.includes(rule.trigger_type),thresholdField=thresholdFields[rule.trigger_type]
  const [form,setForm]=useState(()=>({...marketAlertForm(rule.config),threshold:thresholdField?rule.config?.[thresholdField[0]]??0:0,condition:rule.config?.condition||'legacy_level',active:rule.is_active,cooldown:rule.cooldown_minutes??720})),[busy,setBusy]=useState(false),[error,setError]=useState(null)
  const operation=useRef(null),alive=useRef(true)
  useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])

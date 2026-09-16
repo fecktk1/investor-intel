@@ -8,7 +8,7 @@
 import { getOrAssembleAssetEvidencePack, type AssetEvidenceSubject } from './asset-evidence-pack.ts'
 import { readThesisContextRows } from './thesis-monitor-context.ts'
 import {evaluateThesisConditions} from './thesis-conditions.ts'
-import {loadThesisConditionSources} from './thesis-condition-sources.ts'
+import {loadThesisConditionSources,loadThesisMetricAgreement} from './thesis-condition-sources.ts'
 import { cardsFromAssetPack, classifyEventForThesis, computeThesisStatus, scoreThesisQuality } from './thesis-evidence.ts'
 
 // deno-lint-ignore no-explicit-any
@@ -104,7 +104,13 @@ export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: bo
     invalidation: rules.filter((r) => r.rule_kind === 'invalidation' && r.status === 'triggered').length,
     totalConfirmation: rules.filter((r) => r.rule_kind === 'confirmation').length,
   }
+  // The evidentiary standard for this asset, read from the same retained
+  // observations the pack came from. It restrains what the engine may SUGGEST;
+  // it never blocks the evaluation, and an unavailable verdict leaves the
+  // suggestion exactly as it was before the standard existed.
+  const agreement = await loadThesisMetricAgreement(admin, thesis.subject_canonical_key, Date.now())
   const status = computeThesisStatus({
+    metricAgreement: agreement.agreement,
     stance: thesis.stance,
     baselinePrice: num((baseline?.price_snapshot as Any)?.current_price),
     livePrice: num((pack as Any)?.market_summary?.current_price),

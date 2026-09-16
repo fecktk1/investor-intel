@@ -775,6 +775,18 @@
     "medium": "Besueshmëri mesatare",
     "low": "Besueshmëri e ulët"
   },
+  "evidence": {
+    "corroborated": "E mbështetur",
+    "research_lead": "Pistë hulumtimi",
+    "corroborated_why": "Çmimi, kapitalizimi i tregut dhe vëllimi lëvizën të gjitha në të njëjtin drejtim brenda së njëjtës dritare kohore.",
+    "conflicting_why": "Çmimi, kapitalizimi i tregut dhe vëllimi nuk përputhen me njëri-tjetrin, prandaj kjo është një pistë hulumtimi dhe jo një lëvizje e mbështetur.",
+    "incomplete_why": "Nuk u matën dot të tria vlerat (çmimi, kapitalizimi i tregut dhe vëllimi) brenda së njëjtës dritare kohore, prandaj kjo është një pistë hulumtimi dhe jo një lëvizje e mbështetur.",
+    "unmeasured_why": "Nuk u mat dot asnjë ndryshim i datuar i çmimit, i kapitalizimit të tregut ose i vëllimit, prandaj kjo është një pistë hulumtimi dhe jo një lëvizje e mbështetur.",
+    "reason_cap_undated": "Ky burim e publikon kapitalizimin e tregut pa një kohë vëzhgimi të vetën, prandaj prej tij nuk mund të nxirret një ndryshim i datuar.",
+    "reason_cap_single": "Ruhet vetëm një lexim i datuar i kapitalizimit të tregut, ndërsa për një ndryshim duhen dy.",
+    "reason_not_market_move": "Ky njoftim raporton një ngjarje të regjistruar dhe jo një lëvizje tregu, prandaj çmimi, kapitalizimi i tregut dhe vëllimi nuk kanë çfarë të mbështesin këtu.",
+    "reason_narrative_no_cap": "Një pikëzim narrativi përmban përbërës çmimi dhe vëllimi, por jo kapitalizim tregu, prandaj testi i plotë nuk mund të zbatohet mbi të."
+  },
   "sources": {
     "none": "Nuk u raportuan burime",
     "missing": "Nuk u mund të verifikohet",
