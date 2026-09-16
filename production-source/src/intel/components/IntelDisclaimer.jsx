@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Info } from 'lucide-react'
 
 // Persistent non-financial-advice disclaimer. Investor Intel is research,
-// education, and risk context — never advice. This renders in the shell and
+// education, and risk context, never advice. This renders in the shell and
 // can be reused per-page (variant="block").
 export default function IntelDisclaimer({ variant = 'bar' }) {
   const { t } = useTranslation('intel', { useSuspense: false })
