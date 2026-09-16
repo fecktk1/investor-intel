@@ -20,7 +20,8 @@
 // as `skipped: 'time_budget'` and the next cron tick picks them up.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { requestCmc, cmcPlan, loadCmcOperatingSettings } from '../_shared/market-assets/cmc-transport.ts'
+import { requestCmc, cmcPlan, cmcCreditCeiling, loadCmcOperatingSettings } from '../_shared/market-assets/cmc-transport.ts'
+import { calibrateCadence, calibratePolicyRows, loadAccountObservations } from '../_shared/intel/budget-calibration.ts'
 import { requireIntelAccess } from '../_shared/intel/research-service.ts'
 import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
 import {
@@ -93,9 +94,18 @@ Deno.serve(async (req) => {
     }
 
     const now = new Date()
-    const [policy, settings] = await Promise.all([loadSchedulePolicy(admin), loadCmcOperatingSettings(admin)])
+    const [policy, settings, observed] = await Promise.all([loadSchedulePolicy(admin), loadCmcOperatingSettings(admin), loadAccountObservations(admin)])
     const plan = cmcPlan(now.getTime(), settings)
-    const deps: CaptureDeps = { request: requestCmc, policy }
+    // One calibration, applied once to the policy rows, so every lane below
+    // reads a cadence this account can actually sustain to its reset without any
+    // lane knowing this exists. The multiplier only ever stretches a cadence and
+    // is exactly 1 whenever the burn cannot be measured, so the reviewed plan
+    // table remains both the default and the fastest rate anyone approved.
+    const calibration = calibrateCadence({
+      observations: observed.observations, ceiling: cmcCreditCeiling(settings), now: now.getTime(), error: observed.error,
+      boundaries: [settings.CMC_SOURCE_POLICY_EXPIRES_AT ?? null, settings.CMC_HACKATHON_EXPIRES_AT ?? null],
+    })
+    const deps: CaptureDeps = { request: requestCmc, policy: calibratePolicyRows(policy, calibration) }
     // A per-job context carries its own call ceiling, so one lane can never
     // consume the budget of another inside the hourly batch.
     const ctxFor = (name: string, maxCalls: number) => ({ supabase: admin, jobName: 'intel-capture', caller: `intel-capture-${name}`, kind: 'job' as const, maxCalls })
@@ -127,8 +137,8 @@ Deno.serve(async (req) => {
 
     const credits = jobs.reduce((sum, job) => sum + (Number(job.credits) || 0), 0)
     const rows = jobs.reduce((sum, job) => sum + (Number(job.rows) || 0), 0)
-    console.info('intel_capture_run', { op, plan, credits, rows, durationMs: Date.now() - startedAt, jobs: jobs.map((j) => ({ job: j.job, rows: j.rows, credits: j.credits, skipped: j.skipped ?? null, error: j.error ?? null })) })
-    return json({ ok: jobs.every((job) => !job.error), op, plan, jobs, credits, rows, durationMs: Date.now() - startedAt })
+    console.info('intel_capture_run', { op, plan, credits, rows, durationMs: Date.now() - startedAt, calibration: { scale: calibration.scale, reason: calibration.reason, usable: calibration.usable }, jobs: jobs.map((j) => ({ job: j.job, rows: j.rows, credits: j.credits, skipped: j.skipped ?? null, error: j.error ?? null })) })
+    return json({ ok: jobs.every((job) => !job.error), op, plan, calibration, jobs, credits, rows, durationMs: Date.now() - startedAt })
   } catch (e) {
     const denied = orgAuthzErrorResponse(e, corsHeaders)
     if (denied) return denied

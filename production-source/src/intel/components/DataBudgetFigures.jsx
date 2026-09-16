@@ -152,6 +152,16 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
     ['basic', num(projection.basic)],
   ]
 
+  // ---- (b2) cadence calibration ---------------------------------------------
+  // A multiplier of 1 is a reading, not an absence: it says the observed burn
+  // fits the budget, or that the burn could not be measured and the reviewed
+  // cadence stands. The reason is always shown so the two are never confused.
+  const calibration = budget.calibration || null
+  const perHour = value => { const n = num(value); return n == null ? null : n * 3600 }
+  const rate = value => { const n = perHour(value); return n == null ? '—' : n.toLocaleString(undefined, { maximumFractionDigits: 2 }) }
+  const hoursToReset = num(calibration?.secondsToReset)
+  const projectedCalibrated = num(month.projectedAtCalibratedCadence)
+
   // ---- (c) per-feature projection ------------------------------------------
   const featureRows = features.map(feature => {
     const status = featureStatus(feature)
@@ -304,6 +314,44 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
             })}
           </li>
         </ul>
+      </section>
+
+      <section aria-label={t('data_budget.calibration_label', { defaultValue: 'Cadence calibration' })} className="space-y-1">
+        <h2 className="intel-section-title">{t('data_budget.calibration_title', { defaultValue: 'Cadence calibration' })}</h2>
+        {!calibration ? (
+          <p className="intel-analysis-caption" role="status">
+            {t('data_budget.calibration_missing', { defaultValue: 'No cadence calibration was reported for this read.' })}
+          </p>
+        ) : (
+          <ul className="intel-analysis-caption space-y-1" data-testid="data-budget-calibration" data-scale={String(num(calibration.scale) ?? '')} data-reason={String(calibration.reason ?? '')}>
+            <li>
+              {t('data_budget.calibration_line', {
+                observed: rate(calibration.observedCreditsPerSecond), affordable: rate(calibration.affordableCreditsPerSecond),
+                scale: num(calibration.scale) == null ? '—' : String(calibration.scale), count: num(calibration.usable) ?? 0,
+                defaultValue: 'Observed burn {{observed}} credits per hour against {{affordable}} affordable · cadence multiplier ×{{scale}} · {{count}} account observations',
+              })}
+            </li>
+            <li>
+              {t('data_budget.calibration_reason', {
+                reason: String(calibration.reason || t('data_budget.no_reason', { defaultValue: 'no reason was reported' })),
+                defaultValue: 'Reason: {{reason}}',
+              })}
+            </li>
+            <li>
+              {t('data_budget.calibration_window', {
+                remaining: credits(calibration.remainingCredits),
+                hours: hoursToReset == null ? '—' : Math.max(0, Math.round(hoursToReset / 3600)).toLocaleString(),
+                defaultValue: '{{remaining}} credits remain with {{hours}} hours to the reset.',
+              })}
+            </li>
+            <li>
+              {t('data_budget.calibration_projection', {
+                credits: projectedCalibrated == null ? t('data_budget.not_reported', { defaultValue: 'not reported' }) : credits(projectedCalibrated),
+                defaultValue: 'Projected at the calibrated cadence: {{credits}} credits',
+              })}
+            </li>
+          </ul>
+        )}
       </section>
 
       <section aria-label={t('data_budget.features_label', { defaultValue: 'Scheduled features' })} className="space-y-2">

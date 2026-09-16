@@ -3467,7 +3467,14 @@
     "col_active": "Aktive",
     "job_active": "Aktive",
     "job_paused": "E ndalur",
-    "profile_promotional": "promocional"
+    "profile_promotional": "promocional",
+    "calibration_label": "Kalibrimi i ritmit",
+    "calibration_title": "Kalibrimi i ritmit",
+    "calibration_missing": "Për këtë lexim nuk u raportua asnjë kalibrim ritmi.",
+    "calibration_line": "Konsum i vëzhguar {{observed}} kredite në orë kundrejt {{affordable}} të përballueshme · shumëzues ritmi ×{{scale}} · {{count}} vëzhgime të llogarisë",
+    "calibration_reason": "Arsyeja: {{reason}}",
+    "calibration_window": "Mbeten {{remaining}} kredite dhe {{hours}} orë deri te rivendosja.",
+    "calibration_projection": "Parashikim me ritmin e kalibruar: {{credits}} kredite"
   },
   "receipt": {
     "summary": "Fatura e thirrjes së burimit",

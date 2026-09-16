@@ -3467,7 +3467,14 @@
     "col_active": "Attivo",
     "job_active": "Attivo",
     "job_paused": "In pausa",
-    "profile_promotional": "promozionale"
+    "profile_promotional": "promozionale",
+    "calibration_label": "Calibrazione della cadenza",
+    "calibration_title": "Calibrazione della cadenza",
+    "calibration_missing": "Nessuna calibrazione della cadenza è stata riportata per questa lettura.",
+    "calibration_line": "Consumo osservato {{observed}} crediti all'ora rispetto a {{affordable}} sostenibili · moltiplicatore di cadenza ×{{scale}} · {{count}} osservazioni dell'account",
+    "calibration_reason": "Motivo: {{reason}}",
+    "calibration_window": "Restano {{remaining}} crediti e {{hours}} ore al ripristino.",
+    "calibration_projection": "Proiezione alla cadenza calibrata: {{credits}} crediti"
   },
   "receipt": {
     "summary": "Ricevuta della chiamata alla fonte",

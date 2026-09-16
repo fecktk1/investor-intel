@@ -3467,7 +3467,14 @@
     "col_active": "Active",
     "job_active": "Active",
     "job_paused": "Paused",
-    "profile_promotional": "promotional"
+    "profile_promotional": "promotional",
+    "calibration_label": "Cadence calibration",
+    "calibration_title": "Cadence calibration",
+    "calibration_missing": "No cadence calibration was reported for this read.",
+    "calibration_line": "Observed burn {{observed}} credits per hour against {{affordable}} affordable · cadence multiplier ×{{scale}} · {{count}} account observations",
+    "calibration_reason": "Reason: {{reason}}",
+    "calibration_window": "{{remaining}} credits remain with {{hours}} hours to the reset.",
+    "calibration_projection": "Projected at the calibrated cadence: {{credits}} credits"
   },
   "receipt": {
     "summary": "Source call receipt",

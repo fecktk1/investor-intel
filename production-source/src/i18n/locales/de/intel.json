@@ -3467,7 +3467,14 @@
     "col_active": "Aktiv",
     "job_active": "Aktiv",
     "job_paused": "Pausiert",
-    "profile_promotional": "Aktionsprofil"
+    "profile_promotional": "Aktionsprofil",
+    "calibration_label": "Taktkalibrierung",
+    "calibration_title": "Taktkalibrierung",
+    "calibration_missing": "Für diesen Abruf wurde keine Taktkalibrierung gemeldet.",
+    "calibration_line": "Gemessener Verbrauch {{observed}} Credits pro Stunde gegenüber {{affordable}} leistbar · Taktfaktor ×{{scale}} · {{count}} Kontobeobachtungen",
+    "calibration_reason": "Grund: {{reason}}",
+    "calibration_window": "{{remaining}} Credits verbleiben, {{hours}} Stunden bis zur Zurücksetzung.",
+    "calibration_projection": "Projiziert beim kalibrierten Takt: {{credits}} Credits"
   },
   "receipt": {
     "summary": "Beleg zum Quellenaufruf",

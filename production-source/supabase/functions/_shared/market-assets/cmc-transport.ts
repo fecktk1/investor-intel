@@ -108,6 +108,13 @@ async function syncAccount(db:any,key:string,fingerprint:string):Promise<void> {
   if(!plan || !usage || !Number.isFinite(Number(usage.credits_used))) throw new Error('account_unavailable')
   const ok=await rpc(db,'cmc_account_sync',{p_fingerprint:fingerprint,p_limit:Number(plan.credit_limit_monthly),p_used:Number(usage.credits_used),p_reset_at:plan.credit_limit_monthly_reset_timestamp,p_rpm:Number(plan.rate_limit_minute)})
   if(ok!==true) throw new Error('account_unavailable')
+  // The sync above keeps only the NEWEST figures, so nothing in the stack can
+  // see how fast the balance is falling. One advisory append beside the read
+  // that already happened gives the cadence calibrator successive observations
+  // to take a delta from (see _shared/intel/budget-calibration.ts). No second
+  // provider call, and a failure is swallowed on purpose: an account sync must
+  // never fail because a measurement could not be recorded.
+  try { await db.rpc('cmc_account_observe',{p_fingerprint:fingerprint,p_limit:Number(plan.credit_limit_monthly),p_used:Number(usage.credits_used),p_reset_at:plan.credit_limit_monthly_reset_timestamp}) } catch { /* cadence stays the reviewed one */ }
 }
 export async function reserveCmcStream(db:any,maxMessages:number) {
   const settings=await loadCmcOperatingSettings(db)
