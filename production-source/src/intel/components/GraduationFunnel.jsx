@@ -9,6 +9,7 @@ import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/c
 import { useUrlState } from '../lib/useUrlState'
 import { getChain, chainIdFor } from '../lib/chains'
 import { formatUsd, fmtNum } from '../lib/market-format'
+import RateInterval from './thesis/RateInterval'
 
 // Meme graduation lifecycle (CMC plan proposal 30). The hourly launch-stage
 // capture read as a funnel, a cohort graduation rate, a time-to-graduate
@@ -285,6 +286,9 @@ export default function GraduationFunnel() {
       </div>
 
       {rateLine ? <p className="intel-analysis-caption" data-testid="graduation-rate">{rateLine}</p> : null}
+      {/* A cohort rate is quoted with its Wilson 95% interval and cohort size, so
+          2 of 8 never reads as certain as 200 of 800. No cohort, no interval. */}
+      {ready && rate != null ? <p className="intel-analysis-caption" data-testid="graduation-rate-interval"><RateInterval successes={num(cohort?.graduatedInWindow)} n={num(cohort?.firstSeenInWindow)} className="" /></p> : null}
 
       {binState === 'ready' ? (
         <Histogram
@@ -327,7 +331,10 @@ export default function GraduationFunnel() {
                   <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{fmtNum(still)}</td>
                   <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{fmtNum(eligible)}</td>
                   {/* No eligible contracts is not a zero share: it is no reading. */}
-                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{eligible > 0 ? `${((still / eligible) * 100).toFixed(1)}%` : '—'}</td>
+                  <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">
+                    <span data-share>{eligible > 0 ? `${((still / eligible) * 100).toFixed(1)}%` : '—'}</span>
+                    {eligible > 0 ? <span className="block text-[11px] text-[var(--fg-4)]" data-testid="graduation-retention-interval"><RateInterval successes={still} n={eligible} className="" /></span> : null}
+                  </td>
                 </tr>
               )
             }) : (
