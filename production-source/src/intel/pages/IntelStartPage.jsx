@@ -45,7 +45,11 @@ export default function IntelStartPage() {
     setBusy(true); setError(null)
     try {
       const orgId = await startIntelTrial(supabase, { trialDays: 7 })
-      switchOrg(orgId, dest ? { to: dest } : undefined) // reloads into the new workspace → /intel (or checkout)
+      // Resolves true after it has started the reload into the new workspace.
+      // A false answer means the switch was refused; the spinner must not
+      // outlive that, or the page reads as stuck.
+      const switched = await switchOrg(orgId, dest ? { to: dest } : undefined)
+      if (switched === false) throw new Error('workspace_switch_failed')
     } catch (e) {
       setBusy(false)
       setError(
@@ -64,7 +68,8 @@ export default function IntelStartPage() {
     setBusy(true); setError(null)
     try {
       const orgId = await startIntelFree(supabase)
-      switchOrg(orgId, dest ? { to: dest } : undefined)
+      const switched = await switchOrg(orgId, dest ? { to: dest } : undefined)
+      if (switched === false) throw new Error('workspace_switch_failed')
     } catch {
       setBusy(false)
       setError(t('start.free_error', { defaultValue: 'Could not open your free membership. Please try again.' }))
