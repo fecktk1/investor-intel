@@ -440,7 +440,8 @@
     "rwa_yield_total_return_note": "Groei van de intrinsieke waarde is niet het totaalrendement. Een fonds dat zijn inkomsten uitkeert houdt de intrinsieke waarde vlak, dus een gerealiseerd cijfer van nul kan betekenen dat het rendement is uitgekeerd in plaats van opgebouwd. Uitkeringen zijn niet waarneembaar vanuit de feed, en een fonds waarvan de intrinsieke waarde daalde wordt nooit als negatief rendement gepubliceerd.",
     "rwa_yield_col_deviation": "Koers vs IW",
     "rwa_yield_market_note": "De intrinsieke waarde is het eigen gepubliceerde cijfer van het fonds, on chain gelezen. De marktprijs komt uit onze op CoinGecko gebaseerde catalogus en wordt gekoppeld op de provider-id van die catalogus, waarbij de fondsnaam opnieuw wordt geverifieerd, nooit op een ticker. Dit zijn twee verschillende bronnen met twee verschillende klokken.",
-    "rwa_yield_market_limit": "CoinMarketCap publiceert geen identificatie voor deze getokeniseerde staats- en kredietfondsen, dus de marktkant kan daar niet vandaan komen."
+    "rwa_yield_market_limit": "CoinMarketCap publiceert geen identificatie voor deze getokeniseerde staats- en kredietfondsen, dus de marktkant kan daar niet vandaan komen.",
+    "rwa_not_captured": "Er is nog geen vastlegging van het RWA-universum opgeslagen. De vastlegging is elk uur gepland, 7 minuten na het hele uur (UTC)."
   },
   "asset_attention": {
     "eyebrow": "Aandacht",
@@ -2637,7 +2638,8 @@
     "source_receipts": "Bonnen van de bronaanroepen",
     "source_receipts_caption": "Wat elke leesactie bij de aanbieder achter deze weergave heeft beantwoord. Een antwoord uit de cache deed geen nieuwe aanroep.",
     "evidence_standard": "Bewijsstandaard voor dit asset, gemeten op {{date}} op basis van bewaarde prijs, marktkapitalisatie en volume.",
-    "evidence_standard_replay": "Hij beschrijft het nieuwste bewaarde tijdvenster, niet het afspeelmoment."
+    "evidence_standard_replay": "Hij beschrijft het nieuwste bewaarde tijdvenster, niet het afspeelmoment.",
+    "terms_not_recorded": "Voor deze token zijn nog geen eenheids- of terugbetalingsvoorwaarden vastgelegd. Bronnen van de uitgever worden in een beoordelingscyclus van vijf dagen opnieuw gelezen, en de onderbouwingstabel hieronder toont wat is vastgelegd."
   },
   "journal": {
     "brand": "Thesedagboek",
@@ -3695,7 +3697,11 @@
     "unmapped_none": "Er is geen bewuste niet-koppeling vastgelegd.",
     "unmapped_no_register_record": "geen vermelding in het register",
     "unmapped_name_not_an_identifier": "de naam identificeert niet één entiteit",
-    "unmapped_legal_form_mismatch": "de rechtsvorm komt niet overeen met het register"
+    "unmapped_legal_form_mismatch": "de rechtsvorm komt niet overeen met het register",
+    "not_captured": "Er is nog niets uit de primaire bronnen vastgelegd. Deponeringen en registervermeldingen worden dagelijks om {{registryTime}} UTC gelezen, en de concentratie van houders en de beperkingen van de contracten dagelijks om {{concentrationTime}} UTC. De identiteiten en weigeringen hieronder komen uit de gedateerde koppelingslijst en wachten niet op een vastlegging.",
+    "subject_not_captured": "Nog niet vastgelegd. Deponeringen en de registervermelding worden dagelijks om {{registryTime}} UTC gelezen, houders en het contract dagelijks om {{concentrationTime}} UTC.",
+    "identity_withheld": "Deze identiteitsbewering is op {{expiresAt}} voorbij haar herzieningsdatum gegaan. Tot een nieuwe beoordeling haar bevestigt, worden er geen juridische naam, rechtsgebied, registratiestatus, sanctievergelijking of toelatingsvoorwaarden voor getoond.",
+    "unmapped_issuer_changed_over_time": "de uitgever is in de loop van de tijd veranderd"
   },
   "figure_scope": {
     "birdeye_price": "On-chain USD-cijfers van Birdeye op het moment dat onze gedeelde cache ze vastlegde. Geen uitvoerbare prijs en geen observatietijd van de aanbieder.",

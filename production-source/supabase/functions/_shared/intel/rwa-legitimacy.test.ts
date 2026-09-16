@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
-import { legitimacyView } from './rwa-legitimacy.ts'
-import { ALIAS_REVIEWED_AT } from './rwa-issuer-aliases.ts'
+import { identityGate, legitimacyView } from './rwa-legitimacy.ts'
+import { ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES, ALIAS_V2_REVIEWED_AT } from './rwa-issuer-aliases.ts'
 import { parseSdnCsv } from './rwa-sources/ofac.ts'
 import { concentration } from './rwa-sources/blockscout.ts'
 import { detectRestrictions } from './rwa-sources/sourcify.ts'
@@ -142,6 +142,23 @@ Deno.test('a name collision is surfaced on a mapped subject without becoming a m
 
 Deno.test('an expired mapping loses its legal facts the same way an unmapped one never had them', () => {
   const view = legitimacyView({ subject: USTB, at: Date.parse('2026-10-01T00:00:00.000Z'), lei: lapsedLei, admissions: SERIES })
+  assert.equal(view.identity.state, 'expired')
+  assert.deepEqual(view.signals, [])
+  assert.deepEqual(view.admission.timeline, [])
+})
+
+Deno.test('the identity gate is one decision shared by the view and the shipped read board', () => {
+  const live = identityGate(USTB, at)
+  assert.equal(live.legalFactsAllowed, true)
+  assert.equal(live.assertion?.entity.cik, '0002004367')
+  assert.equal(live.unmapped, null)
+  // Expired: no assertion is handed out, so no legal fact can be built from it.
+  const lapsed = identityGate(USTB, Date.parse(ALIAS_REVIEW_EXPIRES) + 1000)
+  assert.deepEqual([lapsed.state, lapsed.legalFactsAllowed, lapsed.assertion], ['expired', false, null])
+  // A refusal is read as of the instant asked: version 2 re-probed Ondo.
+  assert.equal(identityGate(ONDO, at).unmapped?.version, 'rwa-issuer-alias-1')
+  assert.equal(identityGate(ONDO, Date.parse(ALIAS_V2_REVIEWED_AT) + 1000).unmapped?.version, 'rwa-issuer-alias-2')
+  const view = legitimacyView({ subject: USTB, at: Date.parse(ALIAS_REVIEW_EXPIRES) + 1000, lei: lapsedLei, admissions: SERIES })
   assert.equal(view.identity.state, 'expired')
   assert.deepEqual(view.signals, [])
   assert.deepEqual(view.admission.timeline, [])

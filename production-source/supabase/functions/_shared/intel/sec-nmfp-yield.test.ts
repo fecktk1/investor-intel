@@ -1,6 +1,6 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  newestDatedPair, parseNmfpAdvertisedYield, newestFilingUrl, readAdvertisedYield, SEC_USER_AGENT,
+  newestDatedPair, parseNmfpAdvertisedYield, newestFilingUrl, readAdvertisedYield,
 } from './sec-nmfp-yield.ts'
 
 /** The real shape probed on 2026-09-16: one filing carrying many dated pairs in
@@ -92,7 +92,9 @@ Deno.test('a sibling series filing is refused and every request names this clien
   // several series can return a different fund's filing for this query.
   const seen: Record<string, string>[] = []
   const wrongSeries = FILING.replace('S000067043', 'S000012345')
+  const AGENT = 'TheContentForge Investor Intel support@thecontentforge.io'
   const refused = await readAdvertisedYield('S000067043', {
+    userAgent: AGENT,
     fetchText: (url, headers) => {
       seen.push(headers)
       return Promise.resolve(url.includes('efts')
@@ -103,9 +105,10 @@ Deno.test('a sibling series filing is refused and every request names this clien
   eq((refused as { reason: string }).reason, 'series_mismatch')
   // EDGAR answers 403 without a descriptive agent, so every call carries one.
   assert(seen.length >= 1)
-  for (const headers of seen) eq(headers['User-Agent'], SEC_USER_AGENT)
+  for (const headers of seen) eq(headers['User-Agent'], AGENT)
 
   const ok = await readAdvertisedYield('S000067043', {
+    userAgent: AGENT,
     fetchText: (url) => Promise.resolve(url.includes('efts')
       ? JSON.stringify({ hits: { hits: [{ _id: '0002071691-26-021281:primary_doc.xml', _source: { ciks: ['0001786958'], period_ending: '2026-08-31' } }] } })
       : FILING),
@@ -115,5 +118,12 @@ Deno.test('a sibling series filing is refused and every request names this clien
   eq(ok.yield.observedAt, '2026-08-31')
 
   eq((await readAdvertisedYield('nope', { fetchText: () => Promise.resolve(null) }) as { reason: string }).reason, 'invalid_series_id')
-  eq((await readAdvertisedYield('S000067043', { fetchText: () => Promise.resolve(null) }) as { reason: string }).reason, 'search_unavailable')
+  eq((await readAdvertisedYield('S000067043', { userAgent: AGENT, fetchText: () => Promise.resolve(null) }) as { reason: string }).reason, 'search_unavailable')
+
+  // No agent, or an agent with no contact, is refused before any request.
+  let calls = 0
+  const counting = () => { calls += 1; return Promise.resolve(null) }
+  eq((await readAdvertisedYield('S000067043', { fetchText: counting }) as { reason: string }).reason, 'user_agent_required')
+  eq((await readAdvertisedYield('S000067043', { userAgent: 'TheContentForge Investor Intel', fetchText: counting }) as { reason: string }).reason, 'user_agent_required')
+  eq(calls, 0)
 })

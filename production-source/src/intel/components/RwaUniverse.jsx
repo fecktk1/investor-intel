@@ -128,6 +128,13 @@ export default function RwaUniverse() {
           state={state}
           reason={read.reason}
         />
+        {/* A read that succeeded with no capture yet is a stated state with its
+            schedule (the hourly intel-capture batch at minute 7), not a blank. */}
+        {read.status === 'ready' && state === 'empty' ? (
+          <p role="status" className="text-[12px] text-[var(--fg-4)]">
+            {t('structure.rwa_not_captured', { defaultValue: 'No RWA universe capture has been stored yet. The capture is scheduled every hour at 7 minutes past the hour (UTC).' })}
+          </p>
+        ) : null}
         {state === 'ready' ? (
           <div className="overflow-x-auto">
             <table className="w-full text-[12px]">

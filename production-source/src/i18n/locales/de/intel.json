@@ -440,7 +440,8 @@
     "rwa_yield_total_return_note": "Wachstum des Nettoinventarwerts ist nicht die Gesamtrendite. Ein Fonds, der seine Erträge ausschüttet, hält seinen Nettoinventarwert flach, daher kann ein realisierter Wert von null bedeuten, dass die Rendite ausgeschüttet statt thesauriert wurde. Ausschüttungen sind im Feed nicht beobachtbar, und ein Fonds mit gefallenem Nettoinventarwert wird nie als negative Rendite veröffentlicht.",
     "rwa_yield_col_deviation": "Kurs vs. NAV",
     "rwa_yield_market_note": "Der Nettoinventarwert ist die eigene veröffentlichte Zahl des Fonds, on chain gelesen. Der Marktpreis stammt aus unserem CoinGecko-basierten Katalog und wird über dessen Provider-ID zugeordnet, wobei der Fondsname erneut geprüft wird, niemals über ein Kürzel. Das sind zwei verschiedene Quellen mit zwei verschiedenen Uhren.",
-    "rwa_yield_market_limit": "CoinMarketCap veröffentlicht für diese tokenisierten Staatsanleihen- und Kreditfonds keine Kennung, daher kann die Marktseite nicht von dort kommen."
+    "rwa_yield_market_limit": "CoinMarketCap veröffentlicht für diese tokenisierten Staatsanleihen- und Kreditfonds keine Kennung, daher kann die Marktseite nicht von dort kommen.",
+    "rwa_not_captured": "Es wurde noch keine Erfassung des RWA-Universums gespeichert. Die Erfassung ist stündlich um 7 Minuten nach der vollen Stunde (UTC) geplant."
   },
   "asset_attention": {
     "eyebrow": "Aufmerksamkeit",
@@ -2637,7 +2638,8 @@
     "source_receipts": "Belege zu den Quellenaufrufen",
     "source_receipts_caption": "Was jede Anbieterabfrage hinter dieser Ansicht beantwortet hat. Eine Antwort aus dem Zwischenspeicher hat keinen neuen Aufruf ausgelöst.",
     "evidence_standard": "Belegstandard für dieses Asset, gemessen am {{date}} anhand gespeicherter Werte für Preis, Marktkapitalisierung und Volumen.",
-    "evidence_standard_replay": "Er beschreibt das neueste gespeicherte Zeitfenster, nicht den Wiedergabezeitpunkt."
+    "evidence_standard_replay": "Er beschreibt das neueste gespeicherte Zeitfenster, nicht den Wiedergabezeitpunkt.",
+    "terms_not_recorded": "Für diesen Token wurden noch keine Einheiten- oder Rücknahmebedingungen erfasst. Emittentenquellen werden in einem fünftägigen Prüfzyklus neu gelesen, und die Belegtabelle unten zeigt, was erfasst ist."
   },
   "journal": {
     "brand": "Thesentagebuch",
@@ -3695,7 +3697,11 @@
     "unmapped_none": "Es wurde keine bewusste Nichtzuordnung aufgezeichnet.",
     "unmapped_no_register_record": "kein Eintrag im Register",
     "unmapped_name_not_an_identifier": "der Name identifiziert nicht eine einzelne Entität",
-    "unmapped_legal_form_mismatch": "die Rechtsform stimmt nicht mit dem Register überein"
+    "unmapped_legal_form_mismatch": "die Rechtsform stimmt nicht mit dem Register überein",
+    "not_captured": "Aus den Primärquellen wurde noch nichts erfasst. Einreichungen und Registereinträge werden täglich um {{registryTime}} UTC gelesen, die Konzentration der Holder und die Übertragungsbeschränkungen der Verträge täglich um {{concentrationTime}} UTC. Die Identitäten und Ablehnungen unten stammen aus der datierten Zuordnungsliste und warten nicht auf eine Erfassung.",
+    "subject_not_captured": "Noch nicht erfasst. Einreichungen und der Registereintrag werden täglich um {{registryTime}} UTC gelesen, Holder und Vertrag täglich um {{concentrationTime}} UTC.",
+    "identity_withheld": "Diese Identitätsbehauptung hat ihr Überprüfungsdatum am {{expiresAt}} überschritten. Bis eine neue Prüfung sie bestätigt, werden dafür kein rechtlicher Name, keine Rechtsordnung, kein Registrierungsstatus, kein Sanktionsvergleich und keine Zulassungsbedingungen gezeigt.",
+    "unmapped_issuer_changed_over_time": "der Emittent hat sich im Lauf der Zeit geändert"
   },
   "figure_scope": {
     "birdeye_price": "On-Chain-USD-Werte von Birdeye zum Zeitpunkt, an dem unser gemeinsamer Zwischenspeicher sie erfasst hat. Kein ausführbarer Preis und kein Beobachtungszeitpunkt des Anbieters.",

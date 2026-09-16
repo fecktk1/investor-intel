@@ -17,7 +17,9 @@
 //   2. Per registered feed, TWO batched RPC reads: one to prove the feed
 //      (`description()` must match) and one to walk its recent rounds.
 //   3. ONE read per distinct benchmark the registered feeds actually need.
-//   4. TWO reads per advertised-only fund, against SEC EDGAR.
+//   4. TWO reads per advertised-only fund, against SEC EDGAR, with the agent
+//      resolved by `rwa-sources/edgar-agent.ts`. With no agent configured the
+//      fund is still a row, stating `user_agent_required`, and no call is made.
 //
 // Upper bound: 1 + 13 x 2 + 4 + 2 = 33 calls.
 //
@@ -48,6 +50,18 @@ import {
 import { realizedYield, navIsStale } from './rwa-yield-realized.ts'
 import { readBenchmarkRates, type FetchText } from './rwa-benchmark-rates.ts'
 import { readAdvertisedYield, type FetchTextWithHeaders } from './sec-nmfp-yield.ts'
+import { resolveEdgarUserAgent } from './rwa-sources/edgar-agent.ts'
+
+/** The pg_cron job that runs this lane (UTC), from migration
+ * 20260916202000_intel_rwa_capture_cron.sql. Every six hours: registered NAV
+ * feeds publish on a heartbeat of about a day, benchmarks once a business day
+ * and N-MFP3 filings monthly, so four reads a day catch a stale feed within six
+ * hours without re-reading an unchanged round every hour. Served by the read
+ * view so an empty panel can say when it fills; asserted against the
+ * migration by test. */
+export const RWA_YIELD_CAPTURE_SCHEDULE = {
+  rwa_yield: { job: 'intel-capture-rwa-yield-6h', cron: '29 1,7,13,19 * * *', cadence: 'every_6_hours', utc: '01:29, 07:29, 13:29, 19:29' },
+} as const
 
 export const RWA_YIELD_FEATURE = 'rwa_yield'
 /** This lane's rows are not CoinMarketCap's, so they carry their own provider. */
@@ -67,6 +81,9 @@ export interface RwaYieldDeps extends CaptureDeps {
   fetchWithHeaders?: FetchTextWithHeaders
   rpcCall?: NavRpc
   policy?: SchedulePolicyRow[]
+  /** The EDGAR agent. Omitted: resolved from the environment, then the
+   * operating profile row. `null`: none, so the advertised side is refused. */
+  edgarUserAgent?: string | null
 }
 
 // ─── Live seams ───────────────────────────────────────────────────────────────
@@ -317,10 +334,16 @@ export async function captureRwaYield(
     // 5. Advertised-only funds: a primary-source yield with no NAV feed to
     //    compare it against, which is stated rather than hidden.
     let advertised = 0
+    // The same resolved agent the issuer registry lane uses, read once per run
+    // and only when there is a filing to read.
+    const edgarUserAgent = !RWA_ADVERTISED_ONLY.length ? null
+      : deps.edgarUserAgent !== undefined ? deps.edgarUserAgent
+      : (await resolveEdgarUserAgent(admin)).userAgent
     for (const fund of RWA_ADVERTISED_ONLY) {
       if (calls + 2 > budget) { partial = partial || 'call_budget'; break }
-      calls += 2
-      const result = await readAdvertisedYield(fund.secSeriesId, { fetchText: fetchWithHeaders })
+      // A refusal for want of an agent issues no request, so it spends no calls.
+      if (edgarUserAgent) calls += 2
+      const result = await readAdvertisedYield(fund.secSeriesId, { fetchText: fetchWithHeaders, userAgent: edgarUserAgent })
       const found = 'yield' in result ? result.yield : null
       if (found) advertised += 1
       yieldRows.push({

@@ -18,9 +18,17 @@
 //                             top-N shares, and read the verified contract source
 //                             for transfer restrictions.
 //
-// AN UNMAPPED SUBJECT IS NEVER CAPTURED. The lane iterates the assertions, not
-// the tokens we happen to track, so there is no path by which a legal fact is
-// stored against a subject whose identity was never asserted.
+// AN UNMAPPED SUBJECT IS NEVER CAPTURED. The lane iterates the assertions IN
+// FORCE at the run's clock (`currentAssertions`), not the tokens we happen to
+// track, so there is no path by which a legal fact is stored against a subject
+// whose identity was never asserted, or whose assertion has expired. Rows
+// captured while a mapping was in force are kept; they are simply not refreshed
+// until a later version restates it.
+//
+// SCHEDULE. Both ops are driven by pg_cron from migration
+// 20260916202000_intel_rwa_capture_cron.sql, once a day each, at the times in
+// RWA_ISSUER_CAPTURE_SCHEDULE below. A test reads that migration and fails if
+// the two disagree.
 //
 // NEVER THROWS. Every failure becomes a named reason on the result, and a source
 // that failed never empties a table: the writes are upserts keyed so a retry
@@ -28,7 +36,7 @@
 
 import { hourBucket } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult, SchedulePolicyRow } from './capture-jobs.ts'
-import { ALIAS_ASSERTIONS, ALIAS_VERSION, type AliasAssertion } from './rwa-issuer-aliases.ts'
+import { ALIAS_VERSION, currentAssertions, type AliasAssertion } from './rwa-issuer-aliases.ts'
 import { fetchLeiRecord } from './rwa-sources/gleif.ts'
 import { fetchFormD, fetchSubmissions, formDFilings } from './rwa-sources/edgar.ts'
 import { concentration, concentrationScope, fetchAddressImplementation, fetchTokenSummary, fetchTopHolders, type BlockscoutChain } from './rwa-sources/blockscout.ts'
@@ -37,6 +45,7 @@ import { fetchSdnIndex, screenLegalEntity, type SdnIndex } from './rwa-sources/o
 import { leiRegistrationSignal } from './rwa-sources/gleif.ts'
 import { admissionDrift, admissionSnapshot, admissionTimeline } from './rwa-admission-drift.ts'
 import type { SourceDeps } from './rwa-sources/http.ts'
+import { resolveEdgarUserAgent } from './rwa-sources/edgar-agent.ts'
 
 /** These lanes answer to their own provider row, not CoinMarketCap's. */
 export const RWA_ISSUER_PROVIDER = 'primary-sources'
@@ -50,30 +59,30 @@ export const SIGNAL_TABLE = 'intel_rwa_issuer_risk_signals'
 export const CONCENTRATION_TABLE = 'intel_rwa_token_concentration'
 export const RESTRICTION_TABLE = 'intel_rwa_token_restrictions'
 
+/** The pg_cron jobs that run these lanes (UTC). Served by the read view so an
+ * empty board can say when it fills; asserted against the migration by test. */
+export const RWA_ISSUER_CAPTURE_SCHEDULE = {
+  rwa_issuer_registry: { job: 'intel-capture-rwa-issuer-registry-daily', cron: '19 2 * * *', cadence: 'daily', utc: '02:19' },
+  rwa_token_concentration: { job: 'intel-capture-rwa-token-concentration-daily', cron: '53 2 * * *', cadence: 'daily', utc: '02:53' },
+} as const
+
 /** Filings read per subject per run. The admission series is short by nature:
  * the longest real series probed 2026-09-16 was seven filings. */
 export const FILINGS_PER_SUBJECT = 8
 /** Subjects one run will process, so a growing alias map cannot grow the run. */
 export const SUBJECTS_PER_RUN = 10
 
-/** The environment variable carrying the descriptive contact EDGAR requires.
- * REQUIRED SETTING: until it is set, `rwa_issuer_registry` reads nothing from
- * EDGAR and reports `user_agent_required`. See the migration header. */
-export const EDGAR_AGENT_ENV = 'SEC_EDGAR_USER_AGENT'
+/** The setting carrying the descriptive contact EDGAR requires. REQUIRED
+ * SETTING: until it resolves, `rwa_issuer_registry` reads nothing from EDGAR and
+ * reports `user_agent_required`. It is read from the environment first and then
+ * from the operating profile row; see `rwa-sources/edgar-agent.ts`. */
+export { EDGAR_AGENT_ENV } from './rwa-sources/edgar-agent.ts'
 
 /** Recorded for a token that IS a proxy but whose implementation could not be
  * read. It must never fall through to `no_restriction_found`: not having looked
  * is not the same as having looked and found nothing. */
 export const PROXY_UNRESOLVED_SCOPE =
   'This token is a proxy contract and its implementation could not be resolved, so its transfer restrictions were NOT read. Absence of a detected restriction here is not evidence that transfers are unrestricted, that no identity registry applies, or that a holder cannot be frozen. Nothing is asserted about this token\'s restrictions. Read the contract at the block explorer.'
-
-// deno-lint-ignore no-explicit-any
-const _glob = globalThis as any
-function envValue(name: string): string | null {
-  try { const v = _glob?.Deno?.env?.get?.(name); if (v) return String(v) } catch { /* permission-gated */ }
-  const v = _glob?.process?.env?.[name]
-  return v ? String(v) : null
-}
 
 /** This lane's own policy row. `schedulePolicy` in capture-jobs.ts filters on
  * the CoinMarketCap provider, so it would never see these rows. */
@@ -128,10 +137,13 @@ export async function captureRwaIssuerRegistry(
   try {
     if (!lanePolicy(deps.policy, RWA_REGISTRY_FEATURE).enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
     const at = options.at ?? now.getTime()
-    const assertions = (options.subjects ?? ALIAS_ASSERTIONS).slice(0, SUBJECTS_PER_RUN)
+    const assertions = (options.subjects ?? currentAssertions(at)).slice(0, SUBJECTS_PER_RUN)
     if (!assertions.length) return { job, rows: 0, credits: 0, skipped: 'no_mapped_subjects' }
 
-    const agent = deps.sources?.userAgent ?? envValue(EDGAR_AGENT_ENV)
+    // An injected agent wins (tests, a manual run); otherwise the environment,
+    // then the operating profile row. None resolves to `user_agent_required`
+    // at the transport, before any EDGAR call is issued.
+    const agent = deps.sources?.userAgent ?? (await resolveEdgarUserAgent(admin)).userAgent
     const sources: SourceDeps = { ...(deps.sources ?? {}), userAgent: agent }
 
     // One SDN read for the whole run. A failure here suppresses only the
@@ -238,7 +250,7 @@ export async function captureRwaTokenConcentration(
     if (!lanePolicy(deps.policy, RWA_CONCENTRATION_FEATURE).enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
     const at = options.at ?? now.getTime()
     const capturedAt = hourBucket(at)
-    const tokens = (options.subjects ?? ALIAS_ASSERTIONS).slice(0, SUBJECTS_PER_RUN)
+    const tokens = (options.subjects ?? currentAssertions(at)).slice(0, SUBJECTS_PER_RUN)
       .map((a) => ({ assertion: a, token: tokenSubject(a) }))
       .filter((t): t is { assertion: AliasAssertion; token: { chain: BlockscoutChain; address: string } } => !!t.token)
     if (!tokens.length) return { job, rows: 0, credits: 0, skipped: 'no_mapped_tokens' }

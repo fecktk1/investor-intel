@@ -10,9 +10,22 @@
 // every MAPPED subject is listed, plus every DELIBERATE NON-MAPPING, because
 // "we looked and the sources did not support a mapping" is a finding a reader
 // needs, not an absence to hide.
+//
+// THE GUARD from rwa-legitimacy.ts applies here through `identityGate`: a
+// subject whose assertion is not in force at the instant read (expired, or not
+// yet restated by a later version) shows NO legal name, jurisdiction,
+// registration status, sanctions pointer, admission terms or name collision.
+// Holder concentration and contract restrictions are properties of the token
+// contract and stay visible. A replay at an earlier instant lists only the
+// mappings and refusals that had been recorded by then.
+//
+// NOTHING CAPTURED YET is a state, not a blank: `schedule` names the pg_cron
+// jobs and times that fill these tables, so the board can say when the first
+// capture will land.
 
-import { ALIAS_ASSERTIONS, ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES, NAME_COLLISIONS, UNMAPPED, collisionsFor, resolveAlias } from './rwa-issuer-aliases.ts'
-import { tokenSubject, CONCENTRATION_TABLE, DRIFT_TABLE, ENTITY_TABLE, FILING_TABLE, RESTRICTION_TABLE, SIGNAL_TABLE } from './capture-rwa-issuer.ts'
+import { ALIAS_VERSIONS, NAME_COLLISIONS, assertionsAsOf, collisionsFor, unmappedAsOf } from './rwa-issuer-aliases.ts'
+import { identityGate } from './rwa-legitimacy.ts'
+import { tokenSubject, CONCENTRATION_TABLE, DRIFT_TABLE, ENTITY_TABLE, FILING_TABLE, RESTRICTION_TABLE, RWA_ISSUER_CAPTURE_SCHEDULE, SIGNAL_TABLE } from './capture-rwa-issuer.ts'
 
 const FILING_CAP = 200
 const DRIFT_CAP = 200
@@ -45,9 +58,12 @@ async function readRows(build: () => any): Promise<{ rows: any[]; reason: string
 export async function readRwaIssuerLegitimacy(db: any, params: Record<string, unknown> = {}, now: Date | number = Date.now()): Promise<ViewResult> {
   const at = now instanceof Date ? now.getTime() : now
   const wanted = str(params.subject, 200)
-  const assertions = ALIAS_ASSERTIONS.filter((a) => !wanted || a.subject.toLowerCase() === wanted.toLowerCase())
-  const ciks = [...new Set(assertions.map((a) => a.entity.cik).filter((c): c is string => !!c))]
-  const entityKeys = [...new Set(assertions.map((a) => (a.entity.lei ? `lei:${a.entity.lei}` : a.entity.cik ? `cik:${a.entity.cik}` : null)).filter((k): k is string => !!k))]
+  const assertions = assertionsAsOf(at).filter((a) => !wanted || a.subject.toLowerCase() === wanted.toLowerCase())
+  const gates = new Map(assertions.map((a) => [a.subject, identityGate(a.subject, at)]))
+  // Legal-person tables are read only for subjects whose mapping is in force.
+  const legal = assertions.filter((a) => gates.get(a.subject)?.legalFactsAllowed)
+  const ciks = [...new Set(legal.map((a) => a.entity.cik).filter((c): c is string => !!c))]
+  const entityKeys = [...new Set(legal.map((a) => (a.entity.lei ? `lei:${a.entity.lei}` : a.entity.cik ? `cik:${a.entity.cik}` : null)).filter((k): k is string => !!k))]
   const addresses = [...new Set(assertions.map((a) => tokenSubject(a)?.address).filter((x): x is string => !!x))]
 
   const reasons: string[] = []
@@ -77,9 +93,10 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
   const subjects = assertions.map((assertion) => {
     const entityKey = assertion.entity.lei ? `lei:${assertion.entity.lei}` : `cik:${assertion.entity.cik}`
     const token = tokenSubject(assertion)
+    const allowed = gates.get(assertion.subject)?.legalFactsAllowed === true
     // deno-lint-ignore no-explicit-any
     const mine = (rows: any[], key: string, value: unknown) => rows.filter((r) => r?.[key] === value)
-    const series = mine(filingRows, 'cik', assertion.entity.cik)
+    const series = !allowed ? [] : mine(filingRows, 'cik', assertion.entity.cik)
       .map((r) => ({
         accessionNumber: str(r.accession_number, 25), filingDate: str(r.filing_date, 10), submissionType: str(r.submission_type, 10),
         entityName: str(r.entity_name, 500), jurisdictionOfInc: str(r.jurisdiction_of_inc, 120),
@@ -107,28 +124,40 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
         .sort((a, b) => String(b.capturedAt ?? '').localeCompare(String(a.capturedAt ?? '')))[0] ?? null
       : null
     const restriction = token ? mine(restrictionRows, 'contract_address', token.address)[0] ?? null : null
+    const entityRow = allowed ? entityRows.find((r) => r.entity_key === entityKey) : undefined
+    const drifts = allowed ? mine(driftRows, 'cik', assertion.entity.cik) : []
 
     return {
       subject: assertion.subject,
       subjectLabel: assertion.subjectLabel,
-      state: resolveAlias(assertion.subject, at) ? 'mapped' : 'expired',
+      state: allowed ? 'mapped' : 'expired',
+      // True when the guard withheld every fact about a legal person.
+      legalFactsWithheld: !allowed,
       identity: {
-        entityKey, lei: assertion.entity.lei ?? null, cik: assertion.entity.cik ?? null,
-        legalName: str(entityRows.find((r) => r.entity_key === entityKey)?.legal_name, 500) ?? assertion.entity.legalName,
-        jurisdiction: str(entityRows.find((r) => r.entity_key === entityKey)?.jurisdiction, 20) ?? assertion.entity.jurisdiction ?? null,
-        registrationStatus: str(entityRows.find((r) => r.entity_key === entityKey)?.registration_status, 40),
-        entityStatus: str(entityRows.find((r) => r.entity_key === entityKey)?.entity_status, 40),
+        entityKey: allowed ? entityKey : null,
+        lei: allowed ? assertion.entity.lei ?? null : null,
+        cik: allowed ? assertion.entity.cik ?? null : null,
+        legalName: !allowed ? null : str(entityRow?.legal_name, 500) ?? assertion.entity.legalName,
+        jurisdiction: !allowed ? null : str(entityRow?.jurisdiction, 20) ?? assertion.entity.jurisdiction ?? null,
+        registrationStatus: str(entityRow?.registration_status, 40),
+        entityStatus: str(entityRow?.entity_status, 40),
+        // The assertion's own recorded words stay, so a reader can see what was
+        // asserted, when, and that it lapsed.
         basis: assertion.basis, evidence: assertion.evidence,
         assertedBy: assertion.assertedBy, assertedAt: assertion.assertedAt, expiresAt: assertion.expiresAt,
+        version: assertion.version,
         sourceUrl: assertion.entity.sourceUrl,
       },
       admission: {
         timeline: series,
         current: series.at(-1) ?? null,
-        termDrift: mine(driftRows, 'cik', assertion.entity.cik).filter((r) => r.kind === 'term').map(driftRow),
-        activityDrift: mine(driftRows, 'cik', assertion.entity.cik).filter((r) => r.kind === 'activity').map(driftRow),
+        termDrift: drifts.filter((r) => r.kind === 'term').map(driftRow),
+        activityDrift: drifts.filter((r) => r.kind === 'activity').map(driftRow),
       },
-      signals: signalRows.filter((r) => r.entity_key === entityKey).map((r) => ({
+      // Has anything been captured for this subject yet? Distinguishes "not
+      // captured yet" from "captured and found nothing".
+      captured: !!entityRow || series.length > 0 || !!latestConcentration || !!restriction,
+      signals: signalRows.filter((r) => allowed && r.entity_key === entityKey).map((r) => ({
         type: str(r.signal_type, 40), level: str(r.level, 40), status: str(r.status, 120),
         sourceUrl: str(r.source_url, 500), scope: str(r.scope), fetchedAt: str(r.fetched_at, 40),
       })),
@@ -141,7 +170,7 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
           sourceUrl: str(restriction.source_url, 500), scope: str(restriction.scope),
         }
         : null,
-      collisions: collisionsFor(assertion.subject),
+      collisions: allowed ? collisionsFor(assertion.subject) : [],
     }
   })
 
@@ -155,9 +184,28 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
     reason: reasons.length ? reasons.join(' ').slice(0, 400) : null,
     subjects,
     // Deliberate non-mappings are part of the answer, not an absence.
-    unmapped: UNMAPPED.map((u) => ({ subject: u.subject, subjectLabel: u.subjectLabel, reason: u.reason, evidence: u.evidence, probedAt: u.probedAt, sourceUrl: u.sourceUrl })),
-    collisions: NAME_COLLISIONS,
-    review: { reviewedAt: ALIAS_REVIEWED_AT, expiresAt: ALIAS_REVIEW_EXPIRES, expired: at >= Date.parse(ALIAS_REVIEW_EXPIRES) },
+    unmapped: unmappedAsOf(at).map((u) => ({ subject: u.subject, subjectLabel: u.subjectLabel, reason: u.reason, evidence: u.evidence, probedAt: u.probedAt, sourceUrl: u.sourceUrl, version: u.version })),
+    collisions: NAME_COLLISIONS.filter((c) => subjects.some((s) => s.subject === c.relatedSubject && !s.legalFactsWithheld)),
+    review: aliasReview(subjects, at),
+    // When the capture lanes run, so an empty board can say when it fills.
+    schedule: RWA_ISSUER_CAPTURE_SCHEDULE,
+  }
+}
+
+/**
+ * The review clock of the board. `expired` is true when ANY listed assertion has
+ * lapsed; `expiresAt` is the soonest expiry among the assertions still in
+ * force, which is the next date the board loses a mapping; `versions` lists
+ * every review recorded by `at` with its own window.
+ */
+function aliasReview(subjects: { state: string; identity: { expiresAt: string } }[], at: number) {
+  const versions = ALIAS_VERSIONS.filter((v) => Date.parse(v.reviewedAt) <= at)
+  const inForce = subjects.filter((s) => s.state === 'mapped').map((s) => s.identity.expiresAt).sort()
+  return {
+    reviewedAt: versions.at(-1)?.reviewedAt ?? null,
+    expiresAt: inForce[0] ?? null,
+    expired: subjects.some((s) => s.state === 'expired'),
+    versions: versions.map((v) => ({ version: v.version, reviewedAt: v.reviewedAt, expiresAt: v.expiresAt, expired: at >= Date.parse(v.expiresAt) })),
   }
 }
 

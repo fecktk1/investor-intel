@@ -235,6 +235,28 @@ Deno.test('the registry lane refuses EDGAR honestly when no descriptive user age
   assert.equal(calls.some((c) => c.url.includes('data.sec.gov')), false)
 })
 
+Deno.test('the registry lane reads edgar with the agent set on the operating profile row when the environment has none', async () => {
+  __resetRwaSourceStateForTests()
+  const agent = 'TheContentForge Investor Intel support@thecontentforge.io'
+  const { impl, calls } = fakeFetch({ 'https://www.treasury.gov/ofac/downloads/sdn.csv': { body: '306,"BANCO NACIONAL DE CUBA",-0- ,"CUBA",-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ,-0- ' } })
+  const base = fakeDb()
+  // The same fake, plus the one ledger read the resolver makes.
+  const db = {
+    ...base,
+    from(table: string) {
+      if (table !== 'provider_quota_budgets') return base.from(table)
+      // deno-lint-ignore no-explicit-any
+      const q: any = { select: () => q, eq: () => q, maybeSingle: () => Promise.resolve({ data: { config: { SEC_EDGAR_USER_AGENT: agent } }, error: null }) }
+      return q
+    },
+  }
+  const result = await captureRwaIssuerRegistry(db, NOW, { request: (() => Promise.resolve(null)) as never, sources: sourceDeps(impl) }, { subjects: [USTB] })
+  assert.doesNotMatch(String(result.partial ?? ''), /user_agent_required/)
+  const edgar = calls.filter((c) => c.url.includes('data.sec.gov'))
+  assert.ok(edgar.length >= 1)
+  for (const call of edgar) assert.equal(call.headers['User-Agent'], agent)
+})
+
 Deno.test('the lane captures mapped subjects only and never an unmapped issuer', async () => {
   const db = fakeDb()
   const empty = await captureRwaTokenConcentration(db, NOW, laneDeps(fakeFetch({}).impl), { subjects: [] })

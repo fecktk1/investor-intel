@@ -566,7 +566,8 @@
     "rwa_yield_total_return_note": "Net asset value growth is not total return. A fund that distributes its income holds its net asset value flat, so a realized figure of zero can mean the return was paid out rather than accrued. Distributions are not observable from the feed, and a fund whose net asset value fell is never published as a negative yield.",
     "rwa_yield_col_deviation": "Price vs NAV",
     "rwa_yield_market_note": "The net asset value is the fund's own published figure read on chain. The market price comes from our CoinGecko-sourced catalogue, matched on that catalogue's provider id with the fund name re-verified, never on a ticker. These are two different sources with two different clocks.",
-    "rwa_yield_market_limit": "CoinMarketCap publishes no identifier for these tokenised treasury and credit funds, so the market side cannot come from it."
+    "rwa_yield_market_limit": "CoinMarketCap publishes no identifier for these tokenised treasury and credit funds, so the market side cannot come from it.",
+    "rwa_not_captured": "No RWA universe capture has been stored yet. The capture is scheduled every hour at 7 minutes past the hour (UTC)."
   },
   "asset_attention": {
     "eyebrow": "Attention",
@@ -3068,7 +3069,8 @@
     "source_receipts": "Source call receipts",
     "source_receipts_caption": "What answered each provider read behind this view. A cached answer made no new call.",
     "evidence_standard": "Evidentiary standard for this asset, measured {{date}} from retained price, market capitalisation and volume.",
-    "evidence_standard_replay": "It describes the newest retained window, not the replay time."
+    "evidence_standard_replay": "It describes the newest retained window, not the replay time.",
+    "terms_not_recorded": "No unit or redemption terms have been recorded for this token yet. Issuer sources are re-read on a five-day review cycle, and the evidence table below lists what is recorded."
   },
   "asset_news": {
     "checked": "Coverage checked",
@@ -3695,7 +3697,11 @@
     "unmapped_none": "No deliberate non-mapping has been recorded.",
     "unmapped_no_register_record": "no record in the register",
     "unmapped_name_not_an_identifier": "the name does not identify one entity",
-    "unmapped_legal_form_mismatch": "the legal form does not match the register"
+    "unmapped_legal_form_mismatch": "the legal form does not match the register",
+    "not_captured": "Nothing has been captured from the primary sources yet. Filings and register records are read daily at {{registryTime}} UTC, and holder concentration and contract restrictions daily at {{concentrationTime}} UTC. The identities and refusals below come from the dated alias map and do not wait for a capture.",
+    "subject_not_captured": "Not captured yet. Filings and the register record are read daily at {{registryTime}} UTC, holders and the contract daily at {{concentrationTime}} UTC.",
+    "identity_withheld": "This identity assertion passed its review date on {{expiresAt}}. Until a new review restates it, no legal name, jurisdiction, registration status, sanctions comparison or admission terms are shown for it.",
+    "unmapped_issuer_changed_over_time": "the issuer changed over time"
   },
   "figure_scope": {
     "birdeye_price": "Birdeye on-chain USD figures at the time our shared cache captured them. Not an executable price and not a provider observation time.",

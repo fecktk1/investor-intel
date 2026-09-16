@@ -55,6 +55,30 @@ export function driftRows(subjects = []) {
     .sort((a, b) => String(b.changedBy ?? '').localeCompare(String(a.changedBy ?? '')))
 }
 
+/** The daily capture times (UTC) the read view serves, with the times the
+ * migration schedules as a fallback for an older payload. */
+export function captureTimes(schedule) {
+  return {
+    registryTime: schedule?.rwa_issuer_registry?.utc || '02:19',
+    concentrationTime: schedule?.rwa_token_concentration?.utc || '02:53',
+  }
+}
+
+/** Nothing captured for any subject yet. A board that has captured nothing
+ * says so and says when it will fill, rather than showing empty sections.
+ * Only an explicit `captured: false` from the read view counts, so a payload
+ * that predates the field is never mislabelled as empty. */
+export function boardNotCaptured(payload) {
+  const subjects = Array.isArray(payload?.subjects) ? payload.subjects : []
+  return !payload?.asOf && subjects.length > 0 && subjects.every(subject => subject?.captured === false)
+}
+
+/** A review instant as a readable UTC minute. */
+const utcMinute = value => {
+  const text = String(value || '')
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) ? `${text.slice(0, 10)} ${text.slice(11, 16)} UTC` : text
+}
+
 function Scope({ children }) {
   return <p className="text-[11px] leading-relaxed text-[var(--fg-4)] mt-1 max-w-[75ch]">{children}</p>
 }
@@ -82,6 +106,10 @@ export default function RwaIssuerLegitimacy() {
   const subjects = useMemo(() => (Array.isArray(payload.subjects) ? payload.subjects : []), [payload])
   const unmapped = Array.isArray(payload.unmapped) ? payload.unmapped : []
   const drift = useMemo(() => driftRows(subjects), [subjects])
+  // When the capture lanes run, as the read view reports them. An empty board
+  // says when it fills instead of rendering as blank.
+  const times = captureTimes(payload.schedule)
+  const nothingCaptured = boardNotCaptured(payload)
 
   return (
     <section className="intel-rwa-issuer space-y-6" aria-label={t('rwa_issuer.title', { defaultValue: 'Issuer legitimacy and admission reality' })}>
@@ -107,6 +135,12 @@ export default function RwaIssuerLegitimacy() {
 
           {payload.review?.expired && (
             <p role="status" className="text-[12px]">{t('rwa_issuer.review_expired', { defaultValue: 'These identity assertions are past their review date. They are shown as recorded and are not used to claim a current identity.' })}</p>
+          )}
+
+          {nothingCaptured && (
+            <p role="status" className="text-[12px]">
+              {t('rwa_issuer.not_captured', { ...times, defaultValue: 'Nothing has been captured from the primary sources yet. Filings and register records are read daily at {{registryTime}} UTC, and holder concentration and contract restrictions daily at {{concentrationTime}} UTC. The identities and refusals below come from the dated alias map and do not wait for a capture.' })}
+            </p>
           )}
 
           {/* Admission drift: the row a curated registry structurally cannot hold. */}
@@ -153,7 +187,20 @@ export default function RwaIssuerLegitimacy() {
           {subjects.map(subject => (
             <div key={subject.subject} className="pt-4 border-t border-[var(--border-default)]">
               <div className="eyebrow">{subject.subjectLabel}</div>
-              <p className="text-[13px] mt-1">{subject.identity?.legalName}</p>
+              {subject.legalFactsWithheld ? (
+                // THE GUARD: a lapsed assertion shows no fact about a legal
+                // person until a new review restates it.
+                <p role="status" className="text-[13px] mt-1">
+                  {t('rwa_issuer.identity_withheld', { expiresAt: utcMinute(subject.identity?.expiresAt), defaultValue: 'This identity assertion passed its review date on {{expiresAt}}. Until a new review restates it, no legal name, jurisdiction, registration status, sanctions comparison or admission terms are shown for it.' })}
+                </p>
+              ) : (
+                <p className="text-[13px] mt-1">{subject.identity?.legalName}</p>
+              )}
+              {!nothingCaptured && subject.captured === false && (
+                <p role="status" className="text-[12px] mt-1">
+                  {t('rwa_issuer.subject_not_captured', { ...times, defaultValue: 'Not captured yet. Filings and the register record are read daily at {{registryTime}} UTC, holders and the contract daily at {{concentrationTime}} UTC.' })}
+                </p>
+              )}
               <Scope>
                 {t('rwa_issuer.identity_basis', {
                   basis: t(`rwa_issuer.basis_${subject.identity?.basis}`, { defaultValue: subject.identity?.basis || 'unrecorded' }),

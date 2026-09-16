@@ -440,7 +440,8 @@
     "rwa_yield_total_return_note": "El crecimiento del valor liquidativo no es la rentabilidad total. Un fondo que distribuye sus ingresos mantiene plano su valor liquidativo, por lo que una cifra realizada de cero puede significar que la rentabilidad se repartió en lugar de acumularse. Las distribuciones no son observables desde el feed, y un fondo cuyo valor liquidativo cayó nunca se publica como rendimiento negativo.",
     "rwa_yield_col_deviation": "Precio vs VL",
     "rwa_yield_market_note": "El valor liquidativo es la cifra que publica el propio fondo, leída en cadena. El precio de mercado procede de nuestro catálogo basado en CoinGecko y se empareja por el identificador de proveedor de ese catálogo, verificando de nuevo el nombre del fondo, nunca por el símbolo. Son dos fuentes distintas con dos relojes distintos.",
-    "rwa_yield_market_limit": "CoinMarketCap no publica ningún identificador para estos fondos tokenizados de letras y crédito, así que el lado de mercado no puede venir de ahí."
+    "rwa_yield_market_limit": "CoinMarketCap no publica ningún identificador para estos fondos tokenizados de letras y crédito, así que el lado de mercado no puede venir de ahí.",
+    "rwa_not_captured": "Todavía no se ha guardado ninguna captura del universo RWA. La captura está programada cada hora, 7 minutos después de la hora en punto (UTC)."
   },
   "asset_attention": {
     "eyebrow": "Atención",
@@ -2637,7 +2638,8 @@
     "source_receipts": "Recibos de las llamadas a la fuente",
     "source_receipts_caption": "Qué respondió cada lectura del proveedor detrás de esta vista. Una respuesta en caché no hizo ninguna llamada nueva.",
     "evidence_standard": "Estándar de evidencia para este activo, medido el {{date}} con el precio, la capitalización de mercado y el volumen conservados.",
-    "evidence_standard_replay": "Describe la ventana conservada más reciente, no el momento de la reproducción."
+    "evidence_standard_replay": "Describe la ventana conservada más reciente, no el momento de la reproducción.",
+    "terms_not_recorded": "Todavía no se han registrado condiciones de unidades ni de reembolso para este token. Las fuentes del emisor se vuelven a leer en un ciclo de revisión de cinco días, y la tabla de evidencias de abajo muestra lo que está registrado."
   },
   "journal": {
     "brand": "Diario de tesis",
@@ -3695,7 +3697,11 @@
     "unmapped_none": "No se ha registrado ninguna no vinculación deliberada.",
     "unmapped_no_register_record": "sin constancia en el registro",
     "unmapped_name_not_an_identifier": "el nombre no identifica a una sola entidad",
-    "unmapped_legal_form_mismatch": "la forma jurídica no coincide con el registro"
+    "unmapped_legal_form_mismatch": "la forma jurídica no coincide con el registro",
+    "not_captured": "Todavía no se ha capturado nada de las fuentes primarias. Las presentaciones y los registros se leen a diario a las {{registryTime}} UTC, y la concentración de holders y las restricciones de los contratos a diario a las {{concentrationTime}} UTC. Las identidades y las negativas de abajo provienen del mapa de vínculos fechado y no esperan a una captura.",
+    "subject_not_captured": "Todavía sin capturar. Las presentaciones y el registro se leen a diario a las {{registryTime}} UTC; los holders y el contrato, a diario a las {{concentrationTime}} UTC.",
+    "identity_withheld": "Esta afirmación de identidad pasó su fecha de revisión el {{expiresAt}}. Hasta que una nueva revisión la confirme, no se muestran para ella nombre legal, jurisdicción, estado de registro, comparación con sanciones ni condiciones de admisión.",
+    "unmapped_issuer_changed_over_time": "el emisor cambió con el tiempo"
   },
   "figure_scope": {
     "birdeye_price": "Cifras on-chain en USD de Birdeye en el momento en que nuestra caché compartida las capturó. No es un precio ejecutable ni una hora de observación del proveedor.",
