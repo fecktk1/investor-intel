@@ -54,6 +54,14 @@ export const HEALTH_LANES: LaneSpec[] = [
   { lane: 'venue_share', table: 'intel_venue_share_snapshots', column: 'snapshot_date', granularity: 'day', policyProvider: 'coinmarketcap', policyFeature: 'venue_share', scheduleSeconds: DAY, required: true },
   { lane: 'new_listings', table: 'intel_new_listing_snapshots', column: 'captured_at', policyProvider: 'coinmarketcap', policyFeature: 'listings', scheduleSeconds: DAY, required: true },
   { lane: 'airdrops', table: 'intel_airdrop_snapshots', column: 'last_seen_at', policyProvider: 'coinmarketcap', policyFeature: 'airdrops', scheduleSeconds: DAY, required: true },
+  // RWA lanes, scheduled by 20260916202000_intel_rwa_capture_cron.sql. Yield runs
+  // every six hours and writes a row per feed per run, so a gap is a real fault.
+  { lane: 'rwa_yield', table: 'intel_rwa_yield_snapshots', column: 'captured_at', policyProvider: 'chainlink', policyFeature: 'rwa_yield', scheduleSeconds: 6 * HOUR, required: true },
+  // The two issuer lanes act only on alias assertions in force. Between an
+  // assertion lapsing and the next review they correctly write nothing, so they
+  // are reported but never degrade the status.
+  { lane: 'rwa_issuer_registry', table: 'intel_rwa_issuer_entities', column: 'fetched_at', policyProvider: 'primary-sources', policyFeature: 'rwa_issuer_registry', scheduleSeconds: DAY, required: false },
+  { lane: 'rwa_token_concentration', table: 'intel_rwa_token_concentration', column: 'captured_at', policyProvider: 'primary-sources', policyFeature: 'rwa_token_concentration', scheduleSeconds: DAY, required: false },
   // Scheduled hourly but has never produced a row: the endpoint is not entitled
   // on the current account. Shown so a change is visible, never a degradation.
   { lane: 'meme_stages', table: 'intel_meme_stage_snapshots', column: 'captured_at', policyProvider: 'coinmarketcap', policyFeature: 'meme_stages', scheduleSeconds: HOUR, required: false },
