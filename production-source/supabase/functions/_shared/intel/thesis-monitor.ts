@@ -10,6 +10,7 @@ import { readThesisContextRows } from './thesis-monitor-context.ts'
 import {evaluateThesisConditions} from './thesis-conditions.ts'
 import {loadThesisConditionSources,loadThesisMetricAgreement} from './thesis-condition-sources.ts'
 import { cardsFromAssetPack, classifyEventForThesis, computeThesisStatus, scoreThesisQuality } from './thesis-evidence.ts'
+import {conditionAgreementReceipt} from './metric-agreement.ts'
 
 // deno-lint-ignore no-explicit-any
 type DB = any
@@ -65,8 +66,20 @@ export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: bo
     pack=packRes.pack||{};conditions=evaluateThesisConditions(activatedRules,pack,thesis.subject_canonical_key,Date.now(),sources)
   }
   const cards=cardsFromAssetPack(pack,thesis.stance||null)
+  // The evidentiary standard for this asset, read from the same retained
+  // observations the pack came from. It restrains what the engine may SUGGEST;
+  // it never blocks the evaluation, and an unavailable verdict leaves the
+  // suggestion exactly as it was before the standard existed. Read once, before
+  // the conditions are recorded, so each condition receipt carries the verdict
+  // that applies to it and the reader sees it on the condition itself.
+  const agreement = await loadThesisMetricAgreement(admin, thesis.subject_canonical_key, Date.now())
   for(const condition of conditions){
     if(dryRun)continue
+    // Rides inside the observation the database already stores (minus its
+    // value), so the thesis_condition alert and the rule's evaluation state
+    // both keep it without a schema change. A condition with no observation
+    // records nothing and fires nothing, so there is nothing to label.
+    if(condition.observation)(condition.observation as Any).agreement=conditionAgreementReceipt(condition.rule?.metric,agreement)
     const result=await admin.rpc('intel_record_thesis_condition',{p_org:thesis.org_id,p_user:thesis.user_id,p_rule:condition.rule.id,p_expected:condition.rule,p_met:condition.met,p_evidence_version:packRes.contentHash,p_observation:condition.observation,p_reason:condition.reason})
     if(result.error||!result.data?.state)throw Error('thesis_condition_save_unavailable')
     if(result.data.state==='triggered')condition.rule.status='triggered'
@@ -104,13 +117,9 @@ export async function evaluateThesis(admin: DB, thesis: Any, opts: { dryRun?: bo
     invalidation: rules.filter((r) => r.rule_kind === 'invalidation' && r.status === 'triggered').length,
     totalConfirmation: rules.filter((r) => r.rule_kind === 'confirmation').length,
   }
-  // The evidentiary standard for this asset, read from the same retained
-  // observations the pack came from. It restrains what the engine may SUGGEST;
-  // it never blocks the evaluation, and an unavailable verdict leaves the
-  // suggestion exactly as it was before the standard existed.
-  const agreement = await loadThesisMetricAgreement(admin, thesis.subject_canonical_key, Date.now())
   const status = computeThesisStatus({
     metricAgreement: agreement.agreement,
+    metricAgreementReasons: agreement.reasons,
     stance: thesis.stance,
     baselinePrice: num((baseline?.price_snapshot as Any)?.current_price),
     livePrice: num((pack as Any)?.market_summary?.current_price),

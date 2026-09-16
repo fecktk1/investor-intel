@@ -71,6 +71,9 @@ Deno.test('activated conditions refresh an expired shared pack once without prov
  const result=await evaluateThesis(db,thesis,{readPack:async(_db,_subject,opts)=>{calls.push(opts);return calls.length===1?{pack:{},cached:true,contentHash:'old'} as any:{pack:{market_summary:{retained_observations:[{id:'new',subject:'market:coinmarketcap:1',metric:'price',unit:'USD',value:100,provider:'coinmarketcap',sourceRef:'shared:new',observedAt:observed,recordedAt:recorded,expiresAt:new Date(Date.now()+60000).toISOString()}]}},contentHash:'current-version'} as any}})
  eq(calls.length,2);eq(calls[1].force,true);eq(calls.every(c=>c.allowLiveEnrichment===false),true);eq(result.evidence_version,'current-version')
  const saved=db.rpcs.find(r=>r.name==='intel_record_thesis_condition');eq(saved.args.p_evidence_version,'current-version');eq(saved.args.p_observation.id,'new');eq(saved.args.p_met,true);eq(saved.args.p_expected.description,'Original zero level')
+ // The condition receipt carries the evidentiary verdict for its market-move metric.
+ // This fake database retains no agreement window, so it is an unmeasured research lead.
+ eq(saved.args.p_observation.agreement.metric_agreement,'unmeasured');eq(saved.args.p_observation.agreement.research_lead,true)
 })
 Deno.test('evaluation uses the clock after assembly and accepts evidence learned during that assembly',async()=>{
  const db=database({rules:[{id:'rule',thesis_id:'thesis',status:'active',alert_rule_id:'alert',metric:'price',comparator:'gte',threshold:0,threshold_unit:'USD',time_window:'current'}]})

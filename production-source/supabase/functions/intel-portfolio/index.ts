@@ -16,6 +16,7 @@ import {requireIntelSurface,surfaceLockedResponse} from '../_shared/intel/intel-
 import {loadCmcAiAllowed} from '../_shared/intel/ai-source-policy.ts'
 import {continuePortfolioContext} from '../_shared/intel/portfolio-continuation.ts'
 import {portfolioMarketEvidence} from '../_shared/intel/portfolio-market-evidence.ts'
+import {valuationReceipts} from './valuation-receipts.ts'
 import {readPortfolioPerformance} from '../_shared/intel/portfolio-performance.ts'
 import {withCashflowBenchmarks} from '../_shared/intel/portfolio-benchmark-performance.ts'
 import {portfolioResearchPromptFacts,portfolioResearchFacts,deterministicPortfolioResearch,portfolioResearchFingerprint,validatePortfolioNarrative,portfolioArtifact} from '../_shared/intel/portfolio-research.ts'
@@ -161,6 +162,14 @@ export async function handlePortfolioResearch(req:Request,clientFactory:any=crea
       serviceClient=clientFactory(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
       const performance=await withCashflowBenchmarks(serviceClient,await readPortfolioPerformance(db,portfolio.org_id,portfolioId))
       return json({performance},performance.status==='error'?503:200)
+    }
+    if(body.operation==='valuation_receipts'){
+      // What answered each position's valuation. The same member-scoped facts
+      // read research uses, after the surface gate above; no provider call, no
+      // credit and no AI. Stored clocks only, so nothing here can be estimated.
+      const facts=await db.rpc('intel_portfolio_research_facts',{p_org_id:portfolio.org_id,p_portfolio_id:portfolioId})
+      if(facts.error||!facts.data)throw new Error('portfolio_read_unavailable')
+      return json({receipts:valuationReceipts(portfolioResearchFacts(facts.data).holdings)})
     }
     if(body.operation!=null&&body.operation!=='research')return json({error:'invalid_portfolio_operation'},400)
     const read=await db.rpc('intel_portfolio_research_facts',{p_org_id:portfolio.org_id,p_portfolio_id:portfolioId})

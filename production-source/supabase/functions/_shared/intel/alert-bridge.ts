@@ -13,6 +13,7 @@
 // during transition (backward compatible).
 
 import { stableHash } from './provider-fact-rag.ts'
+import { notAMarketMoveReceipt, type MetricAgreementReceipt } from './metric-agreement.ts'
 
 // deno-lint-ignore no-explicit-any
 type DB = any
@@ -148,8 +149,29 @@ export interface EmitArgs {
 
 export type EmitResult = 'fired' | 'duplicate' | 'cooldown' | 'changed' | 'access_unavailable'
 
+// ── The evidentiary standard on bridged events ───────────────────────────────
+//
+// Every trigger this bridge owns reports a RECORDED EVENT (a transfer, an unlock
+// date, a stablecoin supply step, a holder concentration reading, a metadata
+// drift), and none of them measures the price, market capitalisation and volume
+// triple for the event. So each one carries an explicit `unmeasured` verdict
+// with research_lead true, stored the way the SQL market path stores its own:
+// the verdict word at payload.metric_agreement and the full receipt beside it.
+// Without it the event had no verdict at all and the receipt showed nothing,
+// which a reader could mistake for a failed test.
+export function bridgedAlertAgreement(trigger: string): MetricAgreementReceipt | null {
+  return (BRIDGE_TRIGGERS as readonly string[]).includes(trigger) ? notAMarketMoveReceipt() : null
+}
+export function withBridgedAgreement(trigger: string, payload: Record<string, unknown> = {}): Record<string, unknown> {
+  const agreement = bridgedAlertAgreement(trigger)
+  if (!agreement) return payload
+  // The bridge's own verdict wins over any candidate field of the same name: a
+  // candidate never measures the triple, so it may never claim an agreement.
+  return { ...payload, metric_agreement: agreement.metric_agreement, metric_agreement_receipt: agreement }
+}
+
 export async function emitBridgedAlert(db: DB, a: EmitArgs): Promise<EmitResult> {
-  const {data,error}=await db.rpc('intel_emit_bridged_alert',{p_rule:a.ruleId,p_org:a.orgId,p_revision:a.revision,p_source_system:a.sourceSystem,p_source_table:a.sourceTable,p_source_ref:a.sourceRef,p_metric:a.metric,p_value:a.value,p_payload:a.payload||{}})
+  const {data,error}=await db.rpc('intel_emit_bridged_alert',{p_rule:a.ruleId,p_org:a.orgId,p_revision:a.revision,p_source_system:a.sourceSystem,p_source_table:a.sourceTable,p_source_ref:a.sourceRef,p_metric:a.metric,p_value:a.value,p_payload:withBridgedAgreement(a.triggerType,a.payload||{})})
   if(error)throw Error('alert_commit_failed')
   if(!['fired','duplicate','cooldown','changed','access_unavailable'].includes(data))throw Error('alert_commit_response_invalid')
   return data

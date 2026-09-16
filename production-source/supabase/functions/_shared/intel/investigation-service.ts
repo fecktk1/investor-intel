@@ -18,6 +18,8 @@ import {retainMarketSourceVersions} from './market-source-versions.ts'
 import {makeBenchmarkReceipt} from './benchmark-receipt.ts'
 import {benchmarkRequestPlan} from './benchmark-comparison.ts'
 import {dexCohortService} from './dex-cohort-service.ts'
+import {readMetricAgreement} from './metric-agreement-read.ts'
+import {metricAgreementReceipt} from './metric-agreement.ts'
 import {liveFocusSubject,liveContractSubject,liveObservationSubject,liveTapeKind,LIVE_TAPE_METRICS} from '../market-assets/cmc-live-focus.ts'
 
 export const INVESTIGATION_LENSES=['replay','ownership','fragility','attention','delta','stress','sector','coverage','sessions','counterargument','live','cohort','receipt','participation','liquidity','benchmark'] as const
@@ -59,7 +61,11 @@ async function snapshot(db:any,name:string,params:Record<string,unknown>,actor:{
   const normalized=response.payload&&response.provenance.fetchedAt&&response.provenance.expiresAt?
     await normalizeCmcInvestigation(name,response.payload,cmcParams(name,params),response.provenance.fetchedAt,response.provenance.expiresAt,new Date(Date.parse(response.provenance.fetchedAt)+CMC_CAPABILITIES[name].stale*1000).toISOString(),sourceEnv):null
   if(normalized)await retainMarketSourceVersions(db,normalized.sourceRows)
-  return {capability:name,state:response.state,reason:response.reason,provenance:response.provenance,
+  // The call receipt rides in the body for the same reason intel-research
+  // carries one: provider_call_logs and the response cache are service-role
+  // only, so a receipt that is not in the response cannot be shown at all. It
+  // is the transport's own record of THIS read, never re-derived here.
+  return {capability:name,state:response.state,reason:response.reason,provenance:response.provenance,receipt:response.receipt??null,
     data:response.payload?cmcRows(name,response.payload):{rows:[],total:null,hasMore:false},observations:normalized?.observations??[],retentionRows:normalized?.rows??[]}
 }
 export async function retainCurrentObservations(db:any,records:any[],now=Date.now()) {
@@ -229,13 +235,20 @@ export async function investigationService(db:any,actor:{userId:string;orgId:str
       identity.rwaId?recordIssuerReviews(db,snapshots.filter(s=>s.capability==='rwaQuotes').flatMap(s=>s.data.rows),Math.max(now,Date.now())):Promise.resolve([]),
       retainCurrentObservations(db,results.flatMap(s=>s.retentionRows??[]),Math.max(now,Date.now())),
       identity.cryptoId&&['stress','counterargument'].includes(lens)?readInvestigationDepth(db,identity.cryptoId,Math.max(now,Date.now())).then(async depth=>{await retainCurrentObservations(db,depth.rows,Math.max(now,Date.now()));return depth.observations}):Promise.resolve([]),
+      // The evidentiary standard for a listed asset, from the SAME retained
+      // price, market capitalisation and volume window the alerts and the thesis
+      // monitor read. Retained records only: no provider call, no credit.
+      identity.cryptoId?readMetricAgreement(db,identity.subject,Math.max(now,Date.now())).then(metricAgreementReceipt):Promise.resolve(null),
   ])
   const history=reads[0].status==='fulfilled'?reads[0].value:{observations:[],hasMore:false,nextCursor:null},visit=reads[1].status==='fulfilled'?reads[1].value:null,participation=reads[2].status==='fulfilled'?reads[2].value:[]
   if(reads[3].status==='fulfilled')current.push(...reads[3].value)
   if(reads[5].status==='fulfilled')current.push(...reads[5].value)
-  const storageErrors=Object.fromEntries(reads.flatMap((read,i)=>read.status==='rejected'?[[['history','visit','participation','issuer reviews','current evidence references','venue depth'][i],'Temporarily unavailable']]:[]))
+  // A verdict that could not be computed is omitted, never reported as a
+  // storage failure: the standard is a label, and its absence claims nothing.
+  const metricAgreement=reads[6].status==='fulfilled'?reads[6].value:null
+  const storageErrors=Object.fromEntries(reads.slice(0,6).flatMap((read,i)=>read.status==='rejected'?[[['history','visit','participation','issuer reviews','current evidence references','venue depth'][i],'Temporarily unavailable']]:[]))
   const storageError=Object.keys(storageErrors).length?`Some evidence could not be loaded: ${Object.keys(storageErrors).join(', ')}. Available sources remain visible.`:null
   const attentionComparison=historyPolicy.historical&&dex&&['participation','attention'].includes(lens)?await readAdoptionAttention(db,[...current,...history.observations],dex.subject,identity.cryptoId?cmcSubject(identity.cryptoId):null,Math.max(now,Date.now()),'display'):null
-  return {version:1,identity,connected,lens,snapshots,current,history,attentionComparison,seenAt:visit?.seen_at??null,participation,storageError,storageErrors,serverTime:new Date(Math.max(now,Date.now())).toISOString(),
+  return {version:1,identity,connected,lens,snapshots,current,history,attentionComparison,metricAgreement,seenAt:visit?.seen_at??null,participation,storageError,storageErrors,serverTime:new Date(Math.max(now,Date.now())).toISOString(),
     historyPolicy}
 }

@@ -381,6 +381,10 @@ export interface StatusInput {
    * every suggestion below is then exactly what it was before the test existed:
    * an absent verdict is never read as a failed one. */
   metricAgreement?: MetricAgreement | null
+  /** The shortfall codes behind a non-corroborated verdict, stored beside it so
+   * the thesis page can say WHY it is a research lead. Display only: they never
+   * change a suggestion. */
+  metricAgreementReasons?: string[] | null
   now?: Date
 }
 export type EngineStatus = 'strengthening' | 'weakening' | 'needs_review' | 'confirmed' | 'partially_confirmed' | 'invalidated' | 'active'
@@ -403,7 +407,9 @@ export function computeThesisStatus(input: StatusInput): {
   // the vocabulary this engine already had for "some of it holds".
   const agreement = input.metricAgreement ?? null
   const corroborated = agreement == null || agreement === 'corroborated'
-  const say = (perf: number | null) => reason(drivers, ev, perf, now, agreement)
+  const agreementReasons = agreement == null || !Array.isArray(input.metricAgreementReasons) ? null
+    : input.metricAgreementReasons.filter((r) => typeof r === 'string').slice(0, 20)
+  const say = (perf: number | null) => reason(drivers, ev, perf, now, agreement, agreementReasons)
 
   // price vs benchmark since baseline (benchmark-adjusted)
   let relPerf: number | null = null
@@ -458,8 +464,12 @@ export function computeThesisStatus(input: StatusInput): {
   return { engine_suggested_status: 'active', status_reason: say(relPerf), needs_user_review: false }
 }
 
-function reason(drivers: string[], ev: Record<string, unknown>, relPerf: number | null, now: Date, metricAgreement: MetricAgreement | null = null) {
-  return { drivers, evidence_counts: ev, price_vs_benchmark: relPerf, metric_agreement: metricAgreement, computed_at: now.toISOString() }
+function reason(drivers: string[], ev: Record<string, unknown>, relPerf: number | null, now: Date, metricAgreement: MetricAgreement | null = null, agreementReasons: string[] | null = null) {
+  // research_lead is written ONLY beside a verdict that was actually computed:
+  // an absent verdict stays absent rather than being labelled either way.
+  return { drivers, evidence_counts: ev, price_vs_benchmark: relPerf, metric_agreement: metricAgreement,
+    ...(metricAgreement == null ? {} : { research_lead: metricAgreement !== 'corroborated', metric_agreement_reasons: agreementReasons ?? [] }),
+    computed_at: now.toISOString() }
 }
 
 // Optional: signal-shift dimension via the shared materiality helper.
