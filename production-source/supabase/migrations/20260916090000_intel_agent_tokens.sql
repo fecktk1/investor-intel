@@ -25,8 +25,13 @@ CREATE SCHEMA IF NOT EXISTS app_private;
 -- include "no duplicates", which needs a subquery over unnest, and Postgres
 -- refuses a subquery inside a CHECK constraint. A CHECK may call an IMMUTABLE
 -- function, and the subquery is legal inside the function body.
+-- search_path is pinned because this function BACKS A CHECK CONSTRAINT. A later
+-- CREATE OR REPLACE would silently change what that constraint means, with no
+-- revalidation of the rows already stored, so name resolution is nailed down
+-- now. Only built-ins are called, and pg_catalog is searched implicitly whatever
+-- this is set to.
 CREATE FUNCTION app_private.intel_agent_scopes_valid(p_scopes text[]) RETURNS boolean
-LANGUAGE sql IMMUTABLE AS $$
+LANGUAGE sql IMMUTABLE SET search_path = '' AS $$
  SELECT p_scopes IS NOT NULL
   AND cardinality(p_scopes) BETWEEN 1 AND 9
   AND p_scopes <@ ARRAY['read:portfolio','read:thesis','read:alerts','read:charts','read:watchlists','read:evidence','write:alerts','write:charts','write:thesis']::text[]
@@ -40,10 +45,22 @@ LANGUAGE sql IMMUTABLE AS $$
 $$;
 
 REVOKE ALL ON FUNCTION app_private.intel_agent_scopes_valid(text[]) FROM PUBLIC, anon, authenticated;
+-- service_role MUST keep EXECUTE. A CHECK expression runs as the INSERTING role,
+-- not as the constraint's owner, and service_role is neither a superuser nor an
+-- inheriting member of one. Without this grant every insert into
+-- intel_agent_tokens fails with "permission denied for function", which is the
+-- entire table made unusable by one missing line.
+GRANT EXECUTE ON FUNCTION app_private.intel_agent_scopes_valid(text[]) TO service_role;
 
 CREATE TABLE public.intel_agent_tokens (
  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
- user_id uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ -- profiles(id), not auth.users(id). profiles.id is itself a primary key
+ -- referencing auth.users(id) ON DELETE CASCADE, so the two identify the same
+ -- person and cascade from the same deletion. What differs is which
+ -- neighbourhood this agrees with: every id here is passed as p_user to the
+ -- Intel RPCs and joined against org_members, and the Intel tables around it
+ -- (intel_theses, intel_chart_layouts, intel_alert_rules) all use profiles.
+ user_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
  -- Pinned at creation from a session that was already proven to be a member of
  -- this org. Every request the token makes is bound to it.
  org_id uuid NOT NULL REFERENCES public.orgs(id) ON DELETE CASCADE,
@@ -61,7 +78,12 @@ CREATE TABLE public.intel_agent_tokens (
  last_ip_hash text CHECK(last_ip_hash IS NULL OR length(last_ip_hash)<=64),
  created_at timestamptz NOT NULL DEFAULT now(),
  CHECK(expires_at>created_at),
- CHECK((revoked_at IS NULL)>=(revoked_reason IS NULL))
+ -- Biconditional, deliberately. `>=` reads like "a reason requires a
+ -- revocation", but boolean ordering makes it true whenever revoked_at IS NULL
+ -- is true, so it PERMITS a revocation reason on a token that still reads as
+ -- live. A row carrying a reason while counting as live is exactly the state a
+ -- token table must not hold. The two are set together or not at all.
+ CHECK((revoked_at IS NULL)=(revoked_reason IS NULL))
 );
 CREATE UNIQUE INDEX intel_agent_tokens_hash_uq ON public.intel_agent_tokens(token_hash);
 CREATE INDEX intel_agent_tokens_owner ON public.intel_agent_tokens(user_id,created_at DESC);
@@ -130,7 +152,8 @@ CREATE TABLE public.intel_agent_approvals (
  -- The hash as approved. Execution compares it against the live plan.
  plan_hash text NOT NULL CHECK(plan_hash ~ '^[0-9a-f]{64}$'),
  -- A human, from a real session. A token can never approve its own proposal.
- approved_by uuid NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
+ -- profiles(id), matching the rest of this migration and the Intel tables.
+ approved_by uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
  status text NOT NULL DEFAULT 'approved' CHECK(status IN ('approved','consumed','revoked')),
  note text CHECK(note IS NULL OR length(note)<=500),
  expires_at timestamptz NOT NULL,
@@ -145,7 +168,8 @@ CREATE INDEX intel_agent_approvals_org ON public.intel_agent_approvals(org_id,ap
 
 COMMENT ON TABLE public.intel_agent_approvals IS
  'A person''s yes to one exact plan_hash, from a real session. A token cannot approve '
- 'its own proposal: approved_by is an auth.users id, and the token path never sets it.';
+ 'its own proposal: approved_by is a profiles id written only from a verified session, '
+ 'and the agent token path never sets it.';
 
 -- What the row actually says after the write. An HTTP 200 is a claim; this is
 -- the result of going back and looking.
