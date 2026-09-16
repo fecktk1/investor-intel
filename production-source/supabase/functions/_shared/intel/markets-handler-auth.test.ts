@@ -10,7 +10,17 @@ const request=(header='Bearer fixture-user')=>new Request('https://fixture.test/
 Deno.test('Markets verifies the user exactly once, then checks organization and entitlement before cached reads',()=>withEnv(async()=>{
  const f=fixture(),r=await handleMarkets(request(),f.factory,f.chains);assertEquals(r.status,200);assertEquals(f.counts(),{userReads:1,chainReads:1,rpcs:['can_access_intel','intel_markets_screen_for_user']})
  const timing=r.headers.get('Server-Timing')||'';assertEquals(timing.split(', ').map(v=>v.split(';')[0]).sort(),['access','assemble','body','native','region','runtime','screen','total','trace']);assertEquals(/verified-user|org|fixture/.test(timing),false);assertEquals(r.headers.get('Timing-Allow-Origin'),'*')
- assertEquals(await r.json(),{catalog:null,snapshot:{strongestChain:null,freshness:'unavailable'},rows:[],total:0,page:0,limit:50,sort:null,dir:null,marketCapPanel:{topByMarketCap:[],estimatedCount:0},topGainers:[],topLosers:[],availableCategories:[],categoryLeaders:[],watchlistMovers:[],chainHeatmap:[],crossExchangeSpreads:[],providerStatus:[],nativeChains:[],nativeChainsUnavailable:false})
+ // The screen shape is pinned exactly. The only additions are the source receipt
+ // for the stored catalogue and one provenance envelope per figure family; both
+ // describe stored data and neither carries a figure of its own.
+ const {figureProvenance,receipt,...screen}=await r.json()
+ assertEquals(screen,{catalog:null,snapshot:{strongestChain:null,freshness:'unavailable'},rows:[],total:0,page:0,limit:50,sort:null,dir:null,marketCapPanel:{topByMarketCap:[],estimatedCount:0},topGainers:[],topLosers:[],availableCategories:[],categoryLeaders:[],watchlistMovers:[],chainHeatmap:[],crossExchangeSpreads:[],providerStatus:[],nativeChains:[],nativeChainsUnavailable:false})
+ assertEquals(Object.keys(figureProvenance).sort(),['catalogue','cex','dex','market_cap','price','price_change','volume_24h'])
+ for(const envelope of Object.values(figureProvenance) as Record<string,unknown>[]){
+  assertEquals(Object.keys(envelope).sort(),['fetchedAt','freshness','kind','scope','scopeKey','source'])
+  assertEquals(typeof envelope.scope,'string');assert((envelope.scope as string).length>20)
+ }
+ assert(receipt===null||typeof receipt==='object')
 }))
 for(const [label,config,status]of [['invalid user',{valid:false},401],['other organization',{member:false},403],['expired entitlement',{allowed:false},403]] as const)Deno.test(`Markets ${label} cannot reach market or chain reads`,()=>withEnv(async()=>{
  const f=fixture(config),r=await handleMarkets(request(),f.factory,f.chains);assertEquals(r.status,status);assertEquals(f.counts().chainReads,0);assertEquals(f.counts().rpcs.includes('intel_markets_screen_for_user'),false)
@@ -110,8 +120,11 @@ Deno.test('Markets detail opens the full asset page for a pasted contract identi
 // now-explicit `coverage` object (which previously leaked the chart's coverage
 // SENTENCE — still served verbatim as `chartCoverage`). A contract identity
 // must never reshape a listed one.
-const CMC_DETAIL_KEYS=['asOf','barIntervalMs','bestPair','bestProvider','candles','canonicalAssetKey','catalysts','cexCoverage','chain','change1h','change24h','change7d','chartAsset','chartCoverage','chartProvenance','chartReason','chartSource','chartState','coverage','depthQuotes','detail','dex','displayName','ecosystemNarratives','identity','identityChoices','identityState','imageUrl','ladder','marketCap','memorySummary','onchain','orderbook','price','primaryChain','profile','provenance','providerId','providers','quoteProvider','quoteProviderId','quoteReason','quoteRefreshSeconds','rollups','signal','source','sourceFreshness','sourceProvider','sourceReason','sourceState','spread','symbol','timestampMeaning','unlocks','volume24h','volumeUnit']
-Deno.test('Markets detail for a CoinMarketCap identity keeps its response shape and gains only identity and coverage',()=>withEnv(async()=>{
+// 2026-09-16: the evidence layer adds exactly six keys, all describing where a
+// figure came from rather than adding a figure: chartReceipts, figureProvenance,
+// metricAgreement, quoteProvenance, quoteReceipts and receipts.
+const CMC_DETAIL_KEYS=['asOf','barIntervalMs','bestPair','bestProvider','candles','canonicalAssetKey','catalysts','cexCoverage','chain','change1h','change24h','change7d','chartAsset','chartCoverage','chartProvenance','chartReason','chartReceipts','chartSource','chartState','coverage','depthQuotes','detail','dex','displayName','ecosystemNarratives','figureProvenance','identity','identityChoices','identityState','imageUrl','ladder','marketCap','memorySummary','metricAgreement','onchain','orderbook','price','primaryChain','profile','provenance','providerId','providers','quoteProvenance','quoteProvider','quoteProviderId','quoteReason','quoteReceipts','quoteRefreshSeconds','receipts','rollups','signal','source','sourceFreshness','sourceProvider','sourceReason','sourceState','spread','symbol','timestampMeaning','unlocks','volume24h','volumeUnit']
+Deno.test('Markets detail for a CoinMarketCap identity keeps its response shape and gains only identity, coverage, receipts and provenance',()=>withEnv(async()=>{
  const cmcRow={source_provider:'coinmarketcap',provider_id:'1027',symbol:'ETH',normalized_symbol:'ETH',name:'Ethereum',primary_chain:'ethereum',
   platforms:{},current_price:3000,market_cap:360_000_000_000,fdv:null,volume_24h:12_000_000_000,change_1h_pct:0.2,change_24h_pct:1.1,change_7d_pct:4,
   circulating_supply:120_000_000,image_url:'https://img.test/eth.png',as_of:'2026-09-14T10:00:00.000Z'}
