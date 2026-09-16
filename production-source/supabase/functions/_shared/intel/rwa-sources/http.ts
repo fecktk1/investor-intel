@@ -103,7 +103,11 @@ export const RWA_SOURCE_POLICY: Record<RwaSourceId, SourcePolicy> = {
     licence: 'published-source',
   },
   ofac: {
-    hosts: ['www.treasury.gov', 'sanctionslistservice.ofac.treas.gov'],
+    // The publication redirects twice (checked 2026-09-16): www.treasury.gov to
+    // OFAC's list service, which answers with a short-lived signed download from
+    // OFAC's own published-list bucket in AWS GovCloud. Without the bucket host
+    // every run stopped at redirected_off_source and no sanctions list was read.
+    hosts: ['www.treasury.gov', 'sanctionslistservice.ofac.treas.gov', 'wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com'],
     requiresUserAgent: false,
     minIntervalMs: 1_000,
     // The SDN publication is large (sdn.csv was 5.69 MB on 2026-09-16), so it

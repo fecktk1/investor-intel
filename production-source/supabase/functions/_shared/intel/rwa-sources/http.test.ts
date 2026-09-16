@@ -79,3 +79,14 @@ Deno.test('export rights follow the source licence, and the explorer with unveri
   // Blockscout's redistribution terms could not be verified on 2026-09-16.
   assert.equal(sourceExportAllowed('blockscout'), false)
 })
+
+// Checked 2026-09-16: the SDN file ends on a signed download from OFAC's
+// published-list bucket. Only that exact bucket host is added, never S3 at large.
+Deno.test('ofac follows its own publication chain to the published-list bucket and nowhere else on S3', () => {
+  assert.equal(allowedSourceUrl('ofac', 'https://www.treasury.gov/ofac/downloads/sdn.csv'), true)
+  assert.equal(allowedSourceUrl('ofac', 'https://sanctionslistservice.ofac.treas.gov/api/publicationpreview/exports/sdn.csv'), true)
+  assert.equal(allowedSourceUrl('ofac', 'https://wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com/Published/x/2026-09-15/y/SDN.CSV?X-Amz-Expires=3600'), true)
+  assert.equal(allowedSourceUrl('ofac', 'https://other-bucket.s3.us-gov-west-1.amazonaws.com/SDN.CSV'), false)
+  assert.equal(allowedSourceUrl('ofac', 'https://wc2h-sls-prod-public-published.s3.us-east-1.amazonaws.com/SDN.CSV'), false)
+  assert.equal(allowedSourceUrl('gleif', 'https://wc2h-sls-prod-public-published.s3.us-gov-west-1.amazonaws.com/SDN.CSV'), false)
+})
