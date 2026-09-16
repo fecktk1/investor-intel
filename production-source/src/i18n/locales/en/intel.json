@@ -1199,7 +1199,9 @@
       "group_history": "Derived history",
       "group_regime": "Market regime",
       "group_explanation": "Derived history measures the loaded price window of this asset; market regime readings describe the market as a whole, not this asset."
-    }
+    },
+    "evidence_standard": "Evidentiary standard",
+    "evidence_standard_measured": "Evidentiary standard for this asset, measured {{date}}"
   },
   "pages": {
     "market_pulse_sub": "What changed since you were gone, and what matters right now.",
@@ -1537,7 +1539,12 @@
     "benchmark_reason_source_limit_exceeded": "The source history exceeds the supported read window.",
     "benchmark_reason_current_source_permission_required": "Current source permission does not allow this retained comparison.",
     "benchmark_reason_two_dated_snapshots_required": "Two dated portfolio valuations are required.",
-    "benchmark_reason_unsupported_time_window": "The valuation window is unsupported."
+    "benchmark_reason_unsupported_time_window": "The valuation window is unsupported.",
+    "valuation_receipts": "Valuation source receipts",
+    "valuation_receipts_scope": "This position is valued from the stored price, so no provider call was made for this view.",
+    "valuation_receipts_loading": "Loading valuation receipts…",
+    "valuation_receipts_error": "Valuation receipts could not be read. Your holdings are unchanged.",
+    "valuation_receipts_none": "No open position is valued from a stored CoinMarketCap price."
   },
   "watchlist": {
     "type": "Type",
@@ -3057,7 +3064,11 @@
     "token_representation": "Token representation",
     "underlying_clock": "Underlying market",
     "underlying_no_clock": "No verified underlying calendar for this selection.",
-    "workspace": "Connected research"
+    "workspace": "Connected research",
+    "source_receipts": "Source call receipts",
+    "source_receipts_caption": "What answered each provider read behind this view. A cached answer made no new call.",
+    "evidence_standard": "Evidentiary standard for this asset, measured {{date}} from retained price, market capitalisation and volume.",
+    "evidence_standard_replay": "It describes the newest retained window, not the replay time."
   },
   "asset_news": {
     "checked": "Coverage checked",

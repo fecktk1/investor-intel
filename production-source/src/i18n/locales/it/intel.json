@@ -2431,7 +2431,12 @@
     "benchmark_reason_source_limit_exceeded": "Lo storico della fonte supera la finestra di lettura supportata.",
     "benchmark_reason_current_source_permission_required": "L’autorizzazione attuale della fonte non consente questo confronto conservato.",
     "benchmark_reason_two_dated_snapshots_required": "Sono necessarie due valutazioni datate del portafoglio.",
-    "benchmark_reason_unsupported_time_window": "La finestra di valutazione non è supportata."
+    "benchmark_reason_unsupported_time_window": "La finestra di valutazione non è supportata.",
+    "valuation_receipts": "Ricevute delle fonti di valutazione",
+    "valuation_receipts_scope": "Questa posizione è valutata con il prezzo memorizzato, quindi per questa vista non è stato chiamato nessun fornitore.",
+    "valuation_receipts_loading": "Caricamento delle ricevute di valutazione…",
+    "valuation_receipts_error": "Non è stato possibile leggere le ricevute di valutazione. Le tue posizioni non sono cambiate.",
+    "valuation_receipts_none": "Nessuna posizione aperta è valutata con un prezzo CoinMarketCap memorizzato."
   },
   "degen": {
     "subtitle": "Scoperta di memecoin multi-chain e contesto di rischio. Rischio estremamente elevato, non consulenza finanziaria.",
@@ -2628,7 +2633,11 @@
     "token_representation": "Rappresentazione tokenizzata",
     "underlying_clock": "Mercato sottostante",
     "underlying_no_clock": "Nessun calendario verificato del sottostante per questa selezione.",
-    "workspace": "Ricerca collegata"
+    "workspace": "Ricerca collegata",
+    "source_receipts": "Ricevute delle chiamate alla fonte",
+    "source_receipts_caption": "Cosa ha risposto a ogni lettura del fornitore dietro questa vista. Una risposta dalla cache non ha fatto nessuna nuova chiamata.",
+    "evidence_standard": "Standard di evidenza per questo asset, misurato il {{date}} su prezzo, capitalizzazione di mercato e volume conservati.",
+    "evidence_standard_replay": "Descrive la finestra conservata più recente, non il momento della riproduzione."
   },
   "journal": {
     "brand": "Diario delle tesi",
@@ -3021,7 +3030,9 @@
       "group_history": "Storico derivato",
       "group_regime": "Regime di mercato",
       "group_explanation": "Lo storico derivato misura la finestra di prezzo caricata di questo asset; le letture del regime di mercato descrivono il mercato nel suo complesso, non questo asset."
-    }
+    },
+    "evidence_standard": "Standard di evidenza",
+    "evidence_standard_measured": "Standard di evidenza per questo asset, misurato il {{date}}"
   },
   "signup": {
     "seo_title": "Crea il tuo account Investor Intel",

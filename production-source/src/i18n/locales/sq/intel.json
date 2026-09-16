@@ -2431,7 +2431,12 @@
     "benchmark_reason_source_limit_exceeded": "Historiku i burimit e tejkalon dritaren e mbështetur të leximit.",
     "benchmark_reason_current_source_permission_required": "Leja aktuale e burimit nuk e lejon këtë krahasim të ruajtur.",
     "benchmark_reason_two_dated_snapshots_required": "Nevojiten dy vlerësime të datuara të portofolit.",
-    "benchmark_reason_unsupported_time_window": "Dritarja e vlerësimit nuk mbështetet."
+    "benchmark_reason_unsupported_time_window": "Dritarja e vlerësimit nuk mbështetet.",
+    "valuation_receipts": "Faturat e burimeve të vlerësimit",
+    "valuation_receipts_scope": "Ky pozicion vlerësohet nga çmimi i ruajtur, prandaj për këtë pamje nuk u thirr asnjë ofrues.",
+    "valuation_receipts_loading": "Po ngarkohen faturat e vlerësimit…",
+    "valuation_receipts_error": "Faturat e vlerësimit nuk u lexuan dot. Pozicionet e tua nuk kanë ndryshuar.",
+    "valuation_receipts_none": "Asnjë pozicion i hapur nuk vlerësohet nga një çmim i ruajtur i CoinMarketCap."
   },
   "degen": {
     "subtitle": "Zbulim memecoin-esh në shumë rrjete dhe kontekst rreziku. Rrezik jashtëzakonisht i lartë, jo këshillë financiare.",
@@ -2628,7 +2633,11 @@
     "token_representation": "Përfaqësimi i token-it",
     "underlying_clock": "Tregu bazë",
     "underlying_no_clock": "Nuk ka kalendar të verifikuar të tregut bazë për këtë përzgjedhje.",
-    "workspace": "Hulumtim i lidhur"
+    "workspace": "Hulumtim i lidhur",
+    "source_receipts": "Faturat e thirrjeve të burimit",
+    "source_receipts_caption": "Çfarë iu përgjigj çdo leximi të ofruesit pas kësaj pamjeje. Një përgjigje nga cache nuk bëri asnjë thirrje të re.",
+    "evidence_standard": "Standardi i provave për këtë aktiv, i matur më {{date}} nga çmimi, kapitalizimi i tregut dhe vëllimi i ruajtur.",
+    "evidence_standard_replay": "Ai përshkruan dritaren më të re të ruajtur, jo kohën e riluajtjes."
   },
   "journal": {
     "brand": "Ditari i tezave",
@@ -3021,7 +3030,9 @@
       "group_history": "Historik i nxjerrë",
       "group_regime": "Regjimi i tregut",
       "group_explanation": "Historiku i nxjerrë mat dritaren e ngarkuar të çmimeve të këtij aktivi; leximet e regjimit të tregut përshkruajnë tregun në tërësi, jo këtë aktiv."
-    }
+    },
+    "evidence_standard": "Standardi i provave",
+    "evidence_standard_measured": "Standardi i provave për këtë aktiv, i matur më {{date}}"
   },
   "signup": {
     "seo_title": "Krijo llogarinë tënde Investor Intel",

@@ -2431,7 +2431,12 @@
     "benchmark_reason_source_limit_exceeded": "L’historique de la source dépasse la fenêtre de lecture prise en charge.",
     "benchmark_reason_current_source_permission_required": "L’autorisation actuelle de la source ne permet pas cette comparaison conservée.",
     "benchmark_reason_two_dated_snapshots_required": "Deux valorisations datées du portefeuille sont nécessaires.",
-    "benchmark_reason_unsupported_time_window": "La fenêtre de valorisation n’est pas prise en charge."
+    "benchmark_reason_unsupported_time_window": "La fenêtre de valorisation n’est pas prise en charge.",
+    "valuation_receipts": "Reçus des sources de valorisation",
+    "valuation_receipts_scope": "Cette position est valorisée à partir du prix enregistré : aucun fournisseur n’a été appelé pour cette vue.",
+    "valuation_receipts_loading": "Chargement des reçus de valorisation…",
+    "valuation_receipts_error": "Les reçus de valorisation n’ont pas pu être lus. Vos positions sont inchangées.",
+    "valuation_receipts_none": "Aucune position ouverte n’est valorisée à partir d’un prix CoinMarketCap enregistré."
   },
   "degen": {
     "subtitle": "Découverte de jetons mèmes multi-chaînes et contexte de risque. Risque extrêmement élevé, pas un conseil financier.",
@@ -2628,7 +2633,11 @@
     "token_representation": "Représentation en jeton",
     "underlying_clock": "Marché sous-jacent",
     "underlying_no_clock": "Aucun calendrier vérifié du sous-jacent pour cette sélection.",
-    "workspace": "Recherche liée"
+    "workspace": "Recherche liée",
+    "source_receipts": "Reçus des appels à la source",
+    "source_receipts_caption": "Ce qui a répondu à chaque lecture du fournisseur derrière cette vue. Une réponse en cache n’a déclenché aucun nouvel appel.",
+    "evidence_standard": "Norme de preuve pour cet actif, mesurée le {{date}} à partir du prix, de la capitalisation boursière et du volume conservés.",
+    "evidence_standard_replay": "Elle décrit la fenêtre conservée la plus récente, et non l’heure de la relecture."
   },
   "journal": {
     "brand": "Journal des thèses",
@@ -3021,7 +3030,9 @@
       "group_history": "Historique dérivé",
       "group_regime": "Régime de marché",
       "group_explanation": "L’historique dérivé mesure la fenêtre de prix chargée de cet actif ; les relevés du régime de marché décrivent le marché dans son ensemble, pas cet actif."
-    }
+    },
+    "evidence_standard": "Norme de preuve",
+    "evidence_standard_measured": "Norme de preuve pour cet actif, mesurée le {{date}}"
   },
   "signup": {
     "seo_title": "Créez votre compte Investor Intel",

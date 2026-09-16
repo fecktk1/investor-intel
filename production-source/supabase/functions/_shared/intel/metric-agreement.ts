@@ -203,3 +203,16 @@ export function notAMarketMoveReceipt():MetricAgreementReceipt{
  return {metric_agreement:'unmeasured',research_lead:true,period_seconds:null,reasons:['not_a_market_move'],
   readings:AGREEMENT_METRICS.map(metric=>({metric,direction:null,change_pct:null,observed_at:null,reason:'not_a_market_move'}))}
 }
+
+/** Thesis condition metrics that describe a MARKET MOVE of the thesis asset, so
+ * the asset's own verdict applies to a condition built on them. Every other
+ * condition metric (TVL, holders, pool activity, venue depth, the market regime)
+ * is not a price, market capitalisation or volume move of this asset, and gets
+ * the explicit not-a-market-move receipt instead of borrowing a verdict. */
+export const MARKET_MOVE_CONDITION_METRICS=['price','price_change','volume_change','market_cap','price_move','volume_spike'] as const
+export function conditionAgreementReceipt(metric:unknown,asset:MetricAgreementResult|null|undefined):MetricAgreementReceipt{
+ if(typeof metric!=='string'||!(MARKET_MOVE_CONDITION_METRICS as readonly string[]).includes(metric))return notAMarketMoveReceipt()
+ // A missing asset verdict is never upgraded: nothing was measured, so the
+ // condition carries an unmeasured research lead rather than no label at all.
+ return metricAgreementReceipt(asset??metricAgreement({},Date.now()))
+}

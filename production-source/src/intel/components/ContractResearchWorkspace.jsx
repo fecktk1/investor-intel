@@ -12,6 +12,7 @@ import SwapFlowBoard from './SwapFlowBoard'
 import SourceResearchNotes from './SourceResearchNotes'
 import {SecuritySourceHistory} from './MarketSourceHistory'
 import {SharedResearchRefresh} from './ResearchEvidence'
+import SourceCallReceipt from './SourceCallReceipt'
 const financial=v=>v!=null&&v!==''&&typeof v!=='boolean'&&Number.isFinite(Number(v))?value(Number(v)):'—'
 
 export function DexObservationTable({observations=[],subject,at=Date.now(),view}){
@@ -55,6 +56,8 @@ function Workspace({canonicalKey,identity,onEvidence}){
   {Object.values(drafts).some(Boolean)&&<p className="intel-analysis-caption">Automatic updates paused while your source notes are unsaved.</p>}
   {query.loading?<p role="status">Loading contract evidence…</p>:query.error?<p role="alert">Contract evidence could not be read. <button className="intel-text-link" onClick={()=>setIntent(i=>({refresh:false,requestRevision:i.requestRevision+1}))}>Retry retained read</button></p>:result&&<>
    {result.sources?.map(s=><section key={s.capability} className="py-3"><p className="intel-analysis-caption">{({dexToken:'Token market data',dexHolderCount:'Holder count',dexHolderHistory:'Holder history',dexSecurity:'Security observations',dexLiquidityEvents:'Liquidity activity',dexPools:'Current pools',dexSwaps:'Public swaps'})[s.capability]} · {s.state}{s.reason?` · ${s.reason.replaceAll('_',' ')}`:''}{s.provenance?.fetchedAt?` · Retrieved ${time(s.provenance.fetchedAt)}`:''}</p>
+    {/* What answered this read. A refused or failed read still carries one, which is when a reader most wants it. */}
+    <SourceCallReceipt receipt={s.receipt} observedAt={s.provenance?.observedAt}/>
     {s.capability==='dexToken'&&s.rows?.map((r,i)=><React.Fragment key={i}><InvestigationTable rows={[r]} columns={[[ 'Token',r=>`${r.name} (${r.symbol})`],['Price (USD)',r=>financial(r.price)],['Price observed',r=>r.priceObservedAt?time(Number(r.priceObservedAt)<1e12?Number(r.priceObservedAt)*1000:Number(r.priceObservedAt)):'Unreported'],['Reported pool liquidity (USD)',r=>financial(r.liquidityUsd)]]}/><p className="intel-analysis-caption">The liquidity observation time is not reported. The price timestamp applies only to price.</p></React.Fragment>)}
     {s.capability==='dexHolderCount'&&s.rows?.map((r,i)=><p key={i}>Holder accounts: <strong>{financial(r.count)}</strong>. Observation time not reported by this endpoint.</p>)}
     {s.capability==='dexSecurity'&&s.rows?.map((r,i)=>r.exists===false?<p key={i}>Security coverage was not reported for this contract.</p>:<div key={i}><p>CMC source classification: {r.level??'Unreported'}. Observation time not reported.</p><InvestigationTable rows={r.items||[]} columns={[[ 'Source observation',r=>r.description||r.code],['Reported result',r=>r.hit===true?'Flagged':r.hit===false?'Not flagged':'Unknown'],['Source level',r=>r.level??'Unreported']]}/><p className="intel-analysis-caption">Not flagged does not establish that a contract is safe.</p></div>)}

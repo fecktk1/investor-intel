@@ -1,10 +1,35 @@
 type Result={outcome:'provider_accepted'|'retry'|'failed'|'unknown'|'cancelled';http?:number;message?:string;retrySeconds?:number}
-type Target={chatId:string;eventId:string;firedAt:string;trigger:string;title:string}
+type Target={chatId:string;eventId:string;firedAt:string;trigger:string;title:string;metricAgreement?:string|null}
+const VERDICTS=['corroborated','conflicting','incomplete','unmeasured']
+/** The evidentiary standard as one line of the message. Delivery text is not
+ * localised today, so this follows the rest of the message in English. Only a
+ * stored 'corroborated' verdict reads as corroborated: an absent, unreadable or
+ * unknown verdict is a research lead, exactly as the database treats one, so a
+ * missing label can never upgrade an alert's evidence class. */
+export function deliveryEvidenceLabel(verdict:unknown):string {
+ return verdict==='corroborated'
+  ?'Evidence: Corroborated. Price, market capitalisation and volume moved the same way over one window.'
+  :'Evidence: Research lead. Price, market capitalisation and volume did not corroborate this over one window.'
+}
+/** The stored verdict word for one already-authorised event, and nothing else
+ * from its payload. The market and narrative paths keep the receipt under
+ * checkpoint.metric_agreement, thesis conditions under the checkpoint
+ * observation, and the bridge at payload.metric_agreement. A failed read
+ * returns null, which the label reads as a research lead; delivery never fails
+ * because a label could not be read. */
+export async function readDeliveryAgreement(db:any,eventId:string):Promise<string|null> {
+ if(typeof db?.from!=='function'||typeof eventId!=='string'||!/^[a-f0-9-]{36}$/i.test(eventId))return null
+ try{
+  const {data,error}=await db.from('intel_alert_events').select('checkpoint:payload->checkpoint->metric_agreement->>metric_agreement,observation:payload->checkpoint->observation->agreement->>metric_agreement,bridged:payload->>metric_agreement').eq('id',eventId).maybeSingle()
+  if(error||!data)return null
+  return [data.checkpoint,data.observation,data.bridged].find(v=>VERDICTS.includes(v))??null
+ }catch{return null}
+}
 // No price history, source excerpts, trade notes, wallet balances, or org-group
 // destinations leave the private workspace. Plain text disables source markup.
 export function deliveryMessage(target:Target) {
  if(!/^[1-9][0-9]{1,19}$/.test(target.chatId)||!Number.isFinite(Date.parse(target.firedAt))||!/^[a-f0-9-]{36}$/i.test(target.eventId))throw Error('invalid_private_delivery_target')
- return {chat_id:target.chatId,text:`Investor Intel alert\n${String(target.title||'Saved condition').replace(/[\u0000-\u001f]/g,' ').slice(0,160)}\nRecorded ${new Date(target.firedAt).toISOString()}\nReview the original condition and evidence in your private workspace:\nhttps://thecontentforge.io/intel/alerts?event=${encodeURIComponent(target.eventId)}`,link_preview_options:{is_disabled:true}}
+ return {chat_id:target.chatId,text:`Investor Intel alert\n${String(target.title||'Saved condition').replace(/[\u0000-\u001f]/g,' ').slice(0,160)}\n${deliveryEvidenceLabel(target.metricAgreement)}\nRecorded${new Date(target.firedAt).toISOString()}\nReview the original condition and evidence in your private workspace:\nhttps://thecontentforge.io/intel/alerts?event=${encodeURIComponent(target.eventId)}`,link_preview_options:{is_disabled:true}}
 }
 export async function sendIntelAlert(target:Target,token:string,transport:typeof fetch=fetch):Promise<Result> {
  const body=deliveryMessage(target)
@@ -31,7 +56,7 @@ export async function runAlertDeliveries(db:any,{enabled,token,transport=fetch}:
  let accepted=0
  for(const claim of claims){
   const target=await rpc('intel_alert_delivery_target',{p_id:claim.id,p_lease:claim.lease})
-  const result:Result=target?await sendIntelAlert(target,token,transport):{outcome:'cancelled'}
+  const result:Result=target?await sendIntelAlert({...target,metricAgreement:await readDeliveryAgreement(db,target.eventId)},token,transport):{outcome:'cancelled'}
   const committed=await rpc('intel_finish_alert_delivery',{p_id:claim.id,p_lease:claim.lease,p_outcome:result.outcome,p_http:result.http??null,p_message:result.message??null,p_retry_seconds:result.retrySeconds??60})
   if(committed!==true)throw Error('alert_delivery_receipt_conflict')
   if(result.outcome==='provider_accepted')accepted++

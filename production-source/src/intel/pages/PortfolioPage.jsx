@@ -35,6 +35,31 @@ import PortfolioActivityLegs from '../components/PortfolioActivityLegs'
 import {portfolioActivityRoute} from '../lib/portfolio-activity-route'
 import {assetLogoUrl} from '../lib/asset-identity'
 import TokenAvatar from '../components/TokenAvatar'
+import SourceCallReceipt from '../components/SourceCallReceipt'
+
+/** What answered each position's valuation. Read only when the reader opens it,
+ * from intel-portfolio after its surface gate. The valuation uses stored prices,
+ * so every receipt says no provider call was made for this view. */
+export function PortfolioValuationReceipts({supabase,orgId,portfolioId,t}){
+  const [open,setOpen]=useState(false),[state,setState]=useState({loading:false,error:null,receipts:null})
+  useEffect(()=>{
+    if(!open||!supabase||!orgId||!portfolioId)return
+    let alive=true
+    setState({loading:true,error:null,receipts:null})
+    supabase.functions.invoke('intel-portfolio',{body:{orgId,portfolioId,operation:'valuation_receipts'}})
+      .then(({data,error})=>{if(!alive)return;if(error||!Array.isArray(data?.receipts))throw new Error('read_failed');setState({loading:false,error:null,receipts:data.receipts})})
+      .catch(()=>{if(alive)setState({loading:false,error:true,receipts:null})})
+    return()=>{alive=false}
+  },[open,supabase,orgId,portfolioId])
+  const scope=t('portfolio.valuation_receipts_scope',{defaultValue:'This position is valued from the stored price, so no provider call was made for this view.'})
+  return <details className="intel-open-section" onToggle={e=>setOpen(e.currentTarget.open)}>
+    <summary>{t('portfolio.valuation_receipts',{defaultValue:'Valuation source receipts'})}</summary>
+    {state.loading?<p role="status">{t('portfolio.valuation_receipts_loading',{defaultValue:'Loading valuation receipts…'})}</p>
+      :state.error?<p role="alert">{t('portfolio.valuation_receipts_error',{defaultValue:'Valuation receipts could not be read. Your holdings are unchanged.'})}</p>
+      :state.receipts&&(state.receipts.length?state.receipts.map(r=><section key={r.canonicalAssetKey} className="py-2"><p className="intel-analysis-caption break-all">{r.symbol||r.canonicalAssetKey}</p><SourceCallReceipt receipt={r.receipt} scope={scope} observedAt={r.observedAt}/></section>)
+        :<p>{t('portfolio.valuation_receipts_none',{defaultValue:'No open position is valued from a stored CoinMarketCap price.'})}</p>)}
+  </details>
+}
 
 const TX_TYPES = ['buy', 'sell', 'transfer_in', 'transfer_out', 'swap', 'fee', 'airdrop', 'staking_reward', 'deposit', 'withdrawal']
 // Full vocab offered when reclassifying (manual + synced).
@@ -513,6 +538,8 @@ export default function PortfolioPage() {
               the on-demand run that asks. Coverage is rows only; a run spends
               provider credits and is started by hand. */}
           <PortfolioIdentityCoverage key={activeScope} portfolioId={activeId} />
+
+          <PortfolioValuationReceipts key={`receipts:${activeScope}`} supabase={supabase} orgId={org?.id} portfolioId={activeId} t={t}/>
 
           <PortfolioHoldingsSection supabase={supabase} orgId={org?.id} userId={user?.id} portfolioId={activeId} open={workspace?.open} closed={workspace?.closed} hideDust={hideDust} dustCount={workspace?.summary?.dustCount??dustHiddenCount} onToggleDust={onToggleDust} Table={HoldingsTable} t={t}/>
 
