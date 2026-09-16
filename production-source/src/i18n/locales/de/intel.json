@@ -3497,5 +3497,20 @@
     "job_active": "Aktiv",
     "job_paused": "Pausiert",
     "profile_promotional": "Aktionsprofil"
+  },
+  "intel_upgrade": {
+    "free_label": "Kostenlos",
+    "free_price": "$0",
+    "free_note": "keine Karte, keine Testphase",
+    "free_body": "Dasselbe Produkt, keine abgespeckte Version. Alles, was ohnehin einmal für alle berechnet wurde, bleibt für dich offen.",
+    "free_open_title": "Frei zugänglich",
+    "free_open_boards": "Alle Markttafeln und Asset-Seiten",
+    "free_open_regime": "Marktregime-Kennzahlen",
+    "free_open_captures": "Jede aufgezeichnete Erfassung",
+    "free_open_chart": "Die Chart-Arbeitsfläche",
+    "free_open_narratives": "Narrativ-Briefings",
+    "free_open_watchlist": "10 Beobachtungslisten-Einträge",
+    "free_locked_title": "Bis Starter gesperrt",
+    "free_locked_body": "Recherche auf Abruf, Connected Research, Portfoliobewertung, KI-Erzeugung, Kursverlauf und Alarme. Jedes davon startet bei jedem Öffnen eine neue Anfrage für dich."
   }
 }

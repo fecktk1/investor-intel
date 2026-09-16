@@ -3497,5 +3497,20 @@
     "job_active": "Actief",
     "job_paused": "Gepauzeerd",
     "profile_promotional": "promotioneel"
+  },
+  "intel_upgrade": {
+    "free_label": "Gratis",
+    "free_price": "$0",
+    "free_note": "geen kaart, geen proefklok",
+    "free_body": "Hetzelfde product, geen uitgeklede versie. Alles wat al eenmalig voor iedereen is berekend, blijft voor je open.",
+    "free_open_title": "Open in de gratis laag",
+    "free_open_boards": "Alle marktborden en assetpagina's",
+    "free_open_regime": "Regimecijfers van de markt",
+    "free_open_captures": "Elke vastgelegde meting",
+    "free_open_chart": "Het grafiekwerkstation",
+    "free_open_narratives": "Narratiefbriefings",
+    "free_open_watchlist": "10 volglijst-items",
+    "free_locked_title": "Vergrendeld tot Starter",
+    "free_locked_body": "Onderzoek op aanvraag, Connected Research, portefeuillewaardering, AI-generatie, koershistorie en meldingen. Elk daarvan start bij het openen een nieuwe aanvraag voor jou."
   }
 }

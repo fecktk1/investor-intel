@@ -3497,5 +3497,20 @@
     "job_active": "Attivo",
     "job_paused": "In pausa",
     "profile_promotional": "promozionale"
+  },
+  "intel_upgrade": {
+    "free_label": "Gratuito",
+    "free_price": "$0",
+    "free_note": "nessuna carta, nessun conto alla rovescia",
+    "free_body": "Lo stesso prodotto, non una versione ridotta. Tutto ciò che è già stato calcolato una volta per tutti resta aperto.",
+    "free_open_title": "Aperto nel piano gratuito",
+    "free_open_boards": "Tutte le tabelle di mercato e le pagine degli asset",
+    "free_open_regime": "I dati di regime di mercato",
+    "free_open_captures": "Ogni rilevazione registrata",
+    "free_open_chart": "La postazione grafici",
+    "free_open_narratives": "Le sintesi delle narrative",
+    "free_open_watchlist": "10 elementi in watchlist",
+    "free_locked_title": "Bloccato fino a Starter",
+    "free_locked_body": "Ricerca su richiesta, Connected Research, valutazione del portafoglio, generazione con IA, storico dei prezzi e avvisi. Ognuna avvia una nuova richiesta per te a ogni apertura."
   }
 }

@@ -3497,5 +3497,20 @@
     "job_active": "Active",
     "job_paused": "Paused",
     "profile_promotional": "promotional"
+  },
+  "intel_upgrade": {
+    "free_label": "Free",
+    "free_price": "$0",
+    "free_note": "no card, no trial clock",
+    "free_body": "The same product, not a smaller one. Everything already computed once for everyone stays open to you.",
+    "free_open_title": "Open on free",
+    "free_open_boards": "Every market board and asset page",
+    "free_open_regime": "Market regime figures",
+    "free_open_captures": "Every recorded capture",
+    "free_open_chart": "The chart workstation",
+    "free_open_narratives": "Narrative briefs",
+    "free_open_watchlist": "10 watchlist items",
+    "free_locked_title": "Locked until Starter",
+    "free_locked_body": "On demand research, Connected Research, portfolio valuation, AI generation, price history and alerts. Each one runs a fresh request for you every time it is opened."
   }
 }

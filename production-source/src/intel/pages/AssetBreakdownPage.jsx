@@ -17,6 +17,8 @@ import AssetNewsPanel from '../components/AssetNewsPanel'
 import { getChain, chainIdFor, normalizeAddressForChain, assetRef, loadChainCoverage, capabilityStatus } from '../lib/chains'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
+import IntelLockedSurface from '../components/IntelLockedSurface'
+import { useIntelSurfaceLock } from '../context/IntelAccess'
 import TokenRiskBadge from '../components/TokenRiskBadge'
 import TokenAvatar from '../components/TokenAvatar'
 import TokenChart, { CHART_RANGE_MS } from '../components/TokenChart'
@@ -73,6 +75,9 @@ export default function AssetBreakdownPage() {
   const [coverage, setCoverage] = useState({})
   const breakdown = useArtifact(entityScope)
   const risk = useArtifact(entityScope)
+  // The breakdown and the risk panel are the two AI artifacts on this page.
+  // Everything else here (chart, profile, facts, news) is free and unaffected.
+  const lock = useIntelSurfaceLock('ai_generation')
   const isWallet = entity?.entity_kind === 'wallet'
   const projectProfile = useTokenProfile({supabase,orgId:org?.id,userId:user?.id,ident:!entity||isWallet?null:entity._chain&&entity._address?{chain:entity._chain,tokenAddress:entity._address}:{ref:entity.canonical_ref_key}})
   const { profile } = projectProfile
@@ -143,9 +148,10 @@ export default function AssetBreakdownPage() {
 
   const run = useCallback((force = false) => {
     if (!entity?.id) return // AI breakdown/risk need a real watchlist entity (native coins are chart+news only)
+    if (lock) return // this membership does not carry AI generation, so there is nothing to ask for
     breakdown.generate({ artifactType: isWallet ? 'wallet_summary' : 'token_breakdown', entityId: entity.id, force })
     if (!isWallet) risk.generate({ artifactType: 'risk_panel', entityId: entity.id, force })
-  }, [entity, isWallet, breakdown, risk])
+  }, [entity, isWallet, breakdown, risk, lock])
 
   useEffect(() => {
     if (!entity) return
@@ -301,7 +307,9 @@ export default function AssetBreakdownPage() {
       {entity.id ? (
         <section id="canonical-research" className="space-y-2">
           <div className="eyebrow">{isWallet ? t('breakdown.wallet_section', { defaultValue: 'Wallet summary' }) : t('breakdown.section', { defaultValue: 'Breakdown' })}</div>
-          <ArtifactView result={breakdown.result} loading={breakdown.loading} />
+          {lock
+            ? <IntelLockedSurface surface={lock.surface} minTier={lock.minTier} title={isWallet ? t('breakdown.wallet_section', { defaultValue: 'Wallet summary' }) : t('breakdown.section', { defaultValue: 'Breakdown' })} />
+            : <ArtifactView result={breakdown.result} loading={breakdown.loading} />}
           {breakdown.error && <div className="card--flat p-3 text-[13px] text-red-400">{breakdown.error}</div>}
         </section>
       ) : entity._native ? (
@@ -313,7 +321,9 @@ export default function AssetBreakdownPage() {
       {!isWallet && entity.id && (
         <section className="space-y-2">
           <div className="eyebrow">{t('breakdown.risk_section', { defaultValue: 'Risk panel' })}</div>
-          <ArtifactView result={risk.result} loading={risk.loading} />
+          {lock
+            ? <IntelLockedSurface surface={lock.surface} minTier={lock.minTier} title={t('breakdown.risk_section', { defaultValue: 'Risk panel' })} />
+            : <ArtifactView result={risk.result} loading={risk.loading} />}
           {risk.error && <div className="card--flat p-3 text-[13px] text-red-400">{risk.error}</div>}
         </section>
       )}

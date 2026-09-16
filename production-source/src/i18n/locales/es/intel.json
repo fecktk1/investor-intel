@@ -3497,5 +3497,20 @@
     "job_active": "Activo",
     "job_paused": "En pausa",
     "profile_promotional": "promocional"
+  },
+  "intel_upgrade": {
+    "free_label": "Gratis",
+    "free_price": "$0",
+    "free_note": "sin tarjeta y sin reloj de prueba",
+    "free_body": "El mismo producto, no una versión reducida. Todo lo que ya se calculó una vez para todos sigue abierto para ti.",
+    "free_open_title": "Abierto en el plan gratuito",
+    "free_open_boards": "Todos los tableros de mercado y páginas de activos",
+    "free_open_regime": "Cifras de régimen de mercado",
+    "free_open_captures": "Todas las capturas registradas",
+    "free_open_chart": "La estación de gráficos",
+    "free_open_narratives": "Informes de narrativas",
+    "free_open_watchlist": "10 elementos en la lista de seguimiento",
+    "free_locked_title": "Bloqueado hasta Starter",
+    "free_locked_body": "Investigación bajo demanda, Connected Research, valoración de cartera, generación con IA, historial de precios y alertas. Cada una lanza una solicitud nueva para ti cada vez que se abre."
   }
 }

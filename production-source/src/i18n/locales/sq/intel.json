@@ -3497,5 +3497,20 @@
     "job_active": "Aktive",
     "job_paused": "E ndalur",
     "profile_promotional": "promocional"
+  },
+  "intel_upgrade": {
+    "free_label": "Falas",
+    "free_price": "$0",
+    "free_note": "pa kartë, pa afat prove",
+    "free_body": "I njëjti produkt, jo një version i zvogëluar. Gjithcka që është llogaritur një herë për të gjithë mbetet e hapur për ty.",
+    "free_open_title": "E hapur në nivelin falas",
+    "free_open_boards": "Çdo tabelë tregu dhe faqe aseti",
+    "free_open_regime": "Shifrat e regjimit të tregut",
+    "free_open_captures": "Çdo regjistrim i ruajtur",
+    "free_open_chart": "Stacioni i grafikëve",
+    "free_open_narratives": "Përmbledhjet e narrativave",
+    "free_open_watchlist": "10 artikuj në listën e ndjekjes",
+    "free_locked_title": "E kyçur deri te Starter",
+    "free_locked_body": "Kërkimi sipas kërkesës, Connected Research, vlerësimi i portofolit, gjenerimi me IA, historiku i çmimeve dhe njoftimet. Secila nis një kërkesë të re për ty sa herë hapet."
   }
 }

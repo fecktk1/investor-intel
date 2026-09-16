@@ -25,7 +25,12 @@ const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,
  *                    or contacts an upstream provider.
  *   narrativeInputs  readNarrativeInput reads the caller's own research
  *                    artifact under their JWT and the retained snapshot that
- *                    artifact names. No provider call on any branch.
+ *                    artifact names. No provider call on any branch, and RLS
+ *                    plus explicit org and owner checks keep it to rows that
+ *                    member already owns. Free means it costs nothing per
+ *                    additional person, and replaying inputs this workspace
+ *                    already paid to record costs nothing per additional
+ *                    person, so it belongs on the free side of the split.
  */
 const STORE_ONLY_RESEARCH=new Set(['catalog','assetIdentity','sourceHistory','narrativeInputs'])
 
@@ -67,6 +72,18 @@ export async function handleResearch(req:Request) {
     // membership that does not carry the surface. The broad gate that used to
     // sit here refused the store-only reads too, which was safe but wrong: a
     // free member was denied data that was already ours and already paid for.
+    //
+    // IF YOU ARE HERE TO EXEMPT readMode:'retained', READ THIS FIRST. It looks
+    // free and it is not. requestCmc returns the cached row on kind 'render'
+    // with maxCalls 0, so a retained read buys nothing as it is served. But it
+    // reaches that return THROUGH the demand branch, which it enters with
+    // selectedDemand true, and with connected demand enabled that branch stamps
+    // demanded_at on the shared cache row. Foreground demand is the refresh
+    // worker's ONLY input, so the provider call still happens, later and on
+    // another clock, charged to the same shared budget. A retained read of a
+    // provider backed capability spends; it just spends asynchronously. An
+    // earlier note at this call site claimed the opposite. It was wrong, and
+    // anyone acting on it would open a paid refresh path to free members.
     if(researchSurfaceRequired(capability,body.readMode))await requireIntelSurface(db,actor,'research_on_demand')
     if(capability==='narrativeInputs'){
       if(!actor.userId||!actor.orgId)return json({error:'member_required'},403)

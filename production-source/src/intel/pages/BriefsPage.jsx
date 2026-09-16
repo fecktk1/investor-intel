@@ -8,6 +8,8 @@ import { listBriefs, upsertBrief } from '../lib/intel-data'
 import { appendHistoryPage } from '../lib/history-page'
 import { markSurfaceSeen } from '../lib/changes-api'
 import ArtifactView from '../components/ArtifactView'
+import IntelLockedSurface from '../components/IntelLockedSurface'
+import { useIntelSurfaceLock } from '../context/IntelAccess'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import { clarityMeta } from '../lib/narrative-ui'
 import { usePortfolioSelection } from '../lib/PortfolioSelectionContext'
@@ -96,6 +98,9 @@ export default function BriefsPage() {
   const [briefs, setBriefs] = useState([])
   const [loading, setLoading] = useState(true)
   const brief = useArtifact(selection.portfolioId || '')
+  // Generating a brief spends model tokens for this one reader. The archive
+  // below is already written and stays readable either way.
+  const lock = useIntelSurfaceLock('ai_generation')
   const [error, setError] = useState(null)
   const [nextCursor, setNextCursor] = useState(null)
   const [loadingMore, setLoadingMore] = useState(false)
@@ -151,12 +156,13 @@ export default function BriefsPage() {
         </div>
         <div className="intel-investigation-controls">
         <label className="text-xs text-[var(--fg-3)]">Portfolio<select className="select ml-2" value={selection.portfolioId || ''} onChange={e=>selection.selectPortfolio(e.target.value)} disabled={selection.loading}>{!selection.portfolios.length&&<option value="">No portfolio</option>}{selection.portfolios.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-        <button onClick={generate} disabled={brief.loading || selection.loading || !!selection.error} className="btn btn--primary btn--sm disabled:opacity-50">
+        {!lock && <button onClick={generate} disabled={brief.loading || selection.loading || !!selection.error} className="btn btn--primary btn--sm disabled:opacity-50">
           {brief.loading ? 'Preparing your brief…' : <><Sparkles className="h-4 w-4" /> {t('briefs.generate', { defaultValue: "Generate today's brief" })}</>}
-        </button>
+        </button>}
         </div>
       </div>
 
+      {lock && <IntelLockedSurface surface={lock.surface} minTier={lock.minTier} title={t('nav.briefs', { defaultValue: 'Daily Brief' })} />}
       {brief.loading && <p role="status" className="text-sm text-[var(--fg-3)]">Preparing your brief from saved evidence. You can keep reading the archive.</p>}
       {brief.result && <ArtifactView key={brief.result.artifact?.id} result={brief.result} loading={brief.loading} />}
       {brief.error && <div className="card--flat p-3 text-[13px] text-red-400">{brief.error}</div>}
