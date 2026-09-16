@@ -29,7 +29,14 @@ function notifyActivityChanged(orgId, thesisId = null) {
 async function invokeThesis(supabase, body) {
   const { data, error } = await supabase.functions.invoke('intel-thesis', { body })
   if (error) throw error
-  if (data && data.error) throw new Error(data.error)
+  if (data && data.error) {
+    // The code stays the message (existing callers read it), and a refusal keeps
+    // what it refused: the coach names the figures it could not ground.
+    const failure = new Error(data.error)
+    failure.code = data.error
+    if (Array.isArray(data.ungrounded)) failure.ungrounded = data.ungrounded
+    throw failure
+  }
   return data
 }
 

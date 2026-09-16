@@ -1,4 +1,5 @@
 import { attachCoachProvenance } from '../lib/thesis-coach-provenance'
+import { coachErrorText } from '../lib/thesis-coach-error'
 import RecordedEvidence from '../components/thesis/RecordedEvidence'
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useLocation, useNavigate } from 'react-router'
@@ -155,7 +156,7 @@ export default function ThesisBuilderPage() {
         cards: selectedCards.length ? selectedCards : pack.cards.slice(0, 10),
       })
       setAi((a) => ({ ...a, loading: false, draft: res?.draft || null, err: res?.error || null }))
-    } catch (e) { setAi((a) => ({ ...a, loading: false, err: e.message })) }
+    } catch (e) { setAi((a) => ({ ...a, loading: false, err: e })) }
   }, [org?.id, supabase, symbol, basics, entity, draft.statement, selectedCards, pack.cards, pack.content_hash, pack.subject])
 
   const applyAiDraft = useCallback(() => {
@@ -178,7 +179,7 @@ export default function ThesisBuilderPage() {
     try {
       const res = await getThesisCritique(supabase, org.id, { evidenceVersion: pack.content_hash, evidenceSubject: pack.subject?.canonical_key, basics: { symbol, canonicalKey: pack.subject?.canonical_key, stance: basics.stance }, cards: selectedCards, draft: { ...draft, scenarios, rules } })
       setAi((a) => ({ ...a, loading: false, critique: res?.critique || null, err: res?.error || null }))
-    } catch (e) { setAi((a) => ({ ...a, loading: false, err: e.message })) }
+    } catch (e) { setAi((a) => ({ ...a, loading: false, err: e })) }
   }, [org?.id, supabase, symbol, basics.stance, selectedCards, draft, scenarios, rules, pack.content_hash, pack.subject])
 
   const save = useCallback(async (status = 'active') => {
@@ -268,7 +269,11 @@ export default function ThesisBuilderPage() {
                 <div className="text-[13px] font-medium text-[var(--fg-1)]">{t('journal.draft_step', { defaultValue: 'Draft your thesis' })}</div>
                 <button onClick={runAiDraft} disabled={ai.loading} className="btn btn--quiet btn--sm"><Wand2 className="h-4 w-4" /> {ai.loading ? '…' : t('journal.ai_draft', { defaultValue: 'Draft with AI' })}</button>
               </div>
-              {ai.err && <div className="text-[12px] text-amber-300">{ai.err}</div>}
+              {ai.err && (() => {
+                // A grounding refusal is explained in words, never shown as its code.
+                const coachError = coachErrorText(t, ai.err)
+                return <div role="alert" data-coach-refused={coachError.refused ? 'true' : undefined} className="text-[12px] text-amber-300">{coachError.title && <div className="font-medium">{coachError.title}</div>}<div>{coachError.body}</div></div>
+              })()}
               {ai.draft && (
                 <div className="card--flat p-3 space-y-1.5 border-l-2 border-[var(--accent)]">
                   <div className="text-[12px] text-[var(--fg-2)]"><b>{t('journal.ai_proposed', { defaultValue: 'AI proposed' })}:</b> {ai.draft.statement}</div>
