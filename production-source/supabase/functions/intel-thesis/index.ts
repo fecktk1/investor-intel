@@ -15,7 +15,7 @@ import { thesisSaveEvidence, thesisPriceSnapshot } from '../_shared/intel/thesis
 import { readThesisRecordedEvidence } from '../_shared/intel/thesis-recorded-evidence.ts'
 import { cardsFromAssetPack, scoreThesisQuality, partnershipMateriality } from '../_shared/intel/thesis-evidence.ts'
 import { evaluateThesis } from '../_shared/intel/thesis-monitor.ts'
-import { evidenceBlock, selectCoachEvidence, validateCoachCitations } from '../_shared/intel/thesis-coach-evidence.ts'
+import { evidenceBlock, selectCoachEvidence, validateCoachCitations, groundCoachOutput } from '../_shared/intel/thesis-coach-evidence.ts'
 import { readAssetEvidenceVersion } from '../_shared/intel/asset-evidence-version.ts'
 import { prepareAiContext, loadCmcAiAllowed } from '../_shared/intel/ai-source-policy.ts'
 import { intelModel, intelEffort } from '../_shared/intel-model-config.ts'
@@ -365,6 +365,14 @@ ${evidenceJson}
 Draft a disciplined thesis. Bear case must be substantive. Confirmation/invalidation rules must be measurable. If the thesis depends on adoption, include a usage metric in watch_metrics.`
       let out: Any
       try { out = await callCoach(system, userMsg); out.obj = validateCoachCitations(out.obj, evidenceJson) } catch (e) { return json({ error: (e as Error).message || 'coach_unavailable' }, 200) }
+      // Every figure in the draft's prose must be in what the coach was given; one
+      // bounded regeneration, then a refusal that never returns the ungrounded draft.
+      const groundedDraft = await groundCoachOutput(out.obj, { evidenceJson, notes: b.notes, basics: b }, async (instruction) => {
+        const retry = await callCoach(`${system}\n${instruction}`, `${userMsg}\nPrevious JSON to fix:\n${JSON.stringify(out.obj).slice(0, 8000)}`)
+        return validateCoachCitations(retry.obj, evidenceJson)
+      })
+      if (groundedDraft.status === 'refused') return json({ error: 'coach_figure_ungrounded', ungrounded: groundedDraft.ungrounded }, 200)
+      out.obj = groundedDraft.output
       const flat = [out.obj?.statement, out.obj?.why_now, out.obj?.bear?.narrative].filter(Boolean).join('\n')
       const safe = validateSafeLanguage(flat || '')
       void recordIntelEvent(admin, { orgId: orgId || null, userId: auth.user.id, eventType: 'thesis_draft', model: out.model, tokensIn: out.usage?.prompt_tokens, tokensOut: out.usage?.completion_tokens, validatorOutcome: safe?.ok === false ? 'block' : 'pass' }).catch(() => {})
@@ -395,6 +403,12 @@ ${evidenceJson}
 Critique like a coach: is it falsifiable? does the bear case explain underperformance? do the tracked metrics match what the thesis depends on? are any partnerships overhyped?`
       let out: Any
       try { out = await callCoach(system, userMsg); out.obj = validateCoachCitations(out.obj, evidenceJson) } catch (e) { return json({ error: (e as Error).message || 'coach_unavailable' }, 200) }
+      const groundedCritique = await groundCoachOutput(out.obj, { evidenceJson, basics: b, draft }, async (instruction) => {
+        const retry = await callCoach(`${system}\n${instruction}`, `${userMsg}\nPrevious JSON to fix:\n${JSON.stringify(out.obj).slice(0, 8000)}`)
+        return validateCoachCitations(retry.obj, evidenceJson)
+      })
+      if (groundedCritique.status === 'refused') return json({ error: 'coach_figure_ungrounded', ungrounded: groundedCritique.ungrounded }, 200)
+      out.obj = groundedCritique.output
       void recordIntelEvent(admin, { orgId: orgId || null, userId: auth.user.id, eventType: 'thesis_critique', model: out.model, tokensIn: out.usage?.prompt_tokens, tokensOut: out.usage?.completion_tokens, validatorOutcome: 'pass' }).catch(() => {})
       return json({ critique: out.obj })
     }

@@ -1,4 +1,5 @@
 import { partnershipMateriality } from './thesis-evidence.ts'
+import { groundOrRefuse } from './numeric-grounding.ts'
 type Card = Record<string, any>
 export function evidenceBlock(cards: Card[], max = 14, version: string | null = null, maxChars = 18000): string {
   const evidence: Card[] = []
@@ -42,4 +43,30 @@ export function validateCoachCitations(output: Card, evidenceJson: string) {
     if (typeof value === 'string' && value.trim() && !/\[E\d+\]/.test(value)) throw new Error('coach_citation_missing')
   }
   return { ...output, evidence_version, source_evidence: evidence, omitted_evidence_count: omitted_count }
+}
+
+// ── Numeric grounding for the coach ─────────────────────────────────────────
+// The coach writes prose around the reader's own evidence, and its bull, base and
+// bear narratives, why_now and critique routinely quote figures. Each figure must
+// be present in what the coach was given: the evidence block, the reader's notes
+// and basics, and (for a critique) the reader's own draft. Rule thresholds are
+// structured fields the reader edits and are not prose, so they are not checked.
+const PROSE_PATHS = ['statement', 'why_now', 'whats_missing', 'summary', 'critique', 'bull.narrative', 'base.narrative', 'bear.narrative']
+const PROSE_LISTS = ['gaps', 'suggestions', 'partnership_flags', 'key_risks', 'bull.assumptions', 'bull.risks', 'base.assumptions', 'base.risks', 'bear.assumptions', 'bear.risks']
+export function coachProse(output: Card): string {
+  const at = (path: string) => path.split('.').reduce((o: any, key) => o?.[key], output)
+  const texts: string[] = []
+  for (const path of PROSE_PATHS) { const v = at(path); if (typeof v === 'string') texts.push(v) }
+  for (const path of PROSE_LISTS) { const v = at(path); if (Array.isArray(v)) texts.push(...v.filter((x: unknown) => typeof x === 'string')) }
+  for (const rule of [...(Array.isArray(output?.confirmation_rules) ? output.confirmation_rules : []), ...(Array.isArray(output?.invalidation_rules) ? output.invalidation_rules : [])]) {
+    if (typeof rule?.description === 'string') texts.push(rule.description)
+  }
+  return texts.join('\n')
+}
+
+/** Ground a validated coach output; `regenerate` is called at most once and must
+ * return an output that has already passed citation validation. */
+export async function groundCoachOutput(output: Card, context: { evidenceJson: string; notes?: unknown; basics?: unknown; draft?: unknown },
+  regenerate: (instruction: string) => Promise<Card | null>) {
+  return await groundOrRefuse({ output, textOf: coachProse, evidence: context, regenerate })
 }

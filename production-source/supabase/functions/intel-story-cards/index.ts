@@ -16,6 +16,8 @@ import { reconcileCoverage } from '../_shared/intel/coverage.ts'
 import { assembleAssetMiniPack } from '../_shared/intel/asset-mini-pack.ts'
 import { h32 } from '../_shared/core-intel/hashing.ts'
 import { capRankedBoard } from '../_shared/intel/feed-entity-cap.ts'
+import { groundOrRefuse } from '../_shared/intel/numeric-grounding.ts'
+import { intelModel, intelEffort } from '../_shared/intel-model-config.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
@@ -26,6 +28,29 @@ const TRUST: Record<string, number> = { curated: 0.85, macro: 0.7, gemini: 0.5, 
 // one subject. The cap spreads the budget across subjects; because it backfills,
 // a quiet day still generates a full run rather than a short one.
 const STORY_CARDS_PER_SYMBOL = 2
+
+// deno-lint-ignore no-explicit-any
+const storyText = (st: any): string => [st?.summary, st?.what_happened, st?.why_it_matters, st?.crypto_market_impact,
+  ...(Array.isArray(st?.bullish_signals) ? st.bullish_signals : []), ...(Array.isArray(st?.bearish_signals) ? st.bearish_signals : []),
+  ...(Array.isArray(st?.what_to_watch) ? st.what_to_watch : [])].filter((x) => typeof x === 'string').join('\n')
+
+/** The one bounded regeneration a story card gets when a figure in it is not in
+ * its evidence: a single model, told which figures failed, never a second
+ * multi-model pass. */
+// deno-lint-ignore no-explicit-any
+async function regenerateStoryCard(system: string, evidence: unknown, previous: any, instruction: string, apiKey: string): Promise<any | null> {
+  const res = await fetch('https://api.openai.com/v1/chat/completions', {
+    method: 'POST', signal: AbortSignal.timeout(90_000),
+    headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      model: intelModel('escalate'), response_format: { type: 'json_object' }, reasoning_effort: intelEffort(),
+      messages: [{ role: 'system', content: `${system}\n\n${instruction}` }, { role: 'user', content: `Context data: ${JSON.stringify(evidence).slice(0, 12000)}\n\nPrevious JSON to fix:\n${JSON.stringify(previous).slice(0, 8000)}` }],
+    }),
+  })
+  if (!res.ok) return null
+  const data = await res.json().catch(() => null)
+  try { return JSON.parse(data?.choices?.[0]?.message?.content || '') } catch { return null }
+}
 
 function uniqSymbols(values: unknown[]): string[] {
   const out: string[] = []
@@ -139,7 +164,7 @@ Deno.serve(async (req) => {
     const haveFresh = new Set((existing || []).map((e: any) => `${e.evidence_hash}:${e.source_set_hash || ''}`))
     const todo = top.filter((c) => !haveFresh.has(`${c.story_hash}:${c.source_set_hash}`)).slice(0, limit)
 
-    let generated = 0
+    let generated = 0, groundingRefused = 0
     for (const c of todo) {
       const evidence = c.evidence
       const { system } = buildPrompt('story_card', { context: evidence })
@@ -147,7 +172,16 @@ Deno.serve(async (req) => {
       try { mm = await multiModelAnalyze({ entity: null, evidence, baseSystem: system, task: 'Analyze this public crypto news story for a retail investor (research / risk context, not advice).', keys }) }
       catch { mm = null }
       if (!mm?.structured) continue
-      const st = mm.structured
+      // Every figure on a shared card must be in its evidence. One bounded
+      // regeneration names the ungrounded figures; a second failure stores no
+      // card at all, so the dashboard falls back to the curated story rather than
+      // showing a number nobody can trace.
+      const grounded = await groundOrRefuse({
+        output: mm.structured, textOf: storyText, evidence,
+        regenerate: (instruction) => regenerateStoryCard(system, evidence, mm.structured, instruction, keys.openai!),
+      })
+      if (grounded.status === 'refused' || !grounded.output) { groundingRefused++; continue }
+      const st = grounded.output
       reconcileCoverage(st, [c.source_name, 'Story evidence pack (cached corroboration)'], evidence.data_coverage)
       const v = validateSafeLanguage([st.summary, st.what_happened, st.why_it_matters, st.crypto_market_impact, ...(Array.isArray(st.bullish_signals) ? st.bullish_signals : []), ...(Array.isArray(st.bearish_signals) ? st.bearish_signals : [])].filter((x) => typeof x === 'string').join('\n'))
       if (!v.ok) continue // never store advice-y output
@@ -155,12 +189,12 @@ Deno.serve(async (req) => {
         artifact_type: 'story_card', entity_ref: '', evidence_hash: c.story_hash, source_set_hash: c.source_set_hash,
         contract_version: CONTRACT_VERSION, guardrail_version: GUARDRAIL_VERSION, models: mm.providersUsed, consensus: mm.consensus,
         structured: st, confidence: ['high', 'medium', 'low'].includes(st.confidence) ? st.confidence : 'low', net_signal: st.net_signal || null,
-        sources: [c.source_name], data_freshness: {}, validation_status: 'passed', model_meta: { statuses: mm.statuses, synth_failed: !!mm.synthFailed },
+        sources: [c.source_name], data_freshness: {}, validation_status: 'passed', model_meta: { statuses: mm.statuses, synth_failed: !!mm.synthFailed, grounding: { status: grounded.status, checked: grounded.first.checked } },
         raw_candidate_count: c.source_support, final_evidence_count: 1, stale_after: new Date(now + 6 * 3_600_000).toISOString(),
       }, { onConflict: 'artifact_type,entity_ref,evidence_hash,contract_version,guardrail_version' })
       if (!error) generated++
     }
-    return json({ ok: true, candidates: cards.length, generated })
+    return json({ ok: true, candidates: cards.length, generated, grounding_refused: groundingRefused })
   } catch (e) {
     return json({ error: (e as Error)?.message || 'story_cards_failed' }, 500)
   }
