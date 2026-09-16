@@ -19,6 +19,29 @@ import {
 
 const scopeKey = (scope) => scope.replace(':', '_')
 
+// The short form a person can compare at a glance. The full hash is one click
+// away, and it is the full hash the approval actually signs.
+const shortPlanHash = (hash) => (typeof hash === 'string' && hash.length > 12 ? `${hash.slice(0, 12)}...` : hash || '')
+
+// What a pending write will touch, in words. The target is derived on the
+// server (an alert's asset, the saved layout it re-read, the thesis it re-read)
+// and is part of the hash, so this is exactly what the approval covers.
+function planTargetText(plan, t) {
+  const target = plan?.target
+  if (!target || typeof target !== 'object') return null
+  if (plan.tool_key === 'intel_create_alert' && target.asset) {
+    return t('settings.agent_target_alert', { asset: target.asset, defaultValue: 'A new alert on {{asset}}' })
+  }
+  if (plan.tool_key === 'intel_annotate_chart' && target.layoutId) {
+    return t('settings.agent_target_chart', { id: target.layoutId, asset: target.asset || '', defaultValue: 'Saved view {{id}} on {{asset}}' })
+  }
+  if (plan.tool_key === 'intel_append_thesis_evidence' && target.thesisId) {
+    return t('settings.agent_target_thesis', { id: target.thesisId, defaultValue: 'Thesis {{id}}' })
+  }
+  // A target shape this card does not know yet is still shown, never hidden.
+  return JSON.stringify(target)
+}
+
 export default function AgentTokensCard() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
@@ -31,6 +54,7 @@ export default function AgentTokensCard() {
   const [notice, setNotice] = useState(null)
   const [created, setCreated] = useState(null)
   const [copied, setCopied] = useState(false)
+  const [copiedHash, setCopiedHash] = useState(null)
   const [draft, setDraft] = useState({ name: '', scopes: ['read:portfolio'], days: 90 })
 
   const context = { supabase, orgId: org?.id }
@@ -129,6 +153,21 @@ export default function AgentTokensCard() {
     }
   }, [created, t])
 
+  const copyHash = useCallback(async (plan) => {
+    if (!plan?.plan_hash) return
+    setError(null)
+    try {
+      await navigator.clipboard.writeText(plan.plan_hash)
+      setCopiedHash(plan.id)
+      setNotice(t('settings.agent_hash_copied', { defaultValue: 'Full fingerprint copied.' }))
+    } catch {
+      // The full hash is otherwise only in a tooltip, so a failed copy puts it
+      // somewhere it can be selected by hand.
+      setCopiedHash(null)
+      setError(t('settings.agent_hash_copy_failed', { hash: plan.plan_hash, defaultValue: 'Copy failed. The full fingerprint is {{hash}}.' }))
+    }
+  }, [t])
+
   if (!org?.id) return null
 
   return (
@@ -165,6 +204,32 @@ export default function AgentTokensCard() {
                 {' · '}
                 {plan.tool_key}
               </div>
+              {(planTargetText(plan, t) || plan.plan_hash) && (
+                <div className="grid grid-cols-[auto_1fr] gap-x-3 gap-y-1 text-[12px] items-center">
+                  {planTargetText(plan, t) && (
+                    <>
+                      <span className="text-[var(--fg-3)]">{t('settings.agent_target_label', { defaultValue: 'What it touches' })}</span>
+                      <span data-testid="agent-plan-target" className="text-[var(--fg-1)] break-all">{planTargetText(plan, t)}</span>
+                    </>
+                  )}
+                  {plan.plan_hash && (
+                    <>
+                      <span className="text-[var(--fg-3)]">{t('settings.agent_hash_label', { defaultValue: 'Request fingerprint' })}</span>
+                      <span className="flex items-center gap-1 min-w-0">
+                        <code data-testid="agent-plan-hash" title={plan.plan_hash} className="text-[12px] text-[var(--fg-1)]">{shortPlanHash(plan.plan_hash)}</code>
+                        <button
+                          type="button"
+                          onClick={() => copyHash(plan)}
+                          className="btn btn--quiet btn--sm"
+                          aria-label={t('settings.agent_hash_copy', { defaultValue: 'Copy the full fingerprint' })}
+                        >
+                          {copiedHash === plan.id ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
+                        </button>
+                      </span>
+                    </>
+                  )}
+                </div>
+              )}
               <pre className="text-[11px] text-[var(--fg-4)] overflow-x-auto whitespace-pre-wrap break-all">{JSON.stringify(plan.payload, null, 1).slice(0, 1200)}</pre>
               <div className="flex items-center gap-2">
                 <button type="button" onClick={() => decide(plan.id, true)} disabled={busy} className="btn btn--primary btn--sm disabled:opacity-50">
