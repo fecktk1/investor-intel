@@ -38,7 +38,7 @@ function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), { status, headers: { ...corsHeaders, 'Content-Type': 'application/json' } })
 }
 
-/** The ten capture tables and the column that dates the newest row in each. */
+/** The capture tables and the column that dates the newest row in each. */
 const CAPTURE_TABLES: Array<[table: string, newestColumn: string]> = [
   ['intel_regime_snapshots', 'captured_at'],
   ['intel_rank_history', 'snapshot_date'],
@@ -50,6 +50,11 @@ const CAPTURE_TABLES: Array<[table: string, newestColumn: string]> = [
   ['intel_attention_snapshots', 'captured_at'],
   ['intel_airdrop_snapshots', 'last_seen_at'],
   ['intel_network_stats_snapshots', 'captured_at'],
+  // RWA yield provenance. Filled from keyless sources, so these three consume no
+  // provider credits; they are listed here for freshness only.
+  ['intel_rwa_nav_observations', 'captured_at'],
+  ['intel_rwa_yield_snapshots', 'captured_at'],
+  ['intel_benchmark_rates', 'observed_at'],
 ]
 
 const DEFAULT_HACKATHON_EXPIRY = '2026-09-30T23:59:00Z'

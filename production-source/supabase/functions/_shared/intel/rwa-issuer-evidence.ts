@@ -115,6 +115,10 @@ export const ISSUER_REVIEW_CYCLES:readonly ReviewCycle[]=[
   '5176':[{key:'eligibility',label:'Issuer access',summary:'Direct purchase and redemption are for verified issuer customers under the applicable terms; the schedule lists a non-refundable 150 USDt verification fee. A token balance alone does not establish eligibility or present redemption availability.',sourceUrl:'https://gold.tether.to/legal/feeschedule'}],
   '20245':[{key:'redemption',label:'Token-contract redemption terms',summary:'Section 8 of the issuer terms describes conversion to physical gold in one-kilogram minimums and increments, released less fees, with collection at the vault or delivery at the holder’s cost. Section 9 separately lets partner jewellers or bullion providers exchange units from one gram; partner availability is not established here.',sourceUrl:'https://comtechgold.com/assets/pdf/Terms_and_Conditions.pdf'}],
  }},
+ // Every source re-read on 2026-09-16: docs/investor-intel/evidence/issuer-review-4-20260916.md
+ // Every reviewed fact was found again in its source, so no wording changed and
+ // nothing was omitted. The cycle restates the current words under one new date.
+ {version:'issuer-review-4',reviewedAt:'2026-09-16T12:56:00.000Z',expiresAt:'2026-09-23T12:56:00.000Z'},
 ]
 REVIEWS.push(...reviewCycleRestatements(ISSUER_REVIEW_SEED,ISSUER_REVIEW_CYCLES))
 

@@ -4,6 +4,8 @@ import { Network } from 'lucide-react'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
 import RankMap from '../components/RankMap'
 import RwaUniverse from '../components/RwaUniverse'
+import RwaIssuerLegitimacy from '../components/RwaIssuerLegitimacy'
+import RwaYieldProvenance from '../components/RwaYieldProvenance'
 import IndexConstituents from '../components/IndexConstituents'
 import LiquidationHeat from '../components/LiquidationHeat'
 import LiquidationClock from '../components/LiquidationClock'
@@ -56,6 +58,12 @@ export default function MarketStructurePage() {
       />
       <RankMap onLoad={seed} />
       <RwaUniverse />
+      {/* Identity before economics. A yield figure is only interpretable once
+          the reader knows whose instrument it is and whether they may hold it,
+          so legitimacy is read first and yield provenance second. Both panels
+          own their own read, so neither can blank the other. */}
+      <RwaIssuerLegitimacy />
+      <RwaYieldProvenance />
       <IndexConstituents />
       <LiquidationHeat ids={liquidationIds} />
       <LiquidationClock ids={liquidationIds} />
