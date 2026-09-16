@@ -134,7 +134,9 @@ export function CatalystsNewsCard({ data, historical = false }) {
                   : <span className="text-[12px] text-[var(--fg-1)]">{n.title}</span>}
               </div>
               {n.published_at && <time dateTime={n.published_at} className="block text-[11px] text-[var(--fg-4)]">{new Date(n.published_at).toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</time>}
-              {n.why_it_matters && <p className="text-[11px] text-[var(--fg-4)] leading-snug pl-3.5">{n.why_it_matters}</p>}
+              {n.why_it_matters && n.provenance?.kind !== 'curated_stale' && (!n.provenance?.staleAfter || Date.parse(n.provenance.staleAfter) > Date.now()) && <p className="text-[11px] text-[var(--fg-4)] leading-snug pl-3.5">{n.why_it_matters}</p>}
+              {/* Play 7: a curated summary past its review window is labelled, never shown as current. */}
+              {(n.provenance?.kind === 'curated_stale' || (n.provenance?.kind === 'curated' && !(Date.parse(n.provenance.staleAfter) > Date.now()))) && <p className="text-[11px] text-[var(--fg-5)] leading-snug pl-3.5" data-envelope="curated_stale"><strong>{t('receipt_state.curated_stale', { defaultValue: 'Past its review window' })}</strong>{(n.stale_summary?.why_it_matters || n.why_it_matters) ? <> {n.stale_summary?.why_it_matters || n.why_it_matters}</> : null}</p>}
             </li>
           ))}
         </ul>

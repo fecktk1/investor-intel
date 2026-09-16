@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Network } from 'lucide-react'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
+import CaptureReceipts from '../components/CaptureReceipts'
 import RankMap from '../components/RankMap'
 import RwaUniverse from '../components/RwaUniverse'
 import RwaIssuerLegitimacy from '../components/RwaIssuerLegitimacy'
@@ -39,6 +40,9 @@ function topProviderIds(payload, max = TOP_ASSETS) {
   return rows.slice(0, max).map(row => row.providerId)
 }
 
+// The capture lanes whose newest run the receipt drawer describes.
+const CAPTURE_RECEIPT_LANES = ['rank', 'rwa', 'index', 'liquidations', 'exchange_reserves', 'venue_share']
+
 export default function MarketStructurePage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const [liquidationIds, setLiquidationIds] = useState([])
@@ -56,6 +60,7 @@ export default function MarketStructurePage() {
         title={t('structure.title', { defaultValue: 'Structure figures' })}
         subtitle={t('structure.subtitle', { defaultValue: 'Rank history, the tokenized real-world asset universe, published index concentration and liquidation heat — read straight from the capture tables. Every figure states its own coverage and says why it is unavailable rather than drawing an empty chart.' })}
       />
+      <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />
       <RankMap onLoad={seed} />
       <RwaUniverse />
       {/* Identity before economics. A yield figure is only interpretable once

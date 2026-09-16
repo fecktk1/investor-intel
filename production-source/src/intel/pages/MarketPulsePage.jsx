@@ -20,6 +20,9 @@ import DisplayOptions from '../components/DisplayOptions'
 import DeskModules, { DeskModule, DESK_MODULES } from '../components/DeskModules'
 import { useWorkspacePreference } from '../context/PersonalWorkspace'
 import OnboardingChecklistCard from '../../components/help/OnboardingChecklistCard'
+import FigureProvenance from '../components/FigureProvenance'
+import MetricAgreementChip from '../components/MetricAgreementChip'
+import { envelopeKind } from '../lib/source-receipt'
 
 const assetHref = (ref) => `/intel/asset/${encodeURIComponent(ref || '')}`
 const marketHrefForChain = (c) => assetHref(c?.ref || `native:${c?.chain_id || ''}`)
@@ -40,8 +43,14 @@ function DeskSignal({ s }) {
 
 // One clean, explainable investor news card — never a raw row.
 function NotableCard({ c }) {
+  const { t } = useTranslation('intel', { useSuspense: false })
   const tags = [...(c.chains || []), c.symbol].filter(Boolean).slice(0, 3)
-  const a = c.analysis
+  // Play 7: a curated summary past its review window is a different kind of
+  // record. It is never drawn as the current analysis, only under its own label,
+  // and the window is re-checked here because a cached desk can outlive it.
+  const staleCurated = envelopeKind(c.provenance) === 'curated_stale'
+  const a = staleCurated ? null : c.analysis
+  const staleAnalysis = staleCurated ? (c.stale_analysis || c.analysis || null) : null
   return (
     <div className="border-t border-[var(--border-default)] py-3 space-y-1.5">
       <div className="flex items-start gap-1.5">
@@ -70,9 +79,16 @@ function NotableCard({ c }) {
           {a.crypto_market_impact && <p className="text-[var(--fg-2)]"><span className="text-[var(--fg-5)]">Crypto impact: </span>{a.crypto_market_impact}</p>}
           {a.what_to_watch && <p className="text-[var(--fg-3)]"><span className="text-[var(--fg-5)]">Watch: </span>{a.what_to_watch}</p>}
         </div>
+      ) : staleCurated ? (
+        <div className="space-y-1 pt-0.5 text-[12px] leading-snug" data-envelope="curated_stale">
+          <p className="text-[var(--fg-3)]"><strong>{t('receipt_state.curated_stale', { defaultValue: 'Past its review window' })}</strong> {t('receipt_state.curated_stale_note', { defaultValue: 'This summary was written for an earlier review window and has not been reviewed since.' })}</p>
+          {staleAnalysis?.what_happened && <p className="text-[var(--fg-4)]">{staleAnalysis.what_happened}</p>}
+          {staleAnalysis?.why_it_matters && <p className="text-[var(--fg-4)]">{staleAnalysis.why_it_matters}</p>}
+        </div>
       ) : (c.supporting_facts?.length > 0 && (
         <ul className="text-[11px] text-[var(--fg-4)] space-y-0.5 pt-0.5">{c.supporting_facts.slice(0, 3).map((f, i) => <li key={i}>· {f}</li>)}</ul>
       ))}
+      {c.provenance && <FigureProvenance envelope={c.provenance} />}
       </details>
     </div>
   )
@@ -229,6 +245,8 @@ export default function MarketPulsePage() {
                 : <div key={m.symbol} className="border-b border-[var(--border-subtle)] py-3">{inner}</div>
             })}
           </div>
+          {/* Birdeye movers when the overview cache is warm, exchange movers otherwise. */}
+          <FigureProvenance envelope={dash?.movers?.length ? dash?.figure_provenance?.movers : dash?.figure_provenance?.market_movers} />
         </section>
       )}
 
@@ -303,9 +321,11 @@ export default function MarketPulsePage() {
                     </div>
                     <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{c.symbol}{c.price != null ? ` · ${fmtPrice(c.price)}` : ''}</div>
                     {c.as_of&&<div className="text-[11px] text-[var(--fg-4)] mt-1">{c.source==='coinmarketcap'?'CoinMarketCap':'CoinGecko'} · <time dateTime={c.as_of}>{new Date(c.as_of).toLocaleTimeString(undefined,{hour:'numeric',minute:'2-digit'})}</time>{c.stale?' · Delayed':''}</div>}
+                    <MetricAgreementChip agreement={c.metric_agreement} />
                   </Link>
                 ))}
               </div>
+              <FigureProvenance envelope={dash?.figure_provenance?.chain_perf} receipts={dash?.receipts?.chain_perf} />
             </section>
           )}
 
@@ -360,6 +380,7 @@ export default function MarketPulsePage() {
                   {news.slice(0, scope === 'chain' ? 8 : 5).map((c) => <NotableCard key={c.story_hash || c.title} c={c} />)}
                 </div>
               )}
+              {news.length > 0 && <FigureProvenance envelope={dash?.figure_provenance?.news} />}
               {(dash?.developing || []).length > 0 && (
                 <div className="mt-3 pt-2 border-t border-[color:var(--border-default)]">
                   <div className="text-[10px] uppercase tracking-wide text-[var(--fg-5)] mb-1.5">{t('pulse.developing', { defaultValue: 'Developing chatter · lower confidence' })}</div>
@@ -369,6 +390,7 @@ export default function MarketPulsePage() {
                         <span className={`text-[9px] ${SIG_CLS[c.signal] || ''}`}>{(SIG_LABEL[c.signal] || c.signal || '?').replace('Leans ', '')}</span>
                         {c.url ? <a href={c.url} target="_blank" rel="noopener noreferrer" className="truncate hover:text-[var(--accent)]">{c.title}</a> : <span className="truncate">{c.title}</span>}
                         {c.symbol && <span className="text-[var(--fg-5)] flex-shrink-0">· {c.symbol}</span>}
+                        {envelopeKind(c.provenance) === 'curated_stale' && <span className="text-[var(--fg-5)] flex-shrink-0">· {t('receipt_state.curated_stale', { defaultValue: 'Past its review window' })}</span>}
                       </div>
                     ))}
                   </div>
@@ -389,6 +411,7 @@ export default function MarketPulsePage() {
               ) : (
                 <div className="space-y-2">{dash.signals.map((s) => <DeskSignal key={s.id} s={s} />)}</div>
               )}
+              {(dash?.signals || []).length > 0 && <FigureProvenance envelope={dash?.figure_provenance?.signals} />}
             </section>
           </div>
 

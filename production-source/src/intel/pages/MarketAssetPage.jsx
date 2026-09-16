@@ -68,6 +68,8 @@ const AttentionPersistence = deferredPanel(() => import('../components/Attention
 const ProfilePanel = deferredPanel(() => import('../components/ProfilePanel'), { label: 'The project profile' })
 const ContractChartEvidenceStatus = deferredPanel(() => import('../components/ContractChartEvidenceStatus'), { label: 'Contract chart evidence' })
 import TokenRiskBadge from '../components/TokenRiskBadge'
+import FigureProvenance from '../components/FigureProvenance'
+import MetricAgreementChip from '../components/MetricAgreementChip'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 
 // `coinmarketcap_kline` is the contract k-line aggregate, not the listed-asset
@@ -270,6 +272,11 @@ export default function MarketAssetPage() {
           </div>
           {d.bestPair && <p className="page-sub font-mono text-[12px]">{PROVIDER_LABELS[d.bestProvider] || d.bestProvider} · {d.bestPair}</p>}
           {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'&&d.sourceFreshness!=='cached'?` · ${d.sourceFreshness}`:''}</p>}
+          {/* Play 1 and 7: what answered the quote (the minute refresh replaces
+              these with its own receipts) and what the price does not mean. */}
+          <FigureProvenance envelope={d.quoteProvenance?.price} receipts={d.quoteReceipts} />
+          {/* Play 4: read from retained observations on the server, no provider call. */}
+          <MetricAgreementChip agreement={d.metricAgreement} />
           {liveQuote.error&&<p role="status" className="intel-event-meta">{liveQuote.error}</p>}
           {/* Money above is converted from the stored USD at display time. When
               the reader asked for a currency the hourly capture cannot supply,

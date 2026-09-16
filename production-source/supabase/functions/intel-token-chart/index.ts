@@ -25,12 +25,16 @@ import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
 import {sharedBirdeyeChart} from '../_shared/intel/birdeye-chart-cache.ts'
 import {legacyChartRange,loadCmcContractChart} from '../_shared/intel/cmc-contract-chart.ts'
 import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
+import {tokenChartProvenance} from '../_shared/intel/market-provenance.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 async function json(b: any, s = 200) {
  if(Array.isArray(b?.candles)){
   const series=chartSeriesResponse(b);b={...b,candles:series.candles,chartSource:series.source,coverage:[b.coverage,series.coverage].filter(Boolean).join(' ')||null}
   if(series.candles.length&&b.entity?.ref){try{b.captureProof=await makeChartCaptureProof(b.entity.ref,series.candles,series.source,Deno.env.get('INTEL_CHART_PROOF_SECRET')||Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')||'')}catch{b.captureReason='Verified chart capture is unavailable for this source identity.'}}
+  // Play 1 and 7: what answered this chart and what its figures do not mean,
+  // assembled from this response only.
+  const read=tokenChartProvenance(b);b={...b,receipts:read.receipts,figureProvenance:read.figureProvenance}
  }
  return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json','Cache-Control':'private, no-store' } })
 }
@@ -151,7 +155,7 @@ async function degenChart(chain: string, address: string, timeframe: string): Pr
 
   const entity = { symbol: row?.symbol ?? null, name: row?.name ?? null, ref: `${chain}:${address}`, chain }
   if (candles.length && pool) {
-    return json({ entity, overview: ov, candles, timeframe, source: 'geckoterminal', source_label: 'GeckoTerminal', source_url: gtNet ? `https://www.geckoterminal.com/${gtNet}/pools/${pool}` : null, pool_address: pool, dex_id: dexId, pair_url: pairUrl, as_of: nowIso, last_refreshed_at: ohlcvSnapshot?.fetched_at ?? dexSnapshot?.fetched_at ?? row?.last_refreshed_at ?? nowIso })
+    return json({ entity, overview: ov, candles, timeframe, source: 'geckoterminal', source_label: 'GeckoTerminal', sourceSnapshot: ohlcvSnapshot ? { fetchedAt: ohlcvSnapshot.fetched_at ?? null, staleAfter: ohlcvSnapshot.stale_after ?? null } : null, source_url: gtNet ? `https://www.geckoterminal.com/${gtNet}/pools/${pool}` : null, pool_address: pool, dex_id: dexId, pair_url: pairUrl, as_of: nowIso, last_refreshed_at: ohlcvSnapshot?.fetched_at ?? dexSnapshot?.fetched_at ?? row?.last_refreshed_at ?? nowIso })
   }
   // No verified pool → clean unsupported state (overview-only). Never break the page.
   const state = (row?.listing_state === 'pre_liquidity' || row?.is_new) ? 'pre_liquidity' : (row?.is_migrated ? 'pool_pending' : 'no_pool')
@@ -232,7 +236,7 @@ Deno.serve(async (req) => {
         sharedBirdeyeChart(admin,appId!,ent.contract_address,timeframe,beCtx),
       ])
       const candles=ohlcv.candles
-      if(candles.length)return json({entity:{symbol:ent.display_symbol||overview?.symbol,ref:ent.canonical_ref_key,chain:appId,privacy_limited:ent.privacy_limited},overview,candles,timeframe,source:'birdeye',sourceState:ohlcv.state,sourceReason:ohlcv.reason,last_refreshed_at:ohlcv.fetchedAt,
+      if(candles.length)return json({entity:{symbol:ent.display_symbol||overview?.symbol,ref:ent.canonical_ref_key,chain:appId,privacy_limited:ent.privacy_limited},overview,candles,timeframe,source:'birdeye',sourceState:ohlcv.state,sourceReason:ohlcv.reason,last_refreshed_at:ohlcv.fetchedAt,sourceRefreshed:ohlcv.refreshed===true,
         coverage:ohlcv.state==='stale'?'Showing the last available Birdeye candles while refresh is unavailable.':'Birdeye OHLCV; shared refresh every two minutes. Provider candle timestamps are preserved.'})
       // Birdeye returned nothing → fall through to the free GeckoTerminal path below.
     }
