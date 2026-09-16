@@ -3782,7 +3782,13 @@
     "lane_categories": "Kategoritë",
     "lane_airdrops": "Airdrop-et",
     "lane_new_listings": "Listimet e reja",
-    "lane_meme_stages": "Fazat e lançimit të memeve"
+    "lane_meme_stages": "Fazat e lançimit të memeve",
+    "chart_candles_for": "Burimi i qirinjve {{range}} që shfaqen",
+    "chart_candles": "Burimi i qirinjve që shfaqen",
+    "venue_title": "Nga vijnë shifrat e platformave spot",
+    "venue_cex": "Ticker-at e bursave",
+    "venue_orderbook": "Thellësia e librit të porosive",
+    "venue_dex": "Pool DEX"
   },
   "receipt": {
     "summary": "Fatura e thirrjes së burimit",

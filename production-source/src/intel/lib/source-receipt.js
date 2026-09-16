@@ -69,3 +69,70 @@ export function providerLabel(value, t = null) {
   if (STORE_LABELS[key]) return t ? t(STORE_LABELS[key][0], { defaultValue: STORE_LABELS[key][1] }) : STORE_LABELS[key][1]
   return key.split('+').map(part => PROVIDER_NAMES[part] || part).join(' + ')
 }
+
+// Chart candles on /intel/markets/:symbol. The detail response carries one
+// receipt set and one envelope for the candles of its FIRST load (the page's
+// default period). Every other period is a `candlesOnly` read whose body carries
+// the ladder output (raw CoinMarketCap transport receipts, the source, its state
+// and clocks) but no assembled envelope. So the chart re-derives the envelope for
+// the snapshot it is actually drawing, with the same rules as chartProvenance()
+// in supabase/functions/_shared/intel/market-provenance.ts. A parity test runs
+// both on the same bodies, so the two cannot drift apart silently.
+const CHART_SCOPE = { coinmarketcap: 'cmc_ohlcv', coinmarketcap_kline: 'dex_ohlcv', coingecko: 'coingecko_ohlc', birdeye: 'birdeye_ohlcv', geckoterminal: 'dex_ohlcv', dexscreener: 'dex_pool' }
+const CHART_EXCHANGES = ['binance', 'coinbase', 'kraken', 'kucoin', 'okx', 'bybit']
+// The English sentences behind each scope key (market-figure-scope.ts). The app
+// renders the localised figure_scope.<key> string; these are its fallback.
+const CHART_SCOPE_SENTENCES = {
+  birdeye_ohlcv: 'Birdeye on-chain candles for this contract from a shared cache. Pool prices, not a fill anyone received.',
+  dex_pool: 'Figures for one DEX pool at its snapshot time. Not the depth available to a trade and not every pool for this token.',
+  dex_ohlcv: 'Candles for one DEX pool as a public source published them. Not every pool for this token and not an execution record.',
+  exchange_ohlcv: 'Candles from one covered centralized exchange pair. Reported by that venue and not the price on any other venue.',
+  coingecko_ohlc: 'CoinGecko observations at the provider spacing. Volume is not included and the spacing is not a candle width.',
+  cmc_ohlcv: 'CoinMarketCap completed OHLCV periods for this asset. Asset-level market data, not the price of any one pool or venue.',
+}
+const PRICE_SCOPE = 'Provider-aggregated USD quote at its reported time. Not an executable price and not the quote of any one venue.'
+
+const isoOrNull = value => {
+  if (value == null || value === '') return null
+  const at = Date.parse(String(value))
+  return Number.isFinite(at) ? new Date(at).toISOString() : null
+}
+const newestStamp = values => {
+  const stamps = values.map(v => Date.parse(String(v ?? ''))).filter(Number.isFinite)
+  return stamps.length ? new Date(Math.max(...stamps)).toISOString() : null
+}
+const worstFreshness = states => (!states.length ? null
+  : states.includes('unavailable') ? 'unavailable'
+    : states.includes('stale') ? 'stale'
+      : states.every(s => s === 'fresh') ? 'fresh' : 'cached')
+
+/** Receipts and the chart envelope for one candle snapshot, as chartProvenance()
+ * derives them on the server. A snapshot that already carries the server's own
+ * `chartEnvelope` / `chartReceipts` (the detail response's first load) keeps
+ * them untouched. Returns null for anything that is not a snapshot. */
+export function chartSnapshotProvenance(snapshot, now = Date.now()) {
+  if (!snapshot || typeof snapshot !== 'object') return null
+  if (snapshot.chartEnvelope !== undefined || Array.isArray(snapshot.chartReceipts)) {
+    return { receipts: Array.isArray(snapshot.chartReceipts) ? snapshot.chartReceipts.filter(Boolean) : [], envelope: snapshot.chartEnvelope || null }
+  }
+  const source = String(snapshot.bestProvider || snapshot.source || 'unknown')
+  const receipts = (Array.isArray(snapshot.receipts) ? snapshot.receipts : [])
+    .filter(r => r && typeof r === 'object')
+    .map(r => ({ ...r, provider: 'coinmarketcap', freshness: receiptFreshness(r, now) }))
+  const fetchedAt = newestStamp([...(Array.isArray(snapshot.provenance) ? snapshot.provenance.map(p => p?.fetchedAt) : []), snapshot.last_refreshed_at, snapshot.lastRefreshedAt])
+  const state = String(snapshot.sourceState ?? snapshot.chartState ?? '')
+  const freshness = receipts.length ? worstFreshness(receipts.map(r => receiptFreshness(r, now)))
+    : state === 'stale' ? 'stale' : state === 'unavailable' || !(snapshot.candles?.length) ? 'unavailable' : null
+  const scopeKey = CHART_SCOPE[source] ?? (source.includes('exchange') || CHART_EXCHANGES.includes(source) ? 'exchange_ohlcv' : null)
+  return {
+    receipts,
+    envelope: {
+      kind: receipts.some(r => r.origin === 'live') ? 'live' : 'stored',
+      source,
+      fetchedAt: isoOrNull(fetchedAt),
+      freshness: FRESHNESS_STATES.includes(freshness) ? freshness : null,
+      scope: scopeKey ? CHART_SCOPE_SENTENCES[scopeKey] : PRICE_SCOPE,
+      scopeKey,
+    },
+  }
+}

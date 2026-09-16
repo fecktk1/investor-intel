@@ -3782,7 +3782,13 @@
     "lane_categories": "Categorieën",
     "lane_airdrops": "Airdrops",
     "lane_new_listings": "Nieuwe noteringen",
-    "lane_meme_stages": "Lanceringsfasen van memes"
+    "lane_meme_stages": "Lanceringsfasen van memes",
+    "chart_candles_for": "Bron van de getoonde {{range}}-candles",
+    "chart_candles": "Bron van de getoonde candles",
+    "venue_title": "Waar de cijfers van de spothandelsplatforms vandaan komen",
+    "venue_cex": "Beurstickers",
+    "venue_orderbook": "Orderboekdiepte",
+    "venue_dex": "DEX-pool"
   },
   "receipt": {
     "summary": "Bon van de bronaanroep",

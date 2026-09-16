@@ -3782,7 +3782,13 @@
     "lane_categories": "Kategorien",
     "lane_airdrops": "Airdrops",
     "lane_new_listings": "Neue Listings",
-    "lane_meme_stages": "Meme-Startphasen"
+    "lane_meme_stages": "Meme-Startphasen",
+    "chart_candles_for": "Quelle der angezeigten {{range}}-Kerzen",
+    "chart_candles": "Quelle der angezeigten Kerzen",
+    "venue_title": "Woher die Spot-Handelsplatzwerte stammen",
+    "venue_cex": "Börsen-Ticker",
+    "venue_orderbook": "Orderbuchtiefe",
+    "venue_dex": "DEX-Pool"
   },
   "receipt": {
     "summary": "Beleg zum Quellenaufruf",

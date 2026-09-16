@@ -321,7 +321,11 @@ export default function MarketAssetPage() {
           historyLoading={research.loading || position.loading || research.loadingMore || position.loadingMore}
           historyError={research.error || (position.error && intelReadError(position.error, 'Your portfolio activity is temporarily unavailable. Please retry from Your position.'))} historyHasMore={!!(research.nextCursor || position.nextCursor)}
           onLoadMoreHistory={() => { if (research.nextCursor) research.loadMore(); if (position.nextCursor) position.loadMore() }}
-          priceCoverage={{ chartSource:d.chartSource&&d.chartSource.provider==='coinmarketcap_kline'?{...d.chartSource,provider:chartProviderLabel(d.chartSource.provider)}:d.chartSource,capture:d.captureProof?{proof:d.captureProof,bars:d.candles}:null, coverage: d.chartCoverage, state: d.chartState, provenance: d.chartProvenance }}
+          priceCoverage={{ chartSource:d.chartSource&&d.chartSource.provider==='coinmarketcap_kline'?{...d.chartSource,provider:chartProviderLabel(d.chartSource.provider)}:d.chartSource,capture:d.captureProof?{proof:d.captureProof,bars:d.candles}:null, coverage: d.chartCoverage, state: d.chartState, provenance: d.chartProvenance,
+            // The server's receipts and envelope for THIS first load only. Every other
+            // period's snapshot carries its own, re-derived by the chart.
+            chartEnvelope: d.figureProvenance?.chart ?? null, chartReceipts: d.chartReceipts ?? null }}
+          candleProvenance
           loadCandles={(tf, extra) => loadMarketCandleSnapshot(supabase, org.id, sym, tf, { sourceProvider: d.sourceProvider, providerId: d.providerId,interval:candleInterval, ...extra })} />}
         {network.choices.length ? <AssetPortfolioPosition context={{ ...position, loading: position.loading || network.loading, error: position.error || network.error, invalidPortfolio: position.invalidPortfolio || network.invalidExplicit, refresh: network.error ? network.retry : position.refresh }}/> : <p className="intel-event-meta py-4">{t('asset.position_identity_required', { defaultValue: 'A verified network identity is not available for this market asset yet. Your market research remains available below.' })}</p>}
       </section>
@@ -450,7 +454,7 @@ export default function MarketAssetPage() {
       )}
 
       <OrderbookDepthCard orderbook={d.orderbook} />
-      {canonicalKey&&<AssetVenueWorkspace canonicalKey={canonicalKey}/>}
+      {canonicalKey&&<AssetVenueWorkspace canonicalKey={canonicalKey} provenance={{cex:d.figureProvenance?.cex,orderbook:d.figureProvenance?.orderbook,dex:d.figureProvenance?.dex}}/>}
       <><ContractChartEvidenceStatus evidence={publicEvidence}/><LiveTape canonicalKey={canonicalKey} onMarkers={setTapeMarkers}/><ContractResearchWorkspace canonicalKey={canonicalKey} onEvidence={publicEvidence.acceptEvidence}/></>
 
       {d.memorySummary && (

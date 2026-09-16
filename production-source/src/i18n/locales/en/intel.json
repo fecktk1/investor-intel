@@ -3782,7 +3782,13 @@
     "lane_categories": "Categories",
     "lane_airdrops": "Airdrops",
     "lane_new_listings": "New listings",
-    "lane_meme_stages": "Meme launch stages"
+    "lane_meme_stages": "Meme launch stages",
+    "chart_candles_for": "Source of the {{range}} candles shown",
+    "chart_candles": "Source of the candles shown",
+    "venue_title": "Where the spot venue figures come from",
+    "venue_cex": "Exchange tickers",
+    "venue_orderbook": "Order book depth",
+    "venue_dex": "DEX pool"
   },
   "receipt": {
     "summary": "Source call receipt",

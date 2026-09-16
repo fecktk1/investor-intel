@@ -3782,7 +3782,13 @@
     "lane_categories": "Categorías",
     "lane_airdrops": "Airdrops",
     "lane_new_listings": "Nuevos listados",
-    "lane_meme_stages": "Etapas de lanzamiento de memes"
+    "lane_meme_stages": "Etapas de lanzamiento de memes",
+    "chart_candles_for": "Fuente de las velas de {{range}} que se muestran",
+    "chart_candles": "Fuente de las velas que se muestran",
+    "venue_title": "De dónde salen las cifras de las plataformas spot",
+    "venue_cex": "Tickers de exchanges",
+    "venue_orderbook": "Profundidad del libro de órdenes",
+    "venue_dex": "Pool DEX"
   },
   "receipt": {
     "summary": "Recibo de la llamada a la fuente",
