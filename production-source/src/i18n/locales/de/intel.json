@@ -2423,7 +2423,12 @@
     "benchmark_reason_source_limit_exceeded": "Der Quellverlauf überschreitet das unterstützte Lesefenster.",
     "benchmark_reason_current_source_permission_required": "Die aktuelle Quellenberechtigung erlaubt diesen gespeicherten Vergleich nicht.",
     "benchmark_reason_two_dated_snapshots_required": "Zwei datierte Portfoliobewertungen sind erforderlich.",
-    "benchmark_reason_unsupported_time_window": "Das Bewertungsfenster wird nicht unterstützt."
+    "benchmark_reason_unsupported_time_window": "Das Bewertungsfenster wird nicht unterstützt.",
+    "valuation_receipts": "Belege zu den Bewertungsquellen",
+    "valuation_receipts_scope": "Diese Position wird mit dem gespeicherten Preis bewertet, daher wurde für diese Ansicht kein Anbieter aufgerufen.",
+    "valuation_receipts_loading": "Bewertungsbelege werden geladen…",
+    "valuation_receipts_error": "Die Bewertungsbelege konnten nicht gelesen werden. Deine Positionen bleiben unverändert.",
+    "valuation_receipts_none": "Keine offene Position wird mit einem gespeicherten CoinMarketCap-Preis bewertet."
   },
   "degen": {
     "subtitle": "Multi-Chain-Entdeckung von Meme-Coins mit Risikokontext. Extrem hohes Risiko, keine Finanzberatung.",
@@ -2620,7 +2625,11 @@
     "token_representation": "Token-Repräsentation",
     "underlying_clock": "Zugrunde liegender Markt",
     "underlying_no_clock": "Kein verifizierter Kalender des Basiswerts für diese Auswahl.",
-    "workspace": "Verbundene Recherche"
+    "workspace": "Verbundene Recherche",
+    "source_receipts": "Belege zu den Quellenaufrufen",
+    "source_receipts_caption": "Was jede Anbieterabfrage hinter dieser Ansicht beantwortet hat. Eine Antwort aus dem Zwischenspeicher hat keinen neuen Aufruf ausgelöst.",
+    "evidence_standard": "Belegstandard für dieses Asset, gemessen am {{date}} anhand gespeicherter Werte für Preis, Marktkapitalisierung und Volumen.",
+    "evidence_standard_replay": "Er beschreibt das neueste gespeicherte Zeitfenster, nicht den Wiedergabezeitpunkt."
   },
   "journal": {
     "brand": "Thesentagebuch",
@@ -3013,7 +3022,9 @@
       "group_history": "Abgeleitete Historie",
       "group_regime": "Marktregime",
       "group_explanation": "Die abgeleitete Historie misst das geladene Preisfenster dieses Assets; Ablesungen zum Marktregime beschreiben den Markt als Ganzes, nicht dieses Asset."
-    }
+    },
+    "evidence_standard": "Belegstandard",
+    "evidence_standard_measured": "Belegstandard für dieses Asset, gemessen am {{date}}"
   },
   "signup": {
     "seo_title": "Erstelle dein Investor-Intel-Konto",

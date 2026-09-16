@@ -21,6 +21,7 @@ import ThesisStatusBadge from '../components/thesis/ThesisStatusBadge'
 import ThesisQualityScore from '../components/thesis/ThesisQualityScore'
 import ThesisDeltaCard from '../components/thesis/ThesisDeltaCard'
 import EngineSuggestionBanner from '../components/thesis/EngineSuggestionBanner'
+import MetricAgreementChip from '../components/MetricAgreementChip'
 import ReviewComposer from '../components/thesis/ReviewComposer'
 import { CHART_RANGE_MS } from '../components/TokenChart'
 import IntelErrorNotice from '../components/IntelErrorNotice'
@@ -183,6 +184,12 @@ export default function ThesisDetailPage() {
       </header>
 
       {isOwner&&<EngineSuggestionBanner thesis={th} onResolve={onResolve} busy={busy} />}
+      {/* The verdict the monitor stored with its last evaluation, shown whenever
+          one was computed, not only when a confirmation rule fired. */}
+      {th.status_reason?.metric_agreement&&<section aria-label={t('journal.evidence_standard',{defaultValue:'Evidentiary standard'})} className="space-y-1">
+        <p className="text-[11px] text-[var(--fg-4)]">{t('journal.evidence_standard_measured',{defaultValue:'Evidentiary standard for this asset, measured {{date}}',date:th.status_reason.computed_at&&Number.isFinite(Date.parse(th.status_reason.computed_at))?new Date(th.status_reason.computed_at).toLocaleString():t('journal.conditions.not_available',{defaultValue:'not available'})})}</p>
+        <MetricAgreementChip agreement={{metric_agreement:th.status_reason.metric_agreement,reasons:th.status_reason.metric_agreement_reasons}}/>
+      </section>}
 
       {/* tabs */}
       <nav aria-label="Thesis sections" className="intel-thesis-tabs">

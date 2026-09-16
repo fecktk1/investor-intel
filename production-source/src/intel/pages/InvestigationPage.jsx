@@ -31,6 +31,8 @@ import RwaSelectedPosition from '../components/RwaSelectedPosition'
 import {DexObservationTable} from '../components/ContractResearchWorkspace'
 import LiveFocus from '../components/LiveFocus'
 import {EvidenceRecord} from '../components/ResearchEvidence'
+import InvestigationSourceReceipts from '../components/InvestigationSourceReceipts'
+import MetricAgreementChip from '../components/MetricAgreementChip'
 import {useMarketResearch} from '../lib/useMarketResearch'
 import AdoptionAttentionEvidence from '../components/AdoptionAttentionEvidence'
 import {BenchmarkLens} from '../components/BenchmarkEvidence'
@@ -40,6 +42,11 @@ import {AttentionLens,CohortLens,CoverageLens,DeltaLens,FragilityLens,Investigat
 const LENSES=[['replay','Decision replay','Decisions'],['delta','Evidence changes','Decisions'],['stress','Stress rehearsal','Decisions'],['counterargument','Second opinion','Decisions'],['receipt','Research receipt','Decisions'],['fragility','Leverage concentration','Markets'],['attention','Attention versus capital','Markets'],['sector','Sector rotation','Markets'],['cohort','New-listing cohorts','Markets'],['participation','Participation quality','Markets'],['liquidity','Liquidity and position','Markets'],['ownership','RWA ownership','Real-world assets'],['sessions','Sessions and redemption','Real-world assets'],['coverage','Evidence coverage','Evidence'],['live','Live focus','Evidence']]
 const PERIODS={'24H':86400000,'7D':7*86400000,'1M':30*86400000,'3M':90*86400000}
 LENSES.push(['benchmark','CMC benchmark comparison','Markets'])
+// Lenses that read this asset's own quote evidence, where the evidentiary
+// standard over price, market capitalisation and volume answers the question
+// being asked. Cross-asset boards, RWA terms and saved receipts are not a move
+// of this asset, so they do not borrow its verdict.
+const AGREEMENT_LENSES=['replay','delta','stress','counterargument','coverage','fragility','liquidity','benchmark']
 const NATIVE_CMC={'native:bitcoin':'1','native:ethereum':'1027','native:solana':'5426'}
 const DEFAULT_NATIVE={'1':'native:bitcoin','1027':'native:ethereum','5426':'native:solana'}
 export default function InvestigationPage(){
@@ -187,6 +194,8 @@ export function InvestigationWorkspace(){
       {query.loading&&<p role="status">Loading shared evidence…</p>}{query.error&&<p role="alert">{query.error}</p>}{data?.storageError&&<p role="status">{data.storageError}</p>}
       {/* A cached read is a complete answer, not a shortfall: only genuinely degraded sources are named here. */}
       {data?.snapshots?.filter(s=>s.state!=='fresh'&&s.state!=='cached').map(s=><p key={s.capability} role="status">{s.capability}: {s.state} · {s.reason||'Source observation is outside its freshness window.'}</p>)}
+      {AGREEMENT_LENSES.includes(lens)&&data?.metricAgreement&&<div className="py-1"><p className="intel-analysis-caption">{t('investigation.evidence_standard',{date:time(data.serverTime),defaultValue:'Evidentiary standard for this asset, measured {{date}} from retained price, market capitalisation and volume.'})}{replaying?` ${t('investigation.evidence_standard_replay',{defaultValue:'It describes the newest retained window, not the replay time.'})}`:''}</p><MetricAgreementChip agreement={data.metricAgreement}/></div>}
+      <InvestigationSourceReceipts snapshots={[...(data?.snapshots||[]),...(cohortQuotes?.receipt?[cohortQuotes]:[])]}/>
       {lens==='replay'&&<ReplayLens events={events} prices={normalizedPrices} observations={observations} at={at} onTime={replayTo}/>}
       {lens==='benchmark'&&<><label>Benchmark <select className="select" value={benchmark} onChange={e=>{setPreparedBenchmark(null);update({benchmark:e.target.value})}}><option value="100">CMC 100</option><option value="20">CMC 20</option></select></label><p className="intel-analysis-caption">At most ten reported daily observations within the selected period. Index points are not asset prices.</p><BenchmarkLens observations={observations} subject={marketSubject} benchmark={benchmark} from={from} at={at} onSelect={selectEvidence} onPrepareReceipt={sources=>{setIncludeScenario(false);setPreparedBenchmark({benchmark,at,observationIds:sources.map(o=>o.id).sort()});if(!question.trim())setQuestion(`How did this asset compare with CMC ${benchmark} at matching reported times?`);update({lens:'receipt'})}}/></>}
       {lens==='receipt'&&preparedBenchmark&&<p>Prepared CMC {preparedBenchmark.benchmark} comparison · {preparedBenchmark.observationIds.length} original source references, known by {time(preparedBenchmark.at)}. <button className="intel-text-link" onClick={()=>setPreparedBenchmark(null)}>Discard prepared comparison</button></p>}

@@ -2423,7 +2423,12 @@
     "benchmark_reason_source_limit_exceeded": "El historial de la fuente supera la ventana de lectura admitida.",
     "benchmark_reason_current_source_permission_required": "El permiso actual de la fuente no permite esta comparación conservada.",
     "benchmark_reason_two_dated_snapshots_required": "Se necesitan dos valoraciones fechadas de la cartera.",
-    "benchmark_reason_unsupported_time_window": "La ventana de valoración no es compatible."
+    "benchmark_reason_unsupported_time_window": "La ventana de valoración no es compatible.",
+    "valuation_receipts": "Recibos de las fuentes de valoración",
+    "valuation_receipts_scope": "Esta posición se valora con el precio almacenado, así que no se llamó a ningún proveedor para esta vista.",
+    "valuation_receipts_loading": "Cargando recibos de valoración…",
+    "valuation_receipts_error": "No se pudieron leer los recibos de valoración. Tus posiciones no han cambiado.",
+    "valuation_receipts_none": "Ninguna posición abierta se valora con un precio almacenado de CoinMarketCap."
   },
   "degen": {
     "subtitle": "Descubrimiento de tokens meme en varias cadenas y contexto de riesgo. Riesgo extremadamente alto: no es consejo financiero.",
@@ -2620,7 +2625,11 @@
     "token_representation": "Representación del token",
     "underlying_clock": "Mercado subyacente",
     "underlying_no_clock": "No hay un calendario verificado del subyacente para esta selección.",
-    "workspace": "Investigación conectada"
+    "workspace": "Investigación conectada",
+    "source_receipts": "Recibos de las llamadas a la fuente",
+    "source_receipts_caption": "Qué respondió cada lectura del proveedor detrás de esta vista. Una respuesta en caché no hizo ninguna llamada nueva.",
+    "evidence_standard": "Estándar de evidencia para este activo, medido el {{date}} con el precio, la capitalización de mercado y el volumen conservados.",
+    "evidence_standard_replay": "Describe la ventana conservada más reciente, no el momento de la reproducción."
   },
   "journal": {
     "brand": "Diario de tesis",
@@ -3013,7 +3022,9 @@
       "group_history": "Historial derivado",
       "group_regime": "Régimen de mercado",
       "group_explanation": "El historial derivado mide la ventana de precios cargada de este activo; las lecturas del régimen de mercado describen el mercado en su conjunto, no este activo."
-    }
+    },
+    "evidence_standard": "Estándar de evidencia",
+    "evidence_standard_measured": "Estándar de evidencia para este activo, medido el {{date}}"
   },
   "signup": {
     "seo_title": "Crea tu cuenta de Investor Intel",

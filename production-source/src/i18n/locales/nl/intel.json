@@ -2423,7 +2423,12 @@
     "benchmark_reason_source_limit_exceeded": "De brongeschiedenis is groter dan het ondersteunde leesvenster.",
     "benchmark_reason_current_source_permission_required": "De huidige bronrechten staan deze bewaarde vergelijking niet toe.",
     "benchmark_reason_two_dated_snapshots_required": "Er zijn twee gedateerde portefeuillewaarderingen nodig.",
-    "benchmark_reason_unsupported_time_window": "Het waarderingsvenster wordt niet ondersteund."
+    "benchmark_reason_unsupported_time_window": "Het waarderingsvenster wordt niet ondersteund.",
+    "valuation_receipts": "Bonnen van de waarderingsbronnen",
+    "valuation_receipts_scope": "Deze positie wordt gewaardeerd met de opgeslagen prijs, dus voor deze weergave is geen aanbieder aangeroepen.",
+    "valuation_receipts_loading": "Waarderingsbonnen laden…",
+    "valuation_receipts_error": "De waarderingsbonnen konden niet worden gelezen. Je posities zijn ongewijzigd.",
+    "valuation_receipts_none": "Geen open positie wordt gewaardeerd met een opgeslagen CoinMarketCap-prijs."
   },
   "degen": {
     "subtitle": "Memecoins ontdekken op meerdere chains, met risicocontext. Extreem hoog risico, geen financieel advies.",
@@ -2620,7 +2625,11 @@
     "token_representation": "Tokenrepresentatie",
     "underlying_clock": "Onderliggende markt",
     "underlying_no_clock": "Geen geverifieerde kalender van de onderliggende markt voor deze selectie.",
-    "workspace": "Gekoppelde research"
+    "workspace": "Gekoppelde research",
+    "source_receipts": "Bonnen van de bronaanroepen",
+    "source_receipts_caption": "Wat elke leesactie bij de aanbieder achter deze weergave heeft beantwoord. Een antwoord uit de cache deed geen nieuwe aanroep.",
+    "evidence_standard": "Bewijsstandaard voor dit asset, gemeten op {{date}} op basis van bewaarde prijs, marktkapitalisatie en volume.",
+    "evidence_standard_replay": "Hij beschrijft het nieuwste bewaarde tijdvenster, niet het afspeelmoment."
   },
   "journal": {
     "brand": "Thesedagboek",
@@ -3013,7 +3022,9 @@
       "group_history": "Afgeleide geschiedenis",
       "group_regime": "Marktregime",
       "group_explanation": "Afgeleide geschiedenis meet het geladen prijsvenster van dit activum; aflezingen van het marktregime beschrijven de markt als geheel, niet dit activum."
-    }
+    },
+    "evidence_standard": "Bewijsstandaard",
+    "evidence_standard_measured": "Bewijsstandaard voor dit asset, gemeten op {{date}}"
   },
   "signup": {
     "seo_title": "Maak je Investor Intel-account aan",

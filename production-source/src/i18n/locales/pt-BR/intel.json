@@ -2423,7 +2423,12 @@
     "benchmark_reason_source_limit_exceeded": "O histórico da fonte excede a janela de leitura compatível.",
     "benchmark_reason_current_source_permission_required": "A permissão atual da fonte não permite esta comparação retida.",
     "benchmark_reason_two_dated_snapshots_required": "São necessárias duas avaliações datadas da carteira.",
-    "benchmark_reason_unsupported_time_window": "A janela de avaliação não é compatível."
+    "benchmark_reason_unsupported_time_window": "A janela de avaliação não é compatível.",
+    "valuation_receipts": "Recibos das fontes de avaliação",
+    "valuation_receipts_scope": "Esta posição é avaliada pelo preço armazenado, então nenhum provedor foi chamado para esta visualização.",
+    "valuation_receipts_loading": "Carregando recibos de avaliação…",
+    "valuation_receipts_error": "Não foi possível ler os recibos de avaliação. Suas posições não mudaram.",
+    "valuation_receipts_none": "Nenhuma posição aberta é avaliada por um preço armazenado da CoinMarketCap."
   },
   "degen": {
     "subtitle": "Descoberta de moedas meme em várias redes e contexto de risco. Risco extremamente alto; não é conselho financeiro.",
@@ -2620,7 +2625,11 @@
     "token_representation": "Representação em token",
     "underlying_clock": "Mercado subjacente",
     "underlying_no_clock": "Nenhum calendário subjacente verificado para esta seleção.",
-    "workspace": "Pesquisa conectada"
+    "workspace": "Pesquisa conectada",
+    "source_receipts": "Recibos das chamadas à fonte",
+    "source_receipts_caption": "O que respondeu a cada leitura do provedor por trás desta visualização. Uma resposta do cache não fez nenhuma chamada nova.",
+    "evidence_standard": "Padrão de evidência para este ativo, medido em {{date}} com preço, capitalização de mercado e volume retidos.",
+    "evidence_standard_replay": "Ele descreve a janela retida mais recente, não o momento da reprodução."
   },
   "journal": {
     "brand": "Diário de teses",
@@ -3013,7 +3022,9 @@
       "group_history": "Histórico derivado",
       "group_regime": "Regime de mercado",
       "group_explanation": "O histórico derivado mede a janela de preços carregada deste ativo; as leituras de regime de mercado descrevem o mercado como um todo, não este ativo."
-    }
+    },
+    "evidence_standard": "Padrão de evidência",
+    "evidence_standard_measured": "Padrão de evidência para este ativo, medido em {{date}}"
   },
   "signup": {
     "seo_title": "Crie sua conta Investor Intel",
