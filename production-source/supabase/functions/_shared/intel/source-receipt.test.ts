@@ -77,7 +77,7 @@ Deno.test('curated content past its window is a different kind, and its summary 
 })
 
 Deno.test('every non-CMC scope key has a sentence and envelopes never invent a clock',()=>{
- for(const key of SOURCE_SCOPE_KEYS){assert.ok(sourceFigureScope(key).length>40);assert.ok(!sourceFigureScope(key).includes('—'))}
+ for(const key of SOURCE_SCOPE_KEYS){assert.ok(sourceFigureScope(key).length>40);assert.ok(!sourceFigureScope(key).includes('\u2014'))}
  const env=figureEnvelope('stored','birdeye',null,'cached','birdeye_price')
  assert.equal(env.fetchedAt,null);assert.equal(env.scopeKey,'birdeye_price')
  assert.equal(figureEnvelope('stored','coinmarketcap',ago(1),'cached','Plain sentence.').scopeKey,null)

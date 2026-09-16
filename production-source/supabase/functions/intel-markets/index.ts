@@ -284,7 +284,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // What answered the quote rides in the body. The CMC receipts were produced by
   // the reads above; nothing new is requested to build them.
   const quoteRead=quoteProvenance(quote,cmc?.receipts||[])
-  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason,quoteReceipts:quoteRead.receipts,figureProvenance:quoteRead.figureProvenance})
+  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason,quoteReceipts:quoteRead.receipts,quoteProvenance:quoteRead.figureProvenance})
   sym=String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
   const [identityProfile,identityMapping,claimants]=await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol',sym).maybeSingle(),
@@ -402,7 +402,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // Play 1 and 7: receipts and one provenance envelope per figure group.
   const chartRead=chartProvenance(chart)
   const figureProvenance={...quoteRead.figureProvenance,...venueProvenance({tickers:tickR.data||[],orderbookAsOf:orderbook?.asOf||null,dex}),chart:chartRead.envelope}
-  return json({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }), quoteReceipts:quoteRead.receipts, chartReceipts:chartRead.receipts, figureProvenance, metricAgreement })
+  return json({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }), quoteReceipts:quoteRead.receipts, quoteProvenance:quoteRead.figureProvenance, chartReceipts:chartRead.receipts, figureProvenance, metricAgreement })
 }
 
 // ─── HISTORY mode (on-demand history + derived risk) ─────────────────────────
