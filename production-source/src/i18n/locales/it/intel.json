@@ -440,7 +440,8 @@
     "rwa_yield_total_return_note": "La crescita del valore patrimoniale netto non è il rendimento totale. Un fondo che distribuisce i propri proventi mantiene piatto il valore patrimoniale netto, quindi una cifra realizzata pari a zero può significare che il rendimento è stato distribuito anziché accumulato. Le distribuzioni non sono osservabili dal feed, e un fondo il cui valore patrimoniale netto è sceso non viene mai pubblicato come rendimento negativo.",
     "rwa_yield_col_deviation": "Prezzo vs NAV",
     "rwa_yield_market_note": "Il valore patrimoniale netto è la cifra pubblicata dal fondo stesso, letta on chain. Il prezzo di mercato proviene dal nostro catalogo basato su CoinGecko ed è abbinato tramite l'identificativo di provider di quel catalogo, con il nome del fondo verificato di nuovo, mai tramite un ticker. Sono due fonti diverse con due orologi diversi.",
-    "rwa_yield_market_limit": "CoinMarketCap non pubblica alcun identificativo per questi fondi tokenizzati di titoli di stato e credito, quindi il lato di mercato non può venire da lì."
+    "rwa_yield_market_limit": "CoinMarketCap non pubblica alcun identificativo per questi fondi tokenizzati di titoli di stato e credito, quindi il lato di mercato non può venire da lì.",
+    "rwa_not_captured": "Non è ancora stata salvata alcuna acquisizione dell’universo RWA. L’acquisizione è pianificata ogni ora, 7 minuti dopo l’ora esatta (UTC)."
   },
   "asset_attention": {
     "eyebrow": "Attenzione",
@@ -2620,7 +2621,8 @@
     "token_representation": "Rappresentazione tokenizzata",
     "underlying_clock": "Mercato sottostante",
     "underlying_no_clock": "Nessun calendario verificato del sottostante per questa selezione.",
-    "workspace": "Ricerca collegata"
+    "workspace": "Ricerca collegata",
+    "terms_not_recorded": "Per questo token non sono ancora state registrate condizioni sulle unità o sul rimborso. Le fonti dell’emittente vengono rilette con un ciclo di verifica di cinque giorni, e la tabella delle evidenze qui sotto mostra ciò che è registrato."
   },
   "journal": {
     "brand": "Diario delle tesi",
@@ -3676,7 +3678,11 @@
     "unmapped_none": "Non è stata registrata alcuna mancata associazione deliberata.",
     "unmapped_no_register_record": "nessuna traccia nel registro",
     "unmapped_name_not_an_identifier": "il nome non identifica una sola entità",
-    "unmapped_legal_form_mismatch": "la forma giuridica non corrisponde al registro"
+    "unmapped_legal_form_mismatch": "la forma giuridica non corrisponde al registro",
+    "not_captured": "Dalle fonti primarie non è ancora stato acquisito nulla. I depositi e le voci di registro vengono letti ogni giorno alle {{registryTime}} UTC, e la concentrazione degli holder e le restrizioni dei contratti ogni giorno alle {{concentrationTime}} UTC. Le identità e i rifiuti qui sotto provengono dalla mappa di collegamento datata e non attendono un’acquisizione.",
+    "subject_not_captured": "Non ancora acquisito. I depositi e la voce di registro vengono letti ogni giorno alle {{registryTime}} UTC, gli holder e il contratto ogni giorno alle {{concentrationTime}} UTC.",
+    "identity_withheld": "Questa affermazione di identità ha superato la sua data di revisione il {{expiresAt}}. Finché una nuova verifica non la conferma, non vengono mostrati nome legale, giurisdizione, stato di registrazione, confronto con le sanzioni né condizioni di ammissione.",
+    "unmapped_issuer_changed_over_time": "l’emittente è cambiato nel tempo"
   },
   "receipt": {
     "summary": "Ricevuta della chiamata alla fonte",

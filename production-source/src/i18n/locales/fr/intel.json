@@ -440,7 +440,8 @@
     "rwa_yield_total_return_note": "La croissance de la valeur liquidative n’est pas le rendement total. Un fonds qui distribue ses revenus maintient sa valeur liquidative stable, donc un chiffre réalisé de zéro peut signifier que le rendement a été versé plutôt que capitalisé. Les distributions ne sont pas observables depuis le flux, et un fonds dont la valeur liquidative a baissé n’est jamais publié comme un rendement négatif.",
     "rwa_yield_col_deviation": "Prix vs VL",
     "rwa_yield_market_note": "La valeur liquidative est le chiffre publié par le fonds lui-même, lu on-chain. Le prix de marché provient de notre catalogue issu de CoinGecko et est apparié sur l'identifiant de fournisseur de ce catalogue, avec le nom du fonds revérifié, jamais sur un symbole. Ce sont deux sources différentes avec deux horloges différentes.",
-    "rwa_yield_market_limit": "CoinMarketCap ne publie aucun identifiant pour ces fonds tokenisés de bons du Trésor et de crédit, donc le côté marché ne peut pas en provenir."
+    "rwa_yield_market_limit": "CoinMarketCap ne publie aucun identifiant pour ces fonds tokenisés de bons du Trésor et de crédit, donc le côté marché ne peut pas en provenir.",
+    "rwa_not_captured": "Aucune capture de l’univers RWA n’a encore été enregistrée. La capture est planifiée toutes les heures, 7 minutes après l’heure pile (UTC)."
   },
   "asset_attention": {
     "eyebrow": "Attention",
@@ -2620,7 +2621,8 @@
     "token_representation": "Représentation en jeton",
     "underlying_clock": "Marché sous-jacent",
     "underlying_no_clock": "Aucun calendrier vérifié du sous-jacent pour cette sélection.",
-    "workspace": "Recherche liée"
+    "workspace": "Recherche liée",
+    "terms_not_recorded": "Aucune condition d’unités ou de remboursement n’a encore été enregistrée pour ce jeton. Les sources de l’émetteur sont relues selon un cycle d’examen de cinq jours, et le tableau des preuves ci-dessous indique ce qui est enregistré."
   },
   "journal": {
     "brand": "Journal des thèses",
@@ -3676,7 +3678,11 @@
     "unmapped_none": "Aucun non-rattachement délibéré n’a été enregistré.",
     "unmapped_no_register_record": "aucune trace dans le registre",
     "unmapped_name_not_an_identifier": "le nom n’identifie pas une entité unique",
-    "unmapped_legal_form_mismatch": "la forme juridique ne correspond pas au registre"
+    "unmapped_legal_form_mismatch": "la forme juridique ne correspond pas au registre",
+    "not_captured": "Rien n’a encore été capturé depuis les sources primaires. Les dépôts et les fiches de registre sont lus chaque jour à {{registryTime}} UTC, et la concentration des holders et les restrictions des contrats chaque jour à {{concentrationTime}} UTC. Les identités et les refus ci-dessous proviennent de la table de rattachement datée et n’attendent pas de capture.",
+    "subject_not_captured": "Pas encore capturé. Les dépôts et la fiche de registre sont lus chaque jour à {{registryTime}} UTC, les holders et le contrat chaque jour à {{concentrationTime}} UTC.",
+    "identity_withheld": "Cette affirmation d’identité a dépassé sa date de révision le {{expiresAt}}. Tant qu’un nouvel examen ne la confirme pas, aucun nom légal, aucune juridiction, aucun statut d’enregistrement, aucune comparaison avec les sanctions ni aucune condition d’admission ne sont affichés pour elle.",
+    "unmapped_issuer_changed_over_time": "l’émetteur a changé au fil du temps"
   },
   "receipt": {
     "summary": "Reçu de l’appel à la source",

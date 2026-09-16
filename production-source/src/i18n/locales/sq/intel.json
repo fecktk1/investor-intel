@@ -440,7 +440,8 @@
     "rwa_yield_total_return_note": "Rritja e vlerës neto të aktiveve nuk është kthimi total. Një fond që shpërndan të ardhurat e veta e mban të sheshtë vlerën neto të aktiveve, prandaj një shifër e realizuar zero mund të thotë se kthimi u shpërnda në vend që të akumulohej. Shpërndarjet nuk janë të vëzhgueshme nga feed-i, dhe një fond vlera neto e aktiveve të të cilit ra nuk publikohet kurrë si yield negativ.",
     "rwa_yield_col_deviation": "Çmimi vs VNA",
     "rwa_yield_market_note": "Vlera neto e aktiveve është shifra e publikuar nga vetë fondi, e lexuar on chain. Çmimi i tregut vjen nga katalogu ynë me bazë CoinGecko dhe përputhet sipas identifikuesit të ofruesit të atij katalogu, me emrin e fondit të riverifikuar, kurrë sipas një tiketi. Këto janë dy burime të ndryshme me dy orë të ndryshme.",
-    "rwa_yield_market_limit": "CoinMarketCap nuk publikon asnjë identifikues për këto fonde të tokenizuara të bonove dhe kredisë, prandaj ana e tregut nuk mund të vijë prej saj."
+    "rwa_yield_market_limit": "CoinMarketCap nuk publikon asnjë identifikues për këto fonde të tokenizuara të bonove dhe kredisë, prandaj ana e tregut nuk mund të vijë prej saj.",
+    "rwa_not_captured": "Ende nuk është ruajtur asnjë kapje e universit të RWA-ve. Kapja është planifikuar çdo orë, 7 minuta pas orës së plotë (UTC)."
   },
   "asset_attention": {
     "eyebrow": "Vëmendja",
@@ -2620,7 +2621,8 @@
     "token_representation": "Përfaqësimi i token-it",
     "underlying_clock": "Tregu bazë",
     "underlying_no_clock": "Nuk ka kalendar të verifikuar të tregut bazë për këtë përzgjedhje.",
-    "workspace": "Hulumtim i lidhur"
+    "workspace": "Hulumtim i lidhur",
+    "terms_not_recorded": "Për këtë token ende nuk janë regjistruar kushte njësish ose shlyerjeje. Burimet e emetuesit rilexohen në një cikël rishikimi pesëditor, dhe tabela e provave më poshtë tregon çfarë është regjistruar."
   },
   "journal": {
     "brand": "Ditari i tezave",
@@ -3676,7 +3678,11 @@
     "unmapped_none": "Nuk është regjistruar asnjë moslidhje e qëllimshme.",
     "unmapped_no_register_record": "asnjë e dhënë në regjistër",
     "unmapped_name_not_an_identifier": "emri nuk identifikon një subjekt të vetëm",
-    "unmapped_legal_form_mismatch": "forma juridike nuk përputhet me regjistrin"
+    "unmapped_legal_form_mismatch": "forma juridike nuk përputhet me regjistrin",
+    "not_captured": "Ende nuk është kapur asgjë nga burimet parësore. Depozitimet dhe të dhënat e regjistrit lexohen çdo ditë në {{registryTime}} UTC, ndërsa përqendrimi i mbajtësve dhe kufizimet e kontratave çdo ditë në {{concentrationTime}} UTC. Identitetet dhe refuzimet më poshtë vijnë nga harta e datuar e lidhjeve dhe nuk presin një kapje.",
+    "subject_not_captured": "Ende i pakapur. Depozitimet dhe e dhëna e regjistrit lexohen çdo ditë në {{registryTime}} UTC, mbajtësit dhe kontrata çdo ditë në {{concentrationTime}} UTC.",
+    "identity_withheld": "Ky pohim identiteti e kaloi datën e rishikimit më {{expiresAt}}. Derisa një rishikim i ri ta rikonfirmojë, për të nuk shfaqen emër ligjor, juridiksion, status regjistrimi, krahasim me sanksionet apo kushte pranimi.",
+    "unmapped_issuer_changed_over_time": "emetuesi ka ndryshuar me kalimin e kohës"
   },
   "receipt": {
     "summary": "Fatura e thirrjes së burimit",

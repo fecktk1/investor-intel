@@ -440,7 +440,8 @@
     "rwa_yield_total_return_note": "O crescimento do valor patrimonial líquido não é o retorno total. Um fundo que distribui sua renda mantém o valor patrimonial líquido estável, portanto um número realizado de zero pode significar que o retorno foi distribuído em vez de acumulado. As distribuições não são observáveis pelo feed, e um fundo cujo valor patrimonial líquido caiu nunca é publicado como rendimento negativo.",
     "rwa_yield_col_deviation": "Preço vs VPL",
     "rwa_yield_market_note": "O valor patrimonial líquido é o número publicado pelo próprio fundo, lido on chain. O preço de mercado vem do nosso catálogo baseado no CoinGecko e é associado pelo identificador de provedor desse catálogo, com o nome do fundo verificado novamente, nunca pelo ticker. São duas fontes diferentes com dois relógios diferentes.",
-    "rwa_yield_market_limit": "A CoinMarketCap não publica identificador para esses fundos tokenizados de letras e crédito, então o lado de mercado não pode vir dela."
+    "rwa_yield_market_limit": "A CoinMarketCap não publica identificador para esses fundos tokenizados de letras e crédito, então o lado de mercado não pode vir dela.",
+    "rwa_not_captured": "Nenhuma captura do universo de RWA foi salva ainda. A captura está programada a cada hora, 7 minutos após a hora cheia (UTC)."
   },
   "asset_attention": {
     "eyebrow": "Atenção",
@@ -2620,7 +2621,8 @@
     "token_representation": "Representação em token",
     "underlying_clock": "Mercado subjacente",
     "underlying_no_clock": "Nenhum calendário subjacente verificado para esta seleção.",
-    "workspace": "Pesquisa conectada"
+    "workspace": "Pesquisa conectada",
+    "terms_not_recorded": "Nenhuma condição de unidades ou de resgate foi registrada para este token ainda. As fontes do emissor são relidas em um ciclo de revisão de cinco dias, e a tabela de evidências abaixo mostra o que está registrado."
   },
   "journal": {
     "brand": "Diário de teses",
@@ -3676,7 +3678,11 @@
     "unmapped_none": "Nenhuma não vinculação deliberada foi registrada.",
     "unmapped_no_register_record": "não consta no registro",
     "unmapped_name_not_an_identifier": "o nome não identifica uma única entidade",
-    "unmapped_legal_form_mismatch": "a forma jurídica não corresponde ao registro"
+    "unmapped_legal_form_mismatch": "a forma jurídica não corresponde ao registro",
+    "not_captured": "Nada foi capturado das fontes primárias ainda. Documentos e registros são lidos diariamente às {{registryTime}} UTC, e a concentração de detentores e as restrições dos contratos diariamente às {{concentrationTime}} UTC. As identidades e recusas abaixo vêm do mapa de vínculos datado e não esperam uma captura.",
+    "subject_not_captured": "Ainda não capturado. Os documentos e o registro são lidos diariamente às {{registryTime}} UTC; os detentores e o contrato, diariamente às {{concentrationTime}} UTC.",
+    "identity_withheld": "Esta afirmação de identidade passou da data de revisão em {{expiresAt}}. Até que uma nova revisão a confirme, não são exibidos para ela nome legal, jurisdição, status de registro, comparação com sanções nem condições de admissão.",
+    "unmapped_issuer_changed_over_time": "o emissor mudou ao longo do tempo"
   },
   "receipt": {
     "summary": "Recibo da chamada à fonte",
