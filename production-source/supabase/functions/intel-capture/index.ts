@@ -53,6 +53,9 @@ import { RWA_YIELD_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-yield-read
 // no credits and answers to its own `primary-sources` policy rows.
 import { RWA_ISSUER_CAPTURE_OPS } from '../_shared/intel/capture-rwa-issuer.ts'
 import { RWA_ISSUER_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-issuer-read.ts'
+// Source receipts for the capture views: what the newest capture run recorded
+// about its own provider calls. A database read only; no provider call.
+import { readCaptureReceipts } from '../_shared/intel/source-receipt.ts'
 
 // Both keyless RWA lanes are registered here. Dropping either spread silently
 // removes a whole capture lane while every test still passes, so both must
@@ -87,8 +90,9 @@ Deno.serve(async (req) => {
       const actor = await requireIntelAccess(req, createClient, admin, orgId)
       if (!actor?.userId) return json({ error: 'unauthorized' }, 401)
       const view = String(body.view || '')
+      if (view === 'capture_receipts') return json({ ...await readCaptureReceipts(admin, body, Date.now()), durationMs: Date.now() - startedAt })
       const laneView = Object.hasOwn(LANE_VIEWS, view) ? LANE_VIEWS[view] : null
-      if (!laneView && !CAPTURE_VIEWS.includes(view as typeof CAPTURE_VIEWS[number])) return json({ error: 'unsupported_view', views: [...CAPTURE_VIEWS, ...Object.keys(LANE_VIEWS)] }, 400)
+      if (!laneView && !CAPTURE_VIEWS.includes(view as typeof CAPTURE_VIEWS[number])) return json({ error: 'unsupported_view', views: [...CAPTURE_VIEWS, ...Object.keys(LANE_VIEWS), 'capture_receipts'] }, 400)
       const result = laneView ? await laneView(admin, body, Date.now()) : await readCaptureView(admin, view, body, Date.now())
       return json({ ...result, durationMs: Date.now() - startedAt })
     }

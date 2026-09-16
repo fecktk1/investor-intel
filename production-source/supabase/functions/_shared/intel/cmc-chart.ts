@@ -86,11 +86,11 @@ export function cmcOhlcvBars(payload:unknown,id:string,recordedAt:number|null,ba
  return normalizeBars(bars).bars.filter(b=>b.o!=null)
 }
 export async function loadCmcChart(admin:any,id:string,range='1M',interval='auto',now=Date.now(),request=requestCmc,context:MarketAssetsContext={},lookback=0){
- const plan=cmcChartPlan(id,range,interval,now,lookback),all:Bar[]=[],states:string[]=[],reasons:string[]=[],provenance:any[]=[]
+ const plan=cmcChartPlan(id,range,interval,now,lookback),all:Bar[]=[],states:string[]=[],reasons:string[]=[],provenance:any[]=[],receipts:any[]=[]
  const ctx={...context,supabase:admin,kind:'request' as const,caller:'canonical-ohlcv-chart',maxCalls:4}
  for(const params of plan.pages){
   const result=await request('ohlcv',params,ctx)
-  states.push(result.state);if(result.reason)reasons.push(result.reason);provenance.push(result.provenance)
+  states.push(result.state);if(result.reason)reasons.push(result.reason);provenance.push(result.provenance);if(result.receipt)receipts.push(result.receipt)
   const recorded=Date.parse(result.provenance?.fetchedAt||'')
   all.push(...cmcOhlcvBars(result.payload,id,Number.isFinite(recorded)?recorded:null,plan.base))
   if(!result.payload)break // no repeated requests after denial, exhausted budget or outage
@@ -98,5 +98,5 @@ export async function loadCmcChart(admin:any,id:string,range='1M',interval='auto
  const aggregate=aggregateOhlcv(normalizeBars(all).bars,plan.base,plan.step,now)
  const candles=aggregate.bars.filter(b=>b.t>=plan.from&&b.closedAt!<=plan.to)
  const coverage=[`${plan.selected} completed OHLCV candles; UTC periods.`,plan.base===HOUR?'CMC adjusted volume is a snapshot in USD; grouped candles use the final reading, not a sum of hours.':'CMC adjusted volume is in USD for each completed period.',plan.limited?(plan.base===HOUR?'Startup intraday coverage is limited to the most recent 30 days.':'One OHLCV read reaches back 365 days; older periods come from the stored daily archive, not from this request.'):null,aggregate.incomplete?`${aggregate.incomplete} incomplete candle periods omitted.`:null,reasons.length?`Some history is unavailable (${[...new Set(reasons)].join(', ')}).`:null].filter(Boolean).join(' ')
- return {candles,source:'coinmarketcap',timestampMeaning:'open',barIntervalMs:plan.step,volumeUnit:'USD',coverage,sourceState:states.every(s=>cmcUsable(s))?'fresh':candles.length?'stale':states[0]||'unavailable',sourceReason:reasons[0]||null,provenance,bestPair:null,bestProvider:candles.length?'coinmarketcap':null}
+ return {candles,source:'coinmarketcap',timestampMeaning:'open',barIntervalMs:plan.step,volumeUnit:'USD',coverage,sourceState:states.every(s=>cmcUsable(s))?'fresh':candles.length?'stale':states[0]||'unavailable',sourceReason:reasons[0]||null,provenance,receipts,bestPair:null,bestProvider:candles.length?'coinmarketcap':null}
 }

@@ -17,7 +17,10 @@ import {nativeChainPerformance} from '../_shared/intel/chain-performance.ts'
 import {requestCmc} from '../_shared/market-assets/cmc-transport.ts'
 import {cmcRows} from '../_shared/market-assets/cmc-capabilities.ts'
 import {nativeCmcId} from '../_shared/intel/cmc-chart.ts'
-import {dashboardSourceReads} from '../_shared/intel/dashboard-reads.ts'
+import {dashboardSourceReads,withCuratedEnvelope,dashboardFigureProvenance,CHAIN_QUOTE_REFRESH_SECONDS} from '../_shared/intel/dashboard-reads.ts'
+import {fromCmcReceipt,storedReceipt,type SourceReceipt} from '../_shared/intel/source-receipt.ts'
+import {readMetricAgreement} from '../_shared/intel/metric-agreement-read.ts'
+import {metricAgreementReceipt} from '../_shared/intel/metric-agreement.ts'
 import {readDashboardPicture} from '../_shared/intel/dashboard-picture.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
@@ -72,6 +75,10 @@ Deno.serve(async (req) => {
     // selected none; shows all 17 if they selected all 17. Reads the shared
     // intel_chain_perf store (refreshed by the regime cron) — no per-load fetch.
     let chain_perf: any[] = []
+    // Receipts for the chain quotes. The CMC read below is render-only (cache,
+    // no call), so its receipt describes the shared snapshot; stored CoinGecko
+    // rows get a receipt that describes the stored table instead.
+    const chain_perf_receipts: SourceReceipt[] = []
     if (followed_chains.length) {
       try {
         const ids=[...new Set(followed_chains.map((c:any)=>nativeCmcId(c.id)).filter(Boolean))]
@@ -81,6 +88,18 @@ Deno.serve(async (req) => {
         ])
         const quotes=cmc?.payload?cmcRows('quotes',cmc.payload).rows.map(row=>({provider:'coinmarketcap',provider_id:String(row.id),symbol:row.symbol,price:row.quote.price,change_24h:row.quote.percent_change_24h,market_cap:row.quote.market_cap,updated_at:row.quote.last_updated||row.last_updated})):[]
         chain_perf = nativeChainPerformance(followed_chains,[...quotes,...(cached.data||[])])
+        const cmcReceipt=fromCmcReceipt(cmc?.receipt)
+        if(cmcReceipt&&chain_perf.some((c:any)=>c.source==='coinmarketcap'))chain_perf_receipts.push(cmcReceipt)
+        const geckoRows=chain_perf.filter((c:any)=>c.source==='coingecko')
+        if(geckoRows.length)chain_perf_receipts.push(storedReceipt({provider:'coingecko',capability:'intel_chain_perf',origin:'stored',
+          fetchedAt:geckoRows.map((c:any)=>c.as_of).sort().at(-1),refreshSeconds:CHAIN_QUOTE_REFRESH_SECONDS}))
+        // The evidentiary standard for each CoinMarketCap chain quote, from the
+        // retained observations only: no provider call and no credit.
+        await Promise.all(chain_perf.map(async(c:any)=>{
+          const id=c.source==='coinmarketcap'?nativeCmcId(c.chain_id):null
+          if(!id)return
+          try{c.metric_agreement=metricAgreementReceipt(await readMetricAgreement(accessAdmin,`market:coinmarketcap:${id}`,Date.now()))}catch{/* additive */}
+        }))
       } catch { /* best-effort */ }
     }
 
@@ -120,10 +139,11 @@ Deno.serve(async (req) => {
     // deterministic ranking (intel-signals reads mover.change24h) and powers the
     // market-context cards. Best-effort: absent tables ⇒ unchanged behavior.
     const exBySym = new Map<string, any>()            // best (max-volume) exchange ticker per symbol
+    const exchangeAsOf: unknown[] = []
     let marketSignalBySymbol = new Map<string, any>()
     try {
       const [exT,exS]=await Promise.all([sources.exchange_tickers,sources.exchange_signals])
-      for (const tkr of (exT.data || [])) { const k = String(tkr.normalized_symbol).toUpperCase(); const cur = exBySym.get(k); if (!cur || (tkr.volume_quote_24h || 0) > (cur.volume_quote_24h || 0)) exBySym.set(k, tkr) }
+      for (const tkr of (exT.data || [])) { exchangeAsOf.push(tkr.as_of); const k = String(tkr.normalized_symbol).toUpperCase(); const cur = exBySym.get(k); if (!cur || (tkr.volume_quote_24h || 0) > (cur.volume_quote_24h || 0)) exBySym.set(k, tkr) }
       for (const [k, tkr] of exBySym) if (!moverBySymbol.has(k) && typeof tkr.price_change_pct_24h === 'number') moverBySymbol.set(k, { symbol: k, change24h: tkr.price_change_pct_24h, volume24h: tkr.volume_quote_24h, source: 'exchange' })
       marketSignalBySymbol = new Map((exS.data || []).map((s: any) => [String(s.normalized_symbol).toUpperCase(), s]))
     } catch { /* exchange layer optional */ }
@@ -169,8 +189,9 @@ Deno.serve(async (req) => {
     // clearly-labelled "Developing chatter" section instead of polluting top news.
     let notableOut = notable
     let developing: any[] = []
+    let newsSource: 'curated' | 'stored' = 'stored'
     const wlMatch = (c: any) => (c.symbol && wlSymbols.has(String(c.symbol).toUpperCase())) || (c.chains || []).some((ch: string) => wlChains.has(ch))
-    const mapCurated = (c: any) => ({
+    const mapCurated = (c: any) => withCuratedEnvelope({
       story_hash: c.cluster_hash, title: c.cleaned_title || c.title, source_name: c.source_type || 'Curated', source_category: c.source_type,
       url: c.primary_url, published_at: c.published_at, chains: c.chains || [], symbol: (c.tokens || [])[0] || null, source_support: c.source_count,
       signal: c.signal, signal_bias: c.signal_bias, news_category: c.news_category, confidence: c.confidence, final_score: c.final_score,
@@ -178,7 +199,7 @@ Deno.serve(async (req) => {
       scope: (c.chains || []).length >= 2 ? 'market_wide' : (c.tokens || []).length ? 'asset_specific' : (c.chains || []).length === 1 ? 'chain_specific' : 'unclear',
       analysis: { what_happened: c.what_happened || c.summary, why_it_matters: c.why_it_matters, crypto_market_impact: c.crypto_impact, what_to_watch: c.watch_next, bull_case: c.bull_case, bear_case: c.bear_case },
       tokens: c.tokens, sectors: c.sectors, narratives: c.narratives, reason_to_suppress: c.reason_to_suppress,
-    })
+    }, c)
     try {
       const {data:curated}=await sources.curated_news
       const surfaced = (curated || []).filter((c: any) => c.should_surface).map(mapCurated)
@@ -189,6 +210,7 @@ Deno.serve(async (req) => {
         notableOut = scope === 'following'
           ? [...notable.filter((c: any) => c.custom), ...cur.filter((c) => !notable.some((n: any) => n.story_hash === c.story_hash))].slice(0, 6)
           : cur.slice(0, 6)
+        newsSource = 'curated'
       }
       developing = (curated || []).filter((c: any) => !c.should_surface).slice(0, 4).map(mapCurated)
     } catch { /* fall back to deterministic notable */ }
@@ -323,6 +345,9 @@ Deno.serve(async (req) => {
       unread_alerts: alertRes.error?null:(alertRes.data || []).filter((a: any) => !a.read_at).length,
       latest_brief: briefRes.data || null,
       recent_research: researchRes.data || [],
+      // Play 7: every figure group names its source, clock, freshness and scope.
+      figure_provenance: dashboardFigureProvenance({chainPerf:chain_perf,movers,marketMovers:market_movers,exchangeAsOf,news:notableOut,newsSource,signals,signalsSource:signals_source}),
+      receipts: { chain_perf: chain_perf_receipts },
       personal_coverage:{watchlist_truncated:(wlRes.data?.length||0)>200,watchlist_error:!!wlRes.error,profile_error:!!profRes.error,alerts_error:!!alertRes.error,research_error:!!researchRes.error},
       generated_at: new Date().toISOString(),
     },200,batch.timing())

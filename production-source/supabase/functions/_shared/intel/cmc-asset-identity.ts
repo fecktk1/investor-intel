@@ -42,5 +42,7 @@ export async function resolveCmcAsset(admin:any,providerId:string,request=reques
   const quote=await request('quotes',{id:providerId},ctx)
   const metadata=await request('metadata',{id:providerId},ctx)
   const data=cmcAssetRow(providerId,quote.payload,metadata.payload,quote.provenance,quote.state)
-  return {data,error:data?null:quote.reason||metadata.reason||'identity_unavailable',ambiguous:false}
+  // The transport receipts ride along so a surface can show what answered the
+  // quote. Carrying them costs nothing: no call is made to produce them.
+  return {data,error:data?null:quote.reason||metadata.reason||'identity_unavailable',ambiguous:false,receipts:[quote?.receipt,metadata?.receipt].filter(Boolean)}
 }

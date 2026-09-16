@@ -38,6 +38,9 @@ import {loadExchangeCandles} from '../_shared/intel/exchange-candles.ts'
 import {archiveSeries} from '../_shared/intel/candle-archive.ts'
 import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
 import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
+import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance} from '../_shared/intel/market-provenance.ts'
+import {readMetricAgreement} from '../_shared/intel/metric-agreement-read.ts'
+import {metricAgreementReceipt} from '../_shared/intel/metric-agreement.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
@@ -76,6 +79,7 @@ function dexEnrichment(row: Record<string, unknown>, chain: string): Record<stri
     pairAddress: row.pair_address ?? null,
     sourceUrl: row.source_ref ?? null,
     fetchedAt: row.fetched_at ?? null,
+    staleAfter: row.stale_after ?? null,
     chain,
   }
 }
@@ -149,7 +153,13 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
       return finish(json({ error: status === 503 ? 'market_snapshot_unavailable' : screenError.message }, status))
     }
     if (!screen) return finish(json({ error: 'market_snapshot_unavailable' }, 503))
-    return await finish(measured('assemble',()=>json({...marketScreenResponse(screen),nativeChains:nativeChains.rows,nativeChainsUnavailable:nativeChains.unavailable})))
+    return await finish(measured('assemble',()=>{
+      const formatted=marketScreenResponse(screen)
+      // The screen is the stored catalogue, so its receipt describes that stored
+      // snapshot. Assembled from the page already read: no extra read or call.
+      const {receipt,figureProvenance}=screenProvenance(formatted)
+      return json({...formatted,receipt,figureProvenance,nativeChains:nativeChains.rows,nativeChainsUnavailable:nativeChains.unavailable})
+    }))
   } catch (e) {
     const locked=surfaceLockedResponse(e,corsHeaders);if(locked)return finish(locked)
     const denied=orgAuthzErrorResponse(e,corsHeaders);if(denied)return finish(denied)
@@ -227,7 +237,7 @@ async function latestDexSnapshotForPlatforms(admin: any, platforms: Record<strin
     for (const tokenAddress of candidates) {
       try {
         const { data } = await admin.from('dex_pair_snapshots')
-          .select('chain, token_address, pair_address, price_usd, liquidity_usd, volume_24h, market_cap, fdv, source_ref, fetched_at')
+          .select('chain, token_address, pair_address, price_usd, liquidity_usd, volume_24h, market_cap, fdv, source_ref, fetched_at, stale_after')
           .eq('chain', appChain)
           .eq('token_address', tokenAddress)
           .order('fetched_at', { ascending: false })
@@ -271,7 +281,10 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   const cmc=cmcId&&!opts.candlesOnly?await resolveCmcAsset(admin,cmcId,undefined,context):null
   const quote=assetMarketRead(resolved.data,cmc?.data)
   const quoteReason=cmc?.error||resolved.data.quote_reason||null
-  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason})
+  // What answered the quote rides in the body. The CMC receipts were produced by
+  // the reads above; nothing new is requested to build them.
+  const quoteRead=quoteProvenance(quote,cmc?.receipts||[])
+  if(opts.quotesOnly)return json({...quote,sourceProvider:resolved.data.source_provider,providerId:resolved.data.provider_id,quoteReason,quoteReceipts:quoteRead.receipts,figureProvenance:quoteRead.figureProvenance})
   sym=String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
   const [identityProfile,identityMapping,claimants]=await Promise.all([
     admin.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol',sym).maybeSingle(),
@@ -381,7 +394,15 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   // Every identity reports the SAME section list: what is present, and why the
   // rest is not. Sections are never dropped for a less-covered asset.
   const identity = detailIdentity(canonical, quote.chain)
-  return json({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }) })
+  // Play 4: the evidentiary standard for this asset's move, read from retained
+  // observations only (no provider call, no credit). A non-CMC identity has no
+  // dated observations to test, so it carries no verdict at all.
+  let metricAgreement=null
+  if(cmcId)try{metricAgreement=metricAgreementReceipt(await readMetricAgreement(admin,`market:coinmarketcap:${cmcId}`,Date.now()))}catch{/* additive */}
+  // Play 1 and 7: receipts and one provenance envelope per figure group.
+  const chartRead=chartProvenance(chart)
+  const figureProvenance={...quoteRead.figureProvenance,...venueProvenance({tickers:tickR.data||[],orderbookAsOf:orderbook?.asOf||null,dex}),chart:chartRead.envelope}
+  return json({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }), quoteReceipts:quoteRead.receipts, chartReceipts:chartRead.receipts, figureProvenance, metricAgreement })
 }
 
 // ─── HISTORY mode (on-demand history + derived risk) ─────────────────────────
