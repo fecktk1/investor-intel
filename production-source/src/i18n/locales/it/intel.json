@@ -1,4 +1,26 @@
 {
+  "access": {
+    "locked_region": "Parte bloccata di Investor Intel",
+    "locked_eyebrow": "Bloccato",
+    "locked_heading": "Questa parte del terminale",
+    "locked_title": "Disponibile per i membri {{tier}} e superiori",
+    "locked_body": "La tua iscrizione gratuita legge tutte le bacheche di mercato, i valori di regime, le acquisizioni registrate e i grafici salvati. Questa parte avvia una nuova richiesta per te a ogni apertura, quindi appartiene a un piano a pagamento.",
+    "locked_placeholder_note": "La forma qui sopra è un segnaposto. La tua lettura non viene caricata con questa iscrizione, quindi in questa pagina non c’è nulla di nascosto.",
+    "upgrade_cta": "Vedi i piani",
+    "free_badge": "Iscrizione gratuita",
+    "free_body": "Leggi le bacheche di mercato, i valori di regime e ogni acquisizione registrata. Nessuna carta e nessun conto alla rovescia di prova.",
+    "tier_free": "Gratuito",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Prova",
+    "surface_research_on_demand": "Ricerca su richiesta",
+    "surface_investigation": "Ricerca connessa",
+    "surface_portfolio_valuation": "Valutazione del portafoglio",
+    "surface_ai_generation": "Generazione con IA",
+    "surface_market_history": "Storico dei prezzi",
+    "surface_alert_evaluation": "Avvisi"
+  },
   "cohort": {
     "close": "Chiudi",
     "coverage": {

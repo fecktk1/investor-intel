@@ -12,6 +12,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import { validateSafeLanguage, SAFE_LANGUAGE_RULES } from '../_shared/intel-guardrails.ts'
 import { buildMarketMemoryPromptBlock } from '../_shared/exchange-market/memory.ts'
 import {readBoundedJson,RequestBodyError} from '../_shared/intel/bounded-request.ts'
+import {requireIntelSurface,surfaceLockedResponse} from '../_shared/intel/intel-surface-access.ts'
 import {loadCmcAiAllowed} from '../_shared/intel/ai-source-policy.ts'
 import {continuePortfolioContext} from '../_shared/intel/portfolio-continuation.ts'
 import {portfolioMarketEvidence} from '../_shared/intel/portfolio-market-evidence.ts'
@@ -153,6 +154,9 @@ export async function handlePortfolioResearch(req:Request,clientFactory:any=crea
     const access=await db.rpc('can_access_intel',{p_user:user.id,p_org:portfolio.org_id})
     if(access.error)throw new Error('access_unavailable')
     if(access.data!==true)return json({error:'Investor Intel access required.'},403)
+    // Both operations below reprice this member's own positions and then read or
+    // synthesise over them, so the tier is checked before either one starts.
+    await requireIntelSurface(db,{userId:user.id,orgId:portfolio.org_id,isSuperAdmin:false,isService:false},'portfolio_valuation')
     if(body.operation==='performance'){
       serviceClient=clientFactory(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
       const performance=await withCashflowBenchmarks(serviceClient,await readPortfolioPerformance(db,portfolio.org_id,portfolioId))
@@ -382,6 +386,7 @@ export async function handlePortfolioResearch(req:Request,clientFactory:any=crea
     return json({ok:true,blocked,cache:'fresh',operationId:claimArgs.p_operation_id,artifact})
   } catch (e) {
     if(e instanceof RequestBodyError)return json({error:e.message},e.status)
+    const locked=surfaceLockedResponse(e,corsHeaders);if(locked)return locked
     if((e as Error).message==='portfolio_analysis_limit')return json({error:'Portfolio analysis supports up to 5,000 recorded positions. No partial totals were generated.'},422)
     return json({error:'Portfolio research is temporarily unavailable. Your holdings and activity remain available.'},503)
   } finally {

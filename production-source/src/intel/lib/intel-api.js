@@ -12,6 +12,26 @@ export async function startIntelTrial(supabase, { displayName = null, trialDays 
   return data
 }
 
+// Create a FREE Investor Intel workspace for the current user. Returns the org
+// id. Unlike startIntelTrial this does not record a trial guard, so a free
+// member can still take their one 7-day trial later, and it leaves no payment
+// deadline on the workspace, so the membership never lapses into the paywall.
+// A user who already has an Investor Intel workspace is handed that one back.
+export async function startIntelFree(supabase, { displayName = null } = {}) {
+  const { data, error } = await supabase.rpc('start_intel_free', { p_display_name: displayName })
+  if (error) throw new Error(error.message || 'start_free_failed')
+  return data
+}
+
+// The caller's tier and per-surface entitlement, for LABELLING locked surfaces.
+// Never a trust boundary: every gated read is refused again at the server, and
+// the withheld reading is never sent to the browser in the first place.
+export async function readIntelAccess(supabase, orgId) {
+  const { data, error } = await supabase.rpc('intel_account_access', { p_org: orgId })
+  if (error) throw new Error(error.message || 'intel_access_unavailable')
+  return data || { tier: null, surfaces: {} }
+}
+
 export async function getIntelProfile(supabase, orgId) {
   const { data, error } = await supabase
     .from('intel_user_profiles').select('*').eq('org_id', orgId).maybeSingle()

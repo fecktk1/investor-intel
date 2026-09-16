@@ -1,4 +1,26 @@
 {
+  "access": {
+    "locked_region": "Gesperrter Bereich von Investor Intel",
+    "locked_eyebrow": "Gesperrt",
+    "locked_heading": "Dieser Teil des Terminals",
+    "locked_title": "Verfügbar ab {{tier}} und höher",
+    "locked_body": "Deine kostenlose Mitgliedschaft liest alle Markttafeln, die Regime-Kennzahlen, die aufgezeichneten Erfassungen und die gespeicherten Charts. Dieser Teil startet bei jedem Öffnen eine neue Abfrage für dich und gehört deshalb zu einem bezahlten Tarif.",
+    "locked_placeholder_note": "Die Form oben ist ein Platzhalter. Deine Auswertung wird in dieser Mitgliedschaft nicht geladen, es ist also nichts auf dieser Seite verborgen.",
+    "upgrade_cta": "Tarife ansehen",
+    "free_badge": "Kostenlose Mitgliedschaft",
+    "free_body": "Lies die Markttafeln, die Regime-Kennzahlen und jede aufgezeichnete Erfassung. Keine Karte, keine Testphase.",
+    "tier_free": "Kostenlos",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Testphase",
+    "surface_research_on_demand": "Research auf Abruf",
+    "surface_investigation": "Verbundenes Research",
+    "surface_portfolio_valuation": "Portfolio-Bewertung",
+    "surface_ai_generation": "KI-Erzeugung",
+    "surface_market_history": "Kursverlauf",
+    "surface_alert_evaluation": "Alarme"
+  },
   "cohort": {
     "close": "Schließen",
     "coverage": {

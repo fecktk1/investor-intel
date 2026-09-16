@@ -9,7 +9,7 @@
 import React from 'react'
 import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
-import { AlertTriangle, ArrowUpRight } from 'lucide-react'
+import { AlertTriangle, ArrowUpRight, Lock } from 'lucide-react'
 
 const LIMIT_RE = /intel_limit_reached:([a-z_]+)/
 
@@ -27,9 +27,46 @@ export function intelLimitKeyFrom(message) {
   return null
 }
 
+// A surface this membership cannot open, refused by the server BEFORE the
+// reading was produced (see _shared/intel/intel-surface-access.ts). Distinct
+// from a limit: a limit means the allowance for today is spent, a lock means
+// this part belongs to a paid plan. Accepts the { error, surface } body the
+// function answers with, or the raw thrown error.
+export function intelSurfaceLockFrom(error) {
+  if (error && typeof error === 'object' && error.error === 'intel_surface_locked') {
+    return { surface: typeof error.surface === 'string' ? error.surface : null }
+  }
+  const s = String(error?.message ?? error ?? '')
+  if (!s.includes('intel_surface_locked')) return null
+  return { surface: typeof error?.surface === 'string' ? error.surface : null }
+}
+
 export default function IntelErrorNotice({ error, className = '' }) {
   const { t } = useTranslation('intel')
   if (!error) return null
+
+  // A lock is not a failure. Name the plan that opens it and offer the way
+  // there, rather than showing a red error the reader cannot act on.
+  if (intelSurfaceLockFrom(error)) {
+    return (
+      <div className={`card--flat p-3 text-[13px] text-[var(--fg-2)] flex flex-wrap items-center gap-x-2 gap-y-1 border-[rgba(245,178,94,0.24)] ${className}`}>
+        <Lock className="h-4 w-4 flex-shrink-0 text-[var(--forge-gold)]" />
+        <span className="font-medium">
+          {t('access.locked_title', {
+            defaultValue: 'Available to {{tier}} members and above',
+            tier: t('access.tier_starter', { defaultValue: 'Starter' }),
+          })}
+        </span>
+        <Link
+          to="/intel/upgrade"
+          className="inline-flex items-center gap-0.5 font-semibold text-[var(--accent)] hover:underline"
+        >
+          {t('access.upgrade_cta', { defaultValue: 'See plans' })}
+          <ArrowUpRight className="h-3.5 w-3.5" />
+        </Link>
+      </div>
+    )
+  }
 
   const key = intelLimitKeyFrom(error)
   if (!key) {

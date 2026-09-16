@@ -1,4 +1,26 @@
 {
+  "access": {
+    "locked_region": "Pjesë e kyçur e Investor Intel",
+    "locked_eyebrow": "E kyçur",
+    "locked_heading": "Kjo pjesë e terminalit",
+    "locked_title": "E disponueshme për anëtarët {{tier}} e lart",
+    "locked_body": "Anëtarësia jote falas lexon të gjitha tabelat e tregut, shifrat e regjimit, regjistrimet e ruajtura dhe grafikët e ruajtur. Kjo pjesë nis një kërkesë të re për ty sa herë hapet, prandaj i përket një plani me pagesë.",
+    "locked_placeholder_note": "Forma më sipër është vendmbajtëse. Leximi yt nuk ngarkohet me këtë anëtarësi, pra nuk ka asgjë të fshehur në këtë faqe.",
+    "upgrade_cta": "Shih planet",
+    "free_badge": "Anëtarësi falas",
+    "free_body": "Lexo tabelat e tregut, shifrat e regjimit dhe çdo regjistrim të ruajtur. Pa kartë dhe pa afat prove.",
+    "tier_free": "Falas",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Provë",
+    "surface_research_on_demand": "Hulumtim sipas kërkesës",
+    "surface_investigation": "Hulumtim i lidhur",
+    "surface_portfolio_valuation": "Vlerësim i portofolit",
+    "surface_ai_generation": "Gjenerim me IA",
+    "surface_market_history": "Historik i çmimeve",
+    "surface_alert_evaluation": "Njoftime"
+  },
   "cohort": {
     "close": "Mbyll",
     "coverage": {

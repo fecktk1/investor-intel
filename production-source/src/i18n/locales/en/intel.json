@@ -1,4 +1,26 @@
 {
+  "access": {
+    "locked_region": "Locked part of Investor Intel",
+    "locked_eyebrow": "Locked",
+    "locked_heading": "This part of the terminal",
+    "locked_title": "Available to {{tier}} members and above",
+    "locked_body": "Your free membership reads every market board, the regime figures, the recorded captures and the saved charts. This part runs a fresh request for you each time it is opened, so it belongs to a paid plan.",
+    "locked_placeholder_note": "The shape above is a placeholder. Your reading is not loaded on this membership, so there is nothing hidden on this page.",
+    "upgrade_cta": "See plans",
+    "free_badge": "Free membership",
+    "free_body": "Read the market boards, the regime figures and every recorded capture. No card, no trial clock.",
+    "tier_free": "Free",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Trial",
+    "surface_research_on_demand": "On demand research",
+    "surface_investigation": "Connected Research",
+    "surface_portfolio_valuation": "Portfolio valuation",
+    "surface_ai_generation": "AI generation",
+    "surface_market_history": "Price history",
+    "surface_alert_evaluation": "Alerts"
+  },
   "cohort": {
     "close": "Close",
     "coverage": {

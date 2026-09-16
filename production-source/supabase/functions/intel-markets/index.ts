@@ -13,7 +13,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { matchCexEnrichment } from '../_shared/market-assets/cex-match.ts'
 import { requireIntelAccess } from '../_shared/intel/research-service.ts'
-import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import { orgAuthzErrorResponse, type OrgActor } from '../_shared/org-authz.ts'
+import { requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
 import { marketChain, marketCanonicalIdentity, marketIdentityChoices, verifiedNativeMarketSymbol, hasVerifiedCexIdentity, usableSpread } from '../_shared/intel/market-read-quality.ts'
 import {readNativeChainPerformance} from '../_shared/intel/chain-performance-read.ts'
 import { marketScreenResponse } from '../_shared/intel/markets-screen.ts'
@@ -119,7 +120,7 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
         sourceProvider:typeof body.sourceProvider==='string'?body.sourceProvider:undefined,
         providerId:body.providerId != null ? String(body.providerId) : undefined,
         range: typeof body.range==='string'?body.range:'90d',
-      })))
+      }, actor)))
     }
 
     if ((typeof body.symbol === 'string' && body.symbol.trim()) || (typeof body.sourceProvider === 'string' && body.providerId != null)) {
@@ -150,6 +151,7 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
     if (!screen) return finish(json({ error: 'market_snapshot_unavailable' }, 503))
     return await finish(measured('assemble',()=>json({...marketScreenResponse(screen),nativeChains:nativeChains.rows,nativeChainsUnavailable:nativeChains.unavailable})))
   } catch (e) {
+    const locked=surfaceLockedResponse(e,corsHeaders);if(locked)return finish(locked)
     const denied=orgAuthzErrorResponse(e,corsHeaders);if(denied)return finish(denied)
     return finish(json({ error: (e as Error)?.message || 'intel_markets_failed' }, 500))
   }
@@ -388,7 +390,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
 // identity, with no provider call and no metrics invented from nothing.
 const NO_RISK_METRICS = { volatility30d: null, maxDrawdown: null, distanceFromHigh: null, timeUnderWaterDays: null }
 // deno-lint-ignore no-explicit-any
-async function marketHistory(admin: any, sym: string, opts: { range?: string; sourceProvider?: string; providerId?: string } = {}): Promise<Response> {
+async function marketHistory(admin: any, sym: string, opts: { range?: string; sourceProvider?: string; providerId?: string } = {}, actor: OrgActor): Promise<Response> {
   const range = opts.range || '90d'
   if (!historyPlan(range)) return json({ error: 'invalid_history_range' }, 400)
   if (opts.sourceProvider === 'contract') {
@@ -404,6 +406,11 @@ async function marketHistory(admin: any, sym: string, opts: { range?: string; so
   const identity = detailIdentity(resolved.data, null)
   const cmcId = marketCmcIdentity(resolved.data)
   if (!cmcId) return json({ history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS, identity })
+  // Everything above answers from identity alone and spends nothing. The next
+  // line is the provider sampling, charged to the shared credit budget for this
+  // member, so the tier is checked here rather than at the top: a free member
+  // keeps the identity answers and is refused only the part that costs.
+  await requireIntelSurface(admin, actor, 'market_history')
   const history = await loadAssetHistory(admin, { cmcId, range, ctx: { caller: 'market-history' } })
   const now = Date.now()
   const metrics = history.points.length ? {

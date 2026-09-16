@@ -1,4 +1,26 @@
 {
+  "access": {
+    "locked_region": "Partie verrouillée d’Investor Intel",
+    "locked_eyebrow": "Verrouillé",
+    "locked_heading": "Cette partie du terminal",
+    "locked_title": "Disponible pour les membres {{tier}} et au-delà",
+    "locked_body": "Votre adhésion gratuite donne accès à tous les tableaux de marché, aux chiffres de régime, aux captures enregistrées et aux graphiques sauvegardés. Cette partie lance une nouvelle requête pour vous à chaque ouverture, elle relève donc d’une formule payante.",
+    "locked_placeholder_note": "La forme ci-dessus est un espace réservé. Votre lecture n’est pas chargée avec cette adhésion, rien n’est donc masqué sur cette page.",
+    "upgrade_cta": "Voir les formules",
+    "free_badge": "Adhésion gratuite",
+    "free_body": "Consultez les tableaux de marché, les chiffres de régime et chaque capture enregistrée. Sans carte et sans compte à rebours d’essai.",
+    "tier_free": "Gratuit",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Essai",
+    "surface_research_on_demand": "Recherche à la demande",
+    "surface_investigation": "Recherche connectée",
+    "surface_portfolio_valuation": "Valorisation du portefeuille",
+    "surface_ai_generation": "Génération par IA",
+    "surface_market_history": "Historique des prix",
+    "surface_alert_evaluation": "Alertes"
+  },
   "cohort": {
     "close": "Fermer",
     "coverage": {

@@ -1,4 +1,26 @@
 {
+  "access": {
+    "locked_region": "Vergrendeld deel van Investor Intel",
+    "locked_eyebrow": "Vergrendeld",
+    "locked_heading": "Dit deel van de terminal",
+    "locked_title": "Beschikbaar voor {{tier}}-leden en hoger",
+    "locked_body": "Je gratis lidmaatschap leest alle marktborden, de regimecijfers, de vastgelegde opnames en de bewaarde grafieken. Dit deel start bij elke opening een nieuwe aanvraag voor jou en hoort daarom bij een betaald plan.",
+    "locked_placeholder_note": "De vorm hierboven is een plaatshouder. Jouw uitlezing wordt met dit lidmaatschap niet geladen, dus er is niets verborgen op deze pagina.",
+    "upgrade_cta": "Bekijk de plannen",
+    "free_badge": "Gratis lidmaatschap",
+    "free_body": "Lees de marktborden, de regimecijfers en elke vastgelegde opname. Geen kaart en geen proefklok.",
+    "tier_free": "Gratis",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Proef",
+    "surface_research_on_demand": "Research op aanvraag",
+    "surface_investigation": "Verbonden research",
+    "surface_portfolio_valuation": "Portefeuillewaardering",
+    "surface_ai_generation": "AI-generatie",
+    "surface_market_history": "Koershistorie",
+    "surface_alert_evaluation": "Meldingen"
+  },
   "cohort": {
     "close": "Sluiten",
     "coverage": {
