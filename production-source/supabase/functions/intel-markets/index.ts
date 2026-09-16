@@ -38,7 +38,7 @@ import {loadExchangeCandles} from '../_shared/intel/exchange-candles.ts'
 import {archiveSeries} from '../_shared/intel/candle-archive.ts'
 import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
 import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
-import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance} from '../_shared/intel/market-provenance.ts'
+import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance,curatedNewsWithEnvelopes} from '../_shared/intel/market-provenance.ts'
 import {readMetricAgreement} from '../_shared/intel/metric-agreement-read.ts'
 import {metricAgreementReceipt} from '../_shared/intel/metric-agreement.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
@@ -356,7 +356,7 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
   const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
   // A contract identity always knows its own address, even with no cached pair.
   const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : canonical?.contract?.address ? String(canonical.contract.address) : null
-  const [ecosystemNarratives, catalysts, onchain, unlocks] = await Promise.all([
+  const [ecosystemNarratives, catalystRead, onchain, unlocks] = await Promise.all([
     assembleEcosystemNarrativeState(admin, { chain: ecoChain, symbol: sym }),
     assembleCatalystNewsState(admin, { symbol: sym, chain: ecoChain }),
     assemblePublicOnchainState({
@@ -368,6 +368,8 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     }),
     assembleTokenUnlockState(admin, { symbol: sym, nowMs: Date.now() }),
   ])
+  // Play 7: a curated story past its review window is its own kind on this page.
+  const catalysts = { ...catalystRead, curated_news: curatedNewsWithEnvelopes(catalystRead.curated_news) }
 
   const payload = {
     detail: true, symbol: sym, ...quote,

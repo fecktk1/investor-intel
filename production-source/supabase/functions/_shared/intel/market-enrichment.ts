@@ -235,7 +235,7 @@ export async function assembleCatalystNewsState(
   const [curated, events] = await Promise.all([
     tokenTerms.length
       ? readSource('intel_curated_news', () => db.from('intel_curated_news')
-          .select('title, cleaned_title, summary, why_it_matters, crypto_impact, watch_next, signal, confidence, final_score, source_count, primary_url, published_at, chains, tokens, narratives, sectors')
+          .select('title, cleaned_title, summary, why_it_matters, crypto_impact, watch_next, signal, confidence, final_score, source_count, primary_url, published_at, chains, tokens, narratives, sectors, stale_after, updated_at')
           .eq('should_surface', true)
           .or(tokenTerms.join(','))
           .gte('published_at', new Date(now - 7 * 86400000).toISOString())
@@ -267,6 +267,10 @@ export async function assembleCatalystNewsState(
     published_at: c.published_at ?? null,
     tokens: Array.isArray(c.tokens) ? c.tokens.slice(0, 8) : [],
     chains: Array.isArray(c.chains) ? c.chains.slice(0, 8) : [],
+    // The review window, so a surface can tell a current curated summary from
+    // one past its window (see market-provenance.ts curatedNewsWithEnvelopes).
+    stale_after: c.stale_after ?? null,
+    updated_at: c.updated_at ?? null,
   }))
 
   const catalysts = events.map((e: Any) => ({

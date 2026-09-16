@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {receiptFreshness,fromCmcReceipt,storedReceipt,captureRunReceipts,readCaptureReceipts,CAPTURE_RECEIPT_LANES} from './source-receipt.ts'
 import {curatedEnvelope,figureEnvelope,ageFreshness,sourceFigureScope,SOURCE_SCOPE_KEYS} from './market-figure-scope.ts'
-import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance,tokenChartProvenance} from './market-provenance.ts'
+import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance,tokenChartProvenance,curatedNewsWithEnvelopes} from './market-provenance.ts'
 import {withCuratedEnvelope,dashboardFigureProvenance} from './dashboard-reads.ts'
 
 const NOW=Date.parse('2026-09-16T20:00:00.000Z')
@@ -111,4 +111,16 @@ Deno.test('dashboard figure groups each name a source, clock, freshness and scop
  assert.equal(p.movers.freshness,'unavailable');assert.equal(p.market_movers.freshness,'cached');assert.equal(p.market_movers.fetchedAt,ago(30))
  assert.equal(p.news.scopeKey,'news_curated');assert.equal(p.signals.freshness,'cached')
  for(const env of Object.values(p))assert.ok(env.scope&&env.source)
+})
+
+Deno.test('an asset page catalyst story past its window keeps its title but not its current summary',()=>{
+ const [current,expired,unwindowed]=curatedNewsWithEnvelopes([
+  {title:'a',why_it_matters:'now',stale_after:ago(-60),updated_at:ago(60)},
+  {title:'b',why_it_matters:'then',summary:'old',stale_after:ago(60),updated_at:ago(600)},
+  {title:'c',why_it_matters:'unknown window'},
+ ],NOW)
+ assert.equal(current.provenance.kind,'curated');assert.equal(current.why_it_matters,'now')
+ assert.equal(expired.provenance.kind,'curated_stale');assert.equal(expired.why_it_matters,null);assert.equal(expired.summary,null)
+ assert.deepEqual(expired.stale_summary,{summary:'old',why_it_matters:'then',crypto_impact:null,watch_next:null});assert.equal(expired.title,'b')
+ assert.equal(unwindowed.provenance.kind,'curated_stale');assert.equal(unwindowed.why_it_matters,null)
 })

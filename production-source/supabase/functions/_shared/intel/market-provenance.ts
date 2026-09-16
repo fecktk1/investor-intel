@@ -4,7 +4,7 @@
 // of them reads a table or calls a provider, so attaching their output to a
 // response can never add a per-user provider call.
 
-import {figureEnvelope,figureScope,ageFreshness,type FigureEnvelope,type FigureFreshness} from './market-figure-scope.ts'
+import {figureEnvelope,figureScope,ageFreshness,curatedEnvelope,type FigureEnvelope,type FigureFreshness} from './market-figure-scope.ts'
 import {fromCmcReceipt,storedReceipt,receiptFreshness,type SourceReceipt} from './source-receipt.ts'
 
 /** The catalogue refresh policy row (`catalogue`, 300 seconds). */
@@ -134,4 +134,18 @@ export function tokenChartProvenance(b:any,now=Date.now()):{receipts:SourceRecei
   out.overview=figureEnvelope('stored',provider,o.as_of??b?.last_refreshed_at??null,null,scope)
  }
  return {receipts,figureProvenance:out}
+}
+
+/** Curated catalyst stories on the asset page. That read selects by publication
+ * date, not by review window, so a summary past its window can reach the page.
+ * Each item gets its envelope; a stale item keeps its title and link but its
+ * summary fields move under `stale_summary`, so a view drawing `why_it_matters`
+ * cannot present an expired summary as current. */
+export function curatedNewsWithEnvelopes(items:unknown,now=Date.now()):any[] {
+ return (Array.isArray(items)?items:[]).map((item:any)=>{
+  const provenance=curatedEnvelope('intel_curated_news',item?.updated_at??null,item?.stale_after??null,'news_curated',now)
+  if(provenance.kind==='curated')return {...item,provenance}
+  const {summary=null,why_it_matters=null,crypto_impact=null,watch_next=null}=item||{}
+  return {...item,summary:null,why_it_matters:null,crypto_impact:null,watch_next:null,stale_summary:{summary,why_it_matters,crypto_impact,watch_next},provenance}
+ })
 }
