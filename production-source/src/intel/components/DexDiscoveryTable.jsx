@@ -20,7 +20,8 @@ export default function DexDiscoveryTable({query,capability,network,onNetwork,cu
    ...(capability==='dexMeme'?[['Source stage',r=>r.discoveryStage]]:[])
   ]}/>
   <div className="intel-investigation-pagination"><button className="btn" disabled={!cursor||query.loading} onClick={onFirst}>First discovery page</button><button className="btn" disabled={query.loading||!nextCursor||nextCursor===cursor||nextCursor===next} onClick={()=>onNext(nextCursor)}>Next discovery page</button></div>
-  <DexCohortCapture reference={result?.sourceReference} ready={!query.loading&&!query.error&&result?.state==='fresh'&&rows.length>0}/>
+  {/* A cohort may be captured from a snapshot inside its TTL as well as from a live read: both are the exact response the reference pins. */}
+  <DexCohortCapture reference={result?.sourceReference} ready={!query.loading&&!query.error&&(result?.state==='fresh'||result?.state==='cached')&&rows.length>0}/>
   <SourceResearchNotes reference={result?.sourceReference} title={`${names[capability]} · ${CMC_DEX_NETWORKS.find(n=>String(n.platformId)===network)?.label||network}`} onDraftChange={onDraftChange}/>
  </section>
 }

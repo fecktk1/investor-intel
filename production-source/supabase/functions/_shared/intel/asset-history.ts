@@ -8,7 +8,7 @@
 //
 // An empty series is never presented as data: without usable points the read is
 // `unavailable` with the reason that produced it.
-import { cmcRows, cmcUsdQuote, estimateCmcCredits } from '../market-assets/cmc-capabilities.ts'
+import { cmcRows, cmcUsdQuote, cmcUsable, estimateCmcCredits } from '../market-assets/cmc-capabilities.ts'
 import { requestCmc } from '../market-assets/cmc-transport.ts'
 import type { MarketAssetsContext } from '../market-assets/types.ts'
 import { finite, instant } from './investigation-evidence.ts'
@@ -102,6 +102,6 @@ export async function loadAssetHistory(admin: any, options: AssetHistoryOptions)
   const observedAt = new Date(points[points.length - 1].t).toISOString()
   return {
     points, interval: plan.interval, source: 'coinmarketcap', observedAt, fetchedAt,
-    state: result.state === 'fresh' ? 'fresh' : 'stale', reason: result.reason ?? null, credits: plan.credits,
+    state: cmcUsable(result.state) ? 'fresh' : 'stale', reason: result.reason ?? null, credits: plan.credits,
   }
 }

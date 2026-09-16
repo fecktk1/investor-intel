@@ -1,5 +1,5 @@
 import {requestCmc} from '../market-assets/cmc-transport.ts'
-import {cmcParams,cmcRows,CMC_CAPABILITIES} from '../market-assets/cmc-capabilities.ts'
+import {cmcParams,cmcRows,CMC_CAPABILITIES,cmcUsable} from '../market-assets/cmc-capabilities.ts'
 import {cmcDexRowIdentity,cmcDexInteger,isDexDiscovery,validateCmcDexResponse,CMC_DEX_NETWORKS} from '../market-assets/cmc-dex.ts'
 import {cmcPolicyEnvironment,loadCmcOperatingSettings} from '../market-assets/cmc-operating-settings.ts'
 import {cmcHistoryPolicy} from './investigation-normalize.ts'
@@ -90,7 +90,9 @@ export async function dexCohortService(db:any,input:any,actor:{userId:string;org
  let cohort=await read((operation==='read'?q.eq('id',input.cohortId):q.eq('cohort_key',key)).maybeSingle())
  if(!cohort&&operation==='capture'){
   const source=await request(input.capability,params,{supabase:db,kind:'render',maxCalls:0,caller:'intel-dex-cohort-capture',...actor})
-  if(source.state!=='fresh'||!source.payload) return {state:source.state,reason:source.reason||'Refresh the discovery source before capturing its original membership.',cohort:null,quotes:null}
+  // This read is deliberately cache-only (maxCalls 0), so the snapshot answering
+  // from inside its TTL is the normal success here, not a reason to refuse.
+  if(!cmcUsable(source.state)||!source.payload) return {state:source.state,reason:source.reason||'Refresh the discovery source before capturing its original membership.',cohort:null,quotes:null}
   const reference=await marketSourceReference(input.capability,params,source.payload,source.provenance)
   if(reference.payloadHash!==input.payloadHash||reference.retrievedAt!==input.retrievedAt)throw Error('dex_cohort_source_changed')
   const capturedAt=new Date(now).toISOString()

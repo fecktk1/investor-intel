@@ -53,7 +53,7 @@
 
 import { requestCmc, cmcPlan } from '../market-assets/cmc-transport.ts'
 import { loadCmcOperatingSettings } from '../market-assets/cmc-operating-settings.ts'
-import { planAllows, CMC_CAPABILITIES } from '../market-assets/cmc-capabilities.ts'
+import { planAllows, CMC_CAPABILITIES, cmcUsable } from '../market-assets/cmc-capabilities.ts'
 import { cmcDexIdentity, cmcDexParams, type CmcDexIdentity } from '../market-assets/cmc-dex.ts'
 import { normalizeBars, type Bar } from './chart-analysis.ts'
 import { CHART_WINDOWS, CHART_INTERVALS, isSubHourInterval } from './cmc-chart.ts'
@@ -271,7 +271,7 @@ export async function loadKlineChart(admin: any, identity: CmcDexIdentity, timef
   return {
     candles, source: KLINE_SOURCE, timestampMeaning: 'open' as const, barIntervalMs: plan.step, volumeUnit: 'USD',
     coverage: candles.length ? coverage : `${coverage} No completed candles were returned for this window.`.trim(),
-    sourceState: candles.length ? (state === 'fresh' ? 'fresh' : 'stale') : 'unavailable',
+    sourceState: candles.length ? (cmcUsable(state) ? 'fresh' : 'stale') : 'unavailable',
     // `insufficient_entitlement`, `budget_exceeded` and the rest survive onto the
     // ladder, which names them in the pool source's coverage sentence.
     sourceReason: candles.length ? reason : (reason ?? 'no_completed_candles'),

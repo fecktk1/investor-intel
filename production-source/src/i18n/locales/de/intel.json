@@ -3468,5 +3468,19 @@
     "job_active": "Aktiv",
     "job_paused": "Pausiert",
     "profile_promotional": "Aktionsprofil"
+  },
+  "receipt": {
+    "summary": "Beleg zum Quellenaufruf",
+    "capability": "Abfrage",
+    "parameters": "Parameter",
+    "origin": "Beantwortet von",
+    "origin_live": "Direkter Anbieteraufruf",
+    "origin_cache": "Gemeinsamer Zwischenspeicher, kein Aufruf",
+    "http_status": "HTTP-Status",
+    "credits": "Berechnete Credits",
+    "not_reported": "nicht gemeldet",
+    "age": "Alter gegenüber der Aktualisierungsgrenze",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s von {{ttl}} s"
   }
 }

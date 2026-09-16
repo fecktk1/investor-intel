@@ -1,4 +1,4 @@
-import { CMC_CAPABILITIES } from './cmc-capabilities.ts'
+import { CMC_CAPABILITIES, cmcUsable } from './cmc-capabilities.ts'
 import { cmcPlan, refreshCmcSnapshot,loadCmcOperatingSettings,requestCmc } from './cmc-transport.ts'
 import {cmcDemandPolicy,connectedDemandEnabled} from './cmc-demand-policy.ts'
 
@@ -36,7 +36,9 @@ export async function refreshCmcDemand(db:any,now=Date.now()) {
     const [access,member]=await Promise.all([db.rpc('can_access_intel',{p_user:row.demand_user_id,p_org:row.demand_org_id}),db.from('org_members').select('org_id').eq('org_id',row.demand_org_id).eq('user_id',row.demand_user_id).maybeSingle()])
     if(access.error||access.data!==true||member.error||!member.data)continue
     const result=await refreshCmcSnapshot(row.capability,row.request_params||{},{supabase:db,kind:'job',maxCalls:1,caller:'intel-cmc-demand-refresh'})
-    if(result.state==='fresh')refreshed++
+    // A snapshot already live when the lane reached it counts as satisfied demand,
+    // exactly as it did when the transport called that same cache hit 'fresh'.
+    if(cmcUsable(result.state))refreshed++
   }
   return refreshed?'processed' as const:'idle' as const
 }
@@ -85,5 +87,5 @@ export async function refreshOnDemandQuotes(db:any,now=Date.now(),request:typeof
   if(!due.length)return 'idle' as const
 
   const result=await request('quotes',{id:due.join(',')},{supabase:db,kind:'job',maxCalls:1,caller:'intel-on-demand-refresh'})
-  return result?.state==='fresh'?'processed' as const:'idle' as const
+  return cmcUsable(result?.state)?'processed' as const:'idle' as const
 }

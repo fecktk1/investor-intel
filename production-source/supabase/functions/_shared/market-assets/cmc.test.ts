@@ -92,7 +92,8 @@ Deno.test('exchange disclosures send only the documented ID and share one snapsh
  const db=fakeDb()
  const first=await requestCmc('exchangeAssets',{id:'270'},{supabase:db,kind:'request',maxCalls:1})
  const second=await requestCmc('exchangeAssets',{id:'270'},{supabase:db,kind:'request',maxCalls:1})
- assert.equal(first.state,'fresh');assert.equal(second.state,'fresh');assert.equal(urls.length,1)
+ // The second page reuses the one snapshot, so it reports 'cached': still one URL.
+ assert.equal(first.state,'fresh');assert.equal(second.state,'cached');assert.equal(urls.length,1)
  assert.equal(new URL(urls[0]).search,'?id=270');assert.equal(first.provenance.observedAt,null)
 }))
 Deno.test('100 asset selections across users reuse one full exchange response and keep selection out of the provider URL',()=>withEnvironment(async()=>{
@@ -147,12 +148,15 @@ Deno.test('concurrent cold readers await the shared snapshot without another pro
   globalThis.fetch=()=>{network++;throw new Error('No second provider call')}
   const db=fakeDb({reserve:{allowed:false,reason:'refreshing'}})
   const timer=setTimeout(()=>db.state.caches.set([...db.state.rpcs].find(r=>r.name==='cmc_request_reserve')!.args.p_cache_key,{response_json:{data:[{id:1}]},expires_at:new Date(Date.now()+60000).toISOString(),stale_until:new Date(Date.now()+60000).toISOString()}),75)
-  try{const result=await requestCmc('listings',{limit:10},{supabase:db,kind:'request'});assert.equal(result.state,'fresh');assert.equal(result.payload.data[0].id,1);assert.equal(network,0);assert.equal(db.state.rpcs.filter(r=>r.name==='cmc_request_reserve').length,1)}finally{clearTimeout(timer)}
+  // The waiter is answered by the snapshot the OTHER isolate filled, which is a
+  // cache read from this caller's point of view and spends no call of its own.
+  try{const result=await requestCmc('listings',{limit:10},{supabase:db,kind:'request'});assert.equal(result.state,'cached');assert.equal(result.payload.data[0].id,1);assert.equal(network,0);assert.equal(db.state.rpcs.filter(r=>r.name==='cmc_request_reserve').length,1)}finally{clearTimeout(timer)}
 }))
 Deno.test('CMC cache hits, render, entitlement and database failure spend zero calls',()=>withEnvironment(async()=>{
   globalThis.fetch=()=>{throw new Error('Network must not be called')}
   const cache={response_json:{data:[]},expires_at:new Date(Date.now()+60000).toISOString(),stale_until:new Date(Date.now()+60000).toISOString()}
-  const db=fakeDb({cache});assert.equal((await requestCmc('listings',{}, {supabase:db})).state,'fresh');assert.equal(db.state.rpcs.length,0)
+  // A snapshot inside its TTL answers as 'cached': a success that spent no call.
+  const db=fakeDb({cache});assert.equal((await requestCmc('listings',{}, {supabase:db})).state,'cached');assert.equal(db.state.rpcs.length,0)
   assert.equal((await requestCmc('listings',{}, {supabase:fakeDb(),kind:'render'})).reason,'refresh_required')
   assert.equal((await requestCmc('listings',{}, {supabase:fakeDb({fail:true})})).reason,'accounting_unavailable')
   assert.equal((await requestCmc('content',{}, {supabase:fakeDb()})).state,'unsupported')
@@ -175,7 +179,8 @@ Deno.test('100 users across organizations share one batch and later readers use 
   assert.equal(db.state.rpcs.filter(r=>r.name==='cmc_request_reserve').length,1)
   assert.equal(db.state.rpcs.filter(r=>r.name==='cmc_request_reconcile').length,1)
   const later=await requestCmc('quotes',{id:'1027,1'},{supabase:db,kind:'request',orgId:'different-org',userId:'another-user'})
-  assert.equal(later.state,'fresh');assert.equal(calls,1)
+  // The later reader is served entirely by the durable snapshot, so it is 'cached'.
+  assert.equal(later.state,'cached');assert.equal(calls,1)
   assert.ok(!JSON.stringify(later).includes('user-'))
   assert.ok(!JSON.stringify(later).includes('org-'))
 }))

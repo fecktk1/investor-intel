@@ -3468,5 +3468,19 @@
     "job_active": "Active",
     "job_paused": "Paused",
     "profile_promotional": "promotional"
+  },
+  "receipt": {
+    "summary": "Source call receipt",
+    "capability": "Capability",
+    "parameters": "Parameters",
+    "origin": "Answered by",
+    "origin_live": "Live provider call",
+    "origin_cache": "Shared cache, no call made",
+    "http_status": "HTTP status",
+    "credits": "Credits charged",
+    "not_reported": "not reported",
+    "age": "Age against refresh limit",
+    "age_seconds": "{{age}}s",
+    "age_of_ttl": "{{age}}s of {{ttl}}s"
   }
 }

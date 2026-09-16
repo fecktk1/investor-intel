@@ -3468,5 +3468,19 @@
     "job_active": "Actief",
     "job_paused": "Gepauzeerd",
     "profile_promotional": "promotioneel"
+  },
+  "receipt": {
+    "summary": "Bon van de bronaanroep",
+    "capability": "Aanvraag",
+    "parameters": "Parameters",
+    "origin": "Beantwoord door",
+    "origin_live": "Directe aanroep bij de aanbieder",
+    "origin_cache": "Gedeelde cache, geen aanroep",
+    "http_status": "HTTP-status",
+    "credits": "In rekening gebrachte credits",
+    "not_reported": "niet gerapporteerd",
+    "age": "Leeftijd ten opzichte van de verversingslimiet",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s van {{ttl}} s"
   }
 }

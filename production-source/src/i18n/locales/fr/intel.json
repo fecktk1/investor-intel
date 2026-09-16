@@ -3468,5 +3468,19 @@
     "job_active": "Actif",
     "job_paused": "En pause",
     "profile_promotional": "promotionnel"
+  },
+  "receipt": {
+    "summary": "Reçu de l’appel à la source",
+    "capability": "Requête",
+    "parameters": "Paramètres",
+    "origin": "Répondu par",
+    "origin_live": "Appel direct au fournisseur",
+    "origin_cache": "Cache partagé, aucun appel",
+    "http_status": "Statut HTTP",
+    "credits": "Crédits facturés",
+    "not_reported": "non communiqué",
+    "age": "Ancienneté par rapport à la limite d’actualisation",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s sur {{ttl}} s"
   }
 }

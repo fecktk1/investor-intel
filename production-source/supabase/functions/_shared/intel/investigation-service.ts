@@ -7,7 +7,7 @@ import {readParticipation} from './participation-read.ts'
 import {cmcDexIdentity,cmcDexParams} from '../market-assets/cmc-dex.ts'
 import { requestCmc } from '../market-assets/cmc-transport.ts'
 import { cmcPlan,loadCmcOperatingSettings } from '../market-assets/cmc-transport.ts'
-import { planAllows } from '../market-assets/cmc-capabilities.ts'
+import { planAllows, cmcUsable } from '../market-assets/cmc-capabilities.ts'
 import { cmcRows, cmcParams, CMC_CAPABILITIES } from '../market-assets/cmc-capabilities.ts'
 import { cmcHistoryPolicy, cmcSubject, normalizeCmcInvestigation } from './investigation-normalize.ts'
 import { finite, instant, makeResearchReceipt, type Observation } from './investigation-evidence.ts'
@@ -182,7 +182,7 @@ export async function investigationService(db:any,actor:{userId:string;orgId:str
     if(lens==='sector'&&!/^[a-f0-9]{24}$/.test(category))throw new Error('invalid_category_id')
     const cap=lens==='sector'?'category':'newListings',params=lens==='sector'?{id:category,start:1,limit:50}:{start:1,limit:50}
     const quotes=await snapshot(db,cap,params,actor)
-    if(quotes.state!=='fresh'||!quotes.data.rows.length)return {state:quotes.state,reason:quotes.reason??'Fresh membership is required.',cohort:null}
+    if(!cmcUsable(quotes.state)||!quotes.data.rows.length)return {state:quotes.state,reason:quotes.reason??'Fresh membership is required.',cohort:null}
     const collectedAt=new Date(Math.max(now,Date.now())).toISOString()
     const members=quotes.data.rows.flatMap((r:any)=>{const id=cmcSubject(r.id);return id?[{subject:id,name:r.name,symbol:r.symbol??null,joinedAt:collectedAt,initialPrice:finite(r.quote?.price),initialMarketCapUsd:finite(r.quote?.market_cap),initialObservedAt:r.quote?.last_updated??r.last_updated??null}]:[]})
     const key=`${cap}:${category}:${new Date(now).toISOString().slice(0,10)}`

@@ -138,6 +138,13 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   community: cap('/v1/community/trending/token','attention',['limit'],{tier:'growth',cost:'zero'}),
 }
 export const CMC_FEATURE_CAPS: Record<CmcFeature,number> = { market:6000,metadata:500,history:500,regime:2500,rwa:1500,structure:1000,attention:500 }
+/** A read that produced a usable figure. 'fresh' is a live 200 on this read and
+ * 'cached' is the shared snapshot answering from inside its TTL — both succeeded,
+ * and only the receipt distinguishes them. This lives here, not in the transport,
+ * because the transport imports this file and a value import the other way would
+ * be a cycle. Consumers that used to test state==='fresh' alone must call this,
+ * or a perfectly good cached figure reads as a failure. */
+export const cmcUsable=(state:string|null|undefined)=>state==='fresh'||state==='cached'
 export function planAllows(plan: string, minimum: CmcPlan): boolean {
   const levels = ['basic','builder','startup','growth','professional','enterprise']
   return levels.indexOf(plan) >= levels.indexOf(minimum)

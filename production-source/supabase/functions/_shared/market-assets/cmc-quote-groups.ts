@@ -1,4 +1,4 @@
-import {cmcParams,cmcRows,cmcObservedAt} from './cmc-capabilities.ts'
+import {cmcParams,cmcRows,cmcObservedAt,cmcUsable} from './cmc-capabilities.ts'
 import type {MarketAssetsContext} from './types.ts'
 import type {CmcResult} from './cmc-transport.ts'
 
@@ -41,7 +41,14 @@ export async function requestGroupedQuotes(input:Record<string,unknown>,ctx:Mark
  const payload=unique.length?{data:unique}:null
  const clock=(field:'fetchedAt'|'expiresAt')=>{const values=results.filter(r=>r.payload).map(r=>Date.parse(r.provenance[field]||''));return values.length&&values.every(Number.isFinite)?new Date(Math.min(...values)).toISOString():null}
  const first=results[0],missing=unique.length<ids.length
- return {payload,state:payload?(results.every(r=>r.state==='fresh')&&!missing?'fresh':'stale'):(first.state==='fresh'||first.state==='stale'?'unavailable':first.state),
+ // A basket answered live by every group is 'fresh'. A complete basket where any
+ // group came from its snapshot is 'cached' — still a complete answer, so it must
+ // not be downgraded to 'stale', which means the figures are past their TTL.
+ const live=results.every(r=>r.state==='fresh'),usable=results.every(r=>cmcUsable(r.state))
+ return {payload,state:payload?(usable&&!missing?(live?'fresh':'cached'):'stale'):(cmcUsable(first.state)||first.state==='stale'?'unavailable':first.state),
   reason:results.find(r=>r.reason)?.reason||(missing?'missing_coverage':null),
+  // A scattered basket can span more than one shared batch. This receipt describes
+  // the first group that reported one; the other groups are separate calls.
+  receipt:results.find(r=>r.receipt)?.receipt??null,
   provenance:{...first.provenance,observedAt:payload?cmcObservedAt(payload):null,fetchedAt:clock('fetchedAt'),expiresAt:clock('expiresAt')}}
 }

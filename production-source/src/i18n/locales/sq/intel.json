@@ -3468,5 +3468,19 @@
     "job_active": "Aktive",
     "job_paused": "E ndalur",
     "profile_promotional": "promocional"
+  },
+  "receipt": {
+    "summary": "Fatura e thirrjes së burimit",
+    "capability": "Kërkesa",
+    "parameters": "Parametrat",
+    "origin": "Përgjigjur nga",
+    "origin_live": "Thirrje e drejtpërdrejtë te ofruesi",
+    "origin_cache": "Cache i përbashkët, pa thirrje",
+    "http_status": "Statusi HTTP",
+    "credits": "Kreditë e faturuara",
+    "not_reported": "nuk raportohet",
+    "age": "Mosha kundrejt kufirit të rifreskimit",
+    "age_seconds": "{{age}} s",
+    "age_of_ttl": "{{age}} s nga {{ttl}} s"
   }
 }

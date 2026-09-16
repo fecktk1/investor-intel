@@ -1,4 +1,4 @@
-import {cmcRows,cmcUsdQuote} from '../market-assets/cmc-capabilities.ts'
+import {cmcRows,cmcUsdQuote,cmcUsable} from '../market-assets/cmc-capabilities.ts'
 import {requestCmc} from '../market-assets/cmc-transport.ts'
 import {normalizeBars,type Bar} from './chart-analysis.ts'
 import {CHAIN_COINGECKO} from '../chains.ts'
@@ -98,5 +98,5 @@ export async function loadCmcChart(admin:any,id:string,range='1M',interval='auto
  const aggregate=aggregateOhlcv(normalizeBars(all).bars,plan.base,plan.step,now)
  const candles=aggregate.bars.filter(b=>b.t>=plan.from&&b.closedAt!<=plan.to)
  const coverage=[`${plan.selected} completed OHLCV candles; UTC periods.`,plan.base===HOUR?'CMC adjusted volume is a snapshot in USD; grouped candles use the final reading, not a sum of hours.':'CMC adjusted volume is in USD for each completed period.',plan.limited?(plan.base===HOUR?'Startup intraday coverage is limited to the most recent 30 days.':'One OHLCV read reaches back 365 days; older periods come from the stored daily archive, not from this request.'):null,aggregate.incomplete?`${aggregate.incomplete} incomplete candle periods omitted.`:null,reasons.length?`Some history is unavailable (${[...new Set(reasons)].join(', ')}).`:null].filter(Boolean).join(' ')
- return {candles,source:'coinmarketcap',timestampMeaning:'open',barIntervalMs:plan.step,volumeUnit:'USD',coverage,sourceState:states.every(s=>s==='fresh')?'fresh':candles.length?'stale':states[0]||'unavailable',sourceReason:reasons[0]||null,provenance,bestPair:null,bestProvider:candles.length?'coinmarketcap':null}
+ return {candles,source:'coinmarketcap',timestampMeaning:'open',barIntervalMs:plan.step,volumeUnit:'USD',coverage,sourceState:states.every(s=>cmcUsable(s))?'fresh':candles.length?'stale':states[0]||'unavailable',sourceReason:reasons[0]||null,provenance,bestPair:null,bestProvider:candles.length?'coinmarketcap':null}
 }
