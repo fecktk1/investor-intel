@@ -20,6 +20,8 @@ packaging regression failing.
 
 ## 1. The single most important finding
 
+> **Superseded 2026-09-16 by [section 6](#6-re-probe-2026-09-16-and-what-it-changes).** The re-probe on 2026-09-16 got HTTP 200 with real data from `/v1/global-metrics/quotes/latest`, `/v3/cryptocurrency/listings/latest` and `/v1/dex/holders/count` before the shared pool refused again with 429/1022. The 2026-09-15 finding below, that every keyless endpoint refused this network, is kept unchanged as the dated record of that run; it no longer describes the keyless surface's current behaviour.
+
 **Every keyless endpoint refused this network.** Ten probes on 2026-09-15 at 04:32 UTC, one per endpoint family, each
 returned `HTTP 429` with status `error_code` 1022 and the message:
 
@@ -182,8 +184,12 @@ candle widths are accepted; and `unit=usd` is pinned so `volumeUnit` is `USD` an
 | `POST /api/research` `rwaList` in keyless mode | `keyless_unavailable`, `fixture: false`, zero rows, zero network calls |
 | Live keyless requests during development | 10 total, all refused with 429/1022 |
 
+> **Counts superseded 2026-09-16.** The test, file and byte counts in this table are from the 2026-09-15 run. The package now also carries the public docs and recorded call evidence, and the extraction has more tests; the current counts are recorded in the extraction README.
+
 The keyless mode has **not** been exercised against a successful live response, and no browser evidence of the keyless
 journeys exists. Both remain open.
+
+> **Superseded in part 2026-09-16 by [section 6](#6-re-probe-2026-09-16-and-what-it-changes).** The first half of the sentence above no longer holds: on 2026-09-16 the keyless surface answered with HTTP 200 on three routes, and `scripts/capture-keyless-evidence.mjs` recorded a dated artefact from those answers. Browser evidence of the keyless journeys still does not exist and remains open. The sentence above is kept as the 2026-09-15 record.
 
 ## 5. Still open for the owner
 

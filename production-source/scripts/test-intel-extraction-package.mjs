@@ -6,6 +6,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import assert from 'node:assert/strict'
+import { PUBLIC_DOCS, PRIVATE_DOCS, deniedPackagePaths, isBinaryPackagePath, findSecretShapes } from './intel-extraction-package-guards.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const require=createRequire(import.meta.url)
 function run(args,cwd=root){const result=spawnSync(process.execPath,args,{cwd,windowsHide:true,encoding:'utf8',timeout:120000});if(result.error||result.status!==0)throw Error(result.error?.message||result.stderr||result.stdout);return result.stdout}
@@ -22,6 +23,24 @@ assert.ok(manifest.files.some(f=>f.file.endsWith('chart-study.worker.js')))
 assert.ok(manifest.files.some(f=>f.file.endsWith('chart-structure.worker.js')))
 assert.ok(manifest.files.some(f=>f.file.endsWith('lightweight-charts-5.2.0/LICENSE')))
 assert.ok(manifest.files.some(f=>f.file.endsWith('lightweight-charts-5.2.0/NOTICE')))
+// Private working documents never ship, and the public docs the README and the
+// submission text point at always do.
+const packaged=manifest.files.map(f=>f.file)
+for(const doc of PRIVATE_DOCS)assert.ok(!packaged.some(file=>file.toLowerCase().endsWith(path.posix.basename(doc))),`private document in the package manifest: ${doc}`)
+assert.deepEqual(deniedPackagePaths(packaged),[],'the package manifest contains a denylisted document')
+for(const doc of PUBLIC_DOCS)assert.ok(packaged.includes(doc),`public document missing from the package: ${doc}`)
+// The rules require visible evidence of a real API call: at least one recorded
+// CMC call artefact ships, and each one parses and carries its provider status.
+const evidence=packaged.filter(file=>/^evidence\/(?:recorded-cmc-calls\/)?cmc-receipt-evidence-\d{4}-\d{2}-\d{2}\.json$/.test(file))
+assert.ok(evidence.some(file=>file.startsWith('evidence/recorded-cmc-calls/')),'no recorded CMC call evidence in the package')
+for(const file of evidence){
+  const artefact=JSON.parse(readFileSync(path.join(target,file),'utf8'))
+  assert.ok(Array.isArray(artefact.probes)&&artefact.probes.length>0,`${file} has no probes`)
+  assert.ok(artefact.probes.every(probe=>probe.providerStatus&&Number.isInteger(probe.httpStatus)),`${file} lacks a provider status or HTTP status`)
+}
+// The emitted bytes, not only the source tree, pass the secret-shape scan.
+const findings=packaged.filter(file=>!isBinaryPackagePath(file)).flatMap(file=>findSecretShapes(file,readFileSync(path.join(target,file),'utf8')))
+assert.deepEqual(findings,[],`secret-shaped text in the emitted package: ${findings.map(f=>`${f.file}:${f.line} (${f.pattern})`).join(', ')}`)
 // The keyless demo mode ships with the extraction and its tests.
 assert.ok(manifest.files.some(f=>f.file==='server/keyless.mjs'))
 assert.ok(manifest.files.some(f=>f.file==='tests/keyless.test.mjs'))
