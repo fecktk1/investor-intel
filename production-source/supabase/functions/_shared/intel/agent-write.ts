@@ -23,7 +23,7 @@
 
 import {AgentAuthError,type AgentContext} from './agent-token.ts'
 import {agentPlanHash} from './agent-plan.ts'
-import {validateChartLayout,isUuid} from './chart-workspace-contract.ts'
+import {validateChartLayout,validateDrawing,isUuid} from './chart-workspace-contract.ts'
 
 // deno-lint-ignore no-explicit-any
 type Db=any
@@ -93,6 +93,10 @@ export async function executeAgentPlan(db:Db,context:AgentContext,planId:unknown
   const message=error instanceof Error?error.message:'agent_write_failed'
   await db.from('intel_agent_plans').update({status:'failed',executed_at:new Date().toISOString(),failure_reason:message.slice(0,300)}).eq('id',plan.id)
   if(error instanceof AgentAuthError)throw error
+  // A concurrent edit is a conflict, not an outage. Reporting it as 503 would
+  // tell the agent to retry a proposal that can no longer run; 409 tells it the
+  // layout moved on and the annotation has to be proposed again.
+  if(message==='chart_revision_conflict')throw new AgentAuthError(409,'chart_revision_conflict','The layout was changed by someone else while this annotation was being added, so nothing was written. Propose it again.')
   throw new AgentAuthError(503,'agent_write_failed',`The write did not complete: ${message}`)
  }
 }
@@ -123,17 +127,37 @@ async function writeAnnotation(db:Db,plan:any):Promise<{recordId:string|null;ver
  if(error)throw new Error(error.message)
  if(!current)throw new AgentAuthError(404,'chart_layout_not_found','That saved layout no longer exists in this workspace.')
  const drawing=plan.payload.drawing
- if((current.state?.drawings??[]).some((d:any)=>d.id===drawing.id)){
-  // The same annotation is already there. That is the idempotency working.
-  return {recordId:layoutId,verification:{status:'passed',message:'This annotation was already on the layout. Not adding it twice.',expected:{drawing_id:drawing.id},observed:{drawing_id:drawing.id}}}
+ const existing=(current.state?.drawings??[]).find((d:any)=>d?.id===drawing.id)
+ if(existing){
+  // The drawing id is chosen by the agent, and an agent holding read:charts can
+  // see every drawing id on the layout. An id alone is therefore not proof that
+  // the approved annotation is there: only the same id WITH the same content is
+  // the idempotency working. A different drawing under that id is refused and
+  // recorded as a failed verification, never reported as a pass.
+  if(sameDrawing(existing,drawing)){
+   return {recordId:layoutId,verification:{status:'passed',message:'This annotation was already on the layout. Not adding it twice.',expected:{drawing_id:drawing.id},observed:{drawing_id:drawing.id}}}
+  }
+  return {recordId:layoutId,verification:{status:'failed',message:'A different drawing on this layout already uses this id, so the approved annotation was not added and the existing drawing was left untouched.',expected:{drawing_id:drawing.id,drawing_matches:true},observed:{drawing_id:drawing.id,drawing_matches:false}}}
  }
  const state=validateChartLayout({...current.state,drawings:[...(current.state?.drawings??[]),drawing]})
  const {error:saveError}=await db.rpc('intel_save_chart_layout',{p_org:plan.org_id,p_user:plan.user_id,p_id:layoutId,p_revision:current.revision,p_operation:plan.id,p_title:current.title,p_state:state})
  if(saveError)throw new Error(saveError.code==='40001'||saveError.code==='PT409'?'chart_revision_conflict':saveError.message)
  const {data:row,error:readError}=await db.from('intel_chart_layouts').select('id,org_id,user_id,state').eq('id',layoutId).maybeSingle()
  if(readError)return {recordId:layoutId,verification:{status:'inconclusive',message:`Could not re-read the layout: ${readError.message}`,expected:{id:layoutId},observed:{}}}
- const present=(row?.state?.drawings??[]).some((d:any)=>d.id===drawing.id)
+ const present=(row?.state?.drawings??[]).some((d:any)=>d?.id===drawing.id&&sameDrawing(d,drawing))
  return {recordId:layoutId,verification:verifyRow(row,layoutId,plan,{drawing_present:true},{drawing_present:present},'annotation')}
+}
+
+/** Same drawing, compared through the editor's own validator. The validator
+ * rebuilds every drawing in one fixed key order and fills the same defaults, so
+ * a stored copy that differs only in key order or in an omitted default still
+ * counts as the same drawing. Anything the validator refuses matches nothing. */
+function sameDrawing(stored:unknown,approved:unknown):boolean {
+ const canonical=(value:unknown):string|null=>{
+  try{return JSON.stringify(validateDrawing(value))}catch{return null}
+ }
+ const left=canonical(stored)
+ return left!==null&&left===canonical(approved)
 }
 
 /** The only append a member can make by hand. source_table 'manual' is in the
