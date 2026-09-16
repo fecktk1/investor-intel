@@ -3,6 +3,8 @@ import {researchCmcId} from './research-identity.ts'
 import {participationContract} from './participation-read.ts'
 import {birdeyeChainForApp} from '../chains.ts'
 import {finite,instant} from './investigation-evidence.ts'
+import {metricAgreement,metricAgreementReceipt,notAMarketMoveReceipt} from './metric-agreement.ts'
+import {readMetricAgreement} from './metric-agreement-read.ts'
 
 /** Public, bounded cache reads only. This module has no provider transport,
  * wallet synchronization or private journal reads. */
@@ -21,7 +23,11 @@ export async function readMarketAlertEvidence(db:any,rule:any,now=Date.now()){
   if(result.error)throw Error('alert_source_read_failed')
   const o=result.fields.change_86400
   if(!o)throw Error('alert_fresh_source_unavailable')
-  return {metric,unit:'%',overview:{price:result.fields.price?.value??null,price_change_24h_pct:o.value,symbol:entity.display_symbol},observation:{id:o.id,subject,provider:o.provider,sourceRef:o.sourceRef,providerSubject:o.subject,value:o.value,unit:'%',periodSeconds:86400,observedAt:o.observedAt,recordedAt:o.recordedAt,expiresAt:o.expiresAt,sampleAt:o.observedAt,clockBasis:'provider_observation',coverage:'24-hour change reported by CoinMarketCap. The reference is its rolling window, not your entry price.'}}
+  // The evidentiary standard, from the SAME retained window this quote came
+  // from. A failure to establish agreement never blocks the alert: the alert is
+  // still a real crossing, it is simply labelled as a research lead.
+  const agreement=metricAgreementReceipt(await readMetricAgreement(db,subject,now))
+  return {metric,unit:'%',overview:{price:result.fields.price?.value??null,price_change_24h_pct:o.value,symbol:entity.display_symbol},observation:{id:o.id,subject,provider:o.provider,sourceRef:o.sourceRef,providerSubject:o.subject,value:o.value,unit:'%',periodSeconds:86400,observedAt:o.observedAt,recordedAt:o.recordedAt,expiresAt:o.expiresAt,sampleAt:o.observedAt,clockBasis:'provider_observation',agreement,coverage:'24-hour change reported by CoinMarketCap. The reference is its rolling window, not your entry price.'}}
  }
  const identity=participationContract(subject)
  if(!identity)throw Error('alert_canonical_identity_unavailable')
@@ -35,7 +41,18 @@ export async function readMarketAlertEvidence(db:any,rule:any,now=Date.now()){
  if(known==null||expires==null||known>now||expires<=now||known<now-20*60000||data.chain!==chain||data.token_address!==identity.address)throw Error('alert_fresh_source_unavailable')
  const overview=data.normalized_response,value=finite(metric==='liquidity_usd'?overview?.liquidity:overview?.[metric])
  if(value==null||metric==='liquidity_usd'&&value<0)throw Error('alert_metric_coverage_unavailable')
- return {metric,unit:metric==='liquidity_usd'?'USD':'%',overview,observation:{id:`birdeye-overview:${chain}:${identity.address}:${data.fetched_at}`,subject,provider:'birdeye',sourceRef:`birdeye:/defi/token_overview:${chain}:${identity.address}`,value,unit:metric==='liquidity_usd'?'USD':'%',periodSeconds:metric==='liquidity_usd'?null:86400,observedAt:null,recordedAt:data.fetched_at,expiresAt:data.expires_at,sampleAt:data.fetched_at,clockBasis:'cache_capture',coverage:'Values from the dated retained Birdeye response. Original provider observation time is unavailable. Comparisons use capture times and do not establish changes between source observations.'}}
+ // Birdeye's retained overview carries OUR capture clock and no provider
+ // observation time, and it publishes market capitalisation as an undated level.
+ // Price and volume are therefore read at the capture clock the coverage note
+ // below already discloses, and market capitalisation is refused outright: this
+ // source can never reach 'corroborated'. That is the honest answer rather than
+ // a third agreeing metric nobody measured.
+ const agreement=metricAgreementReceipt(metricAgreement({
+  price:{changePct:overview?.price_change_24h_pct,observedAt:data.fetched_at,periodSeconds:86400},
+  volume:{changePct:overview?.volume_change_24h_pct,observedAt:data.fetched_at,periodSeconds:86400},
+  market_cap:{unavailable:'market_cap_undated_by_source'},
+ },now))
+ return {metric,unit:metric==='liquidity_usd'?'USD':'%',overview,observation:{agreement,id:`birdeye-overview:${chain}:${identity.address}:${data.fetched_at}`,subject,provider:'birdeye',sourceRef:`birdeye:/defi/token_overview:${chain}:${identity.address}`,value,unit:metric==='liquidity_usd'?'USD':'%',periodSeconds:metric==='liquidity_usd'?null:86400,observedAt:null,recordedAt:data.fetched_at,expiresAt:data.expires_at,sampleAt:data.fetched_at,clockBasis:'cache_capture',coverage:'Values from the dated retained Birdeye response. Original provider observation time is unavailable. Comparisons use capture times and do not establish changes between source observations.'}}
 }
 
 /** A listing notice is recorded by the DAILY metadata pass, so its evidence is
@@ -61,7 +78,7 @@ async function readMetadataNotice(db:any,rule:any,subject:string,now:number){
  const hash=typeof facts.noticeHash==='string'&&/^[0-9a-f]{64}$/.test(facts.noticeHash)?facts.noticeHash:null
  const at=new Date(observed).toISOString(),excerpt=notice?notice.slice(0,200):null
  return {metric:'metadata_notice',unit:'notice',overview:{symbol:rule.entity?.display_symbol??null,noticePresent:!!notice,noticeHash:hash,excerpt,factsAt:at},
-  observation:{id:`cmc-metadata-notice:${cmcId}:${notice?hash||'unhashed':'none'}`,subject,provider:'coinmarketcap',
+  observation:{agreement:notAMarketMoveReceipt(),id:`cmc-metadata-notice:${cmcId}:${notice?hash||'unhashed':'none'}`,subject,provider:'coinmarketcap',
    sourceRef:'coinmarketcap:/v2/cryptocurrency/info',metric:'metadata_notice',value:notice?1:0,unit:'notice',periodSeconds:null,
    observedAt:at,recordedAt:at,expiresAt:new Date(observed+METADATA_NOTICE_MAX_AGE_MS).toISOString(),sampleAt:at,clockBasis:'provider_observation',
    metadata:{noticeHash:hash,excerpt},
@@ -108,7 +125,7 @@ async function readLiquidationCascade(db:any,rule:any,subject:string,now:number)
  const at=new Date(captured).toISOString()
  return {metric:'liquidation_cascade_ratio',unit:'x',
   overview:{symbol:newest.symbol??rule.entity?.display_symbol??null,window,current,average,samples:baseline.length,ratio:value},
-  observation:{id:`cmc-liquidations:${cmcId}:${window}:${at}`,subject,provider:'coinmarketcap',
+  observation:{agreement:notAMarketMoveReceipt(),id:`cmc-liquidations:${cmcId}:${window}:${at}`,subject,provider:'coinmarketcap',
    sourceRef:`intel_liquidation_snapshots:coinmarketcap:${cmcId}:${window}`,metric:'liquidation_cascade_ratio',value,unit:'x',
    periodSeconds:plan.periodSeconds,observedAt:at,recordedAt:at,expiresAt:new Date(captured+LIQUIDATION_MAX_AGE_MS).toISOString(),
    sampleAt:at,clockBasis:'provider_observation',metadata:{current,average,samples:baseline.length,window},
@@ -157,7 +174,7 @@ async function readAttentionEntry(db:any,rule:any,subject:string,now:number){
  const at=new Date(newest).toISOString(),rank=streak?finite(present[0][1].rank):null
  return {metric:'attention_persistence_hours',unit:'hours',
   overview:{symbol:(streak?present[0][1].symbol:null)??rule.entity?.display_symbol??null,list,hours,persistence:streak,rank},
-  observation:{id:`cmc-attention:${list}:${cmcId}:${at}`,subject,provider:'coinmarketcap',
+  observation:{agreement:notAMarketMoveReceipt(),id:`cmc-attention:${list}:${cmcId}:${at}`,subject,provider:'coinmarketcap',
    sourceRef:`intel_attention_snapshots:coinmarketcap:${list}`,metric:'attention_persistence_hours',value:streak,unit:'hours',
    periodSeconds:null,observedAt:at,recordedAt:at,expiresAt:new Date(newest+ATTENTION_MAX_AGE_MS).toISOString(),
    sampleAt:at,clockBasis:'provider_observation',metadata:{list,requiredHours:hours,captures:streak,rank,capturedAt:at},
@@ -205,7 +222,7 @@ async function readListingFlagChange(db:any,rule:any,subject:string,now:number){
   overview:{symbol:current.symbol??rule.entity?.display_symbol??null,chain:current.chain??null,contractAddress:current.contract_address??null,
    snapshotDate,previousSnapshotDate:String(previous.snapshot_date??'').slice(0,10),securityHash:after,previousSecurityHash:before,
    securityState:current.security_state??null,changed:value===1},
-  observation:{id:`cmc-new-listing-flags:${cmcId}:${snapshotDate}:${before}:${after}`,subject,provider:'coinmarketcap',
+  observation:{agreement:notAMarketMoveReceipt(),id:`cmc-new-listing-flags:${cmcId}:${snapshotDate}:${before}:${after}`,subject,provider:'coinmarketcap',
    sourceRef:`intel_new_listing_snapshots:coinmarketcap:${cmcId}`,metric:'listing_flag_change',value,unit:'flags',periodSeconds:null,
    observedAt:at,recordedAt:at,expiresAt:new Date(captured+LISTING_FLAG_MAX_AGE_MS).toISOString(),sampleAt:at,clockBasis:'provider_observation',
    metadata:{snapshotDate,previousSnapshotDate:String(previous.snapshot_date??'').slice(0,10),securityHash:after,previousSecurityHash:before,chain:current.chain??null},

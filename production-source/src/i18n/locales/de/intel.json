@@ -740,6 +740,18 @@
     "medium": "Mittlere Konfidenz",
     "low": "Niedrige Konfidenz"
   },
+  "evidence": {
+    "corroborated": "Belegt",
+    "research_lead": "Rechercheansatz",
+    "corroborated_why": "Preis, Marktkapitalisierung und Volumen haben sich im selben Zeitfenster alle in dieselbe Richtung bewegt.",
+    "conflicting_why": "Preis, Marktkapitalisierung und Volumen stimmen nicht überein. Das ist daher ein Rechercheansatz und keine belegte Bewegung.",
+    "incomplete_why": "Es konnten nicht alle drei Werte (Preis, Marktkapitalisierung und Volumen) in einem Zeitfenster gemessen werden. Das ist daher ein Rechercheansatz und keine belegte Bewegung.",
+    "unmeasured_why": "Es konnte keine datierte Veränderung bei Preis, Marktkapitalisierung oder Volumen gemessen werden. Das ist daher ein Rechercheansatz und keine belegte Bewegung.",
+    "reason_cap_undated": "Diese Quelle veröffentlicht die Marktkapitalisierung ohne eigenen Beobachtungszeitpunkt, daher lässt sich daraus keine datierte Veränderung ableiten.",
+    "reason_cap_single": "Es liegt nur ein datierter Wert der Marktkapitalisierung vor, für eine Veränderung sind zwei nötig.",
+    "reason_not_market_move": "Diese Meldung beschreibt ein aufgezeichnetes Ereignis und keine Marktbewegung. Preis, Marktkapitalisierung und Volumen haben hier nichts zu belegen.",
+    "reason_narrative_no_cap": "Ein Narrativ-Score enthält Preis- und Volumenanteile, aber keine Marktkapitalisierung. Der vollständige Test lässt sich darauf nicht anwenden."
+  },
   "sources": {
     "none": "Keine Quellen angegeben",
     "missing": "Konnte nicht verifiziert werden",

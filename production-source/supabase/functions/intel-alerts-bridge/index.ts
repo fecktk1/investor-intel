@@ -14,6 +14,7 @@ import { createClient } from 'npm:@supabase/supabase-js@2'
 import {
   BRIDGE_TRIGGERS, DAY_MS, emitBridgedAlert, entityChain,
   exceedsThreshold, supplyShockPct, unlockQualifies, walletActivityQualifies,
+  bridgeTriggerUsesCondition, stepBridgedCondition,
   type EmitResult,
 } from '../_shared/intel/alert-bridge.ts'
 import { gatherCandidates,alertCandidateFailure } from '../_shared/intel/alert-candidates.ts'
@@ -67,6 +68,23 @@ Deno.serve(async (req) => {
       const outcomes:string[]=[]
       for (const c of cands) {
         if (dryRun) { perTrigger[r.trigger_type] = (perTrigger[r.trigger_type] || 0) + 1; continue }
+        // Hysteresis for the LEVEL triggers. The same armed/re-arm machine the
+        // chart and market paths have used since 20260911202815 decides whether
+        // this observation is a CROSSING at all. A rule that has not re-armed
+        // records its step state and emits nothing, so a value oscillating
+        // around its threshold no longer re-fires every time the cooldown
+        // lapses. alert-bridge.ts lists which triggers join and why the others
+        // deliberately do not.
+        if (bridgeTriggerUsesCondition(r.trigger_type)) {
+          const step = await stepBridgedCondition(admin, {
+            ruleId: r.id, orgId: r.org_id, revision: r.chart_revision,
+            observationId: c.sourceRef,
+            observedAt: String(c.payload.known_at ?? c.payload.source_observed_at ?? ''),
+            value: c.value, provider: String(c.payload.source ?? c.sourceSystem),
+            subject: `${c.sourceTable}:${c.metric}`,
+          })
+          if (!step.candidate) { outcomes.push(step.state); continue }
+        }
         const res = await emitBridgedAlert(admin, {
           ruleId: r.id, orgId: r.org_id, revision:r.chart_revision, triggerType: r.trigger_type,
           sourceSystem: c.sourceSystem, sourceTable: c.sourceTable, sourceRef: c.sourceRef,

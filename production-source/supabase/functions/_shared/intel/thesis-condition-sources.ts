@@ -17,6 +17,8 @@ import {historyConditionObservations,regimeConditionObservations,type HistoryRis
 import {historyPoints,type AssetHistory,type HistoryInterval} from './asset-history.ts'
 import {distanceFromHigh,maxDrawdown,realizedVolatility,timeUnderWaterDays} from './risk-metrics.ts'
 import {researchCmcId} from './research-identity.ts'
+import {metricAgreement,type MetricAgreementResult} from './metric-agreement.ts'
+import {readMetricAgreement} from './metric-agreement-read.ts'
 
 /** A capture older than the regime condition's own max age is not a current
  * reading of the market, so it is reported as stale rather than evaluated. */
@@ -104,6 +106,17 @@ export async function loadThesisConditionSources(db:any,subject:string,rules:any
   try{apply('history',await loadHistoryConditionObservations(db,cmcId,now))}catch{apply('history',{observations:[],reason:'history_read_failed'})}
  }
  return sources
+}
+
+/** The evidentiary standard for the thesis's OWN asset, from retained records
+ * only. It spends no credit and calls no provider, exactly like every other
+ * loader here, and a read failure returns an unmeasured verdict rather than
+ * throwing: a thesis evaluation must never fail because a LABEL could not be
+ * computed. An unmeasured verdict is a research lead, which is the safe side. */
+// deno-lint-ignore no-explicit-any
+export async function loadThesisMetricAgreement(db:any,subject:string,now=Date.now()):Promise<MetricAgreementResult>{
+ try{return await readMetricAgreement(db,subject,now)}
+ catch{return metricAgreement({},now)}
 }
 
 /** Human-readable text for the reasons this module records. Unknown reasons are

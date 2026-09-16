@@ -740,6 +740,18 @@
     "medium": "Gemiddelde zekerheid",
     "low": "Lage zekerheid"
   },
+  "evidence": {
+    "corroborated": "Onderbouwd",
+    "research_lead": "Onderzoekspoor",
+    "corroborated_why": "Prijs, marktkapitalisatie en volume bewogen allemaal dezelfde kant op binnen hetzelfde tijdvenster.",
+    "conflicting_why": "Prijs, marktkapitalisatie en volume komen niet met elkaar overeen, dus dit is een onderzoekspoor en geen onderbouwde beweging.",
+    "incomplete_why": "Niet alle drie de waarden (prijs, marktkapitalisatie en volume) konden binnen één tijdvenster worden gemeten, dus dit is een onderzoekspoor en geen onderbouwde beweging.",
+    "unmeasured_why": "Er kon geen gedateerde verandering in prijs, marktkapitalisatie of volume worden gemeten, dus dit is een onderzoekspoor en geen onderbouwde beweging.",
+    "reason_cap_undated": "Deze bron publiceert de marktkapitalisatie zonder een eigen waarnemingstijd, dus daaruit kan geen gedateerde verandering worden afgeleid.",
+    "reason_cap_single": "Er is maar één gedateerde meting van de marktkapitalisatie bewaard, en voor een verandering zijn er twee nodig.",
+    "reason_not_market_move": "Deze melding gaat over een vastgelegde gebeurtenis en niet over een marktbeweging, dus prijs, marktkapitalisatie en volume hebben hier niets te onderbouwen.",
+    "reason_narrative_no_cap": "Een narratiefscore bevat prijs- en volumecomponenten maar geen marktkapitalisatie, dus de volledige toets kan er niet op worden uitgevoerd."
+  },
   "sources": {
     "none": "Geen bronnen vermeld",
     "missing": "Kon niet verifiëren",

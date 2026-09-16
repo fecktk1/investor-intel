@@ -65,6 +65,61 @@ export function exceedsThreshold(value: number, thresholdPct: number): boolean {
   return isFinite(value) && isFinite(thresholdPct) && Math.abs(value) >= Math.abs(thresholdPct)
 }
 
+// ── Hysteresis on the bridge ─────────────────────────────────────────────────
+//
+// The chart and market paths have run the armed/re-arm state machine
+// (app_private.intel_condition_step) since 20260911202815. The bridge never
+// did: it had cooldown plus permanent source_ref dedupe and nothing else, so a
+// LEVEL that oscillates across its threshold re-fired every time the cooldown
+// lapsed. Only a level can oscillate, so only the level triggers join:
+//
+//   supply_shock  a signed percentage against a threshold, recomputed from the
+//                 newest pair of retained snapshots. It genuinely oscillates.
+//
+// Deliberately NOT joined, because each one is a DISCRETE RECORD rather than a
+// level, is already permanently deduped by (rule, source_table, source_ref), and
+// would be silenced rather than debounced by a re-arm gate:
+//   wallet_activity      every candidate is a distinct transfer. Two transfers
+//                        over the floor are two real events, not one flapping.
+//   unlock               qualification is a DATE WINDOW, not a level, and each
+//                        calendar version fires at most once for a rule.
+//   metadata_migration   each drift row is a distinct recorded change.
+//   holder_shift         it WOULD be a level (top-10 concentration), but
+//                        alert-candidates.ts refuses it outright for want of a
+//                        comparable population id and an original source clock.
+//                        A state machine over a source that never produces a
+//                        candidate would be dead code pretending to be a rule.
+export const HYSTERESIS_BRIDGE_TRIGGERS = ['supply_shock'] as const
+export const bridgeTriggerUsesCondition = (trigger: string): boolean =>
+  (HYSTERESIS_BRIDGE_TRIGGERS as readonly string[]).includes(trigger)
+
+export interface ConditionStepArgs {
+  ruleId: string
+  orgId: string
+  revision: number
+  observationId: string
+  observedAt: string
+  value: number | null
+  provider: string
+  subject: string
+}
+export type ConditionStepState = 'baseline' | 'watching' | 'holding' | 'crossed' | 'changed' | 'access_unavailable'
+export interface ConditionStepResult { candidate: boolean; state: ConditionStepState }
+
+/** Runs the SAME state machine the chart and market paths use, against the
+ * rule's own stored chart_state. A refusal to step is never treated as a
+ * crossing: the caller emits nothing rather than firing on an unknown state. */
+// deno-lint-ignore no-explicit-any
+export async function stepBridgedCondition(db: any, a: ConditionStepArgs): Promise<ConditionStepResult> {
+  const { data, error } = await db.rpc('intel_step_bridged_condition', {
+    p_rule: a.ruleId, p_org: a.orgId, p_revision: a.revision,
+    p_observation: { observationId: a.observationId, observedAt: a.observedAt, value: a.value, provider: a.provider, subject: a.subject },
+  })
+  if (error) throw Error('alert_condition_step_failed')
+  if (!data || typeof data !== 'object' || typeof data.state !== 'string') throw Error('alert_condition_step_response_invalid')
+  return { candidate: data.candidate === true, state: data.state as ConditionStepState }
+}
+
 // ── Cooldown (mirrors intel-alerts-eval: ×2 escalation when noisy) ────────────
 export async function cooledDown(db: DB, ruleId: string, cooldownMinutes: number | null): Promise<boolean> {
   const base = Number(cooldownMinutes) > 0 ? Number(cooldownMinutes) : DEFAULT_COOLDOWN_MIN
