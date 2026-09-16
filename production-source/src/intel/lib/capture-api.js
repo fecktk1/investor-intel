@@ -33,6 +33,10 @@ export const CAPTURE_VIEWS = [
   // RWA yield provenance and NAV integrity (capture-rwa-yield-read.ts,
   // RWA_YIELD_CAPTURE_VIEWS). Keyless sources only; no provider credits.
   'rwa_yield',
+  // RWA issuer legitimacy: primary-source identity, dated admission drift,
+  // holder concentration and transfer restrictions
+  // (capture-rwa-issuer-read.ts, RWA_ISSUER_CAPTURE_VIEWS).
+  'rwa_issuer_legitimacy',
 ]
 
 let rememberedClient = null
