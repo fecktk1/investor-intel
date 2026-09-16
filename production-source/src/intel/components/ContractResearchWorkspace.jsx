@@ -8,6 +8,7 @@ import {evidenceAt} from '../../../supabase/functions/_shared/intel/investigatio
 import {projectDexEvidence} from '../lib/dex-evidence-projection'
 import {cmcDexIdentity} from '../../../supabase/functions/_shared/market-assets/cmc-dex.ts'
 import HolderTagBoard from './HolderTagBoard'
+import SwapFlowBoard from './SwapFlowBoard'
 import SourceResearchNotes from './SourceResearchNotes'
 import {SecuritySourceHistory} from './MarketSourceHistory'
 import {SharedResearchRefresh} from './ResearchEvidence'
@@ -37,14 +38,19 @@ function Workspace({canonicalKey,identity,onEvidence}){
  // to open. They belong to that view only — `readContractResearch` rejects them
  // anywhere else — and a null is omitted rather than sent.
  const [tagSelection,setTagSelection]=useState({capturedAt:null,compareWith:null,tag:null})
- const tagParams=view==='holder_tags'?Object.fromEntries(Object.entries(tagSelection).filter(([,v])=>v)):{}
+ // The holder-tag board sends all three of its selections. The maker-flow board
+ // shares the same state but sends only the sweep it wants rendered: the read
+ // view rejects `compareWith` and `tag` anywhere else. A null is omitted rather
+ // than sent, because a stamp the backend cannot read is a bad request.
+ const tagParams=view==='holder_tags'?Object.fromEntries(Object.entries(tagSelection).filter(([,v])=>v)):
+  view==='maker_flow'&&tagSelection.capturedAt?{capturedAt:tagSelection.capturedAt}:{}
  const query=useMarketResearch('dexContext',{canonicalKey,view,...intent,...tagParams,...(cursors.length?{cursor:cursors.at(-1)}:{})},open,!Object.values(drafts).some(Boolean)),result=query.result
  useEffect(()=>{if(result?.canonicalKey===canonicalKey)onEvidence?.(result)},[result,canonicalKey,onEvidence])
  const changeView=v=>{setView(v);setCursors([]);setTagSelection({capturedAt:null,compareWith:null,tag:null});setIntent(i=>({refresh:false,requestRevision:i.requestRevision+1}))}
  const refresh=()=>setIntent(i=>({refresh:true,requestRevision:i.requestRevision+1}))
  return <details className="intel-open-section" onToggle={e=>setOpen(e.currentTarget.open)}><summary>On-chain participation & liquidity · CoinMarketCap</summary>
   <p className="intel-analysis-caption">{identity.label} contract <span className="break-all">{identity.address}</span>. Select the evidence you need; refresh reuses the shared cache.</p>
-  <div className="intel-holdings-toolbar"><label>Evidence <select className="select" value={view} onChange={e=>changeView(e.target.value)}><option value="overview">Token and holders</option><option value="holders">Holder history</option><option value="pools">Current pools</option><option value="swaps">Public swaps</option><option value="liquidity">Liquidity activity</option><option value="security">Security observations</option><option value="holder_tags">Holder tags and cohort</option></select></label><button className="btn" disabled={query.loading} onClick={refresh}>Refresh shared contract evidence</button></div>
+  <div className="intel-holdings-toolbar"><label>Evidence <select className="select" value={view} onChange={e=>changeView(e.target.value)}><option value="overview">Token and holders</option><option value="holders">Holder history</option><option value="pools">Current pools</option><option value="swaps">Public swaps</option><option value="liquidity">Liquidity activity</option><option value="security">Security observations</option><option value="holder_tags">Holder tags and cohort</option><option value="maker_flow">Maker swap flow</option></select></label><button className="btn" disabled={query.loading} onClick={refresh}>Refresh shared contract evidence</button></div>
   <SharedResearchRefresh query={query}/>
   {Object.values(drafts).some(Boolean)&&<p className="intel-analysis-caption">Automatic updates paused while your source notes are unsaved.</p>}
   {query.loading?<p role="status">Loading contract evidence…</p>:query.error?<p role="alert">Contract evidence could not be read. <button className="intel-text-link" onClick={()=>setIntent(i=>({refresh:false,requestRevision:i.requestRevision+1}))}>Retry retained read</button></p>:result&&<>
@@ -57,11 +63,12 @@ function Workspace({canonicalKey,identity,onEvidence}){
     ['Pool',r=><details><summary>{r.venue||'Unreported venue'} · {r.token0?.symbol} / {r.token1?.symbol}</summary><p className="break-all">Pool: {r.address}<br/>Token 0: {r.token0?.address}<br/>Token 1: {r.token1?.address}</p></details>],['Liquidity (USD)',r=>financial(r.liquidityUsd)],['Reported 24h volume (USD)',r=>financial(r.volume24h)]
    ]}/></>}
    {view==='holder_tags'&&<HolderTagBoard result={result} loading={query.loading} selection={tagSelection} onSelection={next=>{setTagSelection(next);setIntent(i=>({...i,refresh:false}))}} onRefresh={refresh}/>}
+   {view==='maker_flow'&&<SwapFlowBoard result={result} loading={query.loading} selection={tagSelection} onSelection={next=>{setTagSelection(next);setIntent(i=>({...i,refresh:false}))}} onRefresh={refresh}/>}
    {['holders','liquidity','swaps'].includes(view)&&<DexObservationTable observations={result.observations} subject={canonicalKey} view={view}/>}
    {view==='security'&&<SecuritySourceHistory history={result.securityHistory} saveable/>}
    {['liquidity','swaps'].includes(view)&&<div className="intel-investigation-pagination"><button className="btn" disabled={!cursors.length||query.loading} onClick={()=>{setCursors(c=>c.slice(0,-1));setIntent(i=>({...i,refresh:false}))}}>Previous activity</button><button className="btn" disabled={query.loading||!result.sources?.[0]?.nextCursor||cursors.includes(result.sources?.[0]?.nextCursor)} onClick={()=>{setCursors(c=>[...c,result.sources[0].nextCursor]);setIntent(i=>({...i,refresh:true}))}}>Next activity</button></div>}
    {result.sources?.map(s=><SourceResearchNotes key={s.capability} reference={s.sourceReference} title={`${identity.label} ${identity.address} · ${view}`} onDraftChange={pending=>setDrafts(previous=>previous[s.capability]===pending?previous:{...previous,[s.capability]:pending})}/>)}
-   <Link className="intel-text-link" to={`/intel/investigate?asset=${encodeURIComponent(canonicalKey)}&lens=${['liquidity','swaps','pools'].includes(view)?'liquidity':'participation'}`}>Investigate and save dated evidence</Link>
+   <Link className="intel-text-link" to={`/intel/investigate?asset=${encodeURIComponent(canonicalKey)}&lens=${['liquidity','swaps','pools','maker_flow'].includes(view)?'liquidity':'participation'}`}>Investigate and save dated evidence</Link>
   </>}
   <p className="intel-analysis-caption"><a href="https://coinmarketcap.com" target="_blank" rel="noreferrer">Data provided by CoinMarketCap.com</a> · Source clocks and coverage stay with each observation.</p>
  </details>

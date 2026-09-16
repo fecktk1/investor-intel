@@ -1,6 +1,6 @@
 import {digest,finite,instant,stableJson,type Observation} from '../intel/investigation-evidence.ts'
 import {cmcHistoryPolicy,cmcSubject} from '../intel/investigation-normalize.ts'
-import {CMC_DEX_NETWORKS,cmcDexAddress,cmcDexIdentity} from './cmc-dex.ts'
+import {CMC_DEX_NETWORKS,cmcDexAddress,cmcDexCanonicalAddress,cmcDexIdentity} from './cmc-dex.ts'
 /** A window is one bounded subscription. Sixty seconds: the probe on 2026-09-15 showed a
  * busy Base token pushing a few swaps a minute, so a 20-second window mostly held only its
  * handshake and the per-window handshake cost outweighed the tape it caught. */
@@ -106,7 +106,7 @@ function onchainSubject(message:any,subjects:string[]) {
  * G2 confirms them. An unreadable frame is `invalid` and still counted. */
 export type LiveTapeEvent={kind:'invalid'}|
   {kind:'swap';subject:string;tx:string;side:string;amountUsd:number;priceUsd:number|null;timestamp:number;venue:string|null;logIndex:string|null;excluded:boolean;
-   baseAddress:string|null;quoteAddress:string|null;baseQuantity:number|null;quoteQuantity:number|null}|
+   baseAddress:string|null;quoteAddress:string|null;baseQuantity:number|null;quoteQuantity:number|null;maker:string|null}|
   {kind:'liquidity';subject:string;eventType:string;amountUsd:number;timestamp:number;venue:string|null;transaction:string;logIndex:string|null;
    baseAddress:string|null;quoteAddress:string|null;baseQuantity:number|null;quoteQuantity:number|null}|
   {kind:'agg';subject:string;liquidityUsd:number;priceUsd:number|null;aggregatePriceUsd:number|null;timestamp:number}|
@@ -114,6 +114,10 @@ export type LiveTapeEvent={kind:'invalid'}|
 function decodeOnchain(channel:string,message:any,subjects:string[],now:number):LiveTapeEvent {
   const subject=onchainSubject(message,subjects),d=message?.data??{},timestamp=finite(message?.ts)??finite(d.ts)
   if(!subject||!fresh(timestamp,now))return {kind:'invalid'}
+  // `onchainSubject` only ever answers with a `contract:<platform>:<address>`
+  // string it built from a verified network, so this re-read always parses. It
+  // is needed for the chain's address grammar (EVM lower-cases, Solana does not).
+  const focus=liveFocusSubject(subject) as Extract<LiveSubject,{kind:'contract'}>
   const venue=text(d.en,120),logIndex=d.lgid==null?null:String(d.lgid)
   const legs={baseAddress:text(d.t0a,120),quoteAddress:text(d.t1a,120),baseQuantity:finite(d.a0),quoteQuantity:finite(d.a1)}
   if(channel==='onchain@transaction'){
@@ -123,7 +127,14 @@ function decodeOnchain(channel:string,message:any,subjects:string[],now:number):
     if(!tx||logIndex==null||amountUsd==null||amountUsd<0)return {kind:'invalid'}
     const asked=String(message?.params?.address??'').toLowerCase()
     const priceUsd=asked&&String(d.t1a??'').toLowerCase()===asked?finite(d.t1pu??d.t0pu):finite(d.t0pu??d.t1pu)
-    return {kind:'swap',subject,tx,side,amountUsd,priceUsd,timestamp:timestamp!,venue,logIndex,excluded:d.ex===true,...legs}
+    // `ma` is the maker: the public on-chain account the push attributes the swap
+    // to. The streamed body carries it (probed 2026-09-15, BRETT on Base) and it
+    // was discarded here until 2026-09-16, exactly as it was on the REST path.
+    // A frame with no readable maker is STILL a swap and is still decoded: the
+    // maker is null and the event counts toward the tape like any other.
+    // `f` (the sender) and `pa` (the pool) stay unread. See cmc-dex-evidence.ts
+    // for why a second account per event is never kept beside the maker.
+    return {kind:'swap',subject,tx,side,amountUsd,priceUsd,timestamp:timestamp!,venue,logIndex,excluded:d.ex===true,...legs,maker:cmcDexCanonicalAddress(d.ma,focus.platform)}
   }
   if(channel==='onchain@liquidity_event'){
     const transaction=text(d.txn??d.tx,200),amountUsd=finite(d.tu??d.vu??d.v)
@@ -185,7 +196,8 @@ export async function liveObservation(event:any,recordedAt:number):Promise<Obser
   const value=kind==='quote'?event.price:kind==='swap'||kind==='liquidity'?event.amountUsd:kind==='agg'?event.liquidityUsd:event.uniqueTraders
   const metadata=kind==='quote'?clock:kind==='swap'?{...place,...clock,eventType:event.side,venue:event.venue??null,transaction:event.tx,logIndex:event.logIndex??null,
       baseAddress:event.baseAddress??null,quoteAddress:event.quoteAddress??null,baseQuantity:event.baseQuantity??null,quoteQuantity:event.quoteQuantity??null,
-      basePriceUsd:event.priceUsd??null,excluded:event.excluded===true,scope:'Reported public swap; not a personal trade.'}:
+      basePriceUsd:event.priceUsd??null,excluded:event.excluded===true,maker:event.maker??null,
+      scope:'Reported public swap; not a personal trade. The maker is a public on-chain account, not a person.'}:
     kind==='liquidity'?{...place,...clock,eventType:event.eventType,venue:event.venue??null,transaction:event.transaction,logIndex:event.logIndex??null,
       baseAddress:event.baseAddress??null,quoteAddress:event.quoteAddress??null,baseQuantity:event.baseQuantity??null,quoteQuantity:event.quoteQuantity??null,
       scope:'Reported pool liquidity activity; not a personal trade or executable order-book depth.'}:

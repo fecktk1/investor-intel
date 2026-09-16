@@ -1,4 +1,4 @@
-import {cmcDexIdentity,cmcDexInteger,validateCmcDexResponse,cmcDexNetwork,CMC_DEX_NETWORKS,isDexDiscovery} from '../market-assets/cmc-dex.ts'
+import {cmcDexIdentity,cmcDexInteger,validateCmcDexResponse,cmcDexNetwork,cmcDexCanonicalAddress,CMC_DEX_NETWORKS,isDexDiscovery} from '../market-assets/cmc-dex.ts'
 export function dexEvidenceRows(name:string,body:any,params:Record<string,string>) {
   if(isDexDiscovery(name)){
     if(!validateCmcDexResponse(name,body,params))return []
@@ -46,10 +46,48 @@ export function dexEvidenceRows(name:string,body:any,params:Record<string,string
   // dated and differently derived price series under one subject and metric.
   // Candles reach the app through cmcRows('dexCandles') and the chart lane, where
   // cmcObservedAt keeps their own period clock.
+  // LIVE PROBE, 2026-09-16: GET /v1/dex/tokens/transactions
+  // (platform=ethereum, address=0x1f98...f984, limit=3), HTTP 200. A row came back
+  // as {pid,f,bh,tp,pa,t0a,t1a,v,q,t0pu,t1pu,tx,ts,qi,ma,ba,a0,a1,tii,t0s,t1s,
+  // t0t,t1t,t0pt,t1pt,tc,h,txId,lgid,ex,txtp,...}. Two fields are retained from it
+  // and BOTH were seen on that live response, not inferred from the WebSocket
+  // documentation.
+  //
+  // `maker` is the provider's `ma`: the public on-chain account the swap is
+  // attributed to. It was present on all three probed swaps. This parser
+  // discarded it until 2026-09-16, and a per-wallet view cannot exist without it.
+  //
+  // `baseDirection`/`quoteDirection` are the provider's `t0pt`/`t1pt`, which state
+  // a direction PER LEG, observed as "reduce" and "add". On the probed row `tp`
+  // was "sell" with the queried token as the base leg, and it carried
+  // t0pt="reduce" with t1pt="add": the maker gave up the queried token. They are
+  // stored VERBATIM and capped, never normalised here, because the vocabulary is
+  // undocumented and a word we have not seen must reach the consumer as what the
+  // provider actually said. `swapDirection` in swap-flow.ts reads them and falls
+  // back to `tp` only when the subject's own leg states nothing. Both legs are
+  // kept because which leg is the subject changes from row to row.
+  //
+  // WHAT IS DELIBERATELY NOT RETAINED from the same row:
+  //   * `f` (sender) and `ba`. Keeping a SECOND account beside the maker invites
+  //     exactly the thing this codebase forbids: relating two addresses to each
+  //     other. One swap leg names one account here, and nothing links accounts.
+  //   * `pa` (pool). Nothing in the cohort views is computed per pool, and a
+  //     field nobody reads is retained data with no purpose.
+  //   * `t0s`/`t1s` (leg symbols). Display sugar only: the subject leg is found by
+  //     comparing the retained leg ADDRESSES against this contract, never by a
+  //     symbol, and `dexToken` already names the token.
+  //   * `t0t`/`t1t` (booleans, true on the queried leg of the probed row). The
+  //     subject leg is already identified by address, which cannot drift if the
+  //     provider changes what these flag.
+  //   * `tc`, `h`, `txId`, `tid`, `fee`, `feeu`. Not read by any view here.
+  // A maker the provider omitted stays null and the swap is still recorded: the
+  // tape must not shrink because one attribution was missing.
   if(name==='dexSwaps')for(const r of d.swaps){
     add('swap_event_usd',r.v,'USD',cmcDexInteger(r.ts),{eventType:r.tp||'Unclassified',venue:r.en??null,transaction:r.tx,logIndex:String(r.lgid),baseAddress:r.t0a,quoteAddress:r.t1a,baseQuantity:r.a0??null,quoteQuantity:r.a1??null,
       basePriceUsd:r.t0pu??null,quotePriceUsd:r.t1pu??null,excluded:r.ex===true,sourceExclusionType:r.txtp??null,
-      scope:'Reported public swap; not a personal trade. Provider-reported leg prices are not executable quotes.'})
+      maker:cmcDexCanonicalAddress(r.ma,identity.platform),
+      baseDirection:typeof r.t0pt==='string'?r.t0pt.slice(0,32):null,quoteDirection:typeof r.t1pt==='string'?r.t1pt.slice(0,32):null,
+      scope:'Reported public swap; not a personal trade. The maker is a public on-chain account, not a person. Provider-reported leg prices are not executable quotes.'})
   }
   return rows
 }
