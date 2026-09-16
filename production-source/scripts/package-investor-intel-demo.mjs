@@ -1,9 +1,10 @@
 // Explicit source-only extraction. No recursive repository copy, credentials,
 // customer data, production migrations, build output or node_modules enter it.
-import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, copyFileSync, existsSync, readdirSync } from 'node:fs'
 import { createHash } from 'node:crypto'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
+import { PUBLIC_DOCS, assertPublishable } from './intel-extraction-package-guards.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),example=path.join(root,'examples/investor-intel-hackathon')
 // Explicit fail-closed boundaries keep private app providers out of the standalone package.
 const adapters={
@@ -40,6 +41,11 @@ const chartSources=[...Object.keys(adapters),
   ...['chart-workspace-contract','chart-analysis','chart-outcome-contract','chart-drawing-geometry','chart-outcome','chart-read','chart-levels','chart-structure','chart-patterns','chart-timeframes'].map(name=>`supabase/functions/_shared/intel/${name}.ts`),
   'src/intel/vendor/lightweight-charts-5.2.0/renderer.mjs',
 ]
+const EVIDENCE_FILE=/^cmc-receipt-evidence-\d{4}-\d{2}-\d{2}\.json$/
+function recordedEvidence(){return readdirSync(path.join(root,'docs/investor-intel/evidence')).filter(file=>EVIDENCE_FILE.test(file)).sort()}
+// A capture written by the example's own script (npm run capture:evidence) lands
+// at the top of evidence/. It is optional: a checkout that never ran it has none.
+function localCaptures(){const dir=path.join(example,'evidence');return existsSync(dir)?readdirSync(dir).filter(file=>EVIDENCE_FILE.test(file)).sort().map(file=>`evidence/${file}`):[]}
 const allowed=new Set(chartSources),extensions=['','.js','.jsx','.ts','.tsx','.mjs']
 for(const file of chartSources){
   const code=readFileSync(path.join(root,adapters[file]||file),'utf8')
@@ -59,9 +65,16 @@ const shared=[...chartSources.map(file=>[adapters[file]||file,`product/${file}`]
   ['public/logo-light.png','public/logo-light.png'],
   ...['cmc-capabilities','cmc-dex','cmc-evidence-shape'].map(name=>[`supabase/functions/_shared/market-assets/${name}.ts`,`server/${name}.ts`]),
   ...['inter-400.woff2','barlow-condensed-600.woff2','geist-mono-400.woff2','LICENSE.md'].map(file=>['public/vsx-fonts/'+file,'public/vsx-fonts/'+file]),
+  // The hackathon rules require visible evidence of a real API call. These are
+  // the recorded CMC call artefacts kept with the product documentation, carried
+  // under one clearly named folder so they are never mistaken for a fresh capture.
+  ...recordedEvidence().map(file=>[`docs/investor-intel/evidence/${file}`,`evidence/recorded-cmc-calls/${file}`]),
 ]
 for(const [source,dest] of shared){const target=path.join(example,dest);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.join(root,source),target)}
-const files=['package.json','package-lock.json','.gitignore','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...shared.map(([,dest])=>dest)]
+const files=['package.json','package-lock.json','.gitignore','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest)]
+// Fail closed before anything is written: the private-document denylist and the
+// secret-shape scan run over every file this package would contain.
+assertPublishable(files.map(file=>({file,text:readFileSync(path.join(example,file),'utf8')})))
 // Validate the entire emitted dependency graph, including the server and tests.
 // A browser-only build cannot detect an omitted server capability dependency.
 const emittedFiles=new Set(files)
