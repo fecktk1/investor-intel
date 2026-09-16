@@ -1330,7 +1330,8 @@
     "reuse_unchanged": "Reutilizado: os dados subjacentes não mudaram desde a última análise.",
     "still_holds": "Continua válido",
     "watch_next": "O que monitorar a seguir",
-    "what_changed": "O que mudou"
+    "what_changed": "O que mudou",
+    "grounding_blocked_body": "Um número desta resposta não pôde ser associado às evidências a partir das quais ela foi gerada, nem após uma nova geração, então a resposta foi retida. Números sem respaldo: {{figures}}."
   },
   "actions": {
     "add_watchlist": "Adicionar à watchlist",
@@ -1725,7 +1726,18 @@
       }
     },
     "notice_threshold_label": "Qualquer aviso presente",
-    "notice_explanation": "Dispara quando existe um aviso de listagem do CoinMarketCap para este ativo. É avaliada no relógio diário de metadados, não no seu cronograma, e o texto do aviso não é interpretado: a regra informa apenas que um aviso existe, então leia o próprio aviso antes de agir. Não há limite nem direção a escolher: a regra é rearmada após o intervalo mínimo."
+    "notice_explanation": "Dispara quando existe um aviso de listagem do CoinMarketCap para este ativo. É avaliada no relógio diário de metadados, não no seu cronograma, e o texto do aviso não é interpretado: a regra informa apenas que um aviso existe, então leia o próprio aviso antes de agir. Não há limite nem direção a escolher: a regra é rearmada após o intervalo mínimo.",
+    "repeat_distinct_label": "Um alerta por",
+    "repeat_distinct_transfer": "Transferência qualificada",
+    "repeat_distinct_transaction": "Transação",
+    "repeat_distinct_version": "Revisão do cronograma",
+    "repeat_distinct_event": "Desbloqueio programado",
+    "repeat_window_wallet_label": "Agrupar transferências em até (minutos)",
+    "repeat_window_unlock_label": "Alertar de novo um desbloqueio revisado após (minutos)",
+    "repeat_wallet_explanation": "Cada transferência é um evento registrado à parte, então uma margem de reinício não se aplica. \"Transação\" envia um alerta para todas as partes de transferência que compartilham o mesmo hash de transação. Uma janela de agrupamento acima de 0 trata uma transferência do mesmo ativo na mesma direção, registrada pelo horário da fonte dentro desses minutos após uma transferência já alertada, como parte desse alerta. Deixar \"Transferência qualificada\" e 0 mantém exatamente o comportamento atual desta regra.",
+    "repeat_unlock_explanation": "Um desbloqueio é uma entrada datada do cronograma, não um nível, então uma margem de reinício não se aplica. Quando um provedor revisa o cronograma, uma nova versão é registrada e, por padrão, alerta de novo. \"Desbloqueio programado\" envia um alerta por desbloqueio, não importa quantas vezes seja revisado. Uma janela acima de 0 só deixa uma revisão alertar de novo depois que esses minutos passarem desde o último alerta do mesmo desbloqueio. Deixar \"Revisão do cronograma\" e 0 mantém exatamente o comportamento atual desta regra.",
+    "repeat_distinct_invalid": "Escolha o que conta como um alerta.",
+    "repeat_window_invalid": "Informe uma janela de repetição entre 0 e {{max}} minutos inteiros."
   },
   "narratives": {
     "add_label": "Acompanhar uma narrativa",
@@ -3732,5 +3744,27 @@
     "free_open_watchlist": "10 itens na lista de acompanhamento",
     "free_locked_title": "Bloqueado até o Starter",
     "free_locked_body": "Pesquisa sob demanda, Connected Research, avaliação de carteira, geração por IA, histórico de preços, alertas, Monitor de Wallets, o Diário de teses, Comment King e acesso de agentes. Cada uma dispara uma nova solicitação para você toda vez que é aberta."
+  },
+  "breadth_spread": {
+    "title": "Amplitude em um só número",
+    "loading": "Lendo a captura diária de listagens…",
+    "unavailable": "Não foi possível ler a diferença.",
+    "empty": "Ainda não há captura diária de listagens com capitalização de mercado e variação em 24h, então a diferença não é medida.",
+    "value": "{{value}} pts",
+    "sides": "Retorno em 24h ponderado pela capitalização {{weighted}} menos o {{median}} do ativo mediano, sobre {{included}} de {{total}} ativos capturados.",
+    "meaning": "Acima de zero, os maiores ativos foram melhor que o ativo típico; abaixo de zero, o ativo típico foi melhor que os maiores.",
+    "not_meaning": "Não é uma previsão nem uma contagem de ativos em alta ou em baixa, e uma diferença perto de zero não significa que todos os ativos se moveram igual.",
+    "excluded": "{{noCap}} ativos sem capitalização de mercado e {{noReturn}} sem variação em 24h ficaram de fora dos dois lados.",
+    "clock": "Captura diária de listagens de {{date}} (UTC)."
+  },
+  "rates": {
+    "interval": "Intervalo de 95%: {{low}} a {{high}}, n = {{n}}",
+    "small_sample": "(amostra pequena)",
+    "reference": "{{label}}: {{rate}}",
+    "neutral_reference": "Referência neutra, não um parâmetro de comparação",
+    "confirmed_share": "Parcela confirmada das resolvidas",
+    "base_rate_resolved": "Taxa base de todas as suas teses resolvidas",
+    "no_resolved": "Nenhuma tese resolvida",
+    "base_rate_line": "Taxa base: {{successes}} de {{n}} teses resolvidas, em todas as posições, foram confirmadas ou confirmadas em parte ({{rate}}). Teses abertas não são contadas."
   }
 }

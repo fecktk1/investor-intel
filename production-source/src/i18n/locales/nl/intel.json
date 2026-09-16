@@ -1330,7 +1330,8 @@
     "reuse_unchanged": "Hergebruikt: de onderliggende data is sinds de laatste analyse niet veranderd.",
     "still_holds": "Geldt nog steeds",
     "watch_next": "Wat hierna te volgen",
-    "what_changed": "Wat er is veranderd"
+    "what_changed": "Wat er is veranderd",
+    "grounding_blocked_body": "Een getal in deze respons kon ook na één nieuwe generatie niet worden gekoppeld aan het bewijs waaruit de respons is gemaakt, dus de respons is achtergehouden. Getallen zonder onderbouwing: {{figures}}."
   },
   "actions": {
     "add_watchlist": "Toevoegen aan watchlist",
@@ -1725,7 +1726,18 @@
       }
     },
     "notice_threshold_label": "Elke aanwezige mededeling",
-    "notice_explanation": "Gaat af wanneer er voor dit activum een noteringsmededeling van CoinMarketCap aanwezig is. De toetsing gebeurt op de dagelijkse metadataklok, niet volgens jouw schema, en de tekst van de mededeling wordt niet uitgelegd: de regel meldt alleen dat er een mededeling bestaat, dus lees de mededeling zelf voordat je handelt. Er is geen drempel en er valt geen richting te kiezen: de regel wordt na de wachttijd opnieuw scherpgesteld."
+    "notice_explanation": "Gaat af wanneer er voor dit activum een noteringsmededeling van CoinMarketCap aanwezig is. De toetsing gebeurt op de dagelijkse metadataklok, niet volgens jouw schema, en de tekst van de mededeling wordt niet uitgelegd: de regel meldt alleen dat er een mededeling bestaat, dus lees de mededeling zelf voordat je handelt. Er is geen drempel en er valt geen richting te kiezen: de regel wordt na de wachttijd opnieuw scherpgesteld.",
+    "repeat_distinct_label": "Eén alarm per",
+    "repeat_distinct_transfer": "Kwalificerende transfer",
+    "repeat_distinct_transaction": "Transactie",
+    "repeat_distinct_version": "Herziening van het schema",
+    "repeat_distinct_event": "Geplande unlock",
+    "repeat_window_wallet_label": "Transfers samenvoegen binnen (minuten)",
+    "repeat_window_unlock_label": "Herziene unlock opnieuw melden na (minuten)",
+    "repeat_wallet_explanation": "Elke transfer is een apart vastgelegde gebeurtenis, dus een resetmarge is niet van toepassing. \"Transactie\" stuurt één alarm voor alle transferdelen met dezelfde transactiehash. Een samenvoegvenster boven 0 rekent een transfer van hetzelfde activum in dezelfde richting, die volgens de brontijd binnen zoveel minuten na een gemelde transfer is vastgelegd, tot dat alarm. Met \"Kwalificerende transfer\" en 0 blijft het huidige gedrag van deze regel precies gelijk.",
+    "repeat_unlock_explanation": "Een unlock is een gedateerde regel in een schema, geen niveau, dus een resetmarge is niet van toepassing. Als een aanbieder het schema herziet, wordt een nieuwe versie vastgelegd die standaard opnieuw meldt. \"Geplande unlock\" stuurt één alarm per unlock, hoe vaak die ook wordt herzien. Een venster boven 0 laat een herziening pas opnieuw melden als er sinds het laatste alarm voor dezelfde unlock zoveel minuten zijn verstreken. Met \"Herziening van het schema\" en 0 blijft het huidige gedrag van deze regel precies gelijk.",
+    "repeat_distinct_invalid": "Kies wat als één alarm telt.",
+    "repeat_window_invalid": "Vul een herhaalvenster in tussen 0 en {{max}} hele minuten."
   },
   "narratives": {
     "add_label": "Een narrative volgen",
@@ -3732,5 +3744,27 @@
     "free_open_watchlist": "10 volglijst-items",
     "free_locked_title": "Vergrendeld tot Starter",
     "free_locked_body": "Onderzoek op aanvraag, Connected Research, portefeuillewaardering, AI-generatie, koershistorie, meldingen, Wallet Watch, het Thesedagboek, Comment King en agenttoegang. Elk daarvan start bij het openen een nieuwe aanvraag voor jou."
+  },
+  "breadth_spread": {
+    "title": "Marktbreedte in één getal",
+    "loading": "Dagelijkse listingvastlegging wordt gelezen…",
+    "unavailable": "Het verschil kon niet worden gelezen.",
+    "empty": "Er is nog geen dagelijkse listingvastlegging met marktkapitalisatie en 24u-verandering, dus het verschil wordt niet gemeten.",
+    "value": "{{value}} ptn",
+    "sides": "Kapitalisatiegewogen 24u-rendement {{weighted}} min de {{median}} van het mediane activum, over {{included}} van {{total}} vastgelegde activa.",
+    "meaning": "Boven nul deden de grootste activa het beter dan het typische activum; onder nul deed het typische activum het beter dan de grootste.",
+    "not_meaning": "Het is geen voorspelling en geen telling van stijgende of dalende activa, en een verschil rond nul betekent niet dat alle activa gelijk bewogen.",
+    "excluded": "{{noCap}} activa zonder marktkapitalisatie en {{noReturn}} zonder 24u-verandering zijn aan beide kanten weggelaten.",
+    "clock": "Dagelijkse listingvastlegging van {{date}} (UTC)."
+  },
+  "rates": {
+    "interval": "95%-interval {{low}} tot {{high}}, n = {{n}}",
+    "small_sample": "(kleine steekproef)",
+    "reference": "{{label}}: {{rate}}",
+    "neutral_reference": "Neutrale referentie, geen benchmark",
+    "confirmed_share": "Bevestigd aandeel van afgeronde",
+    "base_rate_resolved": "Basispercentage over al jouw afgeronde theses",
+    "no_resolved": "Geen afgeronde theses",
+    "base_rate_line": "Basispercentage: {{successes}} van {{n}} afgeronde theses over alle standpunten zijn bevestigd of deels bevestigd ({{rate}}). Open theses worden niet meegeteld."
   }
 }
