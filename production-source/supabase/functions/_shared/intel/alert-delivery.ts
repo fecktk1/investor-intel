@@ -29,7 +29,7 @@ export async function readDeliveryAgreement(db:any,eventId:string):Promise<strin
 // destinations leave the private workspace. Plain text disables source markup.
 export function deliveryMessage(target:Target) {
  if(!/^[1-9][0-9]{1,19}$/.test(target.chatId)||!Number.isFinite(Date.parse(target.firedAt))||!/^[a-f0-9-]{36}$/i.test(target.eventId))throw Error('invalid_private_delivery_target')
- return {chat_id:target.chatId,text:`Investor Intel alert\n${String(target.title||'Saved condition').replace(/[\u0000-\u001f]/g,' ').slice(0,160)}\n${deliveryEvidenceLabel(target.metricAgreement)}\nRecorded${new Date(target.firedAt).toISOString()}\nReview the original condition and evidence in your private workspace:\nhttps://thecontentforge.io/intel/alerts?event=${encodeURIComponent(target.eventId)}`,link_preview_options:{is_disabled:true}}
+ return {chat_id:target.chatId,text:`Investor Intel alert\n${String(target.title||'Saved condition').replace(/[\u0000-\u001f]/g,' ').slice(0,160)}\n${deliveryEvidenceLabel(target.metricAgreement)}\nRecorded ${new Date(target.firedAt).toISOString()}\nReview the original condition and evidence in your private workspace:\nhttps://thecontentforge.io/intel/alerts?event=${encodeURIComponent(target.eventId)}`,link_preview_options:{is_disabled:true}}
 }
 export async function sendIntelAlert(target:Target,token:string,transport:typeof fetch=fetch):Promise<Result> {
  const body=deliveryMessage(target)
