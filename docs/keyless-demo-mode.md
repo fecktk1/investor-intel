@@ -184,6 +184,8 @@ candle widths are accepted; and `unit=usd` is pinned so `volumeUnit` is `USD` an
 | `POST /api/research` `rwaList` in keyless mode | `keyless_unavailable`, `fixture: false`, zero rows, zero network calls |
 | Live keyless requests during development | 10 total, all refused with 429/1022 |
 
+> **Counts superseded 2026-09-16.** The test, file and byte counts in this table are from the 2026-09-15 run. The package now also carries the public docs and recorded call evidence, and the extraction has more tests; the current counts are recorded in the extraction README.
+
 The keyless mode has **not** been exercised against a successful live response, and no browser evidence of the keyless
 journeys exists. Both remain open.
 
