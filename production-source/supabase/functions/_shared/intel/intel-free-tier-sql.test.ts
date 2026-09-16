@@ -11,12 +11,12 @@ const sql = await Deno.readTextFile(
 )
 
 /** The body of one CREATE OR REPLACE FUNCTION, up to the next one. */
-function functionBody(name: string): string {
+function functionBody(name: string, source: string = sql): string {
   const marker = `CREATE OR REPLACE FUNCTION public.${name}`
-  const start = sql.indexOf(marker)
+  const start = source.indexOf(marker)
   assert(start !== -1, `missing function ${name}`)
-  const next = sql.indexOf('CREATE OR REPLACE FUNCTION public.', start + marker.length)
-  return sql.slice(start, next === -1 ? sql.length : next)
+  const next = source.indexOf('CREATE OR REPLACE FUNCTION public.', start + marker.length)
+  return source.slice(start, next === -1 ? source.length : next)
 }
 
 Deno.test('the free tier is seeded with a real zero on every key that spends per member', () => {
@@ -130,4 +130,76 @@ Deno.test('no existing entitlement function is redefined by this migration', () 
       `${fn} must not be redefined here`)
   }
   assertEquals(sql.includes('DROP FUNCTION'), false, 'nothing existing is dropped')
+})
+
+// The second pass (20260916190000) moves four more surfaces behind Starter and
+// adds the two database backstops for the ones a member can reach by writing a
+// row directly. Read whitespace-tolerantly: the seed is column-aligned, so the
+// gaps between the literals are formatting and must not be part of the contract.
+const more = await Deno.readTextFile(
+  new URL('../../../migrations/20260916190000_intel_free_tier_more_surfaces.sql', import.meta.url),
+)
+/** Collapse runs of whitespace so an alignment change cannot fail a test. */
+const flat = more.replace(/\s+/g, ' ')
+
+Deno.test('the four added surfaces are seeded behind Starter and priced as on demand', () => {
+  for (const surface of ['agent_access', 'wallet_watch', 'thesis_journal', 'comment_king']) {
+    assert(flat.includes(`('${surface}', 'starter', 'per_member_on_demand',`),
+      `${surface} must be seeded starter and per_member_on_demand`)
+  }
+  assert(flat.includes('ON CONFLICT (surface) DO NOTHING'),
+    'a replay must not snap an operator edit back to this file')
+  // Free is the one value the table constraint refuses beside per_member_on_demand,
+  // so nothing added here may claim to be precomputed.
+  assert(!more.includes('precomputed_shared'), 'none of the four is shared work already done')
+})
+
+Deno.test('the Thesis Journal backstop gates a member write without touching cron or service role', () => {
+  const body = functionBody('tg_intel_thesis_surface_gate', more)
+  assert(body.includes('SECURITY DEFINER'),
+    'the three argument oracle is service_role only, so the trigger must own the call')
+  assert(body.includes('IF auth.uid() IS NULL THEN RETURN NEW; END IF;'),
+    'no session means service role or cron, which have no tier and must not be gated')
+  assert(body.includes("IS DISTINCT FROM 'intel' THEN RETURN NEW"),
+    'a workspace that is not Investor Intel has no Investor Intel tier')
+  assert(body.includes("public.intel_surface_allowed(auth.uid(), NEW.org_id, 'thesis_journal')"),
+    'the identity asked about is the caller own, never one the row supplied')
+  assert(body.includes("RAISE EXCEPTION 'intel_surface_locked:thesis_journal'"),
+    'a locked member is refused with the surface named')
+})
+
+Deno.test('both thesis tables are gated, before insert only, and idempotently', () => {
+  for (const table of ['public.intel_theses', 'public.intel_trades']) {
+    assert(flat.includes(`BEFORE INSERT ON ${table}`), `${table} must be gated on insert`)
+  }
+  for (const trigger of ['trg_intel_theses_surface_gate', 'trg_intel_trades_surface_gate']) {
+    assert(more.includes(`DROP TRIGGER IF EXISTS ${trigger}`), `${trigger} must be created idempotently`)
+    assert(more.includes(`CREATE TRIGGER ${trigger}`))
+  }
+  // AFTER, UPDATE or DELETE would let a narrowed tier prune rows that already
+  // exist, which is the one thing every limit trigger in this codebase avoids.
+  assert(!/BEFORE (UPDATE|DELETE)|AFTER (INSERT|UPDATE|DELETE)/.test(more),
+    'nothing here fires on update or delete')
+})
+
+Deno.test('the wallet backstop is added to the limit trigger without dropping what it already enforced', () => {
+  const body = functionBody('tg_intel_watchlist_limit', more)
+  assert(body.includes("IF NEW.item_type = 'wallet' THEN"), 'the wallet branch is still the wallet branch')
+  assert(body.includes("auth.uid() IS NOT NULL AND NOT public.intel_surface_allowed(auth.uid(), NEW.org_id, 'wallet_watch')"),
+    'a signed-in member is checked and a cron write is not')
+  assert(body.includes("RAISE EXCEPTION 'intel_surface_locked:wallet_watch'"))
+  // Everything the live definition already did must survive the replace.
+  assert(body.includes("intel_limit_reached:watchlist_items"), 'the watchlist ceiling is preserved')
+  assert(body.includes("intel_limit_reached:tracked_wallets"), 'the tracked wallet ceiling is preserved')
+  assert(body.includes("authorize_intel_limit(auth.uid(), NEW.org_id, 'watchlist_items')"))
+  assert(body.includes("authorize_intel_limit(auth.uid(), NEW.org_id, 'tracked_wallets')"))
+  assert(body.includes("IS DISTINCT FROM 'intel' THEN RETURN NEW"), 'the product_mode early return is preserved')
+})
+
+Deno.test('the second pass redefines no entitlement function and drops nothing', () => {
+  for (const fn of ['can_access_intel', 'intel_surface_allowed', 'intel_tier_rank', 'intel_account_access', 'intel_set_free_tier']) {
+    assert(!more.includes(`CREATE OR REPLACE FUNCTION public.${fn}(`), `${fn} must not be redefined here`)
+  }
+  assertEquals(more.includes('DROP FUNCTION'), false, 'no function is dropped')
+  assertEquals(more.includes('DROP TABLE'), false, 'no table is dropped')
 })

@@ -13,6 +13,8 @@ const MIN_TIER: Record<string, string> = {
   chart_workstation: 'free', narratives_read: 'free', watchlist: 'free',
   research_on_demand: 'starter', investigation: 'starter', portfolio_valuation: 'starter',
   ai_generation: 'starter', market_history: 'starter', alert_evaluation: 'starter',
+  agent_access: 'starter', wallet_watch: 'starter', thesis_journal: 'starter',
+  comment_king: 'starter',
 }
 
 const FREE_SURFACES = INTEL_SURFACES.filter((s) => MIN_TIER[s] === 'free')

@@ -477,6 +477,9 @@ Deno.serve(async (req) => {
     // Synthesis spends model tokens per artifact for this member, so the tier is
     // checked before any evidence is gathered or any model is called.
     await requireIntelSurface(admin, actor, 'ai_generation')
+    // A wallet summary is also a fresh provider read of that wallet for this
+    // member, which is a second, separately sold surface. Both must pass.
+    if (artifactType === 'wallet_summary') await requireIntelSurface(admin, actor, 'wallet_watch')
     const userId = actor.userId
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,

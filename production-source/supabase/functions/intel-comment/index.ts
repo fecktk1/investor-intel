@@ -1,11 +1,14 @@
-// Investor Intel — Comment King (copy-only social drafts).
+// Investor Intel: Comment King (copy-only social drafts).
 // Generates short replies/reactions informed by token/narrative context. Still
-// passes the non-financial-advice guardrails. No posting — copy to clipboard.
+// passes the non-financial-advice guardrails. No posting: copy to clipboard.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { validateSafeLanguage, SAFE_LANGUAGE_RULES } from '../_shared/intel-guardrails.ts'
 import { recordIntelEvent } from '../_shared/intel-events.ts'
 import { recordAIUsage } from '../_shared/usage.ts'
+import { requireIntelAccess } from '../_shared/intel/research-service.ts'
+import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import { requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -45,13 +48,22 @@ Deno.serve(async (req) => {
     const supabase = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_ANON_KEY')!, { global: { headers: { Authorization: authHeader } } })
     const { data: auth } = await supabase.auth.getUser()
 
+    // A draft is a model call made for the asking member, so membership,
+    // product access and the tier are all settled before the model is reached.
+    // The admin client exists only to ask those questions: the generation and
+    // rate gates below stay on the member's own client so they keep deriving
+    // the identity from auth.uid().
+    const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
+    const actor = await requireIntelAccess(req, createClient, admin, orgId)
+    await requireIntelSurface(admin, actor, 'comment_king')
+
     const { data: gate } = await supabase.rpc('intel_generation_allowed')
     if (gate && gate.allowed === false) return json({ error: 'generation_not_allowed', reason: gate.reason }, 402)
     const { data: rate } = await supabase.rpc('intel_rate_check', { p_limit_key: 'comment_king_per_day' })
     if (rate && rate.allowed === false) return json({ error: 'rate_limited', reason: 'comment_king_per_day', used: rate.used, limit: rate.limit }, 429)
 
     const style = STYLES[replyType] || STYLES.smart
-    const system = `You draft a short crypto social reply for an investor — ${style}. Keep it under 280 characters, natural, no hashtags spam. ${SAFE_LANGUAGE_RULES} Output ONLY the reply text.`
+    const system = `You draft a short crypto social reply for an investor, ${style}. Keep it under 280 characters, natural, no hashtags spam. ${SAFE_LANGUAGE_RULES} Output ONLY the reply text.`
     let { text, usage } = await callText('gpt-5.6-luna', system, `Context (an X post or token note):\n${context.slice(0, 2000)}\n\nWrite the reply.`, apiKey)
 
     let v = validateSafeLanguage(text)
@@ -67,6 +79,8 @@ Deno.serve(async (req) => {
     if (!v.ok) return json({ blocked: true, reason: 'safety_validation_failed' })
     return json({ reply: text })
   } catch (e) {
-    return json({ error: (e as Error)?.message || 'comment_failed' }, 400)
+    return surfaceLockedResponse(e, corsHeaders)
+      || orgAuthzErrorResponse(e, corsHeaders)
+      || json({ error: (e as Error)?.message || 'comment_failed' }, 400)
   }
 })

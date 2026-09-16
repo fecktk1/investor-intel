@@ -2,6 +2,7 @@ import React,{useState} from 'react'
 import { NavLink, Outlet } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { LayoutDashboard, NotebookPen, LineChart, CalendarCheck, BarChart3, Settings, Plus } from 'lucide-react'
+import IntelSurfaceGate from '../components/IntelSurfaceGate'
 
 // Thesis Journal shell: a sub-nav strip above the routed page. The five primary
 // destinations also live in the sidebar (intelNav.js); Settings lives here to
@@ -43,7 +44,12 @@ export default function ThesisJournalLayout() {
           <Plus className="h-4 w-4" /> {t('journal.new_thesis', { defaultValue: 'New thesis' })}
         </NavLink>
       </div>
-      <Outlet />
+      {/* The toolbar stays; only the routed body locks. A membership without
+          the Thesis Journal keeps the shell it came to and is told which plan
+          opens it, and none of the journal's reads are mounted. */}
+      <IntelSurfaceGate surface="thesis_journal" title={t('journal.title', { defaultValue: 'Thesis Journal' })}>
+        <Outlet />
+      </IntelSurfaceGate>
     </div>
   )
 }

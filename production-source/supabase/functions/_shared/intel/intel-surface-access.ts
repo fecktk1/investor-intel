@@ -40,6 +40,10 @@ export const INTEL_SURFACES = [
   'ai_generation',
   'market_history',
   'alert_evaluation',
+  'agent_access',
+  'wallet_watch',
+  'thesis_journal',
+  'comment_king',
 ] as const
 export type IntelSurface = typeof INTEL_SURFACES[number]
 

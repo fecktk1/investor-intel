@@ -1214,7 +1214,7 @@
     "briefs_sub": "Your personalized daily investor brief.",
     "alerts_sub": "Smart alerts with source-backed context for why each one matters.",
     "explain_sub": "Clear, easy-to-understand explanations for any token, wallet, chart or narrative.",
-    "comment_king_sub": "Draft replies and reactions — copy to clipboard.",
+    "comment_king_sub": "Draft replies and reactions, then copy them to your clipboard.",
     "research_sub": "Your saved breakdowns, briefs, comparisons and explanations.",
     "settings_sub": "Risk profile, chains, topics, explanation style and Beginner Protection.",
     "my_intel_sub": "Your research desk. Market Pulse, followed assets, and saved work."
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Portfolio valuation",
     "surface_ai_generation": "AI generation",
     "surface_market_history": "Price history",
-    "surface_alert_evaluation": "Alerts"
+    "surface_alert_evaluation": "Alerts",
+    "surface_agent_access": "Agent access",
+    "surface_wallet_watch": "Wallet Watch",
+    "surface_thesis_journal": "Thesis Journal",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Free",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Narrative briefs",
     "free_open_watchlist": "10 watchlist items",
     "free_locked_title": "Locked until Starter",
-    "free_locked_body": "On demand research, Connected Research, portfolio valuation, AI generation, price history and alerts. Each one runs a fresh request for you every time it is opened."
+    "free_locked_body": "On demand research, Connected Research, portfolio valuation, AI generation, price history, alerts, Wallet Watch, the Thesis Journal, Comment King and agent access. Each one runs a fresh request for you every time it is opened."
   }
 }

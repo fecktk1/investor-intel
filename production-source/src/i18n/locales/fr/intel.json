@@ -694,7 +694,7 @@
     "briefs_sub": "Votre brief investisseur quotidien personnalisé.",
     "alerts_sub": "Alertes intelligentes avec une explication IA de pourquoi chacune est importante.",
     "explain_sub": "Explications en langage simple pour tout jeton, wallet, graphique ou narratif.",
-    "comment_king_sub": "Rédigez des réponses et réactions — copier dans le presse-papiers.",
+    "comment_king_sub": "Rédigez des réponses et réactions, puis copiez-les dans le presse-papiers.",
     "research_sub": "Vos analyses, briefs, comparaisons et explications sauvegardés.",
     "settings_sub": "Profil de risque, chaînes, sujets, style d'explication et Protection Débutant.",
     "portfolio_sub": "Vos positions, votre P&L, votre performance et un contexte IA étayé. Lecture seule, pas un conseil financier ou fiscal.",
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Valorisation du portefeuille",
     "surface_ai_generation": "Génération par IA",
     "surface_market_history": "Historique des prix",
-    "surface_alert_evaluation": "Alertes"
+    "surface_alert_evaluation": "Alertes",
+    "surface_agent_access": "Accès des agents",
+    "surface_wallet_watch": "Surveillance wallets",
+    "surface_thesis_journal": "Journal des thèses",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Gratuit",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Les synthèses de narratifs",
     "free_open_watchlist": "10 éléments de liste de suivi",
     "free_locked_title": "Verrouillé jusqu'à Starter",
-    "free_locked_body": "Recherche à la demande, Connected Research, valorisation de portefeuille, génération par IA, historique des prix et alertes. Chacune lance une nouvelle requête pour vous à chaque ouverture."
+    "free_locked_body": "Recherche à la demande, Connected Research, valorisation de portefeuille, génération par IA, historique des prix, alertes, Surveillance wallets, le Journal des thèses, Comment King et l'accès des agents. Chacune lance une nouvelle requête pour vous à chaque ouverture."
   }
 }

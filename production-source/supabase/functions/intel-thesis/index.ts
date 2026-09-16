@@ -23,6 +23,7 @@ import { validateSafeLanguage } from '../_shared/intel-guardrails.ts'
 import { recordIntelEvent } from '../_shared/intel-events.ts'
 import { requireIntelAccess } from '../_shared/intel/research-service.ts'
 import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import { requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -122,7 +123,11 @@ Deno.serve(async (req) => {
     )
     // Verify current membership and product access before any privileged
     // evidence assembly, provider spending or coach operation.
-    await requireIntelAccess(req, createClient, admin, typeof orgId === 'string' ? orgId : null)
+    const actor = await requireIntelAccess(req, createClient, admin, typeof orgId === 'string' ? orgId : null)
+    // Every action below drafts, critiques or evaluates for this member on
+    // demand, so the tier is checked once here, ahead of the dispatch, rather
+    // than per action where a new action could be added without one.
+    await requireIntelSurface(admin, actor, 'thesis_journal')
 
     if (action === 'recorded_evidence') return json(await readThesisRecordedEvidence(admin,user,{orgId,userId:auth.user.id},String(body.thesisId||'')))
 
@@ -396,6 +401,8 @@ Critique like a coach: is it falsifiable? does the bear case explain underperfor
 
     return json({ error: `unknown action: ${action}` }, 400)
   } catch (e) {
+    const locked = surfaceLockedResponse(e, corsHeaders)
+    if (locked) return locked
     const denied = orgAuthzErrorResponse(e, corsHeaders)
     if (denied) return denied
     return json({ error: (e as Error)?.message || 'thesis_failed' }, 400)

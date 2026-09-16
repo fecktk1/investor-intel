@@ -694,7 +694,7 @@
     "briefs_sub": "Tu informe diario personalizado para inversores.",
     "alerts_sub": "Alertas inteligentes con explicación de IA sobre por qué importa cada una.",
     "explain_sub": "Explicaciones en lenguaje claro para cualquier token, wallet, gráfico o narrativa.",
-    "comment_king_sub": "Redacta respuestas y reacciones — copia al portapapeles.",
+    "comment_king_sub": "Redacta respuestas y reacciones, luego cópialas al portapapeles.",
     "research_sub": "Tus análisis, informes, comparaciones y explicaciones guardados.",
     "settings_sub": "Perfil de riesgo, chains, temas, estilo de explicación y Protección para principiantes.",
     "portfolio_sub": "Tus posiciones, P&L, rendimiento y contexto de IA fundamentado: solo lectura, no es consejo financiero ni fiscal.",
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Valoración de cartera",
     "surface_ai_generation": "Generación con IA",
     "surface_market_history": "Historial de precios",
-    "surface_alert_evaluation": "Alertas"
+    "surface_alert_evaluation": "Alertas",
+    "surface_agent_access": "Acceso de agentes",
+    "surface_wallet_watch": "Vigilancia de wallets",
+    "surface_thesis_journal": "Diario de tesis",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Gratis",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Informes de narrativas",
     "free_open_watchlist": "10 elementos en la lista de seguimiento",
     "free_locked_title": "Bloqueado hasta Starter",
-    "free_locked_body": "Investigación bajo demanda, Connected Research, valoración de cartera, generación con IA, historial de precios y alertas. Cada una lanza una solicitud nueva para ti cada vez que se abre."
+    "free_locked_body": "Investigación bajo demanda, Connected Research, valoración de cartera, generación con IA, historial de precios, alertas, Vigilancia de wallets, el Diario de tesis, Comment King y acceso de agentes. Cada una lanza una solicitud nueva para ti cada vez que se abre."
   }
 }

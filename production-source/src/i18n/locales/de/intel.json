@@ -694,7 +694,7 @@
     "briefs_sub": "Dein personalisierter täglicher Investoren-Brief.",
     "alerts_sub": "Smarte Alarme mit einer KI-Erklärung, warum jeder davon wichtig ist.",
     "explain_sub": "Verständliche Erklärungen für jeden Token, jede Wallet, jeden Chart oder jedes Narrativ.",
-    "comment_king_sub": "Antworten und Reaktionen verfassen — in die Zwischenablage kopieren.",
+    "comment_king_sub": "Antworten und Reaktionen verfassen, dann in die Zwischenablage kopieren.",
     "research_sub": "Deine gespeicherten Analysen, Briefs, Vergleiche und Erklärungen.",
     "settings_sub": "Risikoprofil, Chains, Themen, Erklärungsstil und Einsteigerschutz.",
     "portfolio_sub": "Deine Bestände, P&L, Wertentwicklung und fundierter KI-Kontext: nur Lesezugriff, keine Finanz- oder Steuerberatung.",
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Portfolio-Bewertung",
     "surface_ai_generation": "KI-Erzeugung",
     "surface_market_history": "Kursverlauf",
-    "surface_alert_evaluation": "Alarme"
+    "surface_alert_evaluation": "Alarme",
+    "surface_agent_access": "Agent-Zugang",
+    "surface_wallet_watch": "Wallet Watch",
+    "surface_thesis_journal": "Thesentagebuch",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Kostenlos",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Narrativ-Briefings",
     "free_open_watchlist": "10 Beobachtungslisten-Einträge",
     "free_locked_title": "Bis Starter gesperrt",
-    "free_locked_body": "Recherche auf Abruf, Connected Research, Portfoliobewertung, KI-Erzeugung, Kursverlauf und Alarme. Jedes davon startet bei jedem Öffnen eine neue Anfrage für dich."
+    "free_locked_body": "Recherche auf Abruf, Connected Research, Portfoliobewertung, KI-Erzeugung, Kursverlauf, Alarme, Wallet Watch, das Thesentagebuch, Comment King und Agent-Zugang. Jedes davon startet bei jedem Öffnen eine neue Anfrage für dich."
   }
 }

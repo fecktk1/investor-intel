@@ -694,7 +694,7 @@
     "briefs_sub": "Seu briefing diário personalizado para investidores.",
     "alerts_sub": "Alertas inteligentes com explicação de IA sobre por que cada um importa.",
     "explain_sub": "Explicações em linguagem simples para qualquer token, wallet, chart ou narrativa.",
-    "comment_king_sub": "Redija respostas e reações — copie para a área de transferência.",
+    "comment_king_sub": "Redija respostas e reações, depois copie para a área de transferência.",
     "research_sub": "Seus breakdowns, briefings, comparações e explicações salvos.",
     "settings_sub": "Perfil de risco, chains, tópicos, estilo de explicação e Proteção para Iniciantes.",
     "portfolio_sub": "Suas posições, P&L, desempenho e contexto de IA fundamentado (somente leitura, não é conselho financeiro nem tributário).",
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Avaliação da carteira",
     "surface_ai_generation": "Geração com IA",
     "surface_market_history": "Histórico de preços",
-    "surface_alert_evaluation": "Alertas"
+    "surface_alert_evaluation": "Alertas",
+    "surface_agent_access": "Acesso de agentes",
+    "surface_wallet_watch": "Monitor de Wallets",
+    "surface_thesis_journal": "Diário de teses",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Gratuito",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Resumos de narrativas",
     "free_open_watchlist": "10 itens na lista de acompanhamento",
     "free_locked_title": "Bloqueado até o Starter",
-    "free_locked_body": "Pesquisa sob demanda, Connected Research, avaliação de carteira, geração por IA, histórico de preços e alertas. Cada uma dispara uma nova solicitação para você toda vez que é aberta."
+    "free_locked_body": "Pesquisa sob demanda, Connected Research, avaliação de carteira, geração por IA, histórico de preços, alertas, Monitor de Wallets, o Diário de teses, Comment King e acesso de agentes. Cada uma dispara uma nova solicitação para você toda vez que é aberta."
   }
 }

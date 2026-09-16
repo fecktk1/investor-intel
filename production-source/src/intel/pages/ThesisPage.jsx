@@ -10,12 +10,34 @@ import ArtifactView from '../components/ArtifactView'
 import { CHAINS } from '../lib/chains'
 import { Sparkles } from 'lucide-react'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelLockedSurface from '../components/IntelLockedSurface'
+import { useIntelSurfaceLock } from '../context/IntelAccess'
 
 const EMPTY = { title: '', bull_thesis: '', bear_thesis: '', neutral_thesis: '', what_would_confirm: '', what_would_invalidate: '' }
 
+// The flag-off fallback for the Thesis Journal. A membership that does not
+// carry the journal keeps this page's header and gets the lock that names the
+// plan which opens it, with none of the tracker's reads mounted: the refusal
+// has already been made, so there is nothing here to withhold.
+export default function ThesisPage() {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  const lock = useIntelSurfaceLock('thesis_journal')
+  if (!lock) return <ThesisWorkspace />
+  return (
+    <div className="space-y-5">
+      <div>
+        <div className="eyebrow flex items-center gap-1.5"><NotebookPen className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
+        <h1 className="page-title">{t('nav.theses', { defaultValue: 'Thesis Tracker' })}</h1>
+        <p className="page-sub">{t('pages.theses_sub', { defaultValue: 'Save bull, bear and neutral cases with baselines to track later.' })}</p>
+      </div>
+      <IntelLockedSurface surface={lock.surface} minTier={lock.minTier} title={t('journal.title', { defaultValue: 'Thesis Journal' })} />
+    </div>
+  )
+}
+
 // P13 — Thesis Tracker. Captures bull/bear/neutral + confirm/invalidate + a
 // baseline (so the post-launch drift worker can compare later).
-export default function ThesisPage() {
+function ThesisWorkspace() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase, user } = useSupabase()

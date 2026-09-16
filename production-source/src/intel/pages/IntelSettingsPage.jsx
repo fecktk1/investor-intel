@@ -13,6 +13,7 @@ import { CHAINS } from '../lib/chains'
 import { getIntelProfile, getNotificationPrefs, saveIntelProfile, saveNotificationPrefs } from '../lib/intel-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import AgentTokensCard from '../components/AgentTokensCard'
+import IntelSurfaceGate from '../components/IntelSurfaceGate'
 import { useDisplayCurrency, SUPPORTED_CURRENCIES } from '../lib/display-currency'
 
 const EXPERIENCE = ['new', 'intermediate', 'advanced']
@@ -374,7 +375,9 @@ export default function IntelSettingsPage() {
 
       <DisplayCurrencySection />
 
-      <AgentTokensCard />
+      <IntelSurfaceGate surface="agent_access" title={t('access.surface_agent_access', { defaultValue: 'Agent access' })}>
+        <AgentTokensCard />
+      </IntelSurfaceGate>
 
       <div className="card p-4 space-y-2">
         <div className="text-sm font-medium text-[var(--fg-1)]">{t('onboarding.q_experience', { defaultValue: 'Experience' })}</div>

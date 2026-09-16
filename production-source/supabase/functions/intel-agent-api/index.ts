@@ -27,6 +27,7 @@
 import {createClient} from 'npm:@supabase/supabase-js@2'
 import {requireIntelAccess} from '../_shared/intel/research-service.ts'
 import {orgAuthzErrorResponse} from '../_shared/org-authz.ts'
+import {requireIntelSurface,surfaceLockedResponse} from '../_shared/intel/intel-surface-access.ts'
 import {readBoundedJson,RequestBodyError} from '../_shared/intel/bounded-request.ts'
 import {AgentAuthError,authenticateAgentToken,isAgentTokenRequest} from '../_shared/intel/agent-token.ts'
 import {agentManagementService,agentReadService,AGENT_OPERATIONS,MANAGEMENT_OPERATIONS} from '../_shared/intel/agent-service.ts'
@@ -80,6 +81,10 @@ export async function handleAgentApi(req:Request):Promise<Response> {
    let ipHash:string|undefined
    try{ipHash=(await hashedIpKey(req,'agent')).slice(0,64)}catch{ipHash=undefined}
    const context=await authenticateAgentToken(db,req,{requestId,ipHash})
+   // A token minted while the workspace could still use agents keeps working
+   // until it expires, so the tier is asked again on every call rather than
+   // only at mint time. A downgrade therefore stops existing tokens too.
+   await requireIntelSurface(db,{userId:context.userId,orgId:context.orgId,isSuperAdmin:false,isService:false},'agent_access')
    await enforceLimit(db,'intel_agent',context.tokenId,bucketFor(operation))
    return json(await agentReadService(db,context,body))
   }
@@ -92,9 +97,14 @@ export async function handleAgentApi(req:Request):Promise<Response> {
   }
   const actor=await requireIntelAccess(req,createClient,db,typeof body.orgId==='string'?body.orgId:null)
   if(!actor.userId||!actor.orgId)return json({error:'signed_in_investor_required'},403)
+  // Minting or approving opens a standing per-member on demand spend, so the
+  // tier is checked before a token exists rather than after one is in use.
+  await requireIntelSurface(db,actor,'agent_access')
   await enforceLimit(db,'user',actor.userId,'management')
   return json(await agentManagementService(db,{orgId:actor.orgId,userId:actor.userId},body))
  }catch(error){
+  const locked=surfaceLockedResponse(error,cors)
+  if(locked)return locked
   if(error instanceof RequestBodyError)return json({error:error.message},error.status)
   if(error instanceof AgentAuthError)return json({error:error.code,message:error.message},error.status)
   const authz=orgAuthzErrorResponse(error,cors)

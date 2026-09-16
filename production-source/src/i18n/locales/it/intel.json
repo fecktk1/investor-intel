@@ -694,7 +694,7 @@
     "briefs_sub": "Il tuo brief quotidiano personalizzato per l'investitore.",
     "alerts_sub": "Alert intelligenti con una spiegazione IA del perché ciascuno è rilevante.",
     "explain_sub": "Spiegazioni in linguaggio semplice per qualsiasi token, wallet, chart o narrativa.",
-    "comment_king_sub": "Bozza risposte e reazioni — copia negli appunti.",
+    "comment_king_sub": "Prepara risposte e reazioni, poi copiale negli appunti.",
     "research_sub": "Le tue analisi, brief, confronti e spiegazioni salvati.",
     "settings_sub": "Profilo di rischio, chain, argomenti, stile di spiegazione e Protezione Principiante.",
     "portfolio_sub": "Le tue posizioni, il P&L, l’andamento e il contesto IA fondato sui dati: in sola lettura, non consulenza finanziaria o fiscale.",
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Valutazione del portafoglio",
     "surface_ai_generation": "Generazione con IA",
     "surface_market_history": "Storico dei prezzi",
-    "surface_alert_evaluation": "Avvisi"
+    "surface_alert_evaluation": "Avvisi",
+    "surface_agent_access": "Accesso agenti",
+    "surface_wallet_watch": "Wallet Watch",
+    "surface_thesis_journal": "Diario delle tesi",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Gratuito",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Le sintesi delle narrative",
     "free_open_watchlist": "10 elementi in watchlist",
     "free_locked_title": "Bloccato fino a Starter",
-    "free_locked_body": "Ricerca su richiesta, Connected Research, valutazione del portafoglio, generazione con IA, storico dei prezzi e avvisi. Ognuna avvia una nuova richiesta per te a ogni apertura."
+    "free_locked_body": "Ricerca su richiesta, Connected Research, valutazione del portafoglio, generazione con IA, storico dei prezzi, avvisi, Wallet Watch, il Diario delle tesi, Comment King e l'accesso agenti. Ognuna avvia una nuova richiesta per te a ogni apertura."
   }
 }

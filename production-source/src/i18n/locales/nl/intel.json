@@ -694,7 +694,7 @@
     "briefs_sub": "Jouw gepersonaliseerde dagelijkse investeerdersbrief.",
     "alerts_sub": "Slimme alarmen met een AI-uitleg waarom elk alarm ertoe doet.",
     "explain_sub": "Begrijpelijke uitleg voor elk token, wallet, chart of narrative.",
-    "comment_king_sub": "Stel reacties en antwoorden op — kopieer naar klembord.",
+    "comment_king_sub": "Stel reacties en antwoorden op en kopieer ze naar je klembord.",
     "research_sub": "Jouw opgeslagen analyses, briefs, vergelijkingen en uitleg.",
     "settings_sub": "Risicoprofiel, chains, onderwerpen, uitlegstijl en Beginnersbescherming.",
     "portfolio_sub": "Je posities, P&L, prestaties en onderbouwde AI-context: alleen-lezen, geen financieel of fiscaal advies.",
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Portefeuillewaardering",
     "surface_ai_generation": "AI-generatie",
     "surface_market_history": "Koershistorie",
-    "surface_alert_evaluation": "Meldingen"
+    "surface_alert_evaluation": "Meldingen",
+    "surface_agent_access": "Agenttoegang",
+    "surface_wallet_watch": "Wallet Watch",
+    "surface_thesis_journal": "Thesedagboek",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Gratis",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Narratiefbriefings",
     "free_open_watchlist": "10 volglijst-items",
     "free_locked_title": "Vergrendeld tot Starter",
-    "free_locked_body": "Onderzoek op aanvraag, Connected Research, portefeuillewaardering, AI-generatie, koershistorie en meldingen. Elk daarvan start bij het openen een nieuwe aanvraag voor jou."
+    "free_locked_body": "Onderzoek op aanvraag, Connected Research, portefeuillewaardering, AI-generatie, koershistorie, meldingen, Wallet Watch, het Thesedagboek, Comment King en agenttoegang. Elk daarvan start bij het openen een nieuwe aanvraag voor jou."
   }
 }

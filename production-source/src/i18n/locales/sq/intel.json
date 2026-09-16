@@ -694,7 +694,7 @@
     "briefs_sub": "Brifingu yt ditor i personalizuar si investitor.",
     "alerts_sub": "Alarme të mençura me shpjegim IA se pse ka rëndësi secili.",
     "explain_sub": "Shpjegime të thjeshta për çdo token, wallet, grafik ose narrativë.",
-    "comment_king_sub": "Shkruaj përgjigje dhe reagime — kopjo në clipboard.",
+    "comment_king_sub": "Shkruaj përgjigje dhe reagime, pastaj kopjoji në clipboard.",
     "research_sub": "Analizat, brifet, krahasimet dhe shpjegimet e tua të ruajtura.",
     "settings_sub": "Profili i rrezikut, chain-et, temat, stili i shpjegimit dhe Mbrojtja për fillestarët.",
     "portfolio_sub": "Zotërimet e tua, P&L, performanca dhe konteksti IA i mbështetur në fakte: vetëm për lexim, jo këshillë financiare ose tatimore.",
@@ -3712,7 +3712,11 @@
     "surface_portfolio_valuation": "Vlerësim i portofolit",
     "surface_ai_generation": "Gjenerim me IA",
     "surface_market_history": "Historik i çmimeve",
-    "surface_alert_evaluation": "Njoftime"
+    "surface_alert_evaluation": "Njoftime",
+    "surface_agent_access": "Akses i agjentëve",
+    "surface_wallet_watch": "Vëzhgimi i wallet-eve",
+    "surface_thesis_journal": "Ditari i tezave",
+    "surface_comment_king": "Comment King"
   },
   "intel_upgrade": {
     "free_label": "Falas",
@@ -3727,6 +3731,6 @@
     "free_open_narratives": "Përmbledhjet e narrativave",
     "free_open_watchlist": "10 artikuj në listën e ndjekjes",
     "free_locked_title": "E kyçur deri te Starter",
-    "free_locked_body": "Kërkimi sipas kërkesës, Connected Research, vlerësimi i portofolit, gjenerimi me IA, historiku i çmimeve dhe njoftimet. Secila nis një kërkesë të re për ty sa herë hapet."
+    "free_locked_body": "Kërkimi sipas kërkesës, Connected Research, vlerësimi i portofolit, gjenerimi me IA, historiku i çmimeve, njoftimet, Vëzhgimi i wallet-eve, Ditari i tezave, Comment King dhe aksesi i agjentëve. Secila nis një kërkesë të re për ty sa herë hapet."
   }
 }
