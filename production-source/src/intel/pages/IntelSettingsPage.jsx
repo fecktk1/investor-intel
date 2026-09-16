@@ -12,6 +12,7 @@ const SparqAccessCard = lazy(() => import('../../components/sparq/SparqAccessCar
 import { CHAINS } from '../lib/chains'
 import { getIntelProfile, getNotificationPrefs, saveIntelProfile, saveNotificationPrefs } from '../lib/intel-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import AgentTokensCard from '../components/AgentTokensCard'
 import { useDisplayCurrency, SUPPORTED_CURRENCIES } from '../lib/display-currency'
 
 const EXPERIENCE = ['new', 'intermediate', 'advanced']
@@ -372,6 +373,8 @@ export default function IntelSettingsPage() {
       </div>
 
       <DisplayCurrencySection />
+
+      <AgentTokensCard />
 
       <div className="card p-4 space-y-2">
         <div className="text-sm font-medium text-[var(--fg-1)]">{t('onboarding.q_experience', { defaultValue: 'Experience' })}</div>
