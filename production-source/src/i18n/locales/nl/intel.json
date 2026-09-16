@@ -1966,7 +1966,10 @@
     "error": "Kon je proefperiode niet starten. Probeer het opnieuw.",
     "plan_title": "Je werkruimte instellen",
     "plan_body": "Een moment: we maken je Investor Intel-werkruimte aan en brengen je naar de betaling.",
-    "retry": "Opnieuw proberen"
+    "retry": "Opnieuw proberen",
+    "free_cta": "Doorgaan met de gratis laag",
+    "free_title": "Je gratis werkruimte wordt ingericht",
+    "free_error": "Je gratis lidmaatschap kon niet worden geopend. Probeer het opnieuw."
   },
   "onboarding": {
     "title": "Stel je werkruimte in",
@@ -2936,7 +2939,11 @@
     "recap_markets": "Marktterminal",
     "recap_narratives": "Automatisch gedetecteerde narratieven",
     "recap_portfolio": "Portefeuille (alleen-lezen)",
-    "recap_signals": "Uitlegbare signalen"
+    "recap_signals": "Uitlegbare signalen",
+    "free_body": "Je account opent de gratis laag van Investor Intel: de marktborden, de regimecijfers en elke vastgelegde meting. Geen kaart, geen proefklok.",
+    "free_cta": "Account maken en gratis doorgaan",
+    "sent_body_suffix_free": ". Klik erop om je account te activeren en je gratis lidmaatschap te openen.",
+    "trust_free": "Gratis laag"
   },
   "asset_news": {
     "checked": "Berichtgeving gecontroleerd",

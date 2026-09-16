@@ -5,7 +5,7 @@ import { useSearchParams } from 'react-router'
 import { Gauge, ArrowRight } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
-import { startIntelTrial } from '../lib/intel-api'
+import { startIntelTrial, startIntelFree } from '../lib/intel-api'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import { intelReturnPath } from '../lib/intel-return-path'
 
@@ -27,7 +27,11 @@ export default function IntelStartPage() {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState(null)
 
-  const plan = PAID_PLANS.includes(searchParams.get('plan')) ? searchParams.get('plan') : null
+  const requestedPlan = searchParams.get('plan')
+  const plan = PAID_PLANS.includes(requestedPlan) ? requestedPlan : null
+  // Free intent (?plan=free, from /intel/signup?plan=free or from the free
+  // action below). It opens a free membership and spends no trial.
+  const wantsFree = requestedPlan === 'free'
   // Post-switch landing: checkout for paid intent, the workspace itself otherwise.
   const dest = plan ? `/intel/upgrade?plan=${plan}` : intelReturnPath(searchParams.get('next'))
 
@@ -52,6 +56,21 @@ export default function IntelStartPage() {
     }
   }, [supabase, switchOrg, dest, t])
 
+  // The free membership. start_intel_free writes no trial guard and leaves no
+  // payment deadline, so this neither spends the one 7-day trial nor creates a
+  // workspace that can lapse. A user who already has an Investor Intel
+  // workspace is handed that one back rather than given a second.
+  const startFree = useCallback(async () => {
+    setBusy(true); setError(null)
+    try {
+      const orgId = await startIntelFree(supabase)
+      switchOrg(orgId, dest ? { to: dest } : undefined)
+    } catch {
+      setBusy(false)
+      setError(t('start.free_error', { defaultValue: 'Could not open your free membership. Please try again.' }))
+    }
+  }, [supabase, switchOrg, dest, t])
+
   // Paid intent: no extra click — bootstrap the workspace as soon as we know
   // the user has none. Ref-guarded so StrictMode/re-renders can't double-fire
   // the one-per-identity trial RPC.
@@ -61,6 +80,14 @@ export default function IntelStartPage() {
     autoStartedRef.current = true
     startTrial()
   }, [plan, profileLoading, existingIntel, startTrial])
+
+  // Free intent: the same one-click bootstrap, guarded by the same ref so the
+  // two paths can never both fire for one arrival.
+  useEffect(() => {
+    if (!wantsFree || profileLoading || existingIntel || autoStartedRef.current) return
+    autoStartedRef.current = true
+    startFree()
+  }, [wantsFree, profileLoading, existingIntel, startFree])
 
   const loading = profileLoading || !!existingIntel || busy
 
@@ -77,7 +104,9 @@ export default function IntelStartPage() {
             <h1 className="text-lg font-bold text-[var(--fg-1)]">
               {plan
                 ? t('start.plan_title', { defaultValue: 'Setting up your workspace' })
-                : t('start.title', { defaultValue: 'Start your crypto intelligence workspace' })}
+                : wantsFree
+                  ? t('start.free_title', { defaultValue: 'Setting up your free workspace' })
+                  : t('start.title', { defaultValue: 'Start your crypto intelligence workspace' })}
             </h1>
           </div>
         </div>
@@ -90,18 +119,29 @@ export default function IntelStartPage() {
 
         {error && <div className="card--flat p-3 text-[13px] text-red-400">{error}</div>}
 
-        {plan && !error ? (
+        {(plan || wantsFree) && !error ? (
           <div className="flex items-center justify-center py-1.5">
             <span className="animate-spin rounded-full h-5 w-5 border-b-2 border-[var(--accent)]" />
           </div>
         ) : (
-          <button onClick={startTrial} disabled={loading} className="btn btn--primary w-full justify-center disabled:opacity-50">
-            {loading
-              ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
-              : plan
-                ? <>{t('start.retry', { defaultValue: 'Try again' })} <ArrowRight className="h-4 w-4" /></>
-                : <>{t('start.cta', { defaultValue: 'Start 7-day free trial' })} <ArrowRight className="h-4 w-4" /></>}
-          </button>
+          <div className="space-y-2">
+            <button onClick={startTrial} disabled={loading} className="btn btn--primary w-full justify-center disabled:opacity-50">
+              {loading
+                ? <span className="animate-spin rounded-full h-4 w-4 border-b-2 border-current" />
+                : plan
+                  ? <>{t('start.retry', { defaultValue: 'Try again' })} <ArrowRight className="h-4 w-4" /></>
+                  : <>{t('start.cta', { defaultValue: 'Start 7-day free trial' })} <ArrowRight className="h-4 w-4" /></>}
+            </button>
+            {/* The free membership stands beside the trial, not behind it. It
+                is also the way forward for someone who has already spent their
+                one trial, which is the error this page reports just above. */}
+            <button onClick={startFree} disabled={loading} className="btn btn--ghost w-full justify-center disabled:opacity-50">
+              {t('start.free_cta', { defaultValue: 'Continue on the free tier' })}
+            </button>
+            <p className="text-[12px] text-[var(--fg-4)] leading-relaxed">
+              {t('access.free_body', { defaultValue: 'Read the market boards, the regime figures and every recorded capture. No card, no trial clock.' })}
+            </p>
+          </div>
         )}
 
         <IntelDisclaimer variant="block" />

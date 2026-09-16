@@ -2781,7 +2781,10 @@
     "error": "Could not start your trial. Please try again.",
     "plan_title": "Setting up your workspace",
     "plan_body": "One moment — creating your Investor Intel workspace and taking you to checkout.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "free_cta": "Continue on the free tier",
+    "free_title": "Setting up your free workspace",
+    "free_error": "Could not open your free membership. Please try again."
   },
   "signup": {
     "seo_title": "Create your Investor Intel account",
@@ -2813,7 +2816,11 @@
     "recap_markets": "Markets terminal",
     "recap_narratives": "Auto-detected narratives",
     "recap_portfolio": "Read-only portfolio",
-    "recap_signals": "Explainable signals"
+    "recap_signals": "Explainable signals",
+    "free_body": "Your account opens the free tier of Investor Intel: the market boards, the regime figures and every recorded capture. No card, no trial clock.",
+    "free_cta": "Create account & continue free",
+    "sent_body_suffix_free": ". Click it to activate your account and open your free membership.",
+    "trust_free": "Free tier"
   },
   "onboarding": {
     "title": "Set up your workspace",

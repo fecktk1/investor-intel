@@ -1966,7 +1966,10 @@
     "error": "Testphase konnte nicht gestartet werden. Bitte erneut versuchen.",
     "plan_title": "Dein Arbeitsbereich wird eingerichtet",
     "plan_body": "Einen Moment – wir erstellen deinen Investor-Intel-Arbeitsbereich und leiten dich zur Zahlung weiter.",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "free_cta": "Kostenlos weitermachen",
+    "free_title": "Dein kostenloser Arbeitsbereich wird eingerichtet",
+    "free_error": "Deine kostenlose Mitgliedschaft konnte nicht geöffnet werden. Bitte versuche es erneut."
   },
   "onboarding": {
     "title": "Workspace einrichten",
@@ -2936,7 +2939,11 @@
     "recap_markets": "Markt-Terminal",
     "recap_narratives": "Automatisch erkannte Narrative",
     "recap_portfolio": "Portfolio mit reinem Lesezugriff",
-    "recap_signals": "Nachvollziehbare Signale"
+    "recap_signals": "Nachvollziehbare Signale",
+    "free_body": "Dein Konto öffnet die kostenlose Stufe von Investor Intel: die Markttafeln, die Regime-Kennzahlen und jede aufgezeichnete Erfassung. Keine Karte, keine Testphase.",
+    "free_cta": "Konto erstellen und kostenlos fortfahren",
+    "sent_body_suffix_free": ". Klicke darauf, um dein Konto zu aktivieren und deine kostenlose Mitgliedschaft zu öffnen.",
+    "trust_free": "Kostenlose Stufe"
   },
   "asset_news": {
     "checked": "Berichterstattung geprüft",

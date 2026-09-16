@@ -5,6 +5,7 @@ import { useProfile } from '../lib/profile-context'
 import {useSupabase} from '../lib/useSupabase'
 import IntelProfileGate from './components/IntelProfileGate'
 import { IntelProvider } from './context/IntelContext'
+import { IntelAccessProvider } from './context/IntelAccess'
 import { PortfolioSelectionProvider } from './lib/PortfolioSelectionContext'
 import { PersonalWorkspaceProvider } from './context/PersonalWorkspace'
 import { WatchlistSelectionProvider } from './context/WatchlistSelection'
@@ -78,6 +79,11 @@ export default function IntelApp() {
 
   return (
     <IntelProfileGate loading={profileLoading} user={user} profile={profile} org={org}><IntelProvider>
+      {/* Which surfaces this membership may open, read once for the whole mode
+          so a costly panel can be rendered as a lock in its own place. A LABEL
+          only: every gated read is refused again at the server, so nothing here
+          grants access and a failed read never invents a refusal. */}
+      <IntelAccessProvider>
       {/* One FX read an hour for the whole mode: money columns render in the
           reader's chosen currency, converted from the stored USD at display
           time. Outermost of the data providers so every route shares one rate. */}
@@ -170,6 +176,7 @@ export default function IntelApp() {
       </IntelModeShell>
       </PortfolioSelectionProvider></WatchlistSelectionProvider></ResearchThreadsProvider></PersonalWorkspaceProvider></DashboardCacheProvider>
       </DisplayCurrencyProvider>
+      </IntelAccessProvider>
     </IntelProvider></IntelProfileGate>
   )
 }

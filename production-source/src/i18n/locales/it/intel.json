@@ -1966,7 +1966,10 @@
     "error": "Impossibile avviare il trial. Riprova.",
     "plan_title": "Configurazione dell’area di lavoro",
     "plan_body": "Un momento: creiamo la tua area Investor Intel e ti portiamo al pagamento.",
-    "retry": "Riprova"
+    "retry": "Riprova",
+    "free_cta": "Continua con il piano gratuito",
+    "free_title": "Stiamo preparando il tuo spazio gratuito",
+    "free_error": "Non è stato possibile aprire la tua iscrizione gratuita. Riprova."
   },
   "onboarding": {
     "title": "Configura il tuo workspace",
@@ -2936,7 +2939,11 @@
     "recap_markets": "Terminale dei mercati",
     "recap_narratives": "Narrative rilevate automaticamente",
     "recap_portfolio": "Portafoglio in sola lettura",
-    "recap_signals": "Segnali spiegabili"
+    "recap_signals": "Segnali spiegabili",
+    "free_body": "Il tuo account apre il piano gratuito di Investor Intel: le tabelle di mercato, i dati di regime e ogni rilevazione registrata. Nessuna carta, nessun conto alla rovescia.",
+    "free_cta": "Crea l'account e continua gratis",
+    "sent_body_suffix_free": ". Fai clic per attivare il tuo account e aprire la tua iscrizione gratuita.",
+    "trust_free": "Piano gratuito"
   },
   "asset_news": {
     "checked": "Copertura verificata",

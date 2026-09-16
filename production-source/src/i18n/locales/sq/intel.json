@@ -1966,7 +1966,10 @@
     "error": "Nuk u mund të nisej prova. Ju lutem provo përsëri.",
     "plan_title": "Po konfigurohet hapësira jote e punës",
     "plan_body": "Një çast: po krijojmë hapësirën tënde Investor Intel dhe po të kalojmë te pagesa.",
-    "retry": "Provo sërish"
+    "retry": "Provo sërish",
+    "free_cta": "Vazhdo me nivelin falas",
+    "free_title": "Po përgatitet hapësira jote falas",
+    "free_error": "Anëtarësia jote falas nuk mund të hapej. Provo përsëri."
   },
   "onboarding": {
     "title": "Konfiguro hapësirën tënde të punës",
@@ -2936,7 +2939,11 @@
     "recap_markets": "Terminali i tregjeve",
     "recap_narratives": "Narrativa të zbuluara automatikisht",
     "recap_portfolio": "Portofol vetëm për lexim",
-    "recap_signals": "Sinjale të shpjegueshme"
+    "recap_signals": "Sinjale të shpjegueshme",
+    "free_body": "Llogaria jote hap nivelin falas të Investor Intel: tabelat e tregut, shifrat e regjimit dhe çdo regjistrim të ruajtur. Pa kartë dhe pa afat prove.",
+    "free_cta": "Krijo llogarinë dhe vazhdo falas",
+    "sent_body_suffix_free": ". Kliko atë për të aktivizuar llogarinë dhe për të hapur anëtarësinë falas.",
+    "trust_free": "Niveli falas"
   },
   "asset_news": {
     "checked": "Mbulimi u kontrollua",

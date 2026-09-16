@@ -10,6 +10,7 @@ import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
+import IntelSurfaceGate from '../components/IntelSurfaceGate'
 import RelevantSignals from '../components/RelevantSignals'
 import { markSurfaceSeen } from '../lib/changes-api'
 import { emitTutorialSignal } from '../../help/signals'
@@ -186,6 +187,12 @@ function ScopedAlertsPage() {
         <p className="page-sub">{t('pages.alerts_sub', { defaultValue: 'Conditions, source evidence, and a record of what happened.' })}</p>
       </div>
 
+      {/* The upgrade prompt belongs here, where a member reaches for something
+          personal, rather than in front of the reading below. An alert rule is
+          evaluated again and again for as long as it is active, so it is the
+          one part of this page that costs per member. The record of what
+          already happened stays readable underneath. */}
+      <IntelSurfaceGate surface="alert_evaluation" title={t('access.surface_alert_evaluation', { defaultValue: 'Alerts' })}>
       <form onSubmit={add} className="intel-alert-create-form flex flex-wrap items-end gap-3">
         <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('watchlist.chain', { defaultValue: 'Chain' })}</span>
           <select className="select" value={form.chain} onChange={(e) => setForm((f) => ({ ...f, chain: e.target.value }))}>{CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
@@ -236,6 +243,7 @@ function ScopedAlertsPage() {
         </details>
         <button type="submit" disabled={busy || !form.value.trim()} data-tutorial="intel-alerts.add-button" className="btn btn--primary disabled:opacity-50"><Plus className="h-4 w-4" /> {form.active?'Save active rule':'Save draft rule'}</button>
       </form>
+      </IntelSurfaceGate>
 
       <IntelErrorNotice error={err} />
       {err && <button className="btn btn--quiet btn--sm" onClick={load}>Retry loading alerts</button>}

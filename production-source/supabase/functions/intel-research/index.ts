@@ -11,10 +11,45 @@ import {dexCohortService} from '../_shared/intel/dex-cohort-service.ts'
 import {readNarrativeInput} from '../_shared/intel/narrative-input-replay.ts'
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'}
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json','Cache-Control':'private, no-store'}})
-/** Capabilities answered entirely from our own store. `catalog` lists what the
- * plan allows, and the other two read rows a scheduled job already wrote, so
- * none of them spends a provider credit for the asking member. */
-const STORE_ONLY_RESEARCH=new Set(['catalog','assetIdentity','sourceHistory'])
+/** The reads answered entirely from our own store, and so the ONLY reads this
+ * function serves without the research_on_demand surface. Each was checked
+ * against the path it actually takes, not against its name:
+ *
+ *   catalog          researchSnapshot answers from CMC_CAPABILITIES and the
+ *                    operating settings and returns ABOVE requestCmc. It lists
+ *                    what a plan allows; it fetches nothing.
+ *   assetIdentity    readConnectedAssetIdentity reads market_assets and one
+ *                    indexed catalog RPC. It never calls requestCmc.
+ *   sourceHistory    readSourceHistoryPage reads retained source versions, and
+ *                    states in its own contract that it never activates demand
+ *                    or contacts an upstream provider.
+ *   narrativeInputs  readNarrativeInput reads the caller's own research
+ *                    artifact under their JWT and the retained snapshot that
+ *                    artifact names. No provider call on any branch.
+ */
+const STORE_ONLY_RESEARCH=new Set(['catalog','assetIdentity','sourceHistory','narrativeInputs'])
+
+/**
+ * Does this read need the paid research surface?
+ *
+ * WHY readMode:'retained' IS NOT EXEMPT. A retained read buys nothing at the
+ * moment it is served: requestCmc returns the cached row on kind 'render' and
+ * maxCalls is 0. But it reaches that return THROUGH the demand branch, which it
+ * enters with selectedDemand true, and when connected demand is enabled that
+ * branch stamps demanded_at on the shared cache row. Foreground demand is the
+ * refresh worker's only input, so the provider call is still made, later and on
+ * another clock, and charged to the same shared budget. A retained read of a
+ * provider backed capability therefore spends; it just spends asynchronously,
+ * which is why it stays behind the gate.
+ *
+ * The read mode is accepted and then deliberately ignored. It is a parameter so
+ * that the rule is stated where it can be tested rather than assumed at the
+ * call site, and so that reintroducing the retained exemption has to be a
+ * visible edit to this function.
+ */
+export function researchSurfaceRequired(capability:string,_readMode?:unknown):boolean{
+  return !STORE_ONLY_RESEARCH.has(capability)
+}
 
 export async function handleResearch(req:Request) {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: {...cors, 'Access-Control-Max-Age': '600'} })
@@ -25,19 +60,14 @@ export async function handleResearch(req:Request) {
     let body:any;try{body=JSON.parse(raw)}catch{return json({error:'invalid_json'},400)}
     const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const actor=await requireIntelAccess(req,createClient,db,typeof body.orgId==='string'?body.orgId:null)
-    // NOTE, needs a decision. This broad gate gets the security property right
-    // (nothing on-demand is served to a tier that may not have it) but it is
-    // WIDER than the cost split intends: it also refuses `catalog`,
-    // `assetIdentity`, `sourceHistory` and every `readMode:'retained'` read,
-    // all of which are answered from our own store and cost nothing extra per
-    // reader. The precise rule is the conditional one below, which is currently
-    // unreachable because this line already threw. Removing this line is the
-    // intended follow-up; it is left in place deliberately rather than removed
-    // unreviewed, because the failure mode of leaving it is a free member
-    // seeing a lock they should not see, and the failure mode of removing it
-    // wrongly is serving paid work for free.
-    await requireIntelSurface(db,actor,'research_on_demand')
     const capability=typeof body.capability==='string'?body.capability:''
+    // The surface gate, once, before any branch below can begin work. It admits
+    // exactly the four store-only reads named above, which cost nothing extra
+    // per reader, and refuses every other read, RETAINED ONES INCLUDED, for a
+    // membership that does not carry the surface. The broad gate that used to
+    // sit here refused the store-only reads too, which was safe but wrong: a
+    // free member was denied data that was already ours and already paid for.
+    if(researchSurfaceRequired(capability,body.readMode))await requireIntelSurface(db,actor,'research_on_demand')
     if(capability==='narrativeInputs'){
       if(!actor.userId||!actor.orgId)return json({error:'member_required'},403)
       const userDb=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:req.headers.get('authorization')||''}}})
@@ -46,11 +76,6 @@ export async function handleResearch(req:Request) {
     }
     if(body.readMode!=null&&body.readMode!=='retained')return json({error:'invalid_read_mode'},400)
     const cacheOnly=body.readMode==='retained'
-    // Only the reads that actually reach the provider are gated. A retained
-    // read is answered from what we already stored (maxCalls 0, kind render)
-    // and the store-only capabilities below never call out at all, so both stay
-    // open to a free member: serving them again costs nothing.
-    if(!cacheOnly&&!STORE_ONLY_RESEARCH.has(capability))await requireIntelSurface(db,actor,'research_on_demand')
     if(cacheOnly&&capability==='dexCohort')return json({error:'invalid_read_mode'},400)
     if(capability==='dexCohort'){
       if(!actor.userId||!actor.orgId)return json({error:'member_required'},403)

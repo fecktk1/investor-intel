@@ -1966,7 +1966,10 @@
     "error": "No se pudo iniciar tu prueba. Por favor, inténtalo de nuevo.",
     "plan_title": "Configurando tu espacio de trabajo",
     "plan_body": "Un momento: estamos creando tu espacio de Investor Intel y llevándote al pago.",
-    "retry": "Reintentar"
+    "retry": "Reintentar",
+    "free_cta": "Continuar en el plan gratuito",
+    "free_title": "Preparando tu espacio gratuito",
+    "free_error": "No se pudo abrir tu membresía gratuita. Inténtalo de nuevo."
   },
   "onboarding": {
     "title": "Configura tu workspace",
@@ -2936,7 +2939,11 @@
     "recap_markets": "Terminal de mercados",
     "recap_narratives": "Narrativas detectadas automáticamente",
     "recap_portfolio": "Cartera de solo lectura",
-    "recap_signals": "Señales explicables"
+    "recap_signals": "Señales explicables",
+    "free_body": "Tu cuenta abre el nivel gratuito de Investor Intel: los tableros de mercado, las cifras de régimen y todas las capturas registradas. Sin tarjeta y sin reloj de prueba.",
+    "free_cta": "Crear cuenta y continuar gratis",
+    "sent_body_suffix_free": ". Haz clic para activar tu cuenta y abrir tu membresía gratuita.",
+    "trust_free": "Plan gratuito"
   },
   "asset_news": {
     "checked": "Cobertura comprobada",
