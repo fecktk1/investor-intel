@@ -1,12 +1,17 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { BarChart3 } from 'lucide-react'
+import RateInterval from './RateInterval'
 
 // Closed-trade analytics from the intel_trade_analytics RPC (research only).
-const Stat = ({ label, value, tone }) => (
+const Stat = ({ label, value, tone, detail = null }) => (
   <div><dt className="text-[11px] text-[var(--fg-4)]">{label}</dt>
-    <dd className={`font-semibold ${tone || 'text-[var(--fg-1)]'}`}>{value ?? '—'}</dd></div>
+    <dd className={`font-semibold ${tone || 'text-[var(--fg-1)]'}`}>{value ?? '—'}</dd>
+    {detail && <dd className="text-[11px] font-normal">{detail}</dd>}</div>
 )
+// The win-rate denominator is the records that carry P&L (the scoped view), or
+// every closed trade in the legacy view that does not report P&L coverage.
+export const winRateSample = a => ({ successes: a?.wins ?? null, n: a?.priced_closed_trades ?? a?.closed_trades ?? null })
 const pf = (n) => n == null ? null : Number(n).toFixed(2)
 
 export default function TradeAnalyticsPanel({ analytics, loading }) {
@@ -22,7 +27,8 @@ export default function TradeAnalyticsPanel({ analytics, loading }) {
       <p className="intel-analysis-caption">Recorded closed journal trades. {a.priced_closed_trades!=null?`${a.priced_closed_trades} have P&L; ${a.unpriced_closed_trades} do not. The win-rate denominator includes only records with P&L.`:'P&L coverage is not reported by this legacy view.'} Portfolio accounting and thesis assessments remain separate.</p>
       <dl className="intel-thesis-facts">
         <Stat label={t('journal.trade.closed', { defaultValue: 'Closed' })} value={a.closed_trades} />
-        <Stat label={t('journal.trade.winrate', { defaultValue: 'Win rate' })} value={a.win_rate != null ? `${a.win_rate}%` : '—'} tone={a.win_rate >= 50 ? 'text-[var(--ok)]' : 'text-[var(--fg-1)]'} />
+        <Stat label={t('journal.trade.winrate', { defaultValue: 'Win rate' })} value={a.win_rate != null ? `${a.win_rate}%` : '—'} tone={a.win_rate >= 50 ? 'text-[var(--ok)]' : 'text-[var(--fg-1)]'}
+          detail={a.win_rate != null && <RateInterval {...winRateSample(a)} reference={0.5} referenceLabel={t('rates.neutral_reference', { defaultValue: 'Neutral reference, not a benchmark' })} className="" />} />
         <Stat label={t('journal.trade.expectancy', { defaultValue: 'Expectancy' })} value={a.expectancy != null ? `$${a.expectancy}` : '—'} tone={a.expectancy >= 0 ? 'text-[var(--ok)]' : 'text-red-400'} />
         <Stat label={t('journal.trade.profit_factor', { defaultValue: 'Profit factor' })} value={pf(a.profit_factor)} />
         <Stat label={t('journal.trade.avg_r', { defaultValue: 'Avg R' })} value={pf(a.avg_r)} />

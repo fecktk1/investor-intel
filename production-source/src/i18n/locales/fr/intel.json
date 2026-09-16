@@ -1331,7 +1331,8 @@
     "reuse_unchanged": "Réutilisé : données sous-jacentes inchangées depuis la dernière analyse.",
     "still_holds": "Toujours valable",
     "watch_next": "À surveiller ensuite",
-    "what_changed": "Ce qui a changé"
+    "what_changed": "Ce qui a changé",
+    "grounding_blocked_body": "Un chiffre de cette réponse n’a pas pu être rattaché aux éléments à partir desquels elle a été générée, même après une nouvelle génération, la réponse a donc été retenue. Chiffres non étayés : {{figures}}."
   },
   "actions": {
     "add_watchlist": "Ajouter à la watchlist",
@@ -1726,7 +1727,18 @@
       }
     },
     "notice_threshold_label": "Tout avis présent",
-    "notice_explanation": "Se déclenche lorsqu’un avis de listing CoinMarketCap est présent pour cet actif. Elle est évaluée à l’horloge quotidienne des métadonnées, pas selon votre calendrier, et la formulation de l’avis n’est pas interprétée : la règle signale seulement qu’un avis existe, lisez donc l’avis lui-même avant d’agir. Il n’y a ni seuil ni direction à choisir : la règle se réarme après son délai."
+    "notice_explanation": "Se déclenche lorsqu’un avis de listing CoinMarketCap est présent pour cet actif. Elle est évaluée à l’horloge quotidienne des métadonnées, pas selon votre calendrier, et la formulation de l’avis n’est pas interprétée : la règle signale seulement qu’un avis existe, lisez donc l’avis lui-même avant d’agir. Il n’y a ni seuil ni direction à choisir : la règle se réarme après son délai.",
+    "repeat_distinct_label": "Une alerte par",
+    "repeat_distinct_transfer": "Transfert éligible",
+    "repeat_distinct_transaction": "Transaction",
+    "repeat_distinct_version": "Révision du calendrier",
+    "repeat_distinct_event": "Déblocage programmé",
+    "repeat_window_wallet_label": "Regrouper les transferts sur (minutes)",
+    "repeat_window_unlock_label": "Signaler à nouveau un déblocage révisé après (minutes)",
+    "repeat_wallet_explanation": "Chaque transfert est un événement enregistré distinct, une marge de réinitialisation ne s’applique donc pas. « Transaction » envoie une seule alerte pour toutes les parties d’un transfert qui partagent un même hash de transaction. Une fenêtre de regroupement supérieure à 0 rattache à une alerte un transfert du même actif dans le même sens, enregistré selon son heure source dans ce nombre de minutes après un transfert déjà signalé. Laisser « Transfert éligible » et 0 conserve exactement le comportement actuel de cette règle.",
+    "repeat_unlock_explanation": "Un déblocage est une entrée datée du calendrier, pas un niveau, une marge de réinitialisation ne s’applique donc pas. Quand un fournisseur révise le calendrier, une nouvelle version est enregistrée et déclenche par défaut une nouvelle alerte. « Déblocage programmé » envoie une alerte par déblocage, quel que soit le nombre de révisions. Une fenêtre supérieure à 0 ne laisse une révision déclencher une nouvelle alerte qu’une fois ce nombre de minutes écoulé depuis la dernière alerte pour ce même déblocage. Laisser « Révision du calendrier » et 0 conserve exactement le comportement actuel de cette règle.",
+    "repeat_distinct_invalid": "Choisissez ce qui compte comme une alerte.",
+    "repeat_window_invalid": "Saisissez une fenêtre de répétition entre 0 et {{max}} minutes entières."
   },
   "narratives": {
     "add_label": "Suivre un narratif",
@@ -3826,5 +3838,27 @@
     "free_open_watchlist": "10 éléments de liste de suivi",
     "free_locked_title": "Verrouillé jusqu'à Starter",
     "free_locked_body": "Recherche à la demande, Connected Research, valorisation de portefeuille, génération par IA, historique des prix, alertes, Surveillance wallets, le Journal des thèses, Comment King et l'accès des agents. Chacune lance une nouvelle requête pour vous à chaque ouverture."
+  },
+  "breadth_spread": {
+    "title": "La largeur du marché en un chiffre",
+    "loading": "Lecture de la capture quotidienne des listings…",
+    "unavailable": "L’écart n’a pas pu être lu.",
+    "empty": "Aucune capture quotidienne des listings avec capitalisation et variation sur 24 h n’est encore enregistrée, l’écart n’est donc pas mesuré.",
+    "value": "{{value}} pts",
+    "sides": "Rendement sur 24 h pondéré par la capitalisation {{weighted}} moins le {{median}} de l’actif médian, sur {{included}} des {{total}} actifs capturés.",
+    "meaning": "Au-dessus de zéro, les plus gros actifs ont fait mieux que l’actif typique ; en dessous de zéro, l’actif typique a fait mieux que les plus gros.",
+    "not_meaning": "Ce n’est ni une prévision ni un décompte des actifs en hausse ou en baisse, et un écart proche de zéro ne signifie pas que tous les actifs ont évolué de la même façon.",
+    "excluded": "{{noCap}} actifs sans capitalisation et {{noReturn}} sans variation sur 24 h ont été exclus des deux côtés.",
+    "clock": "Capture quotidienne des listings du {{date}} (UTC)."
+  },
+  "rates": {
+    "interval": "Intervalle à 95 % : {{low}} à {{high}}, n = {{n}}",
+    "small_sample": "(petit échantillon)",
+    "reference": "{{label}} : {{rate}}",
+    "neutral_reference": "Référence neutre, pas un indice de comparaison",
+    "confirmed_share": "Part confirmée des thèses résolues",
+    "base_rate_resolved": "Taux de base sur toutes vos thèses résolues",
+    "no_resolved": "Aucune thèse résolue",
+    "base_rate_line": "Taux de base : {{successes}} des {{n}} thèses résolues, toutes orientations confondues, ont été confirmées ou partiellement confirmées ({{rate}}). Les thèses ouvertes ne sont pas comptées."
   }
 }

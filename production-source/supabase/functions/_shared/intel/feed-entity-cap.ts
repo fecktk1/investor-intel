@@ -21,6 +21,27 @@
 //               ones, so one entity cannot own the head of the ranking while
 //               every row remains reachable on a later page.
 //
+// WHERE THE CAP IS DELIBERATELY NOT APPLIED. The rule inherited from the degen
+// screener is that an ordering the reader explicitly chose is never reordered,
+// and neither is a record of what a reader reviewed. Reviewed 2026-09-16:
+//
+//   markets screen table   every ordering is a column sort. The untouched default
+//                          is market capitalisation, drawn as the active column
+//                          header with a rank number on each row, so deferring a
+//                          row would print ranks out of order under a header that
+//                          says otherwise. Its derived boards (gainers, losers,
+//                          category leaders) are capped in SQL.
+//   intel-defi-browse      paginated in SQL and always sent with a sort; the
+//                          default TVL order is drawn as the active TVL column.
+//                          Reordering a page would contradict that header, and a
+//                          per-page defer could not move a row to another page.
+//   dex-cohort-service     a cohort is the exact membership a reader reviewed and
+//                          captured, returned in the provider's own order, pinned
+//                          to one platform and unique per contract. Reordering it
+//                          would falsify the record it exists to keep.
+//   adoption-attention     one asset compared with itself across two dated
+//                          windows. It publishes no ranking of assets to cap.
+//
 // A row whose entity cannot be identified is never grouped with another such
 // row. An unknown entity is not evidence that two rows share one, and treating
 // every unnamed row as one entity would silently bury them all.
@@ -99,4 +120,49 @@ export function capByEntity<T>(rows: readonly T[] | null | undefined, options: E
  * that only wants the list does not have to destructure. */
 export function capRankedBoard<T>(rows: readonly T[] | null | undefined, options: EntityCapOptions<T>): T[] {
  return capByEntity(rows, { ...options, overflow: 'backfill' }).rows
+}
+
+/**
+ * Defer over-quota rows INSIDE each contiguous run of rows that share an ordering
+ * key, never across runs.
+ *
+ * Some default rankings carry an order a reader can see and rely on even though
+ * nobody chose it: a list of listings by the day they were added, or of
+ * contracts by the capture that sighted them. Moving a row behind a later day
+ * would make that order false. Inside one day, or one capture, the rows are tied
+ * on the only thing the list is ordered by, so their relative position is
+ * arbitrary and a cap can spread entities without misstating anything.
+ *
+ * Nothing is dropped and the result is always the same length as the input:
+ * every run keeps exactly its own rows, in the same run position.
+ */
+export function capWithinRuns<T>(
+  rows: readonly T[] | null | undefined,
+  runOf: (row: T) => string | null | undefined,
+  options: Omit<EntityCapOptions<T>, 'limit' | 'overflow'>,
+): EntityCapResult<T> {
+  const all = Array.isArray(rows) ? rows.slice() : []
+  const out: T[] = []
+  let deferred = 0
+  const entities = new Set<string>()
+  let run: T[] = [], current: string | null = null
+  const flush = () => {
+    if (!run.length) return
+    const capped = capByEntity(run, { ...options, overflow: 'defer' })
+    out.push(...capped.rows)
+    deferred += capped.deferred
+    for (const row of run) {
+      try { const e = options.entityOf(row); if (typeof e === 'string' && e.trim()) entities.add(e.trim().toLowerCase()) } catch { /* counted as unnamed by capByEntity */ }
+    }
+    run = []
+  }
+  for (const row of all) {
+    let key: string
+    try { key = String(runOf(row) ?? '') } catch { key = '' }
+    if (current !== null && key !== current) flush()
+    current = key
+    run.push(row)
+  }
+  flush()
+  return { rows: out, deferred, backfilled: 0, entities: entities.size }
 }

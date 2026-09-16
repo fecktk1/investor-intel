@@ -83,7 +83,9 @@ export default function ArtifactView({ result, loading, onRefresh, alreadySaved 
         <ShieldAlert className="h-5 w-5 flex-shrink-0 mt-0.5" />
         <div>
           <div className="font-medium">{t('artifact.blocked_title', { defaultValue: 'Output withheld' })}</div>
-          <div className="text-[13px] text-[var(--fg-3)]">{s.evidence_quality?.status === 'needs_review'
+          <div className="text-[13px] text-[var(--fg-3)]">{s.grounding?.status === 'refused' || result.reason === 'numeric_grounding_failed'
+            ? t('artifact.grounding_blocked_body', { figures: (Array.isArray(s.grounding?.ungrounded) ? s.grounding.ungrounded : []).join('; ') || '-', defaultValue: 'A figure in this response could not be matched to the evidence it was generated from, even after one regeneration, so the response was withheld. Figures that could not be grounded: {{figures}}.' })
+            : s.evidence_quality?.status === 'needs_review'
             ? t('artifact.evidence_blocked_body', { defaultValue: 'This report misstates the meaning of its source evidence and has been withheld. Request an updated report; the original remains recorded.' })
             : t('artifact.blocked_body', { defaultValue: 'This response did not pass our non-financial-advice safety check and was not shown.' })}</div>
           {onRefresh && <button className="btn btn--quiet btn--sm mt-2" onClick={onRefresh}>{t('artifact.refresh', { defaultValue: 'Refresh analysis' })}</button>}

@@ -1331,7 +1331,8 @@
     "reuse_unchanged": "Riutilizzato: dati sottostanti invariati dall’ultima analisi.",
     "still_holds": "Ancora valido",
     "watch_next": "Cosa monitorare dopo",
-    "what_changed": "Cosa è cambiato"
+    "what_changed": "Cosa è cambiato",
+    "grounding_blocked_body": "Un numero di questa risposta non è stato ricondotto alle evidenze da cui è stata generata, nemmeno dopo una rigenerazione, quindi la risposta è stata trattenuta. Numeri non verificabili: {{figures}}."
   },
   "actions": {
     "add_watchlist": "Aggiungi alla watchlist",
@@ -1726,7 +1727,18 @@
       }
     },
     "notice_threshold_label": "Qualsiasi avviso presente",
-    "notice_explanation": "Si attiva quando per questo asset è presente un avviso di quotazione di CoinMarketCap. Viene valutata sull’orologio giornaliero dei metadati, non secondo la tua pianificazione, e il testo dell’avviso non viene interpretato: la regola segnala soltanto che un avviso esiste, quindi leggi l’avviso stesso prima di agire. Non c’è alcuna soglia né direzione da scegliere: la regola si riarma dopo il suo tempo di attesa."
+    "notice_explanation": "Si attiva quando per questo asset è presente un avviso di quotazione di CoinMarketCap. Viene valutata sull’orologio giornaliero dei metadati, non secondo la tua pianificazione, e il testo dell’avviso non viene interpretato: la regola segnala soltanto che un avviso esiste, quindi leggi l’avviso stesso prima di agire. Non c’è alcuna soglia né direzione da scegliere: la regola si riarma dopo il suo tempo di attesa.",
+    "repeat_distinct_label": "Un avviso per",
+    "repeat_distinct_transfer": "Trasferimento idoneo",
+    "repeat_distinct_transaction": "Transazione",
+    "repeat_distinct_version": "Revisione del calendario",
+    "repeat_distinct_event": "Sblocco programmato",
+    "repeat_window_wallet_label": "Raggruppa i trasferimenti entro (minuti)",
+    "repeat_window_unlock_label": "Avvisa di nuovo per uno sblocco rivisto dopo (minuti)",
+    "repeat_wallet_explanation": "Ogni trasferimento è un evento registrato a sé, quindi un margine di reset non si applica. «Transazione» invia un solo avviso per tutte le parti di trasferimento che condividono lo stesso hash di transazione. Una finestra di raggruppamento sopra 0 considera parte di quell’avviso un trasferimento dello stesso asset nella stessa direzione, registrato secondo il suo orario di origine entro quei minuti da un trasferimento già segnalato. Lasciando «Trasferimento idoneo» e 0 il comportamento attuale di questa regola resta esattamente invariato.",
+    "repeat_unlock_explanation": "Uno sblocco è una voce datata del calendario, non un livello, quindi un margine di reset non si applica. Quando un fornitore rivede il calendario viene registrata una nuova versione, che per impostazione predefinita avvisa di nuovo. «Sblocco programmato» invia un avviso per sblocco, per quante volte venga rivisto. Una finestra sopra 0 lascia che una revisione avvisi di nuovo solo dopo che sono passati quei minuti dall’ultimo avviso per lo stesso sblocco. Lasciando «Revisione del calendario» e 0 il comportamento attuale di questa regola resta esattamente invariato.",
+    "repeat_distinct_invalid": "Scegli che cosa conta come un avviso.",
+    "repeat_window_invalid": "Inserisci una finestra di ripetizione tra 0 e {{max}} minuti interi."
   },
   "narratives": {
     "add_label": "Tieni traccia di una narrativa",
@@ -3826,5 +3838,27 @@
     "free_open_watchlist": "10 elementi in watchlist",
     "free_locked_title": "Bloccato fino a Starter",
     "free_locked_body": "Ricerca su richiesta, Connected Research, valutazione del portafoglio, generazione con IA, storico dei prezzi, avvisi, Wallet Watch, il Diario delle tesi, Comment King e l'accesso agenti. Ognuna avvia una nuova richiesta per te a ogni apertura."
+  },
+  "breadth_spread": {
+    "title": "L’ampiezza del mercato in un numero",
+    "loading": "Lettura dell’acquisizione giornaliera dei listing…",
+    "unavailable": "Non è stato possibile leggere lo scarto.",
+    "empty": "Non è ancora registrata un’acquisizione giornaliera dei listing con capitalizzazione e variazione a 24h, quindi lo scarto non viene misurato.",
+    "value": "{{value}} pt",
+    "sides": "Rendimento a 24h ponderato per capitalizzazione {{weighted}} meno il {{median}} dell’asset mediano, su {{included}} di {{total}} asset acquisiti.",
+    "meaning": "Sopra zero, gli asset più grandi hanno fatto meglio dell’asset tipico; sotto zero, l’asset tipico ha fatto meglio di quelli più grandi.",
+    "not_meaning": "Non è una previsione né un conteggio degli asset in rialzo o in ribasso, e uno scarto vicino a zero non significa che tutti gli asset si siano mossi allo stesso modo.",
+    "excluded": "{{noCap}} asset senza capitalizzazione e {{noReturn}} senza variazione a 24h sono stati esclusi da entrambi i lati.",
+    "clock": "Acquisizione giornaliera dei listing del {{date}} (UTC)."
+  },
+  "rates": {
+    "interval": "Intervallo al 95%: da {{low}} a {{high}}, n = {{n}}",
+    "small_sample": "(campione piccolo)",
+    "reference": "{{label}}: {{rate}}",
+    "neutral_reference": "Riferimento neutro, non un benchmark",
+    "confirmed_share": "Quota confermata delle risolte",
+    "base_rate_resolved": "Tasso di base su tutte le tue tesi risolte",
+    "no_resolved": "Nessuna tesi risolta",
+    "base_rate_line": "Tasso di base: {{successes}} di {{n}} tesi risolte, su tutte le posizioni, sono state confermate o confermate in parte ({{rate}}). Le tesi aperte non sono conteggiate."
   }
 }

@@ -51,6 +51,7 @@ import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
 import { requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
 import { isInternalServiceCall } from '../_shared/internal-auth.ts'
 import {loadAlertExplanationReceipt,attachAlertExplanationReceipt,ALERT_EXPLANATION_RULES} from '../_shared/intel/alert-explanation-receipt.ts'
+import { groundOrRefuse, groundingRefusal, type GroundedGeneration } from '../_shared/intel/numeric-grounding.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -361,6 +362,24 @@ async function callOpenAI(model: string, system: string, user: string, apiKey: s
   if (!res.ok) throw new Error(`openai_${res.status}: ${(await res.text()).slice(0, 300)}`)
   const data = await res.json()
   return { content: data.choices?.[0]?.message?.content || '{}', usage: data.usage }
+}
+
+// Numeric grounding (numeric-grounding.ts): every figure in the generated prose
+// must be present in the evidence the model was given. One bounded
+// regeneration names the ungrounded figures; a second failure replaces the
+// artifact with a refusal, so ungrounded prose is never returned or stored.
+// deno-lint-ignore no-explicit-any
+async function groundGeneratedArtifact(args: { structured: any; system: string; user: string; model: string; apiKey: string; evidence: unknown; onUsage?: (usage: any, model: string) => Promise<void> }): Promise<GroundedGeneration<any>> {
+  return await groundOrRefuse({
+    output: args.structured,
+    textOf: textOfArtifact,
+    evidence: args.evidence,
+    regenerate: async (instruction) => {
+      const retry = await callOpenAI(args.model, `${args.system}\n\n${instruction}`, `${args.user}\n\nPrevious JSON to fix:\n${JSON.stringify(args.structured).slice(0, 8000)}`, args.apiKey)
+      await args.onUsage?.(retry.usage, args.model)
+      try { return JSON.parse(retry.content) } catch { return null }
+    },
+  })
 }
 
 // Build a research_artifacts row (org-scoped). Used for fresh generations AND
@@ -909,17 +928,29 @@ Deno.serve(async (req) => {
         validationD = validateSafeLanguage(textOfArtifact(structuredD))
         outcomeD = validationD.ok ? 'rewrite' : 'block'
       }
+      const groundingD = await groundGeneratedArtifact({
+        structured: structuredD, system: dp.system, user: dp.user, model: dp.model, apiKey,
+        evidence: { prompt: dp.user },
+        onUsage: async (u, m) => { usageD = u; await recordAIUsage(admin, { orgId, userId, provider: 'openai', model: m, surface: 'investor_intel', subMode: `${artifactType}:delta_grounding_rewrite`, providerUsage: u, status: 'success' }) },
+      })
+      if (groundingD.status === 'regenerated') {
+        structuredD = groundingD.output
+        validationD = validateSafeLanguage(textOfArtifact(structuredD))
+        outcomeD = validationD.ok ? 'rewrite' : 'block'
+      } else if (groundingD.status === 'refused') {
+        structuredD = groundingRefusal(groundingD.ungrounded, { sources: ['Delta update on prior analysis'] })
+      }
       structuredD = reconcileCoverage(structuredD, ['Delta update on prior analysis'], packCoverageFromContext({ evidence_coverage: pkg?.coverage || null, current_signal: signalSnap }))
       if (narrativeInput) structuredD = attachNarrativeInput(structuredD, narrativeInput)
       if (preparedNarrative) structuredD = annotateNarrativeClaims(structuredD, preparedNarrative.pack)
       const contractD = validateArtifactContract(structuredD, DELTA_REQUIRED_FIELDS)
-      const blockedD = !validationD.ok || structuredD?.evidence_quality?.status === 'needs_review'
+      const blockedD = !validationD.ok || structuredD?.evidence_quality?.status === 'needs_review' || groundingD.status === 'refused'
       const validationStatusD = blockedD ? 'blocked' : (outcomeD === 'rewrite' ? 'rewritten' : 'passed')
       const staleAfterD = new Date(Date.now() + staleMinutes * 60_000).toISOString()
       const rowD = orgArtifactRow({
         orgId, userId, artifactType, ent, extra, structured: structuredD, inputHash, cacheKey, staleAfter: staleAfterD,
         model: dp.model, validationStatus: validationStatusD, sources: ['Delta update on prior analysis'],
-        validatorOutcome: { hits: validationD.hits, contract_missing: contractD.missing, base_artifact_id: deltaPlan.prior.id, drivers: deltaPlan.drivers },
+        validatorOutcome: { hits: validationD.hits, contract_missing: contractD.missing, base_artifact_id: deltaPlan.prior.id, drivers: deltaPlan.drivers, grounding: { status: groundingD.status, checked: groundingD.first.checked, ungrounded: groundingD.ungrounded } },
         evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, signalSnapshot: signalSnap || {},
         baseArtifactId: deltaPlan.prior.id, reuseKind: 'delta',
       })
@@ -937,7 +968,7 @@ Deno.serve(async (req) => {
         allowReason: deltaPlan.magnitude === 'material' ? 'evidence_changed_material' : 'evidence_changed_minor',
         usage: { tokens_in: usageD?.prompt_tokens, tokens_out: usageD?.completion_tokens },
       })
-      if (blockedD) return json({ artifact: artifactD, blocked: true, reason: structuredD?.evidence_quality?.status === 'needs_review' ? 'evidence_validation_failed' : 'safety_validation_failed' }, 200)
+      if (blockedD) return json({ artifact: artifactD, blocked: true, reason: groundingD.status === 'refused' ? 'numeric_grounding_failed' : structuredD?.evidence_quality?.status === 'needs_review' ? 'evidence_validation_failed' : 'safety_validation_failed' }, 200)
       return json({ artifact: artifactD, cached: false, delta: true, base_artifact_id: deltaPlan.prior.id, change_drivers: deltaPlan.drivers })
     }
 
@@ -1167,6 +1198,20 @@ Deno.serve(async (req) => {
       validation = validateSafeLanguage(textOfArtifact(structured))
       validatorOutcome = validation.ok ? 'rewrite' : 'block'
     }
+    // The evidence is what the model was actually shown: the prompt (entity,
+    // context and any question) and, on the multi-model path, the full context.
+    const grounding = await groundGeneratedArtifact({
+      structured, system, user, model: intelModel('escalate'), apiKey,
+      evidence: { prompt: user, context: useMulti ? genContext : null },
+      onUsage: async (u, m) => { usage = u; modelUsed = `${modelUsed}+grounding:${m}`; await recordAIUsage(admin, { orgId, userId, provider: 'openai', model: m, surface: 'investor_intel', subMode: `${artifactType}:grounding_rewrite`, providerUsage: u, status: 'success' }) },
+    })
+    if (grounding.status === 'regenerated') {
+      structured = grounding.output
+      validation = validateSafeLanguage(textOfArtifact(structured))
+      validatorOutcome = validation.ok ? 'rewrite' : 'block'
+    } else if (grounding.status === 'refused') {
+      structured = groundingRefusal(grounding.ungrounded, { sources: sourcesUsed.slice() })
+    }
     structured = reconcileCoverage(structured, sourcesUsed, packCoverageFromContext(genContext))
     if(alertReceipt){
       const currentReceipt=await loadAlertExplanationReceipt(supabase,{eventId:alertReceipt.event_id,orgId,userId,allowCmcAi:await loadCmcAiAllowed(admin)})
@@ -1177,7 +1222,7 @@ Deno.serve(async (req) => {
     if (narrativeInput) structured = attachNarrativeInput(structured, narrativeInput)
     if (preparedNarrative) structured = annotateNarrativeClaims(structured, preparedNarrative.pack)
     const contract = validateArtifactContract(structured, required)
-    const blocked = !validation.ok || structured?.evidence_quality?.status === 'needs_review'
+    const blocked = !validation.ok || structured?.evidence_quality?.status === 'needs_review' || grounding.status === 'refused'
     const validationStatus = blocked ? 'blocked' : (validatorOutcome === 'rewrite' ? 'rewritten' : 'passed')
 
     const now = Date.now()
@@ -1188,7 +1233,7 @@ Deno.serve(async (req) => {
     const row = orgArtifactRow({
       orgId, userId, artifactType, ent, extra, structured, inputHash, cacheKey, staleAfter, model: modelUsed,
       validationStatus, sources: sourcesUsed,
-      validatorOutcome: { hits: validation.hits, contract_missing: contract.missing, consensus, providers: providerMeta?.providers || [], ...(freshWhatChanged?.drivers?.length ? { drivers: freshWhatChanged.drivers } : {}) },
+      validatorOutcome: { hits: validation.hits, contract_missing: contract.missing, consensus, providers: providerMeta?.providers || [], grounding: { status: grounding.status, checked: grounding.first.checked, ungrounded: grounding.ungrounded }, ...(freshWhatChanged?.drivers?.length ? { drivers: freshWhatChanged.drivers } : {}) },
       evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, signalSnapshot: signalSnap || {},
       reuseKind: 'fresh',
       questionNormHash: explainHashes?.question_norm_hash || null, questionShingles: explainHashes?.question_shingles || null,
@@ -1218,12 +1263,12 @@ Deno.serve(async (req) => {
     await recordIntelEvent(admin, {
       orgId, userId, eventType: artifactType, subjectKind: ent?.entity_kind, subjectKey: ent?.canonical_ref_key,
       artifactId: artifact.id, model: modelUsed, tokensIn: usage?.prompt_tokens, tokensOut: usage?.completion_tokens,
-      validatorOutcome, validatorReason: blocked ? validation.hits.map((h) => h.label).join(',') : null,
+      validatorOutcome, validatorReason: blocked ? (grounding.status === 'refused' ? 'numeric_grounding_failed' : validation.hits.map((h) => h.label).join(',')) : null,
       metadata: { cache: 'miss', multi_model: useMulti && !!consensus, consensus, providers: providerMeta?.providers || [], shared_eligible: !!pkg?.reusable, contract_missing: contract.missing, evidence_items: evidenceCount, raw_candidates: pkg?.raw_candidate_count || 0 },
     })
     await recordArtifactDecisionMemory(supabase, { orgId, userId, artifactType, ent, artifact, decisionKind: 'artifact_fresh_generation', cache: 'fresh', reasoningSummary: structured?.summary || null, evidenceHash: pkg?.evidence_hash, sourceSetHash: pkg?.source_set_hash, metadata: { multi_model: useMulti && !!consensus, consensus, providers: providerMeta?.providers || [], shared_eligible: !!pkg?.reusable, contract_missing: contract.missing, evidence_items: evidenceCount, raw_candidates: pkg?.raw_candidate_count || 0 } })
 
-    if (blocked) return json({ artifact, blocked: true, reason: structured?.evidence_quality?.status === 'needs_review' ? 'evidence_validation_failed' : 'safety_validation_failed' }, 200)
+    if (blocked) return json({ artifact, blocked: true, reason: grounding.status === 'refused' ? 'numeric_grounding_failed' : structured?.evidence_quality?.status === 'needs_review' ? 'evidence_validation_failed' : 'safety_validation_failed' }, 200)
     return json({ artifact, cached: false, consensus, multi_model: !!consensus, matched_surfaces: explainRouted?.matched_surfaces || undefined })
   } catch (e) {
     const locked = surfaceLockedResponse(e, corsHeaders)
@@ -1297,9 +1342,17 @@ async function handleNarrativeBrief(req: Request, body: any) {
     } catch { /* keep prior */ }
     validation = validateSafeLanguage(textOfArtifact(structured))
   }
+  const grounding = await groundGeneratedArtifact({ structured, system, user, model: intelModel('escalate'), apiKey, evidence: { prompt: user, evidence } })
+  if (grounding.status === 'regenerated') {
+    structured = grounding.output
+    rewrote = true
+    validation = validateSafeLanguage(textOfArtifact(structured))
+  } else if (grounding.status === 'refused') {
+    structured = groundingRefusal(grounding.ungrounded)
+  }
   structured = reconcileCoverage(structured, [], evidence?.data_coverage || evidence?.coverage || null)
   const contract = validateArtifactContract(structured, required)
-  const blocked = !validation.ok
+  const blocked = !validation.ok || grounding.status === 'refused'
   const validationStatus = blocked ? 'blocked' : (rewrote ? 'rewritten' : 'passed')
   const staleAfter = new Date(Date.now() + (Number(body?.staleMinutes) || 720) * 60_000).toISOString()
 
@@ -1312,5 +1365,5 @@ async function handleNarrativeBrief(req: Request, body: any) {
       model_meta: { providers, contract_missing: contract.missing }, stale_after: staleAfter,
     }, { onConflict: 'artifact_type,entity_ref,evidence_hash,contract_version,guardrail_version' })
   }
-  return json({ entity_ref: entityRef, structured, consensus, blocked, cached: false })
+  return json({ entity_ref: entityRef, structured, consensus, blocked, ...(grounding.status === 'refused' ? { reason: 'numeric_grounding_failed' } : {}), cached: false })
 }

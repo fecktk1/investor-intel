@@ -1331,7 +1331,8 @@
     "reuse_unchanged": "Wiederverwendet: Die zugrunde liegenden Daten sind seit der letzten Analyse unverändert.",
     "still_holds": "Gilt weiterhin",
     "watch_next": "Was als Nächstes zu beobachten ist",
-    "what_changed": "Was sich geändert hat"
+    "what_changed": "Was sich geändert hat",
+    "grounding_blocked_body": "Eine Zahl in dieser Antwort konnte auch nach einer erneuten Generierung nicht den Belegen zugeordnet werden, aus denen sie erzeugt wurde, daher wurde die Antwort zurückgehalten. Nicht belegbare Zahlen: {{figures}}."
   },
   "actions": {
     "add_watchlist": "Zur Watchlist hinzufügen",
@@ -1726,7 +1727,18 @@
       }
     },
     "notice_threshold_label": "Jeder vorhandene Hinweis",
-    "notice_explanation": "Löst aus, wenn für dieses Asset ein CoinMarketCap-Listing-Hinweis vorliegt. Sie wird im täglichen Metadaten-Takt ausgewertet, nicht nach deinem Zeitplan, und der Wortlaut des Hinweises wird nicht ausgelegt: die Regel meldet nur, dass ein Hinweis existiert, lies also den Hinweis selbst, bevor du handelst. Es gibt keinen Schwellenwert und keine Richtung zu wählen: die Regel wird nach ihrer Sperrzeit wieder scharf."
+    "notice_explanation": "Löst aus, wenn für dieses Asset ein CoinMarketCap-Listing-Hinweis vorliegt. Sie wird im täglichen Metadaten-Takt ausgewertet, nicht nach deinem Zeitplan, und der Wortlaut des Hinweises wird nicht ausgelegt: die Regel meldet nur, dass ein Hinweis existiert, lies also den Hinweis selbst, bevor du handelst. Es gibt keinen Schwellenwert und keine Richtung zu wählen: die Regel wird nach ihrer Sperrzeit wieder scharf.",
+    "repeat_distinct_label": "Ein Alarm pro",
+    "repeat_distinct_transfer": "Qualifizierendem Transfer",
+    "repeat_distinct_transaction": "Transaktion",
+    "repeat_distinct_version": "Revision des Zeitplans",
+    "repeat_distinct_event": "Geplantem Unlock",
+    "repeat_window_wallet_label": "Transfers zusammenfassen innerhalb von (Minuten)",
+    "repeat_window_unlock_label": "Revidierten Unlock erneut melden nach (Minuten)",
+    "repeat_wallet_explanation": "Jeder Transfer ist ein eigenes aufgezeichnetes Ereignis, daher gilt keine Rücksetzmarge. „Transaktion“ sendet einen Alarm für alle Transfer-Teile mit demselben Transaktions-Hash. Ein Zusammenfassungsfenster über 0 behandelt einen Transfer desselben Assets in derselben Richtung, der laut Quellzeit innerhalb so vieler Minuten nach einem gemeldeten Transfer aufgezeichnet wurde, als Teil dieses Alarms. Mit „Qualifizierendem Transfer“ und 0 bleibt das bisherige Verhalten dieser Regel genau erhalten.",
+    "repeat_unlock_explanation": "Ein Unlock ist ein datierter Eintrag im Zeitplan, kein Niveau, daher gilt keine Rücksetzmarge. Wenn ein Anbieter den Zeitplan revidiert, entsteht eine neue Version, die standardmäßig erneut meldet. „Geplantem Unlock“ sendet einen Alarm pro Unlock, egal wie oft er revidiert wird. Ein Fenster über 0 lässt eine Revision erst wieder melden, wenn seit dem letzten Alarm für denselben Unlock so viele Minuten vergangen sind. Mit „Revision des Zeitplans“ und 0 bleibt das bisherige Verhalten dieser Regel genau erhalten.",
+    "repeat_distinct_invalid": "Wähle, was als ein Alarm zählt.",
+    "repeat_window_invalid": "Gib ein Wiederholungsfenster zwischen 0 und {{max}} ganzen Minuten ein."
   },
   "narratives": {
     "add_label": "Narrativ verfolgen",
@@ -3826,5 +3838,27 @@
     "free_open_watchlist": "10 Beobachtungslisten-Einträge",
     "free_locked_title": "Bis Starter gesperrt",
     "free_locked_body": "Recherche auf Abruf, Connected Research, Portfoliobewertung, KI-Erzeugung, Kursverlauf, Alarme, Wallet Watch, das Thesentagebuch, Comment King und Agent-Zugang. Jedes davon startet bei jedem Öffnen eine neue Anfrage für dich."
+  },
+  "breadth_spread": {
+    "title": "Marktbreite in einer Zahl",
+    "loading": "Die tägliche Listing-Erfassung wird gelesen…",
+    "unavailable": "Die Differenz konnte nicht gelesen werden.",
+    "empty": "Es ist noch keine tägliche Listing-Erfassung mit Marktkapitalisierung und 24h-Veränderung aufgezeichnet, daher wird die Differenz nicht gemessen.",
+    "value": "{{value}} Pkt.",
+    "sides": "Kapitalisierungsgewichtete 24h-Rendite {{weighted}} minus {{median}} des Median-Assets, über {{included}} von {{total}} erfassten Assets.",
+    "meaning": "Über null haben die größten Assets besser abgeschnitten als das typische Asset; unter null hat das typische Asset besser abgeschnitten als die größten.",
+    "not_meaning": "Sie ist keine Prognose und keine Zählung steigender oder fallender Assets, und eine Differenz nahe null heißt nicht, dass sich alle Assets gleich bewegt haben.",
+    "excluded": "{{noCap}} Assets ohne Marktkapitalisierung und {{noReturn}} ohne 24h-Veränderung wurden auf beiden Seiten ausgelassen.",
+    "clock": "Tägliche Listing-Erfassung vom {{date}} (UTC)."
+  },
+  "rates": {
+    "interval": "95-%-Intervall {{low}} bis {{high}}, n = {{n}}",
+    "small_sample": "(kleine Stichprobe)",
+    "reference": "{{label}}: {{rate}}",
+    "neutral_reference": "Neutraler Bezugswert, kein Benchmark",
+    "confirmed_share": "Bestätigter Anteil der aufgelösten",
+    "base_rate_resolved": "Basisrate über alle deine aufgelösten Thesen",
+    "no_resolved": "Keine aufgelösten Thesen",
+    "base_rate_line": "Basisrate: {{successes}} von {{n}} aufgelösten Thesen über alle Ausrichtungen wurden bestätigt oder teilweise bestätigt ({{rate}}). Offene Thesen werden nicht gezählt."
   }
 }

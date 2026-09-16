@@ -2153,7 +2153,8 @@
     "reuse_unchanged": "Reused — underlying data unchanged since the last analysis.",
     "still_holds": "Still holds",
     "watch_next": "What to watch next",
-    "what_changed": "What changed"
+    "what_changed": "What changed",
+    "grounding_blocked_body": "A figure in this response could not be matched to the evidence it was generated from, even after one regeneration, so the response was withheld. Figures that could not be grounded: {{figures}}."
   },
   "actions": {
     "add_watchlist": "Add to watchlist",
@@ -2548,7 +2549,18 @@
       }
     },
     "notice_threshold_label": "Any notice present",
-    "notice_explanation": "Fires when a CoinMarketCap listing notice is present for this asset. It is evaluated at the daily metadata clock, not on your schedule, and the wording of the notice is not interpreted: the rule reports only that a notice exists, so read the notice itself before acting. There is no threshold and no direction to choose — the rule re-arms after its cooldown."
+    "notice_explanation": "Fires when a CoinMarketCap listing notice is present for this asset. It is evaluated at the daily metadata clock, not on your schedule, and the wording of the notice is not interpreted: the rule reports only that a notice exists, so read the notice itself before acting. There is no threshold and no direction to choose — the rule re-arms after its cooldown.",
+    "repeat_distinct_label": "One alert per",
+    "repeat_distinct_transfer": "Qualifying transfer",
+    "repeat_distinct_transaction": "Transaction",
+    "repeat_distinct_version": "Schedule revision",
+    "repeat_distinct_event": "Scheduled unlock",
+    "repeat_window_wallet_label": "Fold transfers within (minutes)",
+    "repeat_window_unlock_label": "Re-alert a revised unlock after (minutes)",
+    "repeat_wallet_explanation": "Each transfer is a separate recorded event, so a reset margin does not apply. \"Transaction\" sends one alert for all transfer legs that share a transaction hash. A fold window above 0 treats a transfer of the same asset in the same direction, recorded within that many minutes of an alerted transfer by its source time, as part of that alert. Leaving \"Qualifying transfer\" and 0 keeps this rule's existing behaviour exactly.",
+    "repeat_unlock_explanation": "An unlock is a dated schedule entry, not a level, so a reset margin does not apply. A provider revising the schedule records a new version, which alerts again by default. \"Scheduled unlock\" sends one alert per unlock however often it is revised. A window above 0 lets a revision alert again only once that many minutes have passed since the last alert for the same unlock. Leaving \"Schedule revision\" and 0 keeps this rule's existing behaviour exactly.",
+    "repeat_distinct_invalid": "Choose what counts as one alert.",
+    "repeat_window_invalid": "Enter a repeat window between 0 and {{max}} whole minutes."
   },
   "narratives": {
     "add_label": "Track a narrative",
@@ -3826,5 +3838,27 @@
     "free_open_watchlist": "10 watchlist items",
     "free_locked_title": "Locked until Starter",
     "free_locked_body": "On demand research, Connected Research, portfolio valuation, AI generation, price history, alerts, Wallet Watch, the Thesis Journal, Comment King and agent access. Each one runs a fresh request for you every time it is opened."
+  },
+  "breadth_spread": {
+    "title": "Breadth in one number",
+    "loading": "Reading the daily listing capture…",
+    "unavailable": "The spread could not be read.",
+    "empty": "No daily listing capture with market capitalisation and 24h change is recorded yet, so the spread is not measured.",
+    "value": "{{value}} pts",
+    "sides": "Capitalisation-weighted 24h return {{weighted}} minus the median asset’s {{median}}, over {{included}} of {{total}} captured assets.",
+    "meaning": "Above zero, the largest assets did better than the typical asset; below zero, the typical asset did better than the largest ones.",
+    "not_meaning": "It is not a forecast and not a count of assets up or down, and a spread near zero does not mean every asset moved alike.",
+    "excluded": "{{noCap}} assets without a market capitalisation and {{noReturn}} without a 24h change were left out of both sides.",
+    "clock": "Daily listing capture of {{date}} (UTC)."
+  },
+  "rates": {
+    "interval": "95% interval {{low}} to {{high}}, n = {{n}}",
+    "small_sample": "(small sample)",
+    "reference": "{{label}}: {{rate}}",
+    "neutral_reference": "Neutral reference, not a benchmark",
+    "confirmed_share": "Confirmed share of resolved",
+    "base_rate_resolved": "Base rate across all your resolved theses",
+    "no_resolved": "No resolved theses",
+    "base_rate_line": "Base rate: {{successes}} of {{n}} resolved theses across every stance were confirmed or partially confirmed ({{rate}}). Open theses are not counted."
   }
 }

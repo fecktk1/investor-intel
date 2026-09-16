@@ -1,4 +1,4 @@
-import { evidenceBlock, selectCoachEvidence, validateCoachCitations } from './thesis-coach-evidence.ts'
+import { evidenceBlock, selectCoachEvidence, validateCoachCitations, groundCoachOutput, coachProse } from './thesis-coach-evidence.ts'
 function assert(v: unknown, message: string) { if (!v) throw new Error(message) }
 const card = { source_table: 'intel_curated_news', source_ref: 'original:1', title: 'Recorded release', summary: 'Context '.repeat(30) + 'This was a proposal, not a completed release.', date: '2026-09-11T10:00:00Z', url: 'https://example.com/original', source: 'Publisher', event_type: 'development', materiality: 'medium', sentiment: 'neutral', coverage: 'partial' }
 Deno.test('T04 coach retains original qualifying words, source references, links and observation time', () => {
@@ -27,4 +27,19 @@ Deno.test('T04 citation validation rejects unknown and missing references and re
 Deno.test('T04 a too-large record is omitted whole without cutting its original words', () => {
   const result = JSON.parse(evidenceBlock([{ ...card, summary: 'a'.repeat(19000) }, card], 14, 'v'))
   assert(result.evidence.length === 1 && result.evidence[0].summary === card.summary && result.omitted_count === 1, 'whole-record budget')
+})
+
+Deno.test('coach figures must come from the evidence, notes or draft, with one regeneration and then a refusal', async () => {
+  const block = evidenceBlock([{ ...card, summary: 'Fees rose 18% to $2.4M this quarter.' }], 14, 'version-1')
+  const cited = (text: string) => ({ statement: `${text} [E1]`, bull: { narrative: 'Adoption [E1]', assumptions: ['Fees keep 18% growth'] }, confirmation_rules: [{ description: 'Fees above $2.4M', threshold: 999 }] })
+  assert(coachProse(cited('x')).includes('Fees above $2.4M'), 'rule descriptions are prose and are checked')
+  assert(!coachProse(cited('x')).includes('999'), 'a structured threshold is not prose')
+  const grounded = await groundCoachOutput(cited('Fees rose 18%'), { evidenceJson: block }, async () => { throw new Error('must not regenerate') })
+  assert(grounded.status === 'grounded', 'evidence figures ground')
+  const fromNotes = await groundCoachOutput(cited('Targeting 40% upside'), { evidenceJson: block, notes: 'I expect 40% upside' }, async () => null)
+  assert(fromNotes.status === 'grounded', "the reader's own notes are evidence for the reader's own figure")
+  let calls = 0
+  const refused = await groundCoachOutput(cited('Fees rose 35%'), { evidenceJson: block }, async () => { calls++; return validateCoachCitations(cited('Fees rose 36%'), block) })
+  assert(refused.status === 'refused' && refused.output === null && calls === 1, 'a second ungrounded figure refuses after exactly one regeneration')
+  assert(refused.ungrounded.join() === '36%', 'the refusal names the figure that failed')
 })

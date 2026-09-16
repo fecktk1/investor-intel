@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {capByEntity,capRankedBoard} from './feed-entity-cap.ts'
+import {capByEntity,capRankedBoard,capWithinRuns} from './feed-entity-cap.ts'
 
 interface Row{id:string;chain:string}
 const board=(...chains:string[]):Row[]=>chains.map((chain,i)=>({id:`r${i}`,chain}))
@@ -84,4 +84,22 @@ Deno.test('the quota is applied in rank order, so the best row of an entity is t
  const rows=board('solana','solana','base')
  const capped=capRankedBoard(rows,{entityOf:chainOf,perEntity:1,limit:2})
  assert.equal(ids(capped),'r0,r2')
+})
+
+Deno.test('a run cap spreads entities inside a run and never moves a row into another run',()=>{
+ // Runs are days: d1 is one wave of solana listings with one base listing last.
+ const rows=[{id:'a',day:'d1',chain:'solana'},{id:'b',day:'d1',chain:'solana'},{id:'c',day:'d1',chain:'solana'},{id:'d',day:'d1',chain:'base'},
+  {id:'e',day:'d0',chain:'solana'},{id:'f',day:'d0',chain:'solana'}]
+ const capped=capWithinRuns(rows,r=>r.day,{entityOf:r=>r.chain,perEntity:2})
+ assert.equal(capped.rows.map(r=>r.id).join(','),'a,b,d,c,e,f')
+ assert.equal(capped.deferred,1)
+ assert.equal(capped.rows.length,rows.length,'nothing is dropped')
+ assert.deepEqual(capped.rows.map(r=>r.day),['d1','d1','d1','d1','d0','d0'],'every row stays inside its own run')
+})
+
+Deno.test('a run cap over one entity, or over no rows, changes nothing',()=>{
+ const rows=board('solana','solana','solana')
+ assert.equal(ids(capWithinRuns(rows,()=>'same',{entityOf:chainOf,perEntity:1}).rows),'r0,r1,r2')
+ assert.equal(capWithinRuns(null,()=>'x',{entityOf:chainOf,perEntity:1}).rows.length,0)
+ assert.equal(ids(capWithinRuns(rows,()=>{throw new Error('bad')},{entityOf:chainOf,perEntity:0}).rows),'r0,r1,r2','no cap and a throwing run key keep the order')
 })

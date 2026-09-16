@@ -1331,7 +1331,8 @@
     "reuse_unchanged": "Ripërdorur: të dhënat bazë nuk kanë ndryshuar që nga analiza e fundit.",
     "still_holds": "Ende qëndron",
     "watch_next": "Çfarë të vëzhgosh më pas",
-    "what_changed": "Çfarë ndryshoi"
+    "what_changed": "Çfarë ndryshoi",
+    "grounding_blocked_body": "Një shifër në këtë përgjigje nuk mund të lidhej me dëshmitë nga të cilat u krijua, as pas një rigjenerimi, prandaj përgjigjja u mbajt. Shifra pa mbështetje: {{figures}}."
   },
   "actions": {
     "add_watchlist": "Shto në watchlist",
@@ -1726,7 +1727,18 @@
       }
     },
     "notice_threshold_label": "Çdo njoftim i pranishëm",
-    "notice_explanation": "Aktivizohet kur për këtë aktiv është i pranishëm një njoftim listimi i CoinMarketCap. Vlerësohet sipas orës ditore të metadatave, jo sipas orarit tënd, dhe teksti i njoftimit nuk interpretohet: rregulli raporton vetëm se ekziston një njoftim, prandaj lexo vetë njoftimin para se të veprosh. Nuk ka prag dhe nuk ka drejtim për të zgjedhur: rregulli riaktivizohet pas pushimit të vet."
+    "notice_explanation": "Aktivizohet kur për këtë aktiv është i pranishëm një njoftim listimi i CoinMarketCap. Vlerësohet sipas orës ditore të metadatave, jo sipas orarit tënd, dhe teksti i njoftimit nuk interpretohet: rregulli raporton vetëm se ekziston një njoftim, prandaj lexo vetë njoftimin para se të veprosh. Nuk ka prag dhe nuk ka drejtim për të zgjedhur: rregulli riaktivizohet pas pushimit të vet.",
+    "repeat_distinct_label": "Një alarm për",
+    "repeat_distinct_transfer": "Transfertë që kualifikohet",
+    "repeat_distinct_transaction": "Transaksion",
+    "repeat_distinct_version": "Rishikim të kalendarit",
+    "repeat_distinct_event": "Zhbllokim të planifikuar",
+    "repeat_window_wallet_label": "Bashko transfertat brenda (minutash)",
+    "repeat_window_unlock_label": "Njofto sërish për një zhbllokim të rishikuar pas (minutash)",
+    "repeat_wallet_explanation": "Çdo transfertë është një ngjarje e regjistruar më vete, prandaj marzhi i rivendosjes nuk zbatohet. \"Transaksion\" dërgon një alarm për të gjitha pjesët e transfertës që ndajnë të njëjtin hash transaksioni. Një dritare bashkimi mbi 0 e trajton si pjesë të atij alarmi një transfertë të të njëjtit aktiv në të njëjtin drejtim, të regjistruar sipas kohës së burimit brenda aq minutash nga një transfertë e njoftuar. Nëse lë \"Transfertë që kualifikohet\" dhe 0, sjellja aktuale e këtij rregulli mbetet saktësisht e njëjtë.",
+    "repeat_unlock_explanation": "Një zhbllokim është një hyrje me datë në kalendar, jo një nivel, prandaj marzhi i rivendosjes nuk zbatohet. Kur një ofrues rishikon kalendarin regjistrohet një version i ri, i cili si parazgjedhje njofton sërish. \"Zhbllokim të planifikuar\" dërgon një alarm për zhbllokim, sado herë të rishikohet. Një dritare mbi 0 lejon që një rishikim të njoftojë sërish vetëm pasi të kenë kaluar aq minuta nga alarmi i fundit për të njëjtin zhbllokim. Nëse lë \"Rishikim të kalendarit\" dhe 0, sjellja aktuale e këtij rregulli mbetet saktësisht e njëjtë.",
+    "repeat_distinct_invalid": "Zgjidh çfarë llogaritet si një alarm.",
+    "repeat_window_invalid": "Vendos një dritare përsëritjeje midis 0 dhe {{max}} minutash të plota."
   },
   "narratives": {
     "add_label": "Ndiq një narrativë",
@@ -3826,5 +3838,27 @@
     "free_open_watchlist": "10 artikuj në listën e ndjekjes",
     "free_locked_title": "E kyçur deri te Starter",
     "free_locked_body": "Kërkimi sipas kërkesës, Connected Research, vlerësimi i portofolit, gjenerimi me IA, historiku i çmimeve, njoftimet, Vëzhgimi i wallet-eve, Ditari i tezave, Comment King dhe aksesi i agjentëve. Secila nis një kërkesë të re për ty sa herë hapet."
+  },
+  "breadth_spread": {
+    "title": "Gjerësia e tregut në një numër",
+    "loading": "Po lexohet kapja ditore e listimeve…",
+    "unavailable": "Diferenca nuk mund të lexohej.",
+    "empty": "Ende nuk është regjistruar një kapje ditore e listimeve me kapitalizim tregu dhe ndryshim 24-orësh, prandaj diferenca nuk matet.",
+    "value": "{{value}} pikë",
+    "sides": "Kthimi 24-orësh i peshuar sipas kapitalizimit {{weighted}} minus {{median}} i aktivit median, mbi {{included}} nga {{total}} aktive të kapura.",
+    "meaning": "Mbi zero, aktivet më të mëdha ecën më mirë se aktivi tipik; nën zero, aktivi tipik eci më mirë se ato më të mëdhatë.",
+    "not_meaning": "Nuk është parashikim dhe as numërim i aktiveve në rritje apo rënie, dhe një diferencë afër zeros nuk do të thotë se të gjitha aktivet lëvizën njësoj.",
+    "excluded": "{{noCap}} aktive pa kapitalizim tregu dhe {{noReturn}} pa ndryshim 24-orësh u lanë jashtë në të dyja anët.",
+    "clock": "Kapja ditore e listimeve e {{date}} (UTC)."
+  },
+  "rates": {
+    "interval": "Intervali 95%: {{low}} deri {{high}}, n = {{n}}",
+    "small_sample": "(mostër e vogël)",
+    "reference": "{{label}}: {{rate}}",
+    "neutral_reference": "Referencë neutrale, jo pikë krahasimi",
+    "confirmed_share": "Pjesa e konfirmuar e të zgjidhurave",
+    "base_rate_resolved": "Norma bazë për të gjitha tezat e tua të zgjidhura",
+    "no_resolved": "Asnjë tezë e zgjidhur",
+    "base_rate_line": "Norma bazë: {{successes}} nga {{n}} teza të zgjidhura, në të gjitha qëndrimet, u konfirmuan plotësisht ose pjesërisht ({{rate}}). Tezat e hapura nuk numërohen."
   }
 }
