@@ -31,7 +31,7 @@ import type { CaptureDeps, JobResult, SchedulePolicyRow } from './capture-jobs.t
 import { ALIAS_ASSERTIONS, ALIAS_VERSION, type AliasAssertion } from './rwa-issuer-aliases.ts'
 import { fetchLeiRecord } from './rwa-sources/gleif.ts'
 import { fetchFormD, fetchSubmissions, formDFilings } from './rwa-sources/edgar.ts'
-import { concentration, concentrationScope, fetchTokenSummary, fetchTopHolders, type BlockscoutChain } from './rwa-sources/blockscout.ts'
+import { concentration, concentrationScope, fetchAddressImplementation, fetchTokenSummary, fetchTopHolders, type BlockscoutChain } from './rwa-sources/blockscout.ts'
 import { detectRestrictions, fetchContractAbi } from './rwa-sources/sourcify.ts'
 import { fetchSdnIndex, screenLegalEntity, type SdnIndex } from './rwa-sources/ofac.ts'
 import { leiRegistrationSignal } from './rwa-sources/gleif.ts'
@@ -56,8 +56,16 @@ export const FILINGS_PER_SUBJECT = 8
 /** Subjects one run will process, so a growing alias map cannot grow the run. */
 export const SUBJECTS_PER_RUN = 10
 
-/** The environment variable carrying the descriptive contact EDGAR requires. */
+/** The environment variable carrying the descriptive contact EDGAR requires.
+ * REQUIRED SETTING: until it is set, `rwa_issuer_registry` reads nothing from
+ * EDGAR and reports `user_agent_required`. See the migration header. */
 export const EDGAR_AGENT_ENV = 'SEC_EDGAR_USER_AGENT'
+
+/** Recorded for a token that IS a proxy but whose implementation could not be
+ * read. It must never fall through to `no_restriction_found`: not having looked
+ * is not the same as having looked and found nothing. */
+export const PROXY_UNRESOLVED_SCOPE =
+  'This token is a proxy contract and its implementation could not be resolved, so its transfer restrictions were NOT read. Absence of a detected restriction here is not evidence that transfers are unrestricted, that no identity registry applies, or that a holder cannot be frozen. Nothing is asserted about this token\'s restrictions. Read the contract at the block explorer.'
 
 // deno-lint-ignore no-explicit-any
 const _glob = globalThis as any
@@ -266,19 +274,39 @@ export async function captureRwaTokenConcentration(
         rows += write.rows
       }
 
-      // Transfer restrictions from verified source. The proxy is read first so
-      // a proxy shell is reported as such rather than as unrestricted.
+      // Transfer restrictions from VERIFIED SOURCE, read at the IMPLEMENTATION
+      // when this token is a proxy. A proxy's own ABI carries no transfer logic,
+      // so reading the proxy and reporting "no restriction found" would be a
+      // false negative on exactly the tokens that are most restricted. Verified
+      // 2026-09-16: OUSG and USTB are eip1967 proxies whose implementations
+      // carry the restrictions, while BUIDL is not a proxy at all.
       const chainId = ({ ethereum: 1, base: 8453, arbitrum: 42161, polygon: 137 } as Record<string, number>)[token.chain]
-      const abi = await fetchContractAbi(chainId, token.address, sources)
-      if (abi.reason) reasons.sourcify = abi.reason
-      const restrictions = detectRestrictions(abi.abi)
+      const proxy = await fetchAddressImplementation(token.chain, token.address, sources)
+      if (proxy.reason) reasons.blockscout = proxy.reason
+
+      // A declared proxy whose implementation could not be read is recorded as
+      // UNRESOLVED and nothing is claimed about it. Absence of a detected
+      // restriction is not evidence that transfers are unrestricted, so this
+      // case must never fall through to `no_restriction_found`.
+      const unresolvedProxy = proxy.state === 'unresolved'
+      const readAt = proxy.state === 'resolved' && proxy.implementation ? proxy.implementation : token.address
+      const abi = unresolvedProxy ? null : await fetchContractAbi(chainId, readAt, sources)
+      if (abi?.reason) reasons.sourcify = abi.reason
+      const restrictions = detectRestrictions(abi?.abi ?? null)
       const members = restrictions.findings.flatMap((f) => f.members).slice(0, 50)
       const restrictionWrite = await upsert(admin, RESTRICTION_TABLE, [{
-        chain: token.chain, contract_address: token.address, implementation_address: null,
-        state: abi.state === 'not_verified' ? 'not_verified' : restrictions.state,
-        kyc_gated: restrictions.kycGated, pausable: restrictions.pausable, freezable: restrictions.freezable,
-        matched_members: members.length ? members : null,
-        source_url: abi.sourceUrl, scope: restrictions.scope, fetched_at: abi.fetchedAt,
+        chain: token.chain, contract_address: token.address,
+        // Recorded so a reader can verify the claim against the exact contract
+        // whose source was actually read.
+        implementation_address: proxy.state === 'resolved' ? proxy.implementation : null,
+        state: unresolvedProxy ? 'proxy_unresolved' : abi?.state === 'not_verified' ? 'not_verified' : restrictions.state,
+        kyc_gated: unresolvedProxy ? false : restrictions.kycGated,
+        pausable: unresolvedProxy ? false : restrictions.pausable,
+        freezable: unresolvedProxy ? false : restrictions.freezable,
+        matched_members: !unresolvedProxy && members.length ? members : null,
+        source_url: unresolvedProxy ? proxy.sourceUrl : abi!.sourceUrl,
+        scope: unresolvedProxy ? PROXY_UNRESOLVED_SCOPE : restrictions.scope,
+        fetched_at: unresolvedProxy ? proxy.fetchedAt : abi!.fetchedAt,
       }], 'chain,contract_address')
       if (restrictionWrite.error) return { job, rows, credits: 0, error: restrictionWrite.error }
       rows += restrictionWrite.rows

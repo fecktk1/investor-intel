@@ -25,6 +25,21 @@
 --   intel_rwa_token_restrictions         What a token's VERIFIED SOURCE shows its code can do: KYC gating, pause,
 --                                        freeze.
 --
+-- ============================================================
+-- REQUIRED SETTING BEFORE THIS FEATURE DOES ANYTHING: SEC_EDGAR_USER_AGENT
+-- ============================================================
+-- data.sec.gov answers HTTP 403 to a request with no descriptive User-Agent (confirmed 2026-09-16). The
+-- `rwa_issuer_registry` lane therefore refuses to call EDGAR until the `SEC_EDGAR_USER_AGENT` environment variable is
+-- set on the `intel-capture` Edge Function, and reports `user_agent_required` instead. This is a DEPLOYMENT
+-- PREREQUISITE, not a defect: until it is set, no Form D is read, no admission time series is built and no drift is
+-- recorded, and the read view will show mapped issuers with an empty admission history.
+--
+-- Set it to a descriptive identifier with a real contact, which is what the SEC asks for, for example:
+--   supabase secrets set SEC_EDGAR_USER_AGENT="TheContentForge-InvestorIntel/1.0 (you@example.com)"
+--
+-- Nothing else in this feature needs a key: GLEIF, OFAC, Sourcify and the block explorer are all keyless.
+-- ============================================================
+--
 -- WHY THIS SHAPE. Verified 2026-09-16 on EDGAR CIK 0002004367: a fund filed Form D in 2024 with minimum investment 0
 -- under exemptions 06c/3C/3C.1/3C.7; by 2026-05-05 the minimum was 100000 and 3C.1 was gone; on 2026-07-14 the same
 -- fund filed again under a NEW NAME (Superstate to Invesco), while EDGAR `formerNames` records the old one. Two drift
@@ -247,7 +262,10 @@ CREATE TABLE public.intel_rwa_token_restrictions (
   chain text NOT NULL CHECK (chain IN ('ethereum','base','arbitrum','polygon')),
   contract_address text NOT NULL CHECK (contract_address ~ '^0x[0-9a-f]{40}$'),
   implementation_address text CHECK (implementation_address IS NULL OR implementation_address ~ '^0x[0-9a-f]{40}$'),
-  state text NOT NULL CHECK (state IN ('restricted','no_restriction_found','proxy_abi_only','not_verified','unknown')),
+  -- 'proxy_unresolved' is the honest answer for a token that IS a proxy whose implementation could not be read. It is
+  -- deliberately distinct from 'no_restriction_found': not having looked is not the same as having looked and found
+  -- nothing, and collapsing the two would report the most restricted tokens as free.
+  state text NOT NULL CHECK (state IN ('restricted','no_restriction_found','proxy_abi_only','proxy_unresolved','not_verified','unknown')),
   -- Statements about CODE, never about whether a restriction has been applied.
   kyc_gated boolean NOT NULL DEFAULT false,
   pausable boolean NOT NULL DEFAULT false,

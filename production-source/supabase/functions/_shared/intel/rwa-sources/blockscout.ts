@@ -124,6 +124,64 @@ export async function fetchTokenSummary(chain: BlockscoutChain, address: unknown
   }
 }
 
+export interface ImplementationResult {
+  /** 'not_proxy'   the address holds its own logic, so read it directly.
+   *  'resolved'    a proxy whose implementation address was read.
+   *  'unresolved'  a PROXY whose implementation could NOT be read. The caller
+   *                must record this honestly: absence of a detected restriction
+   *                is not evidence that transfers are unrestricted.
+   *  'unavailable' the explorer did not answer, so proxy status is unknown. */
+  state: 'not_proxy' | 'resolved' | 'unresolved' | 'unavailable'
+  proxyType: string | null
+  implementation: string | null
+  implementationName: string | null
+  reason: string | null
+  fetchedAt: string
+  sourceUrl: string
+}
+
+/**
+ * Resolve a token's implementation contract before its source is read.
+ *
+ * Verified 2026-09-16 on three real tokens:
+ *   OUSG  0x1B19C193…ee92  proxy_type eip1967, implementation
+ *                          0x1CEB44b6E515aBf009E0CCb6ddaFD723886cf3Ff
+ *                          (CashKYCSenderReceiver)
+ *   USTB  0x43415eB6…1C4e  proxy_type eip1967, implementation
+ *                          0xB3ac55dd09aA70E9BfBb12F45CD38A1F1597588C (FundToken)
+ *   BUIDL 0x7712c342…2AEc  proxy_type null and no implementations, so NOT a
+ *                          proxy and its own address carries the logic.
+ *
+ * A proxy's own ABI carries no transfer logic, so reading it and reporting "no
+ * restriction found" would be a false negative on exactly the tokens that are
+ * most restricted. That is why this runs first.
+ */
+export async function fetchAddressImplementation(chain: BlockscoutChain, address: unknown, deps: SourceDeps = {}): Promise<ImplementationResult> {
+  const addr = String(address ?? '').trim()
+  const host = BLOCKSCOUT_CHAINS[chain]
+  const fetchedAt = new Date((deps.now ?? Date.now)()).toISOString()
+  const base = { proxyType: null, implementation: null, implementationName: null, fetchedAt, sourceUrl: 'https://blockscout.com/' }
+  if (!host || !EVM_ADDRESS.test(addr)) return { ...base, state: 'unavailable', reason: 'invalid_contract_identity' }
+  const url = `https://${host}/api/v2/addresses/${addr}`
+  // deno-lint-ignore no-explicit-any
+  const response = await fetchSource<any>('blockscout', url, deps)
+  if (!response.ok) return { ...base, state: 'unavailable', reason: response.reason, fetchedAt: response.fetchedAt, sourceUrl: url }
+
+  const payload = response.data ?? {}
+  const proxyType = str(payload?.proxy_type, 40)
+  const entries = Array.isArray(payload?.implementations) ? payload.implementations : []
+  const first = entries.find((entry: unknown) => EVM_ADDRESS.test(String((entry as { address_hash?: unknown })?.address_hash ?? '')))
+  const implementation = first ? String(first.address_hash).toLowerCase() : null
+  const done = { ...base, proxyType, fetchedAt: response.fetchedAt, sourceUrl: url }
+
+  if (implementation) {
+    return { ...done, state: 'resolved', implementation, implementationName: str(first?.name, 120), reason: null }
+  }
+  // A declared proxy with no readable implementation. NOT "no restriction".
+  if (proxyType) return { ...done, state: 'unresolved', reason: 'implementation_not_published' }
+  return { ...done, state: 'not_proxy', reason: null }
+}
+
 export interface HoldersResult {
   state: 'known' | 'not_found' | 'unavailable'
   holders: HolderRow[]

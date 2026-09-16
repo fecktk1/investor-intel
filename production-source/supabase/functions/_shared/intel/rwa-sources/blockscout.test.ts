@@ -1,5 +1,5 @@
 import { strict as assert } from 'node:assert'
-import { concentration, concentrationScope, fetchTokenSummary, fetchTopHolders, HOLDER_FIELDS_DROPPED, blockscoutExportAllowed } from './blockscout.ts'
+import { concentration, concentrationScope, fetchAddressImplementation, fetchTokenSummary, fetchTopHolders, HOLDER_FIELDS_DROPPED, blockscoutExportAllowed } from './blockscout.ts'
 import { __resetRwaSourceStateForTests } from './http.ts'
 import { deps, fakeFetch } from './test-support.ts'
 
@@ -7,6 +7,52 @@ const BUIDL = '0x7712c34205737192402172409a8F7ccef8aA2AEc'
 const TOKEN_URL = `https://eth.blockscout.com/api/v2/tokens/${BUIDL}`
 // Reported total supply, probed 2026-09-16.
 const TOTAL = 212143220660349n
+
+const ADDRESS_URL = (a: string) => `https://eth.blockscout.com/api/v2/addresses/${a}`
+
+Deno.test('a proxy implementation is resolved so the source is read where the logic lives', async () => {
+  __resetRwaSourceStateForTests()
+  // The shape probed 2026-09-16 for OUSG.
+  const { impl } = fakeFetch({ [ADDRESS_URL(BUIDL)]: { body: { proxy_type: 'eip1967', implementations: [{ address_hash: '0x1CEB44b6E515aBf009E0CCb6ddaFD723886cf3Ff', name: 'CashKYCSenderReceiver' }] } } })
+  const result = await fetchAddressImplementation('ethereum', BUIDL, deps(impl))
+  assert.equal(result.state, 'resolved')
+  assert.equal(result.proxyType, 'eip1967')
+  assert.equal(result.implementation, '0x1ceb44b6e515abf009e0ccb6ddafd723886cf3ff')
+  assert.equal(result.implementationName, 'CashKYCSenderReceiver')
+})
+
+Deno.test('a proxy with no readable implementation is unresolved, never treated as unrestricted', async () => {
+  __resetRwaSourceStateForTests()
+  const { impl } = fakeFetch({ [ADDRESS_URL(BUIDL)]: { body: { proxy_type: 'eip1967', implementations: [] } } })
+  const result = await fetchAddressImplementation('ethereum', BUIDL, deps(impl))
+  // Not having looked is not the same as having looked and found nothing.
+  assert.equal(result.state, 'unresolved')
+  assert.equal(result.implementation, null)
+  assert.equal(result.reason, 'implementation_not_published')
+  assert.notEqual(result.state, 'not_proxy')
+})
+
+Deno.test('a token that holds its own logic is reported as not a proxy', async () => {
+  __resetRwaSourceStateForTests()
+  // The shape probed 2026-09-16 for BUIDL, which is not a proxy.
+  const { impl } = fakeFetch({ [ADDRESS_URL(BUIDL)]: { body: { proxy_type: null, implementations: [] } } })
+  const result = await fetchAddressImplementation('ethereum', BUIDL, deps(impl))
+  assert.equal(result.state, 'not_proxy')
+  assert.equal(result.implementation, null)
+  assert.equal(result.reason, null)
+})
+
+Deno.test('an unreachable explorer leaves proxy status unknown rather than assuming none', async () => {
+  __resetRwaSourceStateForTests()
+  const { impl } = fakeFetch({ [ADDRESS_URL(BUIDL)]: { status: 503, body: {} } })
+  const unreachable = await fetchAddressImplementation('ethereum', BUIDL, deps(impl))
+  assert.equal(unreachable.state, 'unavailable')
+  assert.equal(unreachable.reason, 'http_503')
+
+  const invalid = await fetchAddressImplementation('ethereum', 'not-an-address', deps(impl))
+  assert.equal(invalid.state, 'unavailable')
+  assert.equal(invalid.reason, 'invalid_contract_identity')
+})
 
 Deno.test('a top-one share reproduces the figure the explorer reports for a real token', () => {
   // The largest holder balance probed 2026-09-16 against a total supply of
