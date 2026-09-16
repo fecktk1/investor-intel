@@ -52,6 +52,17 @@ import { readBenchmarkRates, type FetchText } from './rwa-benchmark-rates.ts'
 import { readAdvertisedYield, type FetchTextWithHeaders } from './sec-nmfp-yield.ts'
 import { resolveEdgarUserAgent } from './rwa-sources/edgar-agent.ts'
 
+/** The pg_cron job that runs this lane (UTC), from migration
+ * 20260916202000_intel_rwa_capture_cron.sql. Every six hours: registered NAV
+ * feeds publish on a heartbeat of about a day, benchmarks once a business day
+ * and N-MFP3 filings monthly, so four reads a day catch a stale feed within six
+ * hours without re-reading an unchanged round every hour. Served by the read
+ * view so an empty panel can say when it fills; asserted against the
+ * migration by test. */
+export const RWA_YIELD_CAPTURE_SCHEDULE = {
+  rwa_yield: { job: 'intel-capture-rwa-yield-6h', cron: '29 1,7,13,19 * * *', cadence: 'every_6_hours', utc: '01:29, 07:29, 13:29, 19:29' },
+} as const
+
 export const RWA_YIELD_FEATURE = 'rwa_yield'
 /** This lane's rows are not CoinMarketCap's, so they carry their own provider. */
 export const RWA_YIELD_PROVIDER = 'chainlink'

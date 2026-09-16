@@ -13,6 +13,7 @@
 // feed reads as a feed with nothing wrong with it.
 
 import { RWA_FEED_BY_KEY, MARKET_DEVIATION_SOURCE_NOTE, RWA_MARKET_SOURCE_LIMIT } from './rwa-yield-register.ts'
+import { RWA_YIELD_CAPTURE_SCHEDULE } from './capture-rwa-yield.ts'
 import { marketDeviation, DEVIATION_SCOPE, type NavQuote } from './rwa-nav-integrity.ts'
 
 const FEED_CAP = 400
@@ -159,6 +160,8 @@ export async function readRwaYield(db: any, params: { days?: number } = {}, now:
     return {
       view: 'rwa_yield', days, rows: [], summary: { feeds: 0, validated: 0, refused: 0, published: 0, review: 0, stale: 0, unknown: 0, priced: 0 },
       benchmarks: [], asOf: null, coverage: emptyCoverage(), reason: navRead.reason || snapshotRead.reason,
+      // Nothing captured yet: when the lane runs, so the panel can say so.
+      schedule: RWA_YIELD_CAPTURE_SCHEDULE,
     }
   }
 
@@ -271,6 +274,7 @@ export async function readRwaYield(db: any, params: { days?: number } = {}, now:
     marketSourceLimit: RWA_MARKET_SOURCE_LIMIT,
     deviationScope: DEVIATION_SCOPE,
     marketReason: marketRead.reason,
+    schedule: RWA_YIELD_CAPTURE_SCHEDULE,
     asOf,
     coverage: {
       from: capturedStamps[0] ?? null, to: capturedStamps.at(-1) ?? null, count: rows.length,
