@@ -224,8 +224,13 @@ export function treasuryCurveUrls(now: number): string[] {
   return urls
 }
 
-const SOURCES: { key: BenchmarkKey; url: string | ((now: number) => string[]); parse: (raw: string) => BenchmarkRate | { reason: string } }[] = [
-  { key: 'us_treasury_bill_3m', url: treasuryCurveUrls, parse: parseTreasuryCurve },
+/** The month-filtered Treasury curve answers in roughly 17 seconds (measured
+ * 2026-09-16, three runs), so the shared 8 second timeout refused every read and
+ * each bill-backed fund stored `benchmark_unavailable`. */
+export const TREASURY_CURVE_TIMEOUT_MS = 30000
+
+const SOURCES: { key: BenchmarkKey; url: string | ((now: number) => string[]); timeoutMs?: number; parse: (raw: string) => BenchmarkRate | { reason: string } }[] = [
+  { key: 'us_treasury_bill_3m', url: treasuryCurveUrls, timeoutMs: TREASURY_CURVE_TIMEOUT_MS, parse: parseTreasuryCurve },
   { key: 'us_treasury_bill_avg', url: `${TREASURY_AVG_URL}?filter=security_desc:eq:Treasury%20Bills&sort=-record_date&page%5Bsize%5D=1`, parse: parseTreasuryAverage },
   { key: 'sofr', url: SOFR_URL, parse: parseSofr },
   { key: 'estr', url: `${ESTR_URL}?lastNObservations=1&format=jsondata`, parse: parseEstr },
@@ -262,7 +267,7 @@ export async function readBenchmarkRates(
     for (const url of candidates) {
       calls += 1
       let raw: string | null = null
-      try { raw = await deps.fetchText(url, deps.timeoutMs ?? BENCHMARK_TIMEOUT_MS) } catch (e) {
+      try { raw = await deps.fetchText(url, deps.timeoutMs ?? source.timeoutMs ?? BENCHMARK_TIMEOUT_MS) } catch (e) {
         failure = ((e as Error)?.message || 'fetch_failed').slice(0, 120)
         continue
       }

@@ -1,6 +1,6 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  parseTreasuryCurve, parseTreasuryAverage, parseSofr, parseEstr, readBenchmarkRates, treasuryCurveUrls,
+  parseTreasuryCurve, parseTreasuryAverage, parseSofr, parseEstr, readBenchmarkRates, treasuryCurveUrls, TREASURY_CURVE_TIMEOUT_MS, BENCHMARK_TIMEOUT_MS,
 } from './rwa-benchmark-rates.ts'
 
 /** Two dated entries in the Treasury feed's real envelope shape, deliberately
@@ -164,4 +164,15 @@ Deno.test('an empty month late in the month is one call and a named failure', as
   eq(result.calls, 1)
   eq(result.rates.us_treasury_bill_3m, undefined)
   eq(result.failures, [{ key: 'us_treasury_bill_3m', reason: 'no_entries' }])
+})
+
+Deno.test('the slow treasury curve gets its own timeout and the other sources keep the shared one', async () => {
+  const seen: Record<string, number> = {}
+  await readBenchmarkRates({
+    now: Date.parse('2026-09-16T12:00:00Z'),
+    fetchText: (url: string, timeoutMs: number) => { seen[url.includes('daily_treasury_yield_curve') ? 'curve' : url.includes('fiscaldata') ? 'avg' : 'other'] = timeoutMs; return Promise.resolve(null) },
+  }, ['us_treasury_bill_3m', 'us_treasury_bill_avg'])
+  eq(seen.curve, TREASURY_CURVE_TIMEOUT_MS)
+  eq(seen.avg, BENCHMARK_TIMEOUT_MS)
+  assert(TREASURY_CURVE_TIMEOUT_MS >= 25000)
 })
