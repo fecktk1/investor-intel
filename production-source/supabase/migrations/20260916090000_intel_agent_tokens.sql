@@ -17,6 +17,13 @@
 -- A token is not an entitlement. Membership and can_access_intel are re-checked
 -- on every request, exactly as requireExtensionDevice re-checks per request.
 
+-- This migration creates six foreign keys into public.orgs and public.profiles,
+-- each of which takes SHARE ROW EXCLUSIVE on the referenced table. Both are
+-- small but they are on the hot path of every session, so the same bound every
+-- other file in this set carries applies here too: wait five seconds for the
+-- lock and fail rather than queue behind a long transaction and block sign-ins.
+SET LOCAL lock_timeout='5s';
+
 CREATE SCHEMA IF NOT EXISTS app_private;
 
 -- The scope vocabulary, enforced by the database rather than only by the handler.
@@ -151,8 +158,12 @@ CREATE TABLE public.intel_agent_approvals (
  plan_id uuid NOT NULL REFERENCES public.intel_agent_plans(id) ON DELETE CASCADE,
  -- The hash as approved. Execution compares it against the live plan.
  plan_hash text NOT NULL CHECK(plan_hash ~ '^[0-9a-f]{64}$'),
- -- A human, from a real session. A token can never approve its own proposal.
- -- profiles(id), matching the rest of this migration and the Intel tables.
+ -- A human, from a real session, BY HANDLER CONVENTION: this column is written
+ -- only on the approve path, which requires a verified session, and the agent
+ -- token path never sets it. Nothing in the database enforces that, because
+ -- both paths reach this table as service_role and the row carries no record of
+ -- which one inserted it. profiles(id), matching the rest of this migration and
+ -- the Intel tables.
  approved_by uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
  status text NOT NULL DEFAULT 'approved' CHECK(status IN ('approved','consumed','revoked')),
  note text CHECK(note IS NULL OR length(note)<=500),
@@ -167,9 +178,15 @@ CREATE UNIQUE INDEX intel_agent_approvals_plan_uq ON public.intel_agent_approval
 CREATE INDEX intel_agent_approvals_org ON public.intel_agent_approvals(org_id,approved_at DESC);
 
 COMMENT ON TABLE public.intel_agent_approvals IS
- 'A person''s yes to one exact plan_hash, from a real session. A token cannot approve '
- 'its own proposal: approved_by is a profiles id written only from a verified session, '
- 'and the agent token path never sets it.';
+ 'A person''s yes to one exact plan_hash. That the yes came from a real session rather '
+ 'than from the token that proposed the write is a HANDLER CONVENTION, not a database '
+ 'guarantee: approved_by is written only on the approve path, which requires a verified '
+ 'session, and the agent token path never sets it. No constraint and no check in '
+ 'intel_agent_execution_gate enforces it, because both paths reach this table as '
+ 'service_role and the row does not record which one inserted it. Comparing approved_by '
+ 'against the plan''s user_id would not add that guarantee either: the member who owns '
+ 'the token is the same person who approves, so such a check would reject every ordinary '
+ 'approval rather than catch a forged one.';
 
 -- What the row actually says after the write. An HTTP 200 is a claim; this is
 -- the result of going back and looking.

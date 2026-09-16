@@ -51,14 +51,22 @@ SET LOCAL statement_timeout = '60s';
 -- or recurring evaluation for one member. A small real allowance on the keys
 -- that are only a stored list. refresh_minutes and history_days stay display
 -- only, exactly as 207 left them.
-INSERT INTO intel_plan_limits (tier, key, value) VALUES
+-- Schema qualified: an unqualified name here resolves through search_path, and
+-- seeding a plan ladder into whatever table happens to be found first is not a
+-- failure that announces itself.
+INSERT INTO public.intel_plan_limits (tier, key, value) VALUES
   ('free','watchlist_items',10),      ('free','tracked_wallets',0),   ('free','alerts_active',0),
   ('free','breakdowns_per_day',0),    ('free','briefs_per_day',0),    ('free','comparisons_per_day',0),
   ('free','explain_per_day',0),       ('free','comment_king_per_day',0),
   ('free','news_sources',0),          ('free','news_refreshes_per_day',0),
   ('free','portfolio_wallets',0),     ('free','narrative_follows',0),
   ('free','refresh_minutes',60),      ('free','history_days',0)
-ON CONFLICT (tier, key) DO UPDATE SET value = EXCLUDED.value;
+-- DO NOTHING, matching every provider_schedule_policy insert in this set: a later
+-- edit to a row wins, so re-running this never resets one. DO UPDATE here would
+-- hard-reset all 14 free-tier values and silently discard whatever an operator had
+-- tuned them to. Production currently has ZERO free rows, so the first run seeds
+-- all 14 either way; the difference is only what a REPLAY does.
+ON CONFLICT (tier, key) DO NOTHING;
 
 -- SECTION 2: the access ladder.
 -- Separate from the limit ladder on purpose. 'trial' is the 7 day full product
@@ -134,14 +142,35 @@ INSERT INTO public.intel_surface_tiers (surface, min_tier, cost_basis, reason) V
    'One requested history range is one provider sampling, charged to the shared credit budget.'),
   ('alert_evaluation',    'starter', 'per_member_on_demand',
    'An alert rule is evaluated repeatedly for as long as it is active, so its cost recurs per member rather than being paid once.')
-ON CONFLICT (surface) DO UPDATE SET
-  min_tier = EXCLUDED.min_tier, cost_basis = EXCLUDED.cost_basis,
-  reason = EXCLUDED.reason, updated_at = now();
+-- DO NOTHING, for the reason section 3 already gives: "The split lives in rows, not
+-- in code." A replay that snapped all 12 surfaces back to the values in this file
+-- would undercut exactly that, making the code the authority again whenever the
+-- migration is re-applied. Moving a surface between tiers stays a reviewed
+-- migration that UPDATEs the row it means to move.
+ON CONFLICT (surface) DO NOTHING;
 
--- SECTION 4: the entitlement question.
+-- SECTION 4: the entitlement question, in two forms.
 -- Fails closed in every direction: an account that cannot use Investor Intel at
 -- all is refused, a surface the catalogue does not list is refused, and a
 -- disabled row is refused. It can never widen can_access_intel.
+--
+-- THE THREE ARGUMENT FORM TAKES A CALLER SUPPLIED IDENTITY, so it is SERVICE
+-- ROLE ONLY. Granted to `authenticated` it would be an entitlement oracle: any
+-- signed-in member could ask it about any (user, org) pair and read back the
+-- billing posture of a workspace they have nothing to do with. No content leaks
+-- through it, but it is the same bug class as a function trusting a p_user the
+-- caller chose, which this codebase has already had to close once.
+--
+-- The two argument form below is what `authenticated` gets. It takes no user
+-- argument at all: the identity comes from auth.uid() and the membership is
+-- verified against org_members, exactly as intel_account_access does in
+-- section 5. A caller can therefore only ever ask about themselves.
+--
+-- The three argument form stays in `public` rather than moving to app_private
+-- because a real service-role caller needs it over PostgREST, which only exposes
+-- public: supabase/functions/_shared/intel/intel-surface-access.ts calls it with
+-- the service key and an actor.userId it derived from a verified JWT itself.
+-- `authenticated` cannot reach it because the GRANT below does not include it.
 CREATE OR REPLACE FUNCTION public.intel_surface_allowed(p_user uuid, p_org uuid, p_surface text)
 RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
 DECLARE v_min text; v_enabled boolean; v_tier text;
@@ -157,9 +186,30 @@ BEGIN
   RETURN public.intel_tier_rank(v_tier) >= public.intel_tier_rank(v_min);
 END $$;
 COMMENT ON FUNCTION public.intel_surface_allowed(uuid,uuid,text) IS
-  'May this member use this Investor Intel surface. Narrows can_access_intel by the workspace tier and the surface catalogue; never widens it. Unknown surface, disabled row or no product access all answer false.';
-REVOKE EXECUTE ON FUNCTION public.intel_surface_allowed(uuid,uuid,text) FROM PUBLIC, anon;
-GRANT EXECUTE ON FUNCTION public.intel_surface_allowed(uuid,uuid,text) TO authenticated, service_role;
+  'May this member use this Investor Intel surface. Narrows can_access_intel by the workspace tier and the surface catalogue; never widens it. Unknown surface, disabled row or no product access all answer false. SERVICE ROLE ONLY: it trusts the p_user it is handed, so granting it to authenticated would let any signed-in member probe the entitlement state of an arbitrary user and org. Signed-in callers use the two argument form, which derives the user from auth.uid().';
+REVOKE EXECUTE ON FUNCTION public.intel_surface_allowed(uuid,uuid,text) FROM PUBLIC, anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.intel_surface_allowed(uuid,uuid,text) TO service_role;
+
+-- The same question asked by the SIGNED-IN CALLER about THEMSELVES. This is the
+-- only form `authenticated` may execute. It is modelled on intel_account_access
+-- below: derive the user from the session, verify the membership, then answer.
+CREATE OR REPLACE FUNCTION public.intel_surface_allowed(p_org uuid, p_surface text)
+RETURNS boolean LANGUAGE plpgsql STABLE SECURITY DEFINER SET search_path = public AS $$
+DECLARE v_user uuid := auth.uid();
+BEGIN
+  IF v_user IS NULL OR p_org IS NULL OR p_surface IS NULL THEN RETURN false; END IF;
+  -- Not a member of this workspace is not a question this caller may ask.
+  IF NOT EXISTS (SELECT 1 FROM public.org_members WHERE org_id = p_org AND user_id = v_user) THEN
+    RETURN false;
+  END IF;
+  -- One implementation, not two: the decision itself stays in the form above so
+  -- the two answers can never drift apart.
+  RETURN public.intel_surface_allowed(v_user, p_org, p_surface);
+END $$;
+COMMENT ON FUNCTION public.intel_surface_allowed(uuid,text) IS
+  'May the CALLER use this Investor Intel surface in this workspace. Takes no user argument: the identity is auth.uid() and the membership is verified against org_members, so a signed-in caller can only ever ask about themselves. Delegates the decision to the three argument form.';
+REVOKE EXECUTE ON FUNCTION public.intel_surface_allowed(uuid,text) FROM PUBLIC, anon;
+GRANT EXECUTE ON FUNCTION public.intel_surface_allowed(uuid,text) TO authenticated, service_role;
 
 -- SECTION 5: one read the product can label itself with.
 -- The client uses this to decide which surfaces to present as locked. It is a

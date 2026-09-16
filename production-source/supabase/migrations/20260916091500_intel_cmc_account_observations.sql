@@ -24,6 +24,10 @@
 --   * It creates no new table and no new grantable surface: provider_quota_budgets already carries the cmc_account
 --     and cmc_operating_profile sentinel rows under the same service-role-only policy.
 
+-- The same bound every other file in this set carries: wait five seconds for a
+-- lock and fail rather than queue behind a long transaction.
+SET LOCAL lock_timeout='5s';
+
 INSERT INTO public.provider_quota_budgets(provider,data_type,period_start,period_end,config)
 VALUES ('coinmarketcap','cmc_account_observation','1970-01-01','3000-01-01','{"observations":[]}'::jsonb)
 ON CONFLICT (provider,data_type,period_start) DO NOTHING;

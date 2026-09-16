@@ -68,13 +68,19 @@
 --
 -- Retention: 400 days, PATCHED into the live definition of app_private.intel_capture_retention using the technique
 -- from 20260915152118_intel_market_asset_candles rather than restating it, because a restatement copied from any one
--- migration silently drops the blocks added after it. The patch is SKIPPED with a notice when the function is absent,
--- so this migration is safe in an environment that has no capture retention job yet.
+-- migration silently drops the blocks added after it. The SPLICE is SKIPPED with a notice when the function is absent.
+-- The REVOKE that follows it is a top-level statement, matching 20260916104500 and 20260916120000, so that it runs on
+-- every path through the DO block rather than only on the one that reaches the end of it; being top-level it does
+-- require the function to exist, which it does in any environment that applied this directory in order.
 --
 -- NOT SCHEDULED. There is deliberately no cron job in this migration. Capture is on demand from the RWA workspace,
 -- bounded per run, and an operator can disable it through provider_schedule_policy.
 --
--- Safe to apply anytime; idempotent.
+-- APPLY ONCE. This file is NOT idempotent: the six CREATE TABLE statements and their CREATE INDEX statements are
+-- unguarded, so a second application fails on `intel_rwa_issuer_entities` already existing. Only the retention splice
+-- is separately re-runnable. (Guarding the tables with IF NOT EXISTS would not make the file re-runnable, because the
+-- indexes would still fail, and it would let a pre-existing table of a DIFFERENT shape pass silently - which for
+-- tables carrying these constraints is worse than the error.)
 --
 -- ROLLBACK
 --   -- stop the lane, keep the data:
@@ -298,9 +304,10 @@ ON CONFLICT (provider, feature) DO NOTHING;
 -- SECTION: retention
 
 -- 8. 400 days on the capture tables, PATCHED into the live retention function rather than restated, so the blocks every
--- earlier lane added are preserved. Skipped with a notice when the function does not exist yet, and refuses to apply
--- twice. The entity, risk-signal and admission tables are NOT pruned here: an admission time series that forgets its
--- own history is exactly the curated snapshot this feature exists to replace.
+-- earlier lane added are preserved. Skipped with a notice when the function does not exist yet, and skipped with a
+-- notice when its block is already present - the same harmless re-splice behaviour as 20260916104500 and
+-- 20260916120000. The entity, risk-signal and admission tables are NOT pruned here: an admission time series that
+-- forgets its own history is exactly the curated snapshot this feature exists to replace.
 DO $retention$
 DECLARE original text; changed text; block text;
 BEGIN
@@ -325,5 +332,8 @@ BEGIN
   changed := regexp_replace(original, '(\n[ \t]*RETURN removed;)', E'\n' || replace(block, '\', '\\') || E'\\1');
   IF changed = original THEN RAISE EXCEPTION 'unexpected_retention_definition'; END IF;
   EXECUTE changed;
-  REVOKE ALL ON FUNCTION app_private.intel_capture_retention(timestamptz) FROM PUBLIC, anon, authenticated;
 END $retention$;
+-- OUTSIDE the DO block, exactly as 20260916104500 and 20260916120000 run it. Inside, it sat after `EXECUTE changed`
+-- and so was skipped entirely on both early-return paths (function absent, block already present), which meant the
+-- migration did not always execute the statement its neighbours do.
+REVOKE ALL ON FUNCTION app_private.intel_capture_retention(timestamptz) FROM PUBLIC, anon, authenticated;

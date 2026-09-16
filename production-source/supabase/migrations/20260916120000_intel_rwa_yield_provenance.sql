@@ -48,10 +48,16 @@
 -- FULL restatement of that function is 20260915034326_intel_holder_tags, but 20260915171001_intel_chart_working_state
 -- then spliced its own block into the live definition the same way this migration does. A full restatement here would
 -- therefore silently drop the chart working state block and let that table grow without bound. The splice below is
--- copied from that migration, including its two guards: it refuses to apply twice, and it refuses to run at all if the
--- live function does not contain exactly one `RETURN removed;` to anchor against.
+-- copied from that migration, including its two guards: it returns without touching anything when its block is already
+-- present, and it refuses to run at all if the live function does not contain exactly one `RETURN removed;` to anchor
+-- against.
 --
--- Safe to apply anytime; idempotent. There is nothing to schedule: the lane runs from the existing capture op.
+-- APPLY ONCE. This file is NOT idempotent: the three CREATE TABLE statements and their CREATE INDEX statements are
+-- unguarded, so a second application fails on `intel_rwa_nav_observations` already existing. Only the retention splice
+-- is separately re-runnable. (Guarding the tables with IF NOT EXISTS would not make the file re-runnable, because the
+-- indexes would still fail, and it would let a pre-existing table of a DIFFERENT shape pass silently - which for
+-- tables carrying these constraints is worse than the error.) There is nothing to schedule: the lane runs from the
+-- existing capture op.
 --
 -- ROLLBACK
 --   -- stop the lane, keep the data (the view then reads retained captures and never refreshes):
@@ -242,9 +248,13 @@ DO $retention$
 DECLARE original text; changed text; block text;
 BEGIN
   original := pg_get_functiondef('app_private.intel_capture_retention(timestamptz)'::regprocedure);
-  -- Refuse a second application rather than adding the same DELETE blocks twice.
+  -- Already spliced: return without touching anything rather than adding the same DELETE blocks twice. This matches
+  -- 20260916104500 and 20260916150000, so all three splices behave alike on a re-splice. It used to RAISE, which meant
+  -- a replay of a partially completed deploy aborted here while the other two lanes replayed harmlessly - an
+  -- inconsistency with no upside, since a block that is already in place is precisely the state this wants.
   IF position('intel_rwa_nav_observations' in original) > 0 THEN
-    RAISE EXCEPTION 'rwa_yield_retention_block_already_present';
+    RAISE NOTICE 'RWA yield retention block already present; leaving the function unchanged.';
+    RETURN;
   END IF;
   -- Exactly one `RETURN removed;` is what makes the insertion point unambiguous. Any other count means the function is
   -- not the one this migration was written against, and guessing at a second anchor is how a lane's horizon gets lost.

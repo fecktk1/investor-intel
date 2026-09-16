@@ -1,4 +1,28 @@
 -- ============================================================
+-- SHIPPING ORDER DEPENDENCY - READ BEFORE DEPLOYING THIS BRANCH
+-- ============================================================
+-- This migration PATCHES three live function definitions by EXACT STRING MATCH
+-- and RAISES when the text it expects is not there:
+--
+--   app_private.intel_condition_step      -> 'unexpected_condition_step_definition'
+--   app_private.intel_market_rule_guard   -> 'unexpected_market_rule_guard'
+--   public.intel_markets_screen_for_user  -> 'unexpected_markets_gainers_definition'
+--                                            'unexpected_markets_losers_definition'
+--
+-- Raising is the RIGHT failure mode - a silent no-op would leave the feed caps
+-- and the hysteresis wiring unapplied with nothing to show for it - but it makes
+-- this branch ORDER DEPENDENT. If any other branch edits one of those three
+-- functions and lands first, the live text moves, the guard fires, and the whole
+-- seven-migration sequence aborts here, at file 3 of 7.
+--
+-- SO: this branch must land BEFORE anything else that touches those three
+-- functions. If something else has already landed on one of them, do NOT relax
+-- the guard. Re-derive the replacement strings against the new live text and
+-- re-review them: the guard firing means the body this file was written against
+-- is no longer the body in production.
+-- ============================================================
+--
+-- ============================================================
 -- Investor Intel - the stated evidentiary standard, hysteresis on the level
 -- triggers that lacked it, and per-entity caps on the ranked feeds
 -- ============================================================
@@ -361,8 +385,13 @@ GRANT EXECUTE ON FUNCTION public.intel_record_narrative_alert(uuid,uuid,integer)
 -- follows in its original rank order, and the existing LIMIT then returns the
 -- same number of rows it always did. A feed containing exactly one category is
 -- therefore the same length it was before this change.
-DROP FUNCTION IF EXISTS narrative_feed(uuid, int);
-CREATE OR REPLACE FUNCTION narrative_feed(p_org_id uuid, p_limit int DEFAULT 80)
+-- Schema qualified on purpose. An unqualified DROP ... IF EXISTS is a SILENT
+-- NO-OP under any search_path that does not resolve this name to the public
+-- copy, after which the CREATE OR REPLACE below plants a SECOND definition
+-- wherever that search_path does point - leaving the real public.narrative_feed
+-- untouched, the two copies diverging, and no error raised anywhere.
+DROP FUNCTION IF EXISTS public.narrative_feed(uuid, int);
+CREATE OR REPLACE FUNCTION public.narrative_feed(p_org_id uuid, p_limit int DEFAULT 80)
 RETURNS TABLE (
   slug text, name text, parent_category text, origin text, status text, chains text[],
   momentum_score numeric, chatter_score numeric, price_confirmation_score numeric,
@@ -480,15 +509,17 @@ BEGIN
 END $$;
 
 DO $$ BEGIN
-  EXECUTE 'REVOKE EXECUTE ON FUNCTION narrative_feed(uuid,int) FROM PUBLIC, anon';
-  EXECUTE 'GRANT EXECUTE ON FUNCTION narrative_feed(uuid,int) TO authenticated, service_role';
+  EXECUTE 'REVOKE EXECUTE ON FUNCTION public.narrative_feed(uuid,int) FROM PUBLIC, anon';
+  EXECUTE 'GRANT EXECUTE ON FUNCTION public.narrative_feed(uuid,int) TO authenticated, service_role';
 END $$;
 
 -- SECTION: the signal feed keeps one token from filling the board
 -- The reviewed 233 body, unchanged, wrapped with the same interleave. A cluster
 -- carrying no token is its own entity (keyed by its id), so untagged clusters
 -- are never buried together as if they were one subject.
-CREATE OR REPLACE FUNCTION signal_feed(
+-- Schema qualified for the same reason as narrative_feed above: an unqualified
+-- CREATE OR REPLACE resolves through search_path and can plant a second copy.
+CREATE OR REPLACE FUNCTION public.signal_feed(
   p_workspace_id uuid, p_chains text[] DEFAULT NULL, p_followed_only boolean DEFAULT false, p_limit int DEFAULT 40
 ) RETURNS TABLE (
   cluster_id uuid, main_title text, cluster_summary text, item_count int, momentum_score numeric,
@@ -549,8 +580,8 @@ BEGIN
 END $$;
 
 DO $$ BEGIN
-  EXECUTE 'REVOKE EXECUTE ON FUNCTION signal_feed(uuid,text[],boolean,int) FROM PUBLIC, anon';
-  EXECUTE 'GRANT EXECUTE ON FUNCTION signal_feed(uuid,text[],boolean,int) TO authenticated, service_role';
+  EXECUTE 'REVOKE EXECUTE ON FUNCTION public.signal_feed(uuid,text[],boolean,int) FROM PUBLIC, anon';
+  EXECUTE 'GRANT EXECUTE ON FUNCTION public.signal_feed(uuid,text[],boolean,int) TO authenticated, service_role';
 END $$;
 
 -- SECTION: the markets gainers and losers boards keep one chain from filling them

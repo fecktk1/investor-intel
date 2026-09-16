@@ -85,7 +85,12 @@
 -- would have stopped its retention with no error and no warning anywhere. See section 4 for the guarded splice and
 -- for why splicing is what lets this migration compose with agent/intel-rwa-yield in either merge order.
 --
--- Safe to apply anytime; idempotent. There is nothing to schedule and no live function body to patch.
+-- APPLY ONCE. This file is NOT idempotent: the two CREATE TABLE statements and their CREATE INDEX statements are
+-- unguarded, so a second application fails on `intel_swap_flow_snapshots` already existing. Only the retention splice
+-- in section 4 is separately re-runnable, and it returns without touching anything when its block is already there.
+-- (Guarding the tables with IF NOT EXISTS would not make the file re-runnable, because the indexes would still fail,
+-- and it would make a pre-existing table of a DIFFERENT shape pass silently - which for a table this constrained is a
+-- worse outcome than the error.) There is nothing to schedule and no live function body to patch.
 --
 -- ROLLBACK
 --   -- stop the lane, keep the data (the view then answers with retained sweeps only and never refreshes):
@@ -214,16 +219,17 @@ ON CONFLICT (provider, feature) DO NOTHING;
 --   * If the anchor is not EXACTLY one `RETURN removed;`, it RAISES. The function is then not the one this migration
 --     was written against, and guessing at a second anchor is how a lane's horizon gets lost.
 --   * If the splice would not change the text, it RAISES rather than reporting a success it did not achieve.
---   * If this lane's block is already present it returns without touching anything, so a re-run is harmless. That is
---     a deliberate difference from the two migrations above, which raise on a second application: an idempotent
---     re-run lets this file be re-applied after a partially completed deploy without an operator having to work out
---     whether it already ran.
+--   * If this lane's block is already present it RAISES A NOTICE AND RETURNS, touching nothing. The splices in
+--     20260916120000 and 20260916150000 now do exactly the same thing, so all three behave alike on a re-splice: a
+--     replay of a partially completed deploy never aborts on a block that is already in place. Note that this makes
+--     THE SPLICE re-runnable, not this FILE - see the header.
 DO $retention$
 DECLARE original text; changed text; block text;
 BEGIN
   original := pg_get_functiondef('app_private.intel_capture_retention(timestamptz)'::regprocedure);
   -- Already spliced: do nothing rather than add the same DELETE blocks a second time.
   IF position('intel_swap_flow_snapshots' in original) > 0 THEN
+    RAISE NOTICE 'maker swap flow retention block already present; leaving the function unchanged.';
     RETURN;
   END IF;
   IF (SELECT count(*) FROM regexp_matches(original, '\n[ \t]*RETURN removed;', 'g')) <> 1 THEN
