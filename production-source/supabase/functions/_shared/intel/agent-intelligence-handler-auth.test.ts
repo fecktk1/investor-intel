@@ -1,16 +1,17 @@
 import {assert,assertEquals} from 'jsr:@std/assert@1'
 import {handleAgentIntelligence} from '../../agent-intelligence-api/index.ts'
 
-// Reads the gate itself is allowed to make. Anything else appearing before a
+// Tables the gate itself is allowed to read. Anything else appearing before a
 // denial would mean intelligence was assembled for an unauthorized caller.
+// Membership is the whole gate here and it makes no remote procedure call, so
+// any rpc at all counts as a data read.
 const GATE_TABLES=['org_members','profiles']
-const GATE_RPCS=['can_access_intel']
 const SERVICE_KEY='fixture-service-key'
 
 // Membership is decided by the org and user the handler actually asked about,
 // never by a flag, so a body-supplied org id is tested the way an attacker
 // would supply one.
-function fixture({members=['verified-user'],allowed=true,valid=true}:{members?:string[];allowed?:boolean;valid?:boolean}={}) {
+function fixture({members=['verified-user'],entitled=true,valid=true}:{members?:string[];entitled?:boolean;valid?:boolean}={}) {
  let userReads=0
  const tables:string[]=[],rpcs:string[]=[],inserts:{table:string;payload:Record<string,unknown>}[]=[]
  const table=(name:string)=>{
@@ -33,11 +34,10 @@ function fixture({members=['verified-user'],allowed=true,valid=true}:{members?:s
  const db={
   auth:{getUser:()=>{userReads++;return Promise.resolve({data:{user:valid?{id:'verified-user'}:null},error:null})}},
   from:(name:string)=>{tables.push(name);return table(name)},
-  rpc:(name:string)=>{rpcs.push(name);return Promise.resolve({data:name==='can_access_intel'?allowed:null,error:null})},
+  rpc:(name:string)=>{rpcs.push(name);return Promise.resolve({data:name==='can_access_intel'?entitled:null,error:null})},
  }
  return {factory:()=>db,counts:()=>({userReads,tables,rpcs,inserts}),
-  // Every read that is not part of the gate itself.
-  dataReads:()=>[...tables.filter(t=>!GATE_TABLES.includes(t)),...rpcs.filter(r=>!GATE_RPCS.includes(r)).map(r=>`rpc:${r}`)]}
+  dataReads:()=>[...tables.filter(t=>!GATE_TABLES.includes(t)),...rpcs.map(r=>`rpc:${r}`)]}
 }
 
 function withEnv(fn:()=>Promise<void>) {
@@ -58,25 +58,44 @@ const request=(body:Record<string,unknown>={},header='Bearer fixture-user')=>
   headers:header?{Authorization:header,'Content-Type':'application/json'}:{'Content-Type':'application/json'},
   body:JSON.stringify({agentType:'goose-local',orgId:'org',...body})})
 
-Deno.test('Agent intelligence verifies the user exactly once, then org membership and entitlement before any retrieval',()=>withEnv(async()=>{
+Deno.test('Agent intelligence verifies the user exactly once, then org membership, before any retrieval',()=>withEnv(async()=>{
  const f=fixture(),r=await handleAgentIntelligence(request(),f.factory)
  assertEquals(r.status,200)
  const body=await r.json()
  assertEquals(body.ok,true);assertEquals(body.surface,'agent');assertEquals(body.blocks,[])
  const {userReads,rpcs,inserts}=f.counts()
  assertEquals(userReads,1)
- // The entitlement check is the FIRST remote procedure the request makes.
- assertEquals(rpcs[0],'can_access_intel')
  assert(rpcs.includes('intelligence_context_blocks'),'retrieval must still run for an authorized member')
  assertEquals(inserts.map(i=>i.table),['agent_intelligence_access_log'])
  assertEquals(inserts[0].payload.org_id,'org');assertEquals(inserts[0].payload.user_id,'verified-user')
  assertEquals(r.headers.get('Cache-Control'),'private, no-store')
 }))
 
+// Every live caller of this endpoint is a content org, for which
+// can_access_intel is false. The shared RAG serves global_derived context and is
+// not the paid Investor Intel product, so the entitlement must never be
+// consulted here: doing so would refuse every request it has ever served.
+Deno.test('A member of an organization with no Investor Intel entitlement is served in full',()=>withEnv(async()=>{
+ const f=fixture({entitled:false}),r=await handleAgentIntelligence(request(),f.factory)
+ assertEquals(r.status,200)
+ const {rpcs,inserts}=f.counts()
+ assertEquals(rpcs.includes('can_access_intel'),false)
+ assert(rpcs.includes('intelligence_context_blocks'),'a non-entitled member still receives derived context')
+ assertEquals(inserts.map(i=>i.table),['agent_intelligence_access_log'])
+}))
+
+Deno.test('Entitlement is never the gate on any surface this endpoint serves',()=>withEnv(async()=>{
+ // Every surface observed in production traffic, investor_intel included.
+ for(const surface of ['investor_intel','content_studio','trend_scanner','agent','forge_says','alerts','newsletter_mode']){
+  const f=fixture({entitled:false}),r=await handleAgentIntelligence(request({surface}),f.factory)
+  assertEquals(r.status,200)
+  assertEquals(f.counts().rpcs.includes('can_access_intel'),false)
+ }
+}))
+
 for(const [label,make,status] of [
  ['an unverifiable user',()=>({fixture:fixture({valid:false}),body:{}}),401],
  ['an organization the caller does not belong to',()=>({fixture:fixture(),body:{orgId:'someone-elses-org'}}),403],
- ['an expired entitlement',()=>({fixture:fixture({allowed:false}),body:{}}),403],
  ['a caller with no membership anywhere',()=>({fixture:fixture({members:[]}),body:{}}),403],
 ] as const) Deno.test(`Agent intelligence refuses ${label} before reading intelligence`,()=>withEnv(async()=>{
  const {fixture:f,body}=make()
@@ -103,18 +122,14 @@ Deno.test('Service mode cannot read an arbitrary organization for an arbitrary u
  assertEquals(f.counts().inserts,[])
 }))
 
-Deno.test('Service mode cannot reach an organization that holds no entitlement',()=>withEnv(async()=>{
- const f=fixture({allowed:false}),r=await handleAgentIntelligence(serviceRequest({userId:'verified-user'}),f.factory)
- assertEquals(r.status,403);assertEquals(f.dataReads(),[]);assertEquals(f.counts().inserts,[])
-}))
-
 Deno.test('Service mode acts for a verified member of the requested organization',()=>withEnv(async()=>{
- const f=fixture({members:['verified-user','service-member']})
+ const f=fixture({members:['verified-user','service-member'],entitled:false})
  const r=await handleAgentIntelligence(serviceRequest({userId:'service-member'}),f.factory)
  assertEquals(r.status,200)
- const {userReads,inserts}=f.counts()
+ const {userReads,inserts,rpcs}=f.counts()
  // A service credential is its own proof; no user session is verified for it.
  assertEquals(userReads,0)
+ assertEquals(rpcs.includes('can_access_intel'),false)
  assertEquals(inserts[0].payload.user_id,'service-member');assertEquals(inserts[0].payload.org_id,'org')
 }))
 
