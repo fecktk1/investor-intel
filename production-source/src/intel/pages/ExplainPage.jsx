@@ -8,6 +8,7 @@ import { getEntityByRef } from '../lib/artifact-api'
 import { useArtifact } from '../lib/useArtifact'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import IntelSurfaceGate from '../components/IntelSurfaceGate'
 
 const QUICK = [
   ['explain_new', 'Explain like I\'m new'],
@@ -55,6 +56,9 @@ export default function ExplainPage() {
         <p className="page-sub">{t('pages.explain_sub', { defaultValue: 'Clear, easy-to-understand explanations for any token, wallet, chart or narrative.' })}</p>
       </div>
 
+      {/* Asking spends model tokens for this one reader, so the prompt to
+          upgrade sits on the asking, not on the page. */}
+      <IntelSurfaceGate surface="ai_generation" title={t('access.surface_ai_generation', { defaultValue: 'AI generation' })}>
       <form onSubmit={(e) => { e.preventDefault(); ask() }} className="card p-4 space-y-3">
         {entity && <div className="text-[12px] text-[var(--fg-4)] font-mono break-all">{entity.canonical_ref_key}</div>}
         <textarea className="textarea w-full" rows={3} placeholder={t('explain.placeholder', { defaultValue: 'Ask anything — e.g. “What is liquidity and why does it matter?”' })} value={question} onChange={(e) => setQuestion(e.target.value)} />
@@ -67,6 +71,7 @@ export default function ExplainPage() {
           <button type="submit" className="btn btn--primary btn--sm" disabled={ex.loading || !question.trim()}><Send className="h-4 w-4" /> {t('explain.ask', { defaultValue: 'Ask' })}</button>
         </div>
       </form>
+      </IntelSurfaceGate>
 
       {/* Context-routing provenance: which of YOUR cached surfaces grounded the answer */}
       {Array.isArray(ex.result?.matched_surfaces) && ex.result.matched_surfaces.length > 0 && (

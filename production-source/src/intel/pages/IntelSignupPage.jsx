@@ -39,9 +39,14 @@ export default function IntelSignupPage() {
     ? searchParams.get('plan')
     : null
   const plan = planId ? PAID_PLANS[planId] : null
-  // Where a freshly authenticated account should land: the trial bootstrapper,
-  // carrying the paid-plan intent when present.
-  const postAuthNext = planId ? `/intel/start?plan=${planId}` : '/intel/start'
+  // Free intent (?plan=free). The same account flow; only the destination and
+  // the copy differ, so there is one signup path rather than two.
+  const wantsFree = searchParams.get('plan') === 'free'
+  // Where a freshly authenticated account should land: the workspace
+  // bootstrapper, carrying the paid or free intent when present.
+  const postAuthNext = planId
+    ? `/intel/start?plan=${planId}`
+    : wantsFree ? '/intel/start?plan=free' : '/intel/start'
 
   const [fullName, setFullName] = useState('')
   const [email, setEmail] = useState('')
@@ -155,7 +160,9 @@ export default function IntelSignupPage() {
                   <span className="text-[var(--fg-1)] font-medium">{email}</span>
                   {plan
                     ? t('signup.sent_body_suffix_plan', { defaultValue: '. Click it to activate your account and continue to checkout.' })
-                    : t('signup.sent_body_suffix', { defaultValue: '. Click it to activate your account and start your 7-day free trial.' })}
+                    : wantsFree
+                      ? t('signup.sent_body_suffix_free', { defaultValue: '. Click it to activate your account and open your free membership.' })
+                      : t('signup.sent_body_suffix', { defaultValue: '. Click it to activate your account and start your 7-day free trial.' })}
                 </p>
               </div>
               <p className="text-[12px] text-[var(--fg-4)] leading-relaxed">
@@ -183,7 +190,9 @@ export default function IntelSignupPage() {
                       tier: plan.label,
                       price: plan.price,
                     })
-                  : t('signup.body', { defaultValue: 'Your account unlocks the 7-day free trial of Investor Intel — full access, no card required.' })}
+                  : wantsFree
+                    ? t('signup.free_body', { defaultValue: 'Your account opens the free tier of Investor Intel: the market boards, the regime figures and every recorded capture. No card, no trial clock.' })
+                    : t('signup.body', { defaultValue: 'Your account unlocks the 7-day free trial of Investor Intel — full access, no card required.' })}
               </p>
 
               {!plan && (
@@ -258,7 +267,9 @@ export default function IntelSignupPage() {
                     : <>
                         {plan
                           ? t('signup.plan_cta', { defaultValue: 'Create account & continue to checkout' })
-                          : t('signup.cta', { defaultValue: 'Create account & start free trial' })}
+                          : wantsFree
+                            ? t('signup.free_cta', { defaultValue: 'Create account & continue free' })
+                            : t('signup.cta', { defaultValue: 'Create account & start free trial' })}
                         {' '}<ArrowRight className="h-4 w-4" />
                       </>}
                 </button>
@@ -269,6 +280,12 @@ export default function IntelSignupPage() {
                   ? [
                       `${plan.label} · ${plan.price}/mo`,
                       t('signup.trust_pay', { defaultValue: 'Pay by card or crypto' }),
+                      t('signup.trust_cancel', { defaultValue: 'Cancel anytime' }),
+                    ]
+                  : wantsFree
+                  ? [
+                      t('signup.trust_free', { defaultValue: 'Free tier' }),
+                      t('signup.trust_card', { defaultValue: 'No card required' }),
                       t('signup.trust_cancel', { defaultValue: 'Cancel anytime' }),
                     ]
                   : [

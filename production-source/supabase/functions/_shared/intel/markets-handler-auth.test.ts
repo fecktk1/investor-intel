@@ -173,7 +173,9 @@ function cmcHistoryFixture(points:{t:number;price:number}[]){
  const db={auth:{getUser:()=>Promise.resolve({data:{user:{id:'verified-user'}},error:null})},
   from:(name:string)=>{seen.push(name);return table(name)},
   rpc:(name:string)=>{seen.push(`rpc:${name}`)
-   const data=name==='can_access_intel'?true:name==='cmc_request_reserve'?{allowed:true,reservation_id:'res-1'}:name==='cmc_account_sync_claim'?{allowed:false}:{}
+   // market_history spends one provider sampling for the asking member, so the
+   // handler now checks the surface tier as well as product access.
+   const data=name==='can_access_intel'?true:name==='intel_surface_allowed'?true:name==='cmc_request_reserve'?{allowed:true,reservation_id:'res-1'}:name==='cmc_account_sync_claim'?{allowed:false}:{}
    return Promise.resolve({data,error:null})}}
  const body={status:{error_code:0,credit_count:1},data:{'1027':{id:1027,name:'Ethereum',symbol:'ETH',quotes:points.map(p=>({timestamp:new Date(p.t).toISOString(),quote:{USD:{price:p.price,volume_24h:1e9,market_cap:3.6e11,timestamp:new Date(p.t).toISOString()}}}))}}}
  return {factory:()=>db,chains:()=>Promise.resolve({rows:[],unavailable:false}),seen,fetched,

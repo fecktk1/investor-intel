@@ -2845,7 +2845,10 @@
     "error": "Could not start your trial. Please try again.",
     "plan_title": "Setting up your workspace",
     "plan_body": "One moment — creating your Investor Intel workspace and taking you to checkout.",
-    "retry": "Try again"
+    "retry": "Try again",
+    "free_cta": "Continue on the free tier",
+    "free_title": "Setting up your free workspace",
+    "free_error": "Could not open your free membership. Please try again."
   },
   "signup": {
     "seo_title": "Create your Investor Intel account",
@@ -2877,7 +2880,11 @@
     "recap_markets": "Markets terminal",
     "recap_narratives": "Auto-detected narratives",
     "recap_portfolio": "Read-only portfolio",
-    "recap_signals": "Explainable signals"
+    "recap_signals": "Explainable signals",
+    "free_body": "Your account opens the free tier of Investor Intel: the market boards, the regime figures and every recorded capture. No card, no trial clock.",
+    "free_cta": "Create account & continue free",
+    "sent_body_suffix_free": ". Click it to activate your account and open your free membership.",
+    "trust_free": "Free tier"
   },
   "onboarding": {
     "title": "Set up your workspace",
@@ -3642,5 +3649,42 @@
     "age": "Age against refresh limit",
     "age_seconds": "{{age}}s",
     "age_of_ttl": "{{age}}s of {{ttl}}s"
+  },
+  "access": {
+    "locked_region": "Locked part of Investor Intel",
+    "locked_eyebrow": "Locked",
+    "locked_heading": "This part of the terminal",
+    "locked_title": "Available to {{tier}} members and above",
+    "locked_body": "Your free membership reads every market board, the regime figures, the recorded captures and the saved charts. This part runs a fresh request for you each time it is opened, so it belongs to a paid plan.",
+    "locked_placeholder_note": "The shape above is a placeholder. Your reading is not loaded on this membership, so there is nothing hidden on this page.",
+    "upgrade_cta": "See plans",
+    "free_badge": "Free membership",
+    "free_body": "Read the market boards, the regime figures and every recorded capture. No card, no trial clock.",
+    "tier_free": "Free",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Trial",
+    "surface_research_on_demand": "On demand research",
+    "surface_investigation": "Connected Research",
+    "surface_portfolio_valuation": "Portfolio valuation",
+    "surface_ai_generation": "AI generation",
+    "surface_market_history": "Price history",
+    "surface_alert_evaluation": "Alerts"
+  },
+  "intel_upgrade": {
+    "free_label": "Free",
+    "free_price": "$0",
+    "free_note": "no card, no trial clock",
+    "free_body": "The same product, not a smaller one. Everything already computed once for everyone stays open to you.",
+    "free_open_title": "Open on free",
+    "free_open_boards": "Every market board and asset page",
+    "free_open_regime": "Market regime figures",
+    "free_open_captures": "Every recorded capture",
+    "free_open_chart": "The chart workstation",
+    "free_open_narratives": "Narrative briefs",
+    "free_open_watchlist": "10 watchlist items",
+    "free_locked_title": "Locked until Starter",
+    "free_locked_body": "On demand research, Connected Research, portfolio valuation, AI generation, price history and alerts. Each one runs a fresh request for you every time it is opened."
   }
 }

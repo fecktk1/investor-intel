@@ -2030,7 +2030,10 @@
     "error": "Nuk u mund të nisej prova. Ju lutem provo përsëri.",
     "plan_title": "Po konfigurohet hapësira jote e punës",
     "plan_body": "Një çast: po krijojmë hapësirën tënde Investor Intel dhe po të kalojmë te pagesa.",
-    "retry": "Provo sërish"
+    "retry": "Provo sërish",
+    "free_cta": "Vazhdo me nivelin falas",
+    "free_title": "Po përgatitet hapësira jote falas",
+    "free_error": "Anëtarësia jote falas nuk mund të hapej. Provo përsëri."
   },
   "onboarding": {
     "title": "Konfiguro hapësirën tënde të punës",
@@ -3000,7 +3003,11 @@
     "recap_markets": "Terminali i tregjeve",
     "recap_narratives": "Narrativa të zbuluara automatikisht",
     "recap_portfolio": "Portofol vetëm për lexim",
-    "recap_signals": "Sinjale të shpjegueshme"
+    "recap_signals": "Sinjale të shpjegueshme",
+    "free_body": "Llogaria jote hap nivelin falas të Investor Intel: tabelat e tregut, shifrat e regjimit dhe çdo regjistrim të ruajtur. Pa kartë dhe pa afat prove.",
+    "free_cta": "Krijo llogarinë dhe vazhdo falas",
+    "sent_body_suffix_free": ". Kliko atë për të aktivizuar llogarinë dhe për të hapur anëtarësinë falas.",
+    "trust_free": "Niveli falas"
   },
   "asset_news": {
     "checked": "Mbulimi u kontrollua",
@@ -3642,5 +3649,42 @@
     "age": "Mosha kundrejt kufirit të rifreskimit",
     "age_seconds": "{{age}} s",
     "age_of_ttl": "{{age}} s nga {{ttl}} s"
+  },
+  "access": {
+    "locked_region": "Pjesë e kyçur e Investor Intel",
+    "locked_eyebrow": "E kyçur",
+    "locked_heading": "Kjo pjesë e terminalit",
+    "locked_title": "E disponueshme për anëtarët {{tier}} e lart",
+    "locked_body": "Anëtarësia jote falas lexon të gjitha tabelat e tregut, shifrat e regjimit, regjistrimet e ruajtura dhe grafikët e ruajtur. Kjo pjesë nis një kërkesë të re për ty sa herë hapet, prandaj i përket një plani me pagesë.",
+    "locked_placeholder_note": "Forma më sipër është vendmbajtëse. Leximi yt nuk ngarkohet me këtë anëtarësi, pra nuk ka asgjë të fshehur në këtë faqe.",
+    "upgrade_cta": "Shih planet",
+    "free_badge": "Anëtarësi falas",
+    "free_body": "Lexo tabelat e tregut, shifrat e regjimit dhe çdo regjistrim të ruajtur. Pa kartë dhe pa afat prove.",
+    "tier_free": "Falas",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Provë",
+    "surface_research_on_demand": "Hulumtim sipas kërkesës",
+    "surface_investigation": "Hulumtim i lidhur",
+    "surface_portfolio_valuation": "Vlerësim i portofolit",
+    "surface_ai_generation": "Gjenerim me IA",
+    "surface_market_history": "Historik i çmimeve",
+    "surface_alert_evaluation": "Njoftime"
+  },
+  "intel_upgrade": {
+    "free_label": "Falas",
+    "free_price": "$0",
+    "free_note": "pa kartë, pa afat prove",
+    "free_body": "I njëjti produkt, jo një version i zvogëluar. Gjithcka që është llogaritur një herë për të gjithë mbetet e hapur për ty.",
+    "free_open_title": "E hapur në nivelin falas",
+    "free_open_boards": "Çdo tabelë tregu dhe faqe aseti",
+    "free_open_regime": "Shifrat e regjimit të tregut",
+    "free_open_captures": "Çdo regjistrim i ruajtur",
+    "free_open_chart": "Stacioni i grafikëve",
+    "free_open_narratives": "Përmbledhjet e narrativave",
+    "free_open_watchlist": "10 artikuj në listën e ndjekjes",
+    "free_locked_title": "E kyçur deri te Starter",
+    "free_locked_body": "Kërkimi sipas kërkesës, Connected Research, vlerësimi i portofolit, gjenerimi me IA, historiku i çmimeve dhe njoftimet. Secila nis një kërkesë të re për ty sa herë hapet."
   }
 }

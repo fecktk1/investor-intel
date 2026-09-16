@@ -2030,7 +2030,10 @@
     "error": "Impossible de démarrer votre essai. Veuillez réessayer.",
     "plan_title": "Configuration de votre espace de travail",
     "plan_body": "Un instant : nous créons votre espace Investor Intel avant de vous diriger vers le paiement.",
-    "retry": "Réessayer"
+    "retry": "Réessayer",
+    "free_cta": "Continuer avec l'offre gratuite",
+    "free_title": "Préparation de votre espace gratuit",
+    "free_error": "Impossible d'ouvrir votre adhésion gratuite. Veuillez réessayer."
   },
   "onboarding": {
     "title": "Configurez votre espace",
@@ -3000,7 +3003,11 @@
     "recap_markets": "Terminal des marchés",
     "recap_narratives": "Narratifs détectés automatiquement",
     "recap_portfolio": "Portefeuille en lecture seule",
-    "recap_signals": "Signaux explicables"
+    "recap_signals": "Signaux explicables",
+    "free_body": "Votre compte ouvre l'offre gratuite d'Investor Intel : les tableaux de marché, les chiffres de régime et chaque capture enregistrée. Sans carte, sans compte à rebours d'essai.",
+    "free_cta": "Créer un compte et continuer gratuitement",
+    "sent_body_suffix_free": ". Cliquez dessus pour activer votre compte et ouvrir votre adhésion gratuite.",
+    "trust_free": "Offre gratuite"
   },
   "asset_news": {
     "checked": "Couverture vérifiée à",
@@ -3642,5 +3649,42 @@
     "age": "Ancienneté par rapport à la limite d’actualisation",
     "age_seconds": "{{age}} s",
     "age_of_ttl": "{{age}} s sur {{ttl}} s"
+  },
+  "access": {
+    "locked_region": "Partie verrouillée d’Investor Intel",
+    "locked_eyebrow": "Verrouillé",
+    "locked_heading": "Cette partie du terminal",
+    "locked_title": "Disponible pour les membres {{tier}} et au-delà",
+    "locked_body": "Votre adhésion gratuite donne accès à tous les tableaux de marché, aux chiffres de régime, aux captures enregistrées et aux graphiques sauvegardés. Cette partie lance une nouvelle requête pour vous à chaque ouverture, elle relève donc d’une formule payante.",
+    "locked_placeholder_note": "La forme ci-dessus est un espace réservé. Votre lecture n’est pas chargée avec cette adhésion, rien n’est donc masqué sur cette page.",
+    "upgrade_cta": "Voir les formules",
+    "free_badge": "Adhésion gratuite",
+    "free_body": "Consultez les tableaux de marché, les chiffres de régime et chaque capture enregistrée. Sans carte et sans compte à rebours d’essai.",
+    "tier_free": "Gratuit",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Essai",
+    "surface_research_on_demand": "Recherche à la demande",
+    "surface_investigation": "Recherche connectée",
+    "surface_portfolio_valuation": "Valorisation du portefeuille",
+    "surface_ai_generation": "Génération par IA",
+    "surface_market_history": "Historique des prix",
+    "surface_alert_evaluation": "Alertes"
+  },
+  "intel_upgrade": {
+    "free_label": "Gratuit",
+    "free_price": "$0",
+    "free_note": "sans carte, sans compte à rebours",
+    "free_body": "Le même produit, pas une version réduite. Tout ce qui a déjà été calculé une fois pour tous vous reste ouvert.",
+    "free_open_title": "Ouvert en gratuit",
+    "free_open_boards": "Tous les tableaux de marché et pages d'actifs",
+    "free_open_regime": "Les chiffres de régime de marché",
+    "free_open_captures": "Chaque capture enregistrée",
+    "free_open_chart": "Le poste de travail graphique",
+    "free_open_narratives": "Les synthèses de narratifs",
+    "free_open_watchlist": "10 éléments de liste de suivi",
+    "free_locked_title": "Verrouillé jusqu'à Starter",
+    "free_locked_body": "Recherche à la demande, Connected Research, valorisation de portefeuille, génération par IA, historique des prix et alertes. Chacune lance une nouvelle requête pour vous à chaque ouverture."
   }
 }

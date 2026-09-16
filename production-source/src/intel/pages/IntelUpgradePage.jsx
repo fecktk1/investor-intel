@@ -647,8 +647,35 @@ export default function IntelUpgradePage() {
           )}
         </div>
 
-        {/* tier cards */}
-        <div className="grid sm:grid-cols-3 gap-3 mb-8">
+        {/* tier cards, with free as a real column rather than a footnote.
+            Someone reading it should be able to predict exactly which panels
+            will carry a lock, so the locked list names the same six surfaces
+            the server gate refuses. It is not a button: there is nothing here
+            to buy, and pretending otherwise would be a dark pattern. */}
+        <div className="grid sm:grid-cols-4 gap-3 mb-8">
+          <div className="relative text-left rounded-2xl border border-[var(--border-subtle)] bg-[var(--bg-1)] p-4">
+            <p className="text-sm font-bold text-white mb-1">{t('intel_upgrade.free_label', { defaultValue: 'Free' })}</p>
+            <p className="text-2xl font-black text-white mb-1">
+              {t('intel_upgrade.free_price', { defaultValue: '$0' })}
+              <span className="text-xs font-medium text-gray-500"> {t('intel_upgrade.free_note', { defaultValue: 'no card, no trial clock' })}</span>
+            </p>
+            <p className="text-[11px] text-gray-400 mb-2">
+              {t('intel_upgrade.free_body', { defaultValue: 'The same product, not a smaller one. Everything already computed once for everyone stays open to you.' })}
+            </p>
+            <p className="text-[11px] font-semibold text-gray-300">{t('intel_upgrade.free_open_title', { defaultValue: 'Open on free' })}</p>
+            <ul className="space-y-1 text-[11px] text-gray-400">
+              <li>{t('intel_upgrade.free_open_boards', { defaultValue: 'Every market board and asset page' })}</li>
+              <li>{t('intel_upgrade.free_open_regime', { defaultValue: 'Market regime figures' })}</li>
+              <li>{t('intel_upgrade.free_open_captures', { defaultValue: 'Every recorded capture' })}</li>
+              <li>{t('intel_upgrade.free_open_chart', { defaultValue: 'The chart workstation' })}</li>
+              <li>{t('intel_upgrade.free_open_narratives', { defaultValue: 'Narrative briefs' })}</li>
+              <li>{t('intel_upgrade.free_open_watchlist', { defaultValue: '10 watchlist items' })}</li>
+            </ul>
+            <p className="text-[11px] font-semibold text-gray-300 mt-2">{t('intel_upgrade.free_locked_title', { defaultValue: 'Locked until Starter' })}</p>
+            <p className="text-[11px] text-gray-400">
+              {t('intel_upgrade.free_locked_body', { defaultValue: 'On demand research, Connected Research, portfolio valuation, AI generation, price history and alerts. Each one runs a fresh request for you every time it is opened.' })}
+            </p>
+          </div>
           {INTEL_TIERS.map((p) => {
             const active = p.id === tierId
             return (

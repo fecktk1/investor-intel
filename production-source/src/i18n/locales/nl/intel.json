@@ -2030,7 +2030,10 @@
     "error": "Kon je proefperiode niet starten. Probeer het opnieuw.",
     "plan_title": "Je werkruimte instellen",
     "plan_body": "Een moment: we maken je Investor Intel-werkruimte aan en brengen je naar de betaling.",
-    "retry": "Opnieuw proberen"
+    "retry": "Opnieuw proberen",
+    "free_cta": "Doorgaan met de gratis laag",
+    "free_title": "Je gratis werkruimte wordt ingericht",
+    "free_error": "Je gratis lidmaatschap kon niet worden geopend. Probeer het opnieuw."
   },
   "onboarding": {
     "title": "Stel je werkruimte in",
@@ -3000,7 +3003,11 @@
     "recap_markets": "Marktterminal",
     "recap_narratives": "Automatisch gedetecteerde narratieven",
     "recap_portfolio": "Portefeuille (alleen-lezen)",
-    "recap_signals": "Uitlegbare signalen"
+    "recap_signals": "Uitlegbare signalen",
+    "free_body": "Je account opent de gratis laag van Investor Intel: de marktborden, de regimecijfers en elke vastgelegde meting. Geen kaart, geen proefklok.",
+    "free_cta": "Account maken en gratis doorgaan",
+    "sent_body_suffix_free": ". Klik erop om je account te activeren en je gratis lidmaatschap te openen.",
+    "trust_free": "Gratis laag"
   },
   "asset_news": {
     "checked": "Berichtgeving gecontroleerd",
@@ -3642,5 +3649,42 @@
     "age": "Leeftijd ten opzichte van de verversingslimiet",
     "age_seconds": "{{age}} s",
     "age_of_ttl": "{{age}} s van {{ttl}} s"
+  },
+  "access": {
+    "locked_region": "Vergrendeld deel van Investor Intel",
+    "locked_eyebrow": "Vergrendeld",
+    "locked_heading": "Dit deel van de terminal",
+    "locked_title": "Beschikbaar voor {{tier}}-leden en hoger",
+    "locked_body": "Je gratis lidmaatschap leest alle marktborden, de regimecijfers, de vastgelegde opnames en de bewaarde grafieken. Dit deel start bij elke opening een nieuwe aanvraag voor jou en hoort daarom bij een betaald plan.",
+    "locked_placeholder_note": "De vorm hierboven is een plaatshouder. Jouw uitlezing wordt met dit lidmaatschap niet geladen, dus er is niets verborgen op deze pagina.",
+    "upgrade_cta": "Bekijk de plannen",
+    "free_badge": "Gratis lidmaatschap",
+    "free_body": "Lees de marktborden, de regimecijfers en elke vastgelegde opname. Geen kaart en geen proefklok.",
+    "tier_free": "Gratis",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Proef",
+    "surface_research_on_demand": "Research op aanvraag",
+    "surface_investigation": "Verbonden research",
+    "surface_portfolio_valuation": "Portefeuillewaardering",
+    "surface_ai_generation": "AI-generatie",
+    "surface_market_history": "Koershistorie",
+    "surface_alert_evaluation": "Meldingen"
+  },
+  "intel_upgrade": {
+    "free_label": "Gratis",
+    "free_price": "$0",
+    "free_note": "geen kaart, geen proefklok",
+    "free_body": "Hetzelfde product, geen uitgeklede versie. Alles wat al eenmalig voor iedereen is berekend, blijft voor je open.",
+    "free_open_title": "Open in de gratis laag",
+    "free_open_boards": "Alle marktborden en assetpagina's",
+    "free_open_regime": "Regimecijfers van de markt",
+    "free_open_captures": "Elke vastgelegde meting",
+    "free_open_chart": "Het grafiekwerkstation",
+    "free_open_narratives": "Narratiefbriefings",
+    "free_open_watchlist": "10 volglijst-items",
+    "free_locked_title": "Vergrendeld tot Starter",
+    "free_locked_body": "Onderzoek op aanvraag, Connected Research, portefeuillewaardering, AI-generatie, koershistorie en meldingen. Elk daarvan start bij het openen een nieuwe aanvraag voor jou."
   }
 }

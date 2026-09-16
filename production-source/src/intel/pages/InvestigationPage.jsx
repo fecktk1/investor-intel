@@ -8,6 +8,8 @@ import {nativeAssetChain, marketNativeChain} from '../lib/asset-identity'
 import {useResearchThread} from '../context/ResearchThreads'
 import {useWatchlistSelection} from '../context/WatchlistSelection'
 import ResearchThreadPanel from '../components/ResearchThreadPanel'
+import IntelLockedSurface from '../components/IntelLockedSurface'
+import {useIntelSurfaceLock} from '../context/IntelAccess'
 import {useInvestigation,invokeInvestigation} from '../lib/useInvestigation'
 import {loadMarketDetail} from '../lib/markets-api'
 import {loadThesisChart} from '../lib/thesis-chart'
@@ -41,7 +43,21 @@ LENSES.push(['benchmark','CMC benchmark comparison','Markets'])
 const NATIVE_CMC={'native:bitcoin':'1','native:ethereum':'1027','native:solana':'5426'}
 const DEFAULT_NATIVE={'1':'native:bitcoin','1027':'native:ethereum','5426':'native:solana'}
 export default function InvestigationPage(){
+  const {t}=useTranslation('intel',{useSuspense:false})
   const {user}=useSupabase(),{org}=useProfile(),[search]=useSearchParams()
+  const lock=useIntelSurfaceLock('investigation')
+  // Connected research runs the on-demand provider path for the asking member.
+  // A membership that does not carry it gets the workspace it came to, with the
+  // workspace body locked in its place, and none of its reads are mounted: the
+  // refusal has already been made, so there is nothing here to withhold.
+  if(lock)return <div className="intel-investigation-workspace">
+    <header className="intel-investigation-heading"><div>
+      <p className="eyebrow">{t('investigation.workspace',{defaultValue:'Connected research'})}</p>
+      <h1 className="page-title">{t('access.surface_investigation',{defaultValue:'Connected Research'})}</h1>
+      <p className="page-sub">{t('investigation.subtitle',{defaultValue:'What changed, and what does it change about your thesis?'})}</p>
+    </div></header>
+    <IntelLockedSurface surface={lock.surface} minTier={lock.minTier} title={t('access.surface_investigation',{defaultValue:'Connected Research'})}/>
+  </div>
   return <InvestigationWorkspace key={`${user?.id}:${org?.id}:${search.get('asset')||'native:bitcoin'}`} />
 }
 export function InvestigationWorkspace(){

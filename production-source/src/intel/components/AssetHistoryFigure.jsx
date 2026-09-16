@@ -6,6 +6,8 @@ import { useScreenParams } from '../lib/useScreenParams'
 import { LineArea, RadialGauge } from '../charts'
 import { readAssetHistory } from '../lib/markets-api'
 import { formatPct, formatPrice, formatUsd } from '../lib/market-format'
+import IntelLockedSurface from './IntelLockedSurface'
+import { useIntelSurfaceLock } from '../context/IntelAccess'
 
 // Price history for one asset, read only when a reader asks for it, and the risk
 // measures derived from exactly the points that were loaded.
@@ -82,6 +84,7 @@ export default function AssetHistoryFigure({ sourceProvider, providerId, symbol 
   const [requested, setRequested] = useState(null)
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
+  const lock = useIntelSurfaceLock('market_history')
 
   const selected = RANGE_KEYS.includes(params.range) ? params.range : null
   const plan = HISTORY_RANGES.find(range => range.key === (requested || selected)) || HISTORY_RANGES[1]
@@ -132,6 +135,20 @@ export default function AssetHistoryFigure({ sourceProvider, providerId, symbol 
 
   const volatilityMax = Math.max(100, Math.ceil((num(volatility?.pct) ?? 0) / 50) * 50)
   const daysMax = Math.max(1, plan.days)
+
+  // One range is one provider sampling. A membership that does not carry the
+  // history surface keeps the figure's place on the asset page, named and
+  // priced, and never gets a range button to spend with. Nothing was fetched:
+  // the read above only runs once a reader asks for a range.
+  if (lock) {
+    return (
+      <IntelLockedSurface
+        surface={lock.surface}
+        minTier={lock.minTier}
+        title={t('asset_history.heading', { defaultValue: 'Price history and derived risk' })}
+      />
+    )
+  }
 
   return (
     <section className="intel-asset-history space-y-3" aria-label={t('asset_history.heading', { defaultValue: 'Price history and derived risk' })}>

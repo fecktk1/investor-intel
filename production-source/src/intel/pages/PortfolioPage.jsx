@@ -15,6 +15,7 @@ import { fmtPrice, fmtPct, fmtVol, pctClass, timeAgo } from '../lib/market-forma
 import MarketSignalBadge from '../components/MarketSignalBadge'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
+import IntelSurfaceGate from '../components/IntelSurfaceGate'
 import RelevantSignals from '../components/RelevantSignals'
 import PortfolioExposureCards from '../components/PortfolioExposureCards'
 import { markSurfaceSeen } from '../lib/changes-api'
@@ -482,6 +483,11 @@ export default function PortfolioPage() {
 
       <IntelErrorNotice error={error || selectionError?.message} />
 
+      {/* Valuing a portfolio reprices this member's own positions and then
+          synthesises over them, which spends per reader. The page keeps its
+          heading and its portfolio controls; only the valuation itself is
+          locked, in the place where it would have been. */}
+      <IntelSurfaceGate surface="portfolio_valuation" title={t('access.surface_portfolio_valuation', { defaultValue: 'Portfolio valuation' })}>
       <div className={`space-y-5${waitingForPortfolio?' intel-portfolio-pending':''}`} aria-busy={waitingForPortfolio}>
       {waitingForSelection?<p role="status">Loading portfolios…</p>:portfolios.length === 0 ? (
         <div className="border-b border-[var(--border-default)] rounded-none p-10 text-center space-y-3">
@@ -528,6 +534,7 @@ export default function PortfolioPage() {
         </>
       )}
       </div>
+      </IntelSurfaceGate>
 
       {activeId && workspace?.scope===activeScope && <PortfolioExposureCards portfolioId={activeId} revision={holdings} />}
 

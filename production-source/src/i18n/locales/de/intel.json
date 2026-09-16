@@ -2030,7 +2030,10 @@
     "error": "Testphase konnte nicht gestartet werden. Bitte erneut versuchen.",
     "plan_title": "Dein Arbeitsbereich wird eingerichtet",
     "plan_body": "Einen Moment – wir erstellen deinen Investor-Intel-Arbeitsbereich und leiten dich zur Zahlung weiter.",
-    "retry": "Erneut versuchen"
+    "retry": "Erneut versuchen",
+    "free_cta": "Kostenlos weitermachen",
+    "free_title": "Dein kostenloser Arbeitsbereich wird eingerichtet",
+    "free_error": "Deine kostenlose Mitgliedschaft konnte nicht geöffnet werden. Bitte versuche es erneut."
   },
   "onboarding": {
     "title": "Workspace einrichten",
@@ -3000,7 +3003,11 @@
     "recap_markets": "Markt-Terminal",
     "recap_narratives": "Automatisch erkannte Narrative",
     "recap_portfolio": "Portfolio mit reinem Lesezugriff",
-    "recap_signals": "Nachvollziehbare Signale"
+    "recap_signals": "Nachvollziehbare Signale",
+    "free_body": "Dein Konto öffnet die kostenlose Stufe von Investor Intel: die Markttafeln, die Regime-Kennzahlen und jede aufgezeichnete Erfassung. Keine Karte, keine Testphase.",
+    "free_cta": "Konto erstellen und kostenlos fortfahren",
+    "sent_body_suffix_free": ". Klicke darauf, um dein Konto zu aktivieren und deine kostenlose Mitgliedschaft zu öffnen.",
+    "trust_free": "Kostenlose Stufe"
   },
   "asset_news": {
     "checked": "Berichterstattung geprüft",
@@ -3642,5 +3649,42 @@
     "age": "Alter gegenüber der Aktualisierungsgrenze",
     "age_seconds": "{{age}} s",
     "age_of_ttl": "{{age}} s von {{ttl}} s"
+  },
+  "access": {
+    "locked_region": "Gesperrter Bereich von Investor Intel",
+    "locked_eyebrow": "Gesperrt",
+    "locked_heading": "Dieser Teil des Terminals",
+    "locked_title": "Verfügbar ab {{tier}} und höher",
+    "locked_body": "Deine kostenlose Mitgliedschaft liest alle Markttafeln, die Regime-Kennzahlen, die aufgezeichneten Erfassungen und die gespeicherten Charts. Dieser Teil startet bei jedem Öffnen eine neue Abfrage für dich und gehört deshalb zu einem bezahlten Tarif.",
+    "locked_placeholder_note": "Die Form oben ist ein Platzhalter. Deine Auswertung wird in dieser Mitgliedschaft nicht geladen, es ist also nichts auf dieser Seite verborgen.",
+    "upgrade_cta": "Tarife ansehen",
+    "free_badge": "Kostenlose Mitgliedschaft",
+    "free_body": "Lies die Markttafeln, die Regime-Kennzahlen und jede aufgezeichnete Erfassung. Keine Karte, keine Testphase.",
+    "tier_free": "Kostenlos",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Testphase",
+    "surface_research_on_demand": "Research auf Abruf",
+    "surface_investigation": "Verbundenes Research",
+    "surface_portfolio_valuation": "Portfolio-Bewertung",
+    "surface_ai_generation": "KI-Erzeugung",
+    "surface_market_history": "Kursverlauf",
+    "surface_alert_evaluation": "Alarme"
+  },
+  "intel_upgrade": {
+    "free_label": "Kostenlos",
+    "free_price": "$0",
+    "free_note": "keine Karte, keine Testphase",
+    "free_body": "Dasselbe Produkt, keine abgespeckte Version. Alles, was ohnehin einmal für alle berechnet wurde, bleibt für dich offen.",
+    "free_open_title": "Frei zugänglich",
+    "free_open_boards": "Alle Markttafeln und Asset-Seiten",
+    "free_open_regime": "Marktregime-Kennzahlen",
+    "free_open_captures": "Jede aufgezeichnete Erfassung",
+    "free_open_chart": "Die Chart-Arbeitsfläche",
+    "free_open_narratives": "Narrativ-Briefings",
+    "free_open_watchlist": "10 Beobachtungslisten-Einträge",
+    "free_locked_title": "Bis Starter gesperrt",
+    "free_locked_body": "Recherche auf Abruf, Connected Research, Portfoliobewertung, KI-Erzeugung, Kursverlauf und Alarme. Jedes davon startet bei jedem Öffnen eine neue Anfrage für dich."
   }
 }

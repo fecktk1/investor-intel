@@ -6,6 +6,7 @@ import { useSupabase } from '../../lib/useSupabase'
 import { useMarketResearch } from '../lib/useMarketResearch'
 import { EvidenceRecord, ResearchStatus,SharedResearchRefresh } from '../components/ResearchEvidence'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
+import IntelSurfaceGate from '../components/IntelSurfaceGate'
 import { saveResearch } from '../lib/intel-data'
 import { fmtPrice, fmtVol, fmtPct } from '../lib/market-format'
 import TokenChart from '../components/TokenChart'
@@ -114,6 +115,11 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
       {needsAsset && <label className="text-xs">{t('research.asset', { defaultValue: 'Asset' })}<select className="select ml-3" value={asset} onChange={e => setParam('asset', e.target.value)}>{(assetCatalog.result?.data?.rows?.length ? assetCatalog.result.data.rows : [{ id: 1, name: 'Bitcoin', symbol: 'BTC' }, { id: 1027, name: 'Ethereum', symbol: 'ETH' }, { id: 5426, name: 'Solana', symbol: 'SOL' }]).map(row => <option key={row.id} value={String(row.id)}>{row.name} · {row.symbol}</option>)}{asset && !(assetCatalog.result?.data?.rows || [{id:1},{id:1027},{id:5426}]).some(row => String(row.id) === asset) && <option value={asset}>{t('research.selected_asset', { defaultValue: 'Selected asset' })} · {asset}</option>}</select></label>}
       {workspace === 'structure' && <><Link className="text-xs underline underline-offset-4" to="/intel/execution">{t('nav.execution', { defaultValue: 'Execution research' })}</Link><Link className="text-xs underline underline-offset-4" to="/intel/markets">{t('research.spread_watch', { defaultValue: 'Spreads and liquidity' })}</Link></>}
     </div>
+    {/* Every read below calls the provider for the asking member, so this is
+        the part that belongs to a paid plan. The workspace heading and its own
+        selectors stay: the member sees the page they came to, with the costly
+        panel locked in its place rather than an error or a blank. */}
+    <IntelSurfaceGate surface="research_on_demand" title={t('access.surface_research_on_demand', { defaultValue: 'On demand research' })}>
     <ResearchStatus query={query} showObserved={!["globalHistory","cmc100History","cmc20History"].includes(capability)}/>
     <SharedResearchRefresh query={query}/>
     {sourceDraft&&<p className="intel-analysis-caption">Automatic updates paused while your source notes are unsaved.</p>}
@@ -121,5 +127,6 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
     {!!rows.length && !isDexDiscovery(capability) && (['globalHistory','cmc100History','cmc20History'].includes(capability)?<MarketContextHistory rows={rows} capability={capability}/>:workspace === 'context' || ['liquidations','liquidationAssets','marketPairs'].includes(capability) ? rows.map((row,index) => <EvidenceRecord key={index} record={row}/>) : <ResearchTable rows={rows} capability={capability} onOpen={row => setSelection(row)} t={t}/>)}
     {paged && <div className="flex items-center justify-between text-xs text-[var(--fg-4)]"><span>{t('research.page', { defaultValue: 'Page' })} {page + 1}{query.result?.data?.total != null ? ` · ${query.result.data.total} ${t('research.records', { defaultValue: 'records' })}` : ''}</span><span className="flex gap-3"><button className="btn btn--quiet" disabled={page === 0 || query.loading} onClick={() => setParam('page', String(page - 1))}>{t('markets.prev', { defaultValue: 'Previous' })}</button><button className="btn btn--quiet" disabled={query.loading || !(query.result?.data?.hasMore || (query.result?.data?.total != null ? (page + 1) * PAGE < query.result.data.total : rows.length === PAGE))} onClick={() => setParam('page', String(page + 1))}>{t('markets.next', { defaultValue: 'Next' })}</button></span></div>}
     {selection && <Investigation key={`${org?.id}:${user?.id}:${workspace}:${capability}:${rowId(selection)}`} row={selection} capability={capability} onClose={closeInvestigation} t={t}/>}
+    </IntelSurfaceGate>
   </IntelPageShell>
 }

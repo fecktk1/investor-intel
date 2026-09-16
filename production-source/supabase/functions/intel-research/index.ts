@@ -1,6 +1,7 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { requireIntelAccess, researchParams, researchSnapshot } from '../_shared/intel/research-service.ts'
 import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import { requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
 import {readAssetVenueContext} from '../_shared/intel/asset-venue-service.ts'
 import {readContractResearch} from '../_shared/intel/contract-research.ts'
 import {readConnectedAssetIdentity} from '../_shared/intel/connected-asset-identity.ts'
@@ -10,6 +11,50 @@ import {dexCohortService} from '../_shared/intel/dex-cohort-service.ts'
 import {readNarrativeInput} from '../_shared/intel/narrative-input-replay.ts'
 const cors={'Access-Control-Allow-Origin':'*','Access-Control-Allow-Headers':'authorization, x-client-info, apikey, content-type','Access-Control-Allow-Methods':'POST, OPTIONS'}
 const json=(body:unknown,status=200)=>new Response(JSON.stringify(body),{status,headers:{...cors,'Content-Type':'application/json','Cache-Control':'private, no-store'}})
+/** The reads answered entirely from our own store, and so the ONLY reads this
+ * function serves without the research_on_demand surface. Each was checked
+ * against the path it actually takes, not against its name:
+ *
+ *   catalog          researchSnapshot answers from CMC_CAPABILITIES and the
+ *                    operating settings and returns ABOVE requestCmc. It lists
+ *                    what a plan allows; it fetches nothing.
+ *   assetIdentity    readConnectedAssetIdentity reads market_assets and one
+ *                    indexed catalog RPC. It never calls requestCmc.
+ *   sourceHistory    readSourceHistoryPage reads retained source versions, and
+ *                    states in its own contract that it never activates demand
+ *                    or contacts an upstream provider.
+ *   narrativeInputs  readNarrativeInput reads the caller's own research
+ *                    artifact under their JWT and the retained snapshot that
+ *                    artifact names. No provider call on any branch, and RLS
+ *                    plus explicit org and owner checks keep it to rows that
+ *                    member already owns. Free means it costs nothing per
+ *                    additional person, and replaying inputs this workspace
+ *                    already paid to record costs nothing per additional
+ *                    person, so it belongs on the free side of the split.
+ */
+const STORE_ONLY_RESEARCH=new Set(['catalog','assetIdentity','sourceHistory','narrativeInputs'])
+
+/**
+ * Does this read need the paid research surface?
+ *
+ * WHY readMode:'retained' IS NOT EXEMPT. A retained read buys nothing at the
+ * moment it is served: requestCmc returns the cached row on kind 'render' and
+ * maxCalls is 0. But it reaches that return THROUGH the demand branch, which it
+ * enters with selectedDemand true, and when connected demand is enabled that
+ * branch stamps demanded_at on the shared cache row. Foreground demand is the
+ * refresh worker's only input, so the provider call is still made, later and on
+ * another clock, and charged to the same shared budget. A retained read of a
+ * provider backed capability therefore spends; it just spends asynchronously,
+ * which is why it stays behind the gate.
+ *
+ * The read mode is accepted and then deliberately ignored. It is a parameter so
+ * that the rule is stated where it can be tested rather than assumed at the
+ * call site, and so that reintroducing the retained exemption has to be a
+ * visible edit to this function.
+ */
+export function researchSurfaceRequired(capability:string,_readMode?:unknown):boolean{
+  return !STORE_ONLY_RESEARCH.has(capability)
+}
 
 export async function handleResearch(req:Request) {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: {...cors, 'Access-Control-Max-Age': '600'} })
@@ -21,6 +66,25 @@ export async function handleResearch(req:Request) {
     const db=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const actor=await requireIntelAccess(req,createClient,db,typeof body.orgId==='string'?body.orgId:null)
     const capability=typeof body.capability==='string'?body.capability:''
+    // The surface gate, once, before any branch below can begin work. It admits
+    // exactly the four store-only reads named above, which cost nothing extra
+    // per reader, and refuses every other read, RETAINED ONES INCLUDED, for a
+    // membership that does not carry the surface. The broad gate that used to
+    // sit here refused the store-only reads too, which was safe but wrong: a
+    // free member was denied data that was already ours and already paid for.
+    //
+    // IF YOU ARE HERE TO EXEMPT readMode:'retained', READ THIS FIRST. It looks
+    // free and it is not. requestCmc returns the cached row on kind 'render'
+    // with maxCalls 0, so a retained read buys nothing as it is served. But it
+    // reaches that return THROUGH the demand branch, which it enters with
+    // selectedDemand true, and with connected demand enabled that branch stamps
+    // demanded_at on the shared cache row. Foreground demand is the refresh
+    // worker's ONLY input, so the provider call still happens, later and on
+    // another clock, charged to the same shared budget. A retained read of a
+    // provider backed capability spends; it just spends asynchronously. An
+    // earlier note at this call site claimed the opposite. It was wrong, and
+    // anyone acting on it would open a paid refresh path to free members.
+    if(researchSurfaceRequired(capability,body.readMode))await requireIntelSurface(db,actor,'research_on_demand')
     if(capability==='narrativeInputs'){
       if(!actor.userId||!actor.orgId)return json({error:'member_required'},403)
       const userDb=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:req.headers.get('authorization')||''}}})
@@ -55,6 +119,6 @@ export async function handleResearch(req:Request) {
     let params:Record<string,string>
     try{params=capability==='catalog'?{}:researchParams(capability,body.params)}catch(e){return json({error:(e as Error).message},400)}
     return json(await researchSnapshot(db,capability,params,actor.userId,actor.orgId,undefined,cacheOnly))
-  }catch(e){return orgAuthzErrorResponse(e,cors)||json({error:'research_unavailable'},503)}
+  }catch(e){return surfaceLockedResponse(e,cors)||orgAuthzErrorResponse(e,cors)||json({error:'research_unavailable'},503)}
 }
 if(import.meta.main)Deno.serve(handleResearch)

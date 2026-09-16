@@ -48,6 +48,7 @@ import { comparisonAssetSubjects } from '../_shared/intel/comparison-subjects.ts
 import { generationDecision } from '../_shared/intel/generation-governance.ts'
 import { assetEvidenceFingerprint, comparisonHasStrongEvidence, evidencePackNeedsRefresh } from '../_shared/intel/comparison-evidence-quality.ts'
 import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
+import { requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
 import { isInternalServiceCall } from '../_shared/internal-auth.ts'
 import {loadAlertExplanationReceipt,attachAlertExplanationReceipt,ALERT_EXPLANATION_RULES} from '../_shared/intel/alert-explanation-receipt.ts'
 
@@ -473,6 +474,9 @@ Deno.serve(async (req) => {
     const allowCmcAi=await loadCmcAiAllowed(admin)
     const actor = await requireIntelAccess(req, createClient, admin, orgId)
     if (!actor.userId) return json({ error: 'A signed-in investor is required for personal research.' }, 401)
+    // Synthesis spends model tokens per artifact for this member, so the tier is
+    // checked before any evidence is gathered or any model is called.
+    await requireIntelSurface(admin, actor, 'ai_generation')
     const userId = actor.userId
     const supabase = createClient(
       Deno.env.get('SUPABASE_URL')!,
@@ -1219,6 +1223,8 @@ Deno.serve(async (req) => {
     if (blocked) return json({ artifact, blocked: true, reason: structured?.evidence_quality?.status === 'needs_review' ? 'evidence_validation_failed' : 'safety_validation_failed' }, 200)
     return json({ artifact, cached: false, consensus, multi_model: !!consensus, matched_surfaces: explainRouted?.matched_surfaces || undefined })
   } catch (e) {
+    const locked = surfaceLockedResponse(e, corsHeaders)
+    if (locked) return locked
     const accessError = orgAuthzErrorResponse(e, corsHeaders)
     if (accessError) return accessError
     return json({ error: (e as Error)?.message || 'generate_failed' }, 400)

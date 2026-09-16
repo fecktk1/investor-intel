@@ -2030,7 +2030,10 @@
     "error": "Impossibile avviare il trial. Riprova.",
     "plan_title": "Configurazione dell’area di lavoro",
     "plan_body": "Un momento: creiamo la tua area Investor Intel e ti portiamo al pagamento.",
-    "retry": "Riprova"
+    "retry": "Riprova",
+    "free_cta": "Continua con il piano gratuito",
+    "free_title": "Stiamo preparando il tuo spazio gratuito",
+    "free_error": "Non è stato possibile aprire la tua iscrizione gratuita. Riprova."
   },
   "onboarding": {
     "title": "Configura il tuo workspace",
@@ -3000,7 +3003,11 @@
     "recap_markets": "Terminale dei mercati",
     "recap_narratives": "Narrative rilevate automaticamente",
     "recap_portfolio": "Portafoglio in sola lettura",
-    "recap_signals": "Segnali spiegabili"
+    "recap_signals": "Segnali spiegabili",
+    "free_body": "Il tuo account apre il piano gratuito di Investor Intel: le tabelle di mercato, i dati di regime e ogni rilevazione registrata. Nessuna carta, nessun conto alla rovescia.",
+    "free_cta": "Crea l'account e continua gratis",
+    "sent_body_suffix_free": ". Fai clic per attivare il tuo account e aprire la tua iscrizione gratuita.",
+    "trust_free": "Piano gratuito"
   },
   "asset_news": {
     "checked": "Copertura verificata",
@@ -3642,5 +3649,42 @@
     "age": "Età rispetto al limite di aggiornamento",
     "age_seconds": "{{age}} s",
     "age_of_ttl": "{{age}} s su {{ttl}} s"
+  },
+  "access": {
+    "locked_region": "Parte bloccata di Investor Intel",
+    "locked_eyebrow": "Bloccato",
+    "locked_heading": "Questa parte del terminale",
+    "locked_title": "Disponibile per i membri {{tier}} e superiori",
+    "locked_body": "La tua iscrizione gratuita legge tutte le bacheche di mercato, i valori di regime, le acquisizioni registrate e i grafici salvati. Questa parte avvia una nuova richiesta per te a ogni apertura, quindi appartiene a un piano a pagamento.",
+    "locked_placeholder_note": "La forma qui sopra è un segnaposto. La tua lettura non viene caricata con questa iscrizione, quindi in questa pagina non c’è nulla di nascosto.",
+    "upgrade_cta": "Vedi i piani",
+    "free_badge": "Iscrizione gratuita",
+    "free_body": "Leggi le bacheche di mercato, i valori di regime e ogni acquisizione registrata. Nessuna carta e nessun conto alla rovescia di prova.",
+    "tier_free": "Gratuito",
+    "tier_starter": "Starter",
+    "tier_pro": "Pro",
+    "tier_elite": "Elite",
+    "tier_trial": "Prova",
+    "surface_research_on_demand": "Ricerca su richiesta",
+    "surface_investigation": "Ricerca connessa",
+    "surface_portfolio_valuation": "Valutazione del portafoglio",
+    "surface_ai_generation": "Generazione con IA",
+    "surface_market_history": "Storico dei prezzi",
+    "surface_alert_evaluation": "Avvisi"
+  },
+  "intel_upgrade": {
+    "free_label": "Gratuito",
+    "free_price": "$0",
+    "free_note": "nessuna carta, nessun conto alla rovescia",
+    "free_body": "Lo stesso prodotto, non una versione ridotta. Tutto ciò che è già stato calcolato una volta per tutti resta aperto.",
+    "free_open_title": "Aperto nel piano gratuito",
+    "free_open_boards": "Tutte le tabelle di mercato e le pagine degli asset",
+    "free_open_regime": "I dati di regime di mercato",
+    "free_open_captures": "Ogni rilevazione registrata",
+    "free_open_chart": "La postazione grafici",
+    "free_open_narratives": "Le sintesi delle narrative",
+    "free_open_watchlist": "10 elementi in watchlist",
+    "free_locked_title": "Bloccato fino a Starter",
+    "free_locked_body": "Ricerca su richiesta, Connected Research, valutazione del portafoglio, generazione con IA, storico dei prezzi e avvisi. Ognuna avvia una nuova richiesta per te a ogni apertura."
   }
 }

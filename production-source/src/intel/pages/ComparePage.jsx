@@ -14,6 +14,8 @@ import { loadThesisChart } from '../lib/thesis-chart'
 import { loadMarketCandleSnapshot } from '../lib/markets-api'
 import {requestChartWorkspace} from '../lib/chart-workspace-api'
 import { useArtifact } from '../lib/useArtifact'
+import IntelLockedSurface from '../components/IntelLockedSurface'
+import { useIntelSurfaceLock } from '../context/IntelAccess'
 import { chartAsset, validateChartLayout } from '../../../supabase/functions/_shared/intel/chart-workspace-contract'
 import { comparisonTimeline } from '../lib/chart-comparison'
 import { deferredPanel } from '../components/deferred-panel'
@@ -76,6 +78,9 @@ function CompareWorkspace({ threadId, initialAssets, initialView, initialPeriod,
   const historyEnd=useLiveHistoryEnd(orgId)
   const activityFrom=view.range?.from??historyEnd-({'24H':1,'7D':7,'1M':30,'3M':90,'1Y':365}[period]||7)*86400000,activityTo=view.range?.to??historyEnd
   const cmp = useArtifact(assets.map(a=>a.asset).join('|')), generation = useRef(0), alive = useRef(true)
+  // The charts above are the free chart workstation. Only the written
+  // comparison spends model tokens, so only that part carries the lock.
+  const lock = useIntelSurfaceLock('ai_generation')
   useEffect(() => { alive.current = true; return () => { alive.current = false; ++generation.current } }, [])
   const load = async (selected, window = period) => {
     if (!orgId || selected.length < 2) return
@@ -147,10 +152,10 @@ function CompareWorkspace({ threadId, initialAssets, initialView, initialPeriod,
     {err && <p role="alert">{err}</p>}{notice && <p role="status">{notice}</p>}
     {(series.length > 0 || resolving) && <MultiTokenChart timeWindow={{from:activityFrom,to:activityTo}} eventTime={eventTime} series={series} loading={resolving} view={view} onViewChange={setView} controls={<><label>History period<select value={period} onChange={e => { setPeriod(e.target.value); setView(v => ({ ...v, range: null })); void load(assets, e.target.value) }}>{['24H', '7D', '1M', '3M', '1Y'].map(p => <option key={p}>{p}</option>)}</select></label><button type="button" disabled={resolving} onClick={() => load(assets)}>Refresh comparison</button></>} actions={<><ChartSnapshotSave key={`snapshot:${userId}:${orgId}:${assets.map(a=>a.asset).join(",")}`} context={{supabase,userId,orgId,asset:assets[0]?.asset}} captureLayout={capture} seriesCapture={{series:series.map(s=>({asset:s.asset,...s.capture}))}} /><button type="button" onClick={copyView}>Copy comparison view</button></>} />}
     {series.length > 1 && <ComparisonActivity timezone={view.timezone} assets={assets} from={activityFrom} to={activityTo} onEventTime={setEventTime}/>}
-    {series.length > 1 && <button className="btn btn--quiet" disabled={cmp.loading || resolving || series.some(s => s.error || !s.candles.length)} onClick={explain}>{cmp.loading?'Comparing the evidence…':t('compare.explain_tradeoffs', { defaultValue: 'Explain tradeoffs' })}</button>}
+    {!lock && series.length > 1 && <button className="btn btn--quiet" disabled={cmp.loading || resolving || series.some(s => s.error || !s.candles.length)} onClick={explain}>{cmp.loading?'Comparing the evidence…':t('compare.explain_tradeoffs', { defaultValue: 'Explain tradeoffs' })}</button>}
     <ConnectedAssetSources key={assets.map(a=>a.asset).join('|')} assets={assets} label="Compare underlying market evidence"/>
     {assets.length > 0 && <details><summary>Choose two assets by address</summary><div className="intel-compare-inputs"><AssetInput label="Asset A" val={a} set={setA} t={t} /><AssetInput label="Asset B" val={b} set={setB} t={t} /></div><button className="btn" disabled={resolving || !a.value.trim() || !b.value.trim()} onClick={manual}>Compare addresses</button></details>}
-    {cmp.error && <p role="alert">{cmp.error}</p>}<ArtifactView result={cmp.result} loading={cmp.loading} /><IntelDisclaimer variant="block" />
+    {cmp.error && <p role="alert">{cmp.error}</p>}{lock ? <IntelLockedSurface surface={lock.surface} minTier={lock.minTier} title={t('compare.explain_tradeoffs', { defaultValue: 'Explain tradeoffs' })} /> : <ArtifactView result={cmp.result} loading={cmp.loading} />}<IntelDisclaimer variant="block" />
   </div>
 }
 export default function ComparePage() {
