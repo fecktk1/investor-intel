@@ -332,7 +332,7 @@ export default function GraduationFunnel() {
                   <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">{fmtNum(eligible)}</td>
                   {/* No eligible contracts is not a zero share: it is no reading. */}
                   <td className="intel-number border-b border-[var(--border-default)] py-2 pr-3">
-                    <span data-share>{eligible > 0 ? `${((still / eligible) * 100).toFixed(1)}%` : '—'}</span>
+                    <span data-share>{eligible > 0 ? `${((still / eligible) * 100).toFixed(1)}%` : '\u2014'}</span>
                     {eligible > 0 ? <span className="block text-[11px] text-[var(--fg-4)]" data-testid="graduation-retention-interval"><RateInterval successes={still} n={eligible} className="" /></span> : null}
                   </td>
                 </tr>
