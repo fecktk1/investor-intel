@@ -16,6 +16,7 @@ const LANE_DEFAULTS = {
   regime: 'Market regime', network_stats: 'Network statistics', rank: 'Rank history', rwa: 'Tokenized asset universe',
   index: 'Index constituents', liquidations: 'Liquidations', attention: 'Attention lists', exchange_reserves: 'Exchange reserves',
   venue_share: 'Venue share', categories: 'Categories', airdrops: 'Airdrops', new_listings: 'New listings', meme_stages: 'Meme launch stages',
+  launchpad_stages: 'Launchpad stages',
 }
 
 /** Receipts for figures read from the capture tables (Play 1 on the capture
@@ -24,8 +25,15 @@ const LANE_DEFAULTS = {
  * capture against its cadence. Nothing here asks a provider for anything.
  *
  * The read happens only when a reader opens the drawer, so a page view costs
- * nothing extra and the figures on the page keep their own reads. */
-export default function CaptureReceipts({ lanes = [] }) {
+ * nothing extra and the figures on the page keep their own reads.
+ *
+ * `sources` is the other half of the same question. A receipt describes a RUN;
+ * a source line describes what that run's lane actually left in the window a
+ * reader is looking at. Two lanes can write the same table, so without it a
+ * CoinMarketCap-only window and a CoinGecko-only one look identical. The lines
+ * are built by whichever figure owns the read (it already has the payload), so
+ * nothing here reads the capture tables a second time to say the same thing. */
+export default function CaptureReceipts({ lanes = [], sources = null }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase } = useSupabase()
@@ -50,6 +58,12 @@ export default function CaptureReceipts({ lanes = [] }) {
       <p className="intel-analysis-caption">{t('receipt_state.captures_sub', { defaultValue: 'What the newest scheduled capture run recorded about its own provider calls. Reading these receipts made no provider call.' })}</p>
       {read.status === 'loading' && <p role="status" className="intel-event-meta">{t('receipt_state.captures_loading', { defaultValue: 'Loading capture receipts…' })}</p>}
       {read.status === 'unavailable' && <p role="status" className="intel-event-meta">{t('receipt_state.captures_unavailable', { defaultValue: 'Capture receipts could not be read.' })} {captureReasonText(t, read.reason)}</p>}
+      {Array.isArray(sources) && sources.length ? (
+        <section className="space-y-1 pt-2" aria-label={t('receipt_state.sources_title', { defaultValue: 'What each capture lane left in this window' })} data-testid="capture-receipt-sources">
+          <div className="eyebrow">{t('receipt_state.sources_title', { defaultValue: 'What each capture lane left in this window' })}</div>
+          {sources.map(line => <p key={line?.source} className="intel-event-meta">{line?.text}</p>)}
+        </section>
+      ) : null}
       {rows.map(lane => (
         <section key={lane.lane} className="space-y-1 pt-2" aria-label={t(`receipt_state.lane_${lane.lane}`, { defaultValue: LANE_DEFAULTS[lane.lane] || lane.lane })}>
           <div className="eyebrow">{t(`receipt_state.lane_${lane.lane}`, { defaultValue: LANE_DEFAULTS[lane.lane] || lane.lane })}</div>
