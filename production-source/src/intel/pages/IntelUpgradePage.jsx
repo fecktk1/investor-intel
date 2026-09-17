@@ -180,6 +180,11 @@ export default function IntelUpgradePage() {
   const baseAmountCents = tier.priceCents
   const currentTier = org?.plan_overrides?.intel_tier ?? null
   const isIntelOrg = org?.product_mode === 'intel'
+  // A free membership (start_intel_free / intel_set_free_tier) has no trial
+  // clock and no payment_required_since, so paymentStatus reads 'paid'. It is
+  // a working membership, not a lapsed trial. A free-tier row that has gone
+  // into grace or expired keeps the lapsed copy.
+  const isFreeMember = currentTier === 'free' && (paymentStatus === 'paid' || paymentStatus === 'bypass')
 
   // ── Tokenizer mount (copied from ReactivatePage; amount = tier price) ──
   const mountTokenizer = useCallback(async () => {
@@ -618,7 +623,7 @@ export default function IntelUpgradePage() {
       <SEO title={t('intel_upgrade.seo_title', { defaultValue: 'Upgrade Investor Intel' })} path="/intel/upgrade" noindex />
       <PublicNav />
       <div className="max-w-3xl mx-auto px-6 py-12">
-        {paymentStatus === 'trial' && (
+        {(paymentStatus === 'trial' || isFreeMember) && (
           <Link
             to="/intel"
             className="inline-flex items-center gap-1.5 text-xs text-gray-500 hover:text-gray-300 mb-6 transition-colors"
@@ -638,6 +643,8 @@ export default function IntelUpgradePage() {
           <p className="text-sm text-gray-400">
             {paymentStatus === 'trial'
               ? t('intel_upgrade.subtitle_trial', { defaultValue: 'Upgrade any time. Everything you set up in your trial carries over.' })
+              : isFreeMember
+              ? t('intel_upgrade.subtitle_free', { defaultValue: 'You are on the free plan. Upgrade any time to open on-demand research, alerts and AI generation.' })
               : t('intel_upgrade.subtitle_expired', { defaultValue: 'Your trial has ended. Your data is preserved. Pick a plan to get back in.' })}
           </p>
           {currentTier && currentTier !== 'trial' && (
