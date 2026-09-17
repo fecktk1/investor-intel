@@ -12,9 +12,10 @@
 // needs, not an absence to hide.
 //
 // THE GUARD from rwa-legitimacy.ts applies here through `identityGate`: a
-// subject whose assertion is not in force at the instant read (expired, or not
-// yet restated by a later version) shows NO legal name, jurisdiction,
-// registration status, sanctions pointer, admission terms or name collision.
+// subject whose assertion is not in force at the instant read (explicitly
+// lapsed, or not yet asserted at a replay instant) shows NO legal name,
+// jurisdiction, registration status, sanctions pointer, admission terms or name
+// collision. An assertion does NOT fall out of force because time passed.
 // Holder concentration and contract restrictions are properties of the token
 // contract and stay visible. A replay at an earlier instant lists only the
 // mappings and refusals that had been recorded by then.
@@ -23,7 +24,7 @@
 // jobs and times that fill these tables, so the board can say when the first
 // capture will land.
 
-import { ALIAS_VERSIONS, NAME_COLLISIONS, assertionsAsOf, collisionsFor, unmappedAsOf } from './rwa-issuer-aliases.ts'
+import { ALIAS_VERSIONS, NAME_COLLISIONS, assertionsAsOf, collisionsFor, lapseFor, unmappedAsOf } from './rwa-issuer-aliases.ts'
 import { identityGate } from './rwa-legitimacy.ts'
 import { tokenSubject, CONCENTRATION_TABLE, DRIFT_TABLE, ENTITY_TABLE, FILING_TABLE, RESTRICTION_TABLE, RWA_ISSUER_CAPTURE_SCHEDULE, SIGNAL_TABLE } from './capture-rwa-issuer.ts'
 
@@ -130,7 +131,7 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
     return {
       subject: assertion.subject,
       subjectLabel: assertion.subjectLabel,
-      state: allowed ? 'mapped' : 'expired',
+      state: allowed ? 'mapped' : 'lapsed',
       // True when the guard withheld every fact about a legal person.
       legalFactsWithheld: !allowed,
       identity: {
@@ -144,7 +145,11 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
         // The assertion's own recorded words stay, so a reader can see what was
         // asserted, when, and that it lapsed.
         basis: assertion.basis, evidence: assertion.evidence,
-        assertedBy: assertion.assertedBy, assertedAt: assertion.assertedAt, expiresAt: assertion.expiresAt,
+        assertedBy: assertion.assertedBy, assertedAt: assertion.assertedAt,
+        // Null unless a reviewer explicitly withdrew this mapping. There is no
+        // date on which it withdraws itself.
+        lapsedAt: lapseFor(assertion.subject, at)?.lapsedAt ?? null,
+        lapseReason: lapseFor(assertion.subject, at)?.reason ?? null,
         version: assertion.version,
         sourceUrl: assertion.entity.sourceUrl,
       },
@@ -193,19 +198,19 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
 }
 
 /**
- * The review clock of the board. `expired` is true when ANY listed assertion has
- * lapsed; `expiresAt` is the soonest expiry among the assertions still in
- * force, which is the next date the board loses a mapping; `versions` lists
- * every review recorded by `at` with its own window.
+ * The review state of the board. `lapsed` is true when a listed assertion has
+ * been EXPLICITLY withdrawn, which is the only way a mapping stops being in
+ * force; `lapsedAt` is the earliest such withdrawal. There is no expiry and no
+ * next date to watch: `versions` simply lists every review recorded by `at`.
  */
-function aliasReview(subjects: { state: string; identity: { expiresAt: string } }[], at: number) {
+function aliasReview(subjects: { state: string; identity: { lapsedAt: string | null } }[], at: number) {
   const versions = ALIAS_VERSIONS.filter((v) => Date.parse(v.reviewedAt) <= at)
-  const inForce = subjects.filter((s) => s.state === 'mapped').map((s) => s.identity.expiresAt).sort()
+  const withdrawals = subjects.filter((s) => s.state === 'lapsed').map((s) => s.identity.lapsedAt).filter((v): v is string => !!v).sort()
   return {
     reviewedAt: versions.at(-1)?.reviewedAt ?? null,
-    expiresAt: inForce[0] ?? null,
-    expired: subjects.some((s) => s.state === 'expired'),
-    versions: versions.map((v) => ({ version: v.version, reviewedAt: v.reviewedAt, expiresAt: v.expiresAt, expired: at >= Date.parse(v.expiresAt) })),
+    lapsedAt: withdrawals[0] ?? null,
+    lapsed: subjects.some((s) => s.state === 'lapsed'),
+    versions: versions.map((v) => ({ version: v.version, reviewedAt: v.reviewedAt })),
   }
 }
 

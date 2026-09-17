@@ -21,9 +21,10 @@
 // AN UNMAPPED SUBJECT IS NEVER CAPTURED. The lane iterates the assertions IN
 // FORCE at the run's clock (`currentAssertions`), not the tokens we happen to
 // track, so there is no path by which a legal fact is stored against a subject
-// whose identity was never asserted, or whose assertion has expired. Rows
-// captured while a mapping was in force are kept; they are simply not refreshed
-// until a later version restates it.
+// whose identity was never asserted, or whose assertion was explicitly lapsed.
+// An assertion does not fall out of force because time passed. Rows captured
+// while a mapping was in force are kept; they are simply not refreshed until a
+// later version restates it.
 //
 // SCHEDULE. Both ops are driven by pg_cron from migration
 // 20260916202000_intel_rwa_capture_cron.sql, once a day each, at the times in

@@ -1,11 +1,14 @@
 import { strict as assert } from 'node:assert'
 import {
-  ALIAS_ASSERTIONS, ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES, ALIAS_V2_REVIEWED_AT, ALIAS_V2_REVIEW_EXPIRES, ALIAS_V2_VERSION, ALIAS_VERSION, ALIAS_VERSIONS,
+  ALIAS_ASSERTIONS, ALIAS_LAPSES, ALIAS_REVIEWED_AT, ALIAS_V2_REVIEWED_AT, ALIAS_V2_VERSION, ALIAS_VERSION, ALIAS_VERSIONS,
   NAME_COLLISIONS, UNMAPPED, VERIFIED_ENTITIES,
-  aliasProblems, aliasState, assertionsAsOf, collisionsFor, currentAssertions, resolveAlias, unmappedAsOf, unmappedRecord,
+  aliasProblems, aliasState, assertionInForce, assertionsAsOf, collisionsFor, currentAssertions, lapseFor, resolveAlias, unmappedAsOf, unmappedRecord,
 } from './rwa-issuer-aliases.ts'
 
 const at = Date.parse(ALIAS_REVIEWED_AT) + 1000
+// Years after every assertion was made. Nothing in this module reads that as
+// meaningful, which is the property these tests exist to hold.
+const YEARS_LATER = Date.parse('2031-01-01T00:00:00.000Z')
 
 Deno.test('the alias map is structurally sound, dated and reviewable', () => {
   assert.deepEqual(aliasProblems(), [])
@@ -61,14 +64,41 @@ Deno.test('a mapping resolves only on an exact subject and carries what was comp
   assert.equal(resolveAlias('token:eip155:1', at), null)
 })
 
-Deno.test('an expired assertion stops resolving but keeps its words', () => {
+Deno.test('an assertion keeps resolving however long ago it was made', () => {
   const ustb = 'token:eip155:1:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e'
-  const after = Date.parse(ALIAS_REVIEW_EXPIRES) + 1000
-  assert.equal(resolveAlias(ustb, after), null)
-  assert.equal(aliasState(ustb, after), 'expired')
-  // Before the review existed it is equally not a mapping.
-  assert.equal(aliasState(ustb, Date.parse(ALIAS_REVIEWED_AT) - 1000), 'expired')
+  // A week later, a year later, five years later: still the same mapping.
+  for (const after of [at + 7 * 86_400_000, at + 365 * 86_400_000, YEARS_LATER]) {
+    assert.equal(resolveAlias(ustb, after)?.entity.cik, '0002004367')
+    assert.equal(aliasState(ustb, after), 'mapped')
+  }
+  // Before the review existed nobody had looked at it, which is 'unknown', not
+  // a mapping that stopped: a replay must not invent a finding.
+  assert.equal(resolveAlias(ustb, Date.parse(ALIAS_REVIEWED_AT) - 1000), null)
+  assert.equal(aliasState(ustb, Date.parse(ALIAS_REVIEWED_AT) - 1000), 'unknown')
   assert.ok(ALIAS_ASSERTIONS.find((a) => a.subject === ustb))
+  // No assertion carries an expiry field at all, so none can grow one back.
+  assert.deepEqual(ALIAS_ASSERTIONS.filter((a) => 'expiresAt' in a), [])
+})
+
+Deno.test('an explicit lapse, and only that, withdraws a mapping', () => {
+  const ustb = 'token:eip155:1:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e'
+  // Nothing has been withdrawn. The list is the deliberate escape hatch and is
+  // empty by design, so no subject is in the lapsed state at any instant.
+  assert.deepEqual([...ALIAS_LAPSES], [])
+  assert.equal(lapseFor(ustb, YEARS_LATER), null)
+  assert.equal(aliasState(ustb, YEARS_LATER), 'mapped')
+  assert.deepEqual(currentAssertions(YEARS_LATER).map((a) => a.subjectLabel), ['USTB', 'BUIDL', 'OUSG'])
+
+  // The mechanism itself: a recorded withdrawal takes the mapping out of force
+  // from its own instant, and not a moment earlier.
+  const assertion = ALIAS_ASSERTIONS.find((a) => a.subject === ustb)!
+  const declared = [{ subject: ustb, lapsedAt: '2026-10-01T00:00:00.000Z', reason: 'The filer withdrew the registration this mapping relied on.', declaredBy: 'investor-intel-editorial', version: ALIAS_VERSION }]
+  assert.equal(assertionInForce(assertion, Date.parse('2026-09-30T23:59:59.000Z'), declared), true)
+  assert.equal(assertionInForce(assertion, Date.parse('2026-10-01T00:00:00.000Z'), declared), false)
+  assert.equal(assertionInForce(assertion, YEARS_LATER, declared), false)
+  assert.equal(lapseFor(ustb, YEARS_LATER, declared)?.reason, declared[0].reason)
+  // A withdrawal never reaches another subject.
+  assert.equal(assertionInForce(ALIAS_ASSERTIONS.find((a) => a.subjectLabel === 'BUIDL')!, YEARS_LATER, declared), true)
 })
 
 Deno.test('a shared name stem is surfaced for review and never joined to a token', () => {
@@ -103,7 +133,7 @@ Deno.test('a verified register record is not by itself a claim that a token belo
 const OUSG = 'token:eip155:1:0x1b19c19393e2d034d8ff31ff34c81252fcbbee92'
 const atV2 = Date.parse(ALIAS_V2_REVIEWED_AT) + 1000
 
-Deno.test('version 2 maps OUSG to its SEC filer only inside its own window, on the issuer published statement', () => {
+Deno.test('version 2 maps OUSG to its SEC filer from its own date onward, on the issuer published statement', () => {
   const mapping = resolveAlias(OUSG, atV2)!
   assert.equal(mapping.version, ALIAS_V2_VERSION)
   assert.equal(mapping.entity.cik, '0001957431')
@@ -111,20 +141,24 @@ Deno.test('version 2 maps OUSG to its SEC filer only inside its own window, on t
   assert.equal(mapping.basis, 'issuer_published_identifier')
   assert.match(mapping.evidence, /The issuer of OUSG, Ondo I LP/)
   assert.match(mapping.evidence, /0x1B19C19393e2d034D8Ff31ff34c81252FcBbee92/)
-  // It did not exist during version 1, and it expires with version 2.
+  // It did not exist during version 1, and there is no later date on which it
+  // stops. A version records when a source was read, not how long it counts.
   assert.equal(resolveAlias(OUSG, at), null)
-  assert.equal(resolveAlias(OUSG, Date.parse(ALIAS_V2_REVIEW_EXPIRES)), null)
-  assert.equal(Date.parse(ALIAS_V2_REVIEW_EXPIRES) - Date.parse(ALIAS_V2_REVIEWED_AT), 7 * 86_400_000)
+  assert.equal(resolveAlias(OUSG, YEARS_LATER)?.entity.cik, '0001957431')
+  assert.deepEqual(ALIAS_VERSIONS.filter((v) => 'expiresAt' in v), [])
 })
 
-Deno.test('a replay lists only the mappings that existed then, and an expired version stops resolving on its own date', () => {
+Deno.test('a replay lists only the mappings that existed then, and a version that omits a subject leaves it alone', () => {
   assert.deepEqual(assertionsAsOf(at).map((a) => a.subjectLabel), ['USTB', 'BUIDL'])
   assert.deepEqual(assertionsAsOf(atV2).map((a) => a.subjectLabel), ['USTB', 'BUIDL', 'OUSG'])
-  // Between the two expiries, version 1 has lapsed and version 2 has not.
-  const between = Date.parse(ALIAS_REVIEW_EXPIRES) + 1000
-  assert.deepEqual(currentAssertions(between).map((a) => a.subjectLabel), ['OUSG'])
-  assert.equal(aliasState('token:eip155:1:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e', between), 'expired')
-  assert.equal(aliasState(OUSG, between), 'mapped')
+  // Version 2 did not re-read USTB or BUIDL. Saying nothing about a subject is
+  // not withdrawing it, so all three stay in force indefinitely.
+  const between = Date.parse(ALIAS_V2_REVIEWED_AT) + 9 * 86_400_000
+  for (const when of [between, YEARS_LATER]) {
+    assert.deepEqual(currentAssertions(when).map((a) => a.subjectLabel), ['USTB', 'BUIDL', 'OUSG'])
+    assert.equal(aliasState('token:eip155:1:0x43415eb6ff9db7e26a15b704e7a3edce97d31c4e', when), 'mapped')
+    assert.equal(aliasState(OUSG, when), 'mapped')
+  }
 })
 
 Deno.test('version 2 re-probes every refusal without editing version 1, and records USDY as a new refusal', () => {

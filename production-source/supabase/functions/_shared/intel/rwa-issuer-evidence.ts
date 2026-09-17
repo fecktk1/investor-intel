@@ -2,16 +2,24 @@ import {digest,evidenceAt,instant,observationState,stableJson,type Observation} 
 
 // Editorial factual summaries, not copied issuer documents or live executable
 // quotes. Identity triples were verified with CMC on 2026-09-10 (see evidence).
-// Each revision remains immutable. Review expiry is our freshness policy, not
-// a claim that the issuer's legal terms expire on that date.
+// Each revision remains immutable.
+//
+// NOTHING HERE EXPIRES ON A CLOCK. A review stays current until a NEWER cycle
+// supersedes it, until a later cycle omits one of its facts, or until a cycle
+// declares an explicit `lapse`. There is no timer, no window and no "due" date:
+// a reviewed fact does not become wrong because time passed, and a source is
+// re-read when it is known to have changed or when a re-review is asked for.
+// Timeline and procedure: docs/investor-intel/issuer-review-schedule.md
 export const ISSUER_REVIEWED_AT='2026-09-10T17:55:45.000Z'
-export const ISSUER_REVIEW_EXPIRES='2026-09-17T17:55:45.000Z'
 const paxos='https://www.paxos.com/terms-and-conditions/pax-gold-terms-conditions'
 const ondo='https://docs.ondo.finance/ondo-stocks/'
 type Fact={key:string;label:string;summary:string;sourceUrl:string;schedule?:string;terms?:Record<string,unknown>}
-type Review={rwaId:string;cryptoId:string;issuerId:string;name:string;issuer:string;market:string|null;facts:Fact[];reviewedAt?:string;expiresAt?:string;version?:string}
+/** `facts` are the words in force under this review. `lapsed` are facts this
+ * review explicitly WITHDREW (omitted, or covered by a cycle-wide lapse); they
+ * keep their recorded words and are marked as no longer current. */
+type Review={rwaId:string;cryptoId:string;issuerId:string;name:string;issuer:string;market:string|null;facts:Fact[];lapsed?:Fact[];lapseReason?:string|null;reviewedAt?:string;version?:string}
 export const EXTENDED_ISSUER_REVIEWED_AT='2026-09-12T04:53:06.000Z'
-const extendedReview={reviewedAt:EXTENDED_ISSUER_REVIEWED_AT,expiresAt:'2026-09-19T04:53:06.000Z',version:'issuer-review-2'}
+const extendedReview={reviewedAt:EXTENDED_ISSUER_REVIEWED_AT,version:'issuer-review-2'}
 const REVIEWS:Review[]=[
  {rwaId:'1',cryptoId:'4705',issuerId:'68904c24abae9b5b9fb35815',name:'PAX Gold',issuer:'Paxos',market:null,facts:[
   {key:'backing',label:'Underlying claim',summary:'Paxos describes each PAXG as ownership of one fine troy ounce of allocated London Good Delivery gold.',sourceUrl:paxos},
@@ -43,7 +51,7 @@ const REVIEWS:Review[]=[
  ]},
 ]
 export const STRUCTURED_TERMS_REVIEWED_AT='2026-09-12T22:13:16.000Z'
-const structuredReview={reviewedAt:STRUCTURED_TERMS_REVIEWED_AT,expiresAt:'2026-09-19T22:13:16.000Z',version:'issuer-structured-terms-1'}
+const structuredReview={reviewedAt:STRUCTURED_TERMS_REVIEWED_AT,version:'issuer-structured-terms-1'}
 // Additional independently dated facts. Do not restamp the older reviews of
 // other source documents, or substitute an illustrative share multiplier.
 REVIEWS.push(
@@ -60,44 +68,53 @@ REVIEWS.push(
  ]},
 )
 
-/** Scheduled re-reviews. A cycle re-reads every source and restates the current
- * facts under one review date: unchanged wording carries forward, a changed fact
- * replaces its key, and a fact that could not be re-verified is omitted, so its
- * earlier review expires on its own date. An omission persists until a later
- * cycle supplies the fact again. Append cycles; never edit a deployed one.
+/** Re-reviews. A cycle re-reads every source and restates the current facts
+ * under one review date: unchanged wording carries forward, a changed fact
+ * replaces its key, and a fact that could not be re-verified is `omitted`, which
+ * WITHDRAWS it explicitly. An omission persists until a later cycle supplies the
+ * fact again. A cycle-wide `lapse` withdraws every fact at once and says why;
+ * that is the one deliberate way a review stops being current, and it is never
+ * triggered by elapsed time. Append cycles; never edit a deployed one.
  * Timeline and procedure: docs/investor-intel/issuer-review-schedule.md */
-export const ISSUER_REVIEW_WINDOW_MS=7*86400000
-export type ReviewCycle={version:string;reviewedAt:string;expiresAt:string;changes?:Record<string,Fact[]>;omitted?:string[];lapse?:string}
+export type ReviewCycle={version:string;reviewedAt:string;changes?:Record<string,Fact[]>;omitted?:string[];lapse?:string}
+/** The recorded reason a fact stops being current when a cycle simply did not
+ * find it again. A cycle-wide `lapse` states its own reason instead. */
+export const OMITTED_FACT_REASON='This fact was withdrawn by a later review because its source could not be re-verified.'
 export function reviewCycleRestatements(seed:readonly Review[],cycles:readonly ReviewCycle[],problems:string[]=[]):Review[] {
  const dated=(r:Review)=>Date.parse(r.reviewedAt||ISSUER_REVIEWED_AT),out:Review[]=[]
- const current=new Map<string,{review:Review;facts:Map<string,{fact:Fact;expiresAt:number}>}>()
+ const current=new Map<string,{review:Review;facts:Map<string,Fact>}>()
  let latest=-Infinity
  for(const review of [...seed].sort((a,b)=>dated(a)-dated(b))) {
-  const facts=current.get(review.cryptoId)?.facts??new Map<string,{fact:Fact;expiresAt:number}>(),expiresAt=Date.parse(review.expiresAt||ISSUER_REVIEW_EXPIRES)
-  for(const fact of review.facts)facts.set(fact.key,{fact,expiresAt})
+  const facts=current.get(review.cryptoId)?.facts??new Map<string,Fact>()
+  for(const fact of review.facts)facts.set(fact.key,fact)
   current.set(review.cryptoId,{review,facts});latest=Math.max(latest,dated(review))
  }
  for(const cycle of cycles) {
-  const reviewed=Date.parse(cycle.reviewedAt),expires=Date.parse(cycle.expiresAt)
+  const reviewed=Date.parse(cycle.reviewedAt)
   if(!(reviewed>latest))problems.push(`${cycle.version}: review date must follow every earlier review`)
-  if(expires-reviewed!==ISSUER_REVIEW_WINDOW_MS)problems.push(`${cycle.version}: window must be seven days`)
+  // Explicit withdrawals. Nothing else ever stops a fact being current.
+  const withdrawn=new Map<string,Fact[]>()
   for(const ref of cycle.omitted??[]) {
-   const split=ref.indexOf(':')
-   if(split<1||!current.get(ref.slice(0,split))?.facts.delete(ref.slice(split+1)))problems.push(`${cycle.version}: omits unknown fact ${ref}`)
+   const split=ref.indexOf(':'),cryptoId=split<1?'':ref.slice(0,split),key=ref.slice(split+1)
+   const fact=split<1?undefined:current.get(cryptoId)?.facts.get(key)
+   if(!fact){problems.push(`${cycle.version}: omits unknown fact ${ref}`);continue}
+   current.get(cryptoId)!.facts.delete(key)
+   withdrawn.set(cryptoId,[...(withdrawn.get(cryptoId)??[]),fact])
   }
-  // A carried or replaced fact must still be current when its sources are re-read.
-  if(!cycle.lapse)for(const [cryptoId,{facts}] of current)for(const [key,entry] of facts)
-   if(entry.expiresAt<=reviewed)problems.push(`${cycle.version}: ${cryptoId}:${key} expired before this review`)
   for(const [cryptoId,facts] of Object.entries(cycle.changes??{})) {
    const token=current.get(cryptoId)
    if(!token){problems.push(`${cycle.version}: changes unknown token ${cryptoId}`);continue}
-   for(const fact of facts)token.facts.set(fact.key,{fact,expiresAt:expires})
+   for(const fact of facts)token.facts.set(fact.key,fact)
   }
   for(const {review,facts} of current.values()) {
-   if(!facts.size)continue
-   for(const entry of facts.values())entry.expiresAt=expires
+   // A cycle-wide lapse withdraws everything it would otherwise have carried.
+   const lapsed=cycle.lapse?[...facts.values()]:[]
+   // A key re-supplied by `changes` in the same cycle is carried, not withdrawn.
+   const retired=[...(withdrawn.get(review.cryptoId)??[]).filter(fact=>!facts.has(fact.key)),...lapsed]
+   const carried=cycle.lapse?[]:[...facts.values()]
+   if(!carried.length&&!retired.length)continue
    out.push({rwaId:review.rwaId,cryptoId:review.cryptoId,issuerId:review.issuerId,name:review.name,issuer:review.issuer,market:review.market,
-    reviewedAt:cycle.reviewedAt,expiresAt:cycle.expiresAt,version:cycle.version,facts:[...facts.values()].map(entry=>entry.fact)})
+    reviewedAt:cycle.reviewedAt,version:cycle.version,facts:carried,lapsed:retired,lapseReason:cycle.lapse??null})
   }
   latest=reviewed
  }
@@ -106,7 +123,7 @@ export function reviewCycleRestatements(seed:readonly Review[],cycles:readonly R
 export const ISSUER_REVIEW_SEED:readonly Review[]=[...REVIEWS]
 export const ISSUER_REVIEW_CYCLES:readonly ReviewCycle[]=[
  // Every source re-read on 2026-09-14: docs/investor-intel/evidence/issuer-review-3-20260914.md
- {version:'issuer-review-3',reviewedAt:'2026-09-14T16:35:00.000Z',expiresAt:'2026-09-21T16:35:00.000Z',changes:{
+ {version:'issuer-review-3',reviewedAt:'2026-09-14T16:35:00.000Z',changes:{
   '4705':[{key:'redemption',label:'Allocated-gold redemption',summary:'Physical-bar redemption requires at least 430 PAXG plus the Paxos user-guide fee per London Good Delivery bar, and can involve additional due diligence. The holder arranges delivery. Paxos says an account balance can take several business days to reflect a redemption; no delivery completion time is stated.',sourceUrl:paxos}],
   '38093':[
    {key:'issuer_hours',label:'Conventional platform sessions',summary:'Published New York sessions: 04:01–09:29, 09:31–15:59, 16:01–19:59 and 20:05–03:55 overnight. Session pauses, holidays, maintenance and asset halts apply. Off-Hours trading is a separate service, described in its own fact.',sourceUrl:ondo+'market-hours-and-trading-availability',schedule:'ondo_conventional_1'},
@@ -118,7 +135,7 @@ export const ISSUER_REVIEW_CYCLES:readonly ReviewCycle[]=[
  // Every source re-read on 2026-09-16: docs/investor-intel/evidence/issuer-review-4-20260916.md
  // Every reviewed fact was found again in its source, so no wording changed and
  // nothing was omitted. The cycle restates the current words under one new date.
- {version:'issuer-review-4',reviewedAt:'2026-09-16T12:56:00.000Z',expiresAt:'2026-09-23T12:56:00.000Z'},
+ {version:'issuer-review-4',reviewedAt:'2026-09-16T12:56:00.000Z'},
 ]
 REVIEWS.push(...reviewCycleRestatements(ISSUER_REVIEW_SEED,ISSUER_REVIEW_CYCLES))
 
@@ -135,35 +152,54 @@ export function reviewedRelationships(records:any[]) {
   return !!tokens?.length&&tokens.every(t=>t.issuer_id===review.issuerId)
  })
 }
+/** Stored rows carry NO expiry: `expiresAt` is null, so `observationState` reads
+ * them as current however much time has passed. A WITHDRAWN fact instead carries
+ * an explicit `stale` state with the recorded reason, which is the only way an
+ * issuer fact stops being current. */
 export async function issuerReviewObservations(records:any[],recordedAt:string):Promise<Observation[]> {
  const recorded=instant(recordedAt)
  if(recorded==null)return []
- return Promise.all(reviewedRelationships(records).filter(review=>recorded>=Date.parse(review.reviewedAt||ISSUER_REVIEWED_AT)&&recorded<Date.parse(review.expiresAt||ISSUER_REVIEW_EXPIRES)).flatMap(review=>review.facts.map(async fact=>{
-  const reviewedAt=review.reviewedAt||ISSUER_REVIEWED_AT,reviewExpiresAt=review.expiresAt||ISSUER_REVIEW_EXPIRES,version=review.version||'issuer-review-1'
-  const content={review:version,rwaId:review.rwaId,cryptoId:review.cryptoId,issuerId:review.issuerId,fact,reviewedAt,reviewExpiresAt}
-  return {id:`issuer:${await digest(stableJson(content))}`,subject:`rwa:coinmarketcap:${review.rwaId}`,metric:`issuer_${fact.key}`,value:fact.summary,unit:'text',provider:'investor-intel-editorial',
-   sourceRef:`${version}:${review.cryptoId}:${fact.key}`,sourceUrl:fact.sourceUrl,observedAt:reviewedAt,recordedAt,expiresAt:reviewExpiresAt,
-   universe:`token:coinmarketcap:${review.cryptoId}:${review.issuerId}`,exportAllowed:true,aiAllowed:false,
-   metadata:{cryptoId:review.cryptoId,issuerId:review.issuerId,tokenName:review.name,issuerName:review.issuer,label:fact.label,market:review.market,schedule:fact.schedule??null,...(fact.terms?{terms:fact.terms}:{}),
-    timeMeaning:'Editorial source review, not an issuer publication or market observation time',reviewVersion:version,rights:'Original factual summary with links; source documents are not stored'}} satisfies Observation
- })))
+ return Promise.all(reviewedRelationships(records).filter(review=>recorded>=Date.parse(review.reviewedAt||ISSUER_REVIEWED_AT)).flatMap(review=>{
+  const reviewedAt=review.reviewedAt||ISSUER_REVIEWED_AT,version=review.version||'issuer-review-1'
+  const observation=async(fact:Fact,withdrawn:boolean)=>{
+   const content={review:version,rwaId:review.rwaId,cryptoId:review.cryptoId,issuerId:review.issuerId,fact,reviewedAt,...(withdrawn?{withdrawn:true}:{})}
+   return {id:`issuer:${await digest(stableJson(content))}`,subject:`rwa:coinmarketcap:${review.rwaId}`,metric:`issuer_${fact.key}`,value:fact.summary,unit:'text',provider:'investor-intel-editorial',
+    sourceRef:`${version}:${review.cryptoId}:${fact.key}${withdrawn?':withdrawn':''}`,sourceUrl:fact.sourceUrl,observedAt:reviewedAt,recordedAt,expiresAt:null,
+    ...(withdrawn?{state:'stale' as const,reason:review.lapseReason||OMITTED_FACT_REASON}:{}),
+    universe:`token:coinmarketcap:${review.cryptoId}:${review.issuerId}`,exportAllowed:true,aiAllowed:false,
+    metadata:{cryptoId:review.cryptoId,issuerId:review.issuerId,tokenName:review.name,issuerName:review.issuer,label:fact.label,market:review.market,schedule:fact.schedule??null,...(fact.terms?{terms:fact.terms}:{}),
+     timeMeaning:'Editorial source review, not an issuer publication or market observation time',reviewVersion:version,
+     ...(withdrawn?{withdrawnAt:reviewedAt}:{}),rights:'Original factual summary with links; source documents are not stored'}} satisfies Observation
+  }
+  return [...review.facts.map(fact=>observation(fact,false)),...(review.lapsed??[]).map(fact=>observation(fact,true))]
+ }))
 }
+/** General observation retention, NOT a review window. A reaped row is written
+ * again under the same deterministic id on the next read, so retention never
+ * decides whether a review is current. */
+export const ISSUER_REVIEW_RETENTION_MS=30*86400000
 /** Preserve the first server recording clock on a retried public observation.
  * No private text, account or position is supplied to this store. */
 export async function recordIssuerReviews(db:any,records:any[],now:number) {
  const observations=await issuerReviewObservations(records,new Date(now).toISOString())
  if(!observations.length)return []
- const {error}=await db.rpc('intel_record_market_observations',{p_rows:observations.map(o=>({...o,retainUntil:new Date(now+30*86400000).toISOString()}))})
+ const {error}=await db.rpc('intel_record_market_observations',{p_rows:observations.map(o=>({...o,retainUntil:new Date(now+ISSUER_REVIEW_RETENTION_MS).toISOString()}))})
  if(error)throw new Error('issuer_review_storage_unavailable')
  const stored=await db.from('intel_market_observations').select('observation').in('id',observations.map(o=>o.id)).gt('retain_until',new Date(now).toISOString())
  if(stored.error||stored.data?.length!==observations.length)throw new Error('issuer_review_storage_unavailable')
  return stored.data.map((r:any)=>r.observation) as Observation[]
 }
+/** The state of a token's issuer review at an instant.
+ *
+ * `review_expired` and `partially_reviewed` mean a fact was EXPLICITLY WITHDRAWN
+ * (omitted by a later cycle, or covered by a declared `lapse`). No amount of
+ * elapsed time produces either state: a reviewed fact carries a null expiry and
+ * stays `known` until a newer review supersedes or withdraws it. */
 export function issuerReviewAt(observations:Observation[],subject:string,cryptoId:string,asOf:number) {
  const facts=evidenceAt(observations.filter(o=>o.subject===subject&&o.provider==='investor-intel-editorial'&&o.metadata?.cryptoId===cryptoId),asOf)
  const identities=new Set(facts.map(o=>o.metadata?.issuerId))
  if(identities.size!==1)return {state:'unavailable',facts:[],market:null,schedule:null}
- const current=facts.filter(o=>observationState(o,asOf)==='known'),stale=current.length!==facts.length
- return {state:!current.length?'review_expired':stale?'partially_reviewed':'reviewed',facts,market:String(current.find(o=>o.metadata?.market)?.metadata?.market||'')||null,
+ const current=facts.filter(o=>observationState(o,asOf)==='known'),withdrawn=current.length!==facts.length
+ return {state:!current.length?'review_expired':withdrawn?'partially_reviewed':'reviewed',facts,market:String(current.find(o=>o.metadata?.market)?.metadata?.market||'')||null,
   schedule:current.find(o=>o.metadata?.schedule)?.metadata?.schedule??null}
 }

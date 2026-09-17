@@ -14,10 +14,21 @@ Deno.test('token/USD/share/gram units stay distinct and illustrative multipliers
  eq(rwaTermsProjection(facts,subject,'20245',at,2).denomination?.underlyingUnit,'gram_gold_minimum_999_purity')
  eq(rwaTermsProjection(facts,subject,'20245',at,2).underlyingUnits,2)
 })
-Deno.test('rewind, expiry, conflicting issuer identities and malformed quantities suppress arithmetic',async()=>{
+Deno.test('reviewed terms stay calculable however long ago they were read',async()=>{
+ const facts=await issuerReviewObservations(records,new Date(at).toISOString())
+ // Eight days, then seven years. A structured term does not rot.
+ for(const later of [Date.parse('2026-09-20T00:00Z'),Date.parse('2033-06-01T00:00Z')]) {
+  const projection=rwaTermsProjection(facts,subject,'4705',later,430)
+  eq(projection.state,'reviewed');eq(projection.underlyingUnits,430);eq(projection.redemption?.threshold?.meetsQuantity,true)
+ }
+ // A withdrawn term, and only a withdrawn one, stops the arithmetic.
+ const withdrawn=facts.filter(o=>o.metadata?.terms).map(o=>({...o,id:`${o.id}:w`,observedAt:'2026-09-20T00:00:00.000Z',state:'stale' as const,reason:'withdrawn'}))
+ const gone=rwaTermsProjection([...facts,...withdrawn],subject,'4705',Date.parse('2033-06-01T00:00Z'),430)
+ eq(gone.state,'review_expired');eq(gone.underlyingUnits,null)
+})
+Deno.test('rewind, conflicting issuer identities and malformed quantities suppress arithmetic',async()=>{
  const facts=await issuerReviewObservations(records,new Date(at).toISOString())
  eq(rwaTermsProjection(facts,subject,'4705',at-2000,430).underlyingUnits,null)
- eq(rwaTermsProjection(facts,subject,'4705',Date.parse('2026-09-20T00:00Z'),430).underlyingUnits,null)
  for(const quantity of [-1,null,'','  ',[],{},NaN,Infinity])eq(rwaTermsProjection(facts,subject,'4705',at,quantity).underlyingUnits,null)
  const current=facts.find(o=>o.metadata?.cryptoId==='4705')!
  eq(rwaTermsProjection([...facts,{...current,id:'conflict',universe:'different',metadata:{...current.metadata,issuerId:'other'}}],subject,'4705',at,430).underlyingUnits,null)

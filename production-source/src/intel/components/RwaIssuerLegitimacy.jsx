@@ -133,8 +133,8 @@ export default function RwaIssuerLegitimacy() {
             </p>
           )}
 
-          {payload.review?.expired && (
-            <p role="status" className="text-[12px]">{t('rwa_issuer.review_expired', { defaultValue: 'These identity assertions are past their review date. They are shown as recorded and are not used to claim a current identity.' })}</p>
+          {payload.review?.lapsed && (
+            <p role="status" className="text-[12px]">{t('rwa_issuer.review_expired', { defaultValue: 'An identity assertion on this board was explicitly withdrawn. It is shown as recorded and is not used to claim a current identity.' })}</p>
           )}
 
           {nothingCaptured && (
@@ -188,10 +188,11 @@ export default function RwaIssuerLegitimacy() {
             <div key={subject.subject} className="pt-4 border-t border-[var(--border-default)]">
               <div className="eyebrow">{subject.subjectLabel}</div>
               {subject.legalFactsWithheld ? (
-                // THE GUARD: a lapsed assertion shows no fact about a legal
-                // person until a new review restates it.
+                // THE GUARD: an explicitly withdrawn assertion shows no fact
+                // about a legal person until a new review restates it. Time
+                // alone never puts a subject in this branch.
                 <p role="status" className="text-[13px] mt-1">
-                  {t('rwa_issuer.identity_withheld', { expiresAt: utcMinute(subject.identity?.expiresAt), defaultValue: 'This identity assertion passed its review date on {{expiresAt}}. Until a new review restates it, no legal name, jurisdiction, registration status, sanctions comparison or admission terms are shown for it.' })}
+                  {t('rwa_issuer.identity_withheld', { lapsedAt: utcMinute(subject.identity?.lapsedAt), defaultValue: 'This identity assertion was withdrawn on {{lapsedAt}}. Until a new review restates it, no legal name, jurisdiction, registration status, sanctions comparison or admission terms are shown for it.' })}
                 </p>
               ) : (
                 <p className="text-[13px] mt-1">{subject.identity?.legalName}</p>
