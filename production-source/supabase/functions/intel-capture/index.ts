@@ -41,6 +41,13 @@ import { LISTING_CAPTURE_OPS } from '../_shared/intel/capture-listings.ts'
 import { LISTING_CAPTURE_VIEWS } from '../_shared/intel/capture-listings-read.ts'
 import { MEME_CAPTURE_OPS } from '../_shared/intel/capture-meme.ts'
 import { MEME_CAPTURE_VIEWS } from '../_shared/intel/capture-meme-read.ts'
+// Second source for the SAME two meme-graduation tables: real launchpads on
+// Solana, BNB Chain, Base and Robinhood Chain through the CoinGecko onchain API.
+// It spends no CoinMarketCap credit and answers to its own `coingecko`
+// provider_schedule_policy row, which it loads itself (loadSchedulePolicy below
+// only reads `coinmarketcap` rows). Its view is MEME_CAPTURE_VIEWS above: one
+// page, one view, two sources.
+import { LAUNCHPAD_CAPTURE_OPS } from '../_shared/intel/capture-launchpads.ts'
 import { CANDLE_CAPTURE_OPS } from '../_shared/intel/capture-candles.ts'
 import { CANDLE_CAPTURE_VIEWS } from '../_shared/intel/capture-candles-read.ts'
 // RWA yield provenance and NAV integrity. This lane calls no CoinMarketCap
@@ -60,7 +67,7 @@ import { readCaptureReceipts } from '../_shared/intel/source-receipt.ts'
 // Both keyless RWA lanes are registered here. Dropping either spread silently
 // removes a whole capture lane while every test still passes, so both must
 // appear in both objects.
-const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS }
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...LAUNCHPAD_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS }
 const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS, ...CANDLE_CAPTURE_VIEWS, ...RWA_YIELD_CAPTURE_VIEWS, ...RWA_ISSUER_CAPTURE_VIEWS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }

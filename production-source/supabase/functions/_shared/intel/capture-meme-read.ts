@@ -38,10 +38,32 @@
 //                 first sighting — a contract first seen twenty minutes ago
 //                 cannot fail a 24-hour test, so it is not counted against it.
 //
+//   launchpads    the SAME three numbers per launchpad (funnel, cohort rate,
+//                 time to graduate), so the page can say that Pump.fun graduates
+//                 at one rate and Four.meme at another instead of averaging two
+//                 unrelated populations into one meaningless figure. `chains` is
+//                 the same grouping one level up.
+//
+//   sources       which capture lane each row came from, its newest capture
+//                 clock and how many rows of the window it contributed. The two
+//                 lanes write the SAME tables, so without this a reader cannot
+//                 tell a CoinMarketCap-only window from a CoinGecko-only one.
+//
+//   attribution   CoinGecko's paid terms require a visible "Powered by CoinGecko"
+//                 notice (font size at least 10) wherever this data is shown.
+//                 It is part of the payload rather than a constant in the page so
+//                 the page cannot render the data without being handed the notice.
+//
+// TWO SOURCES, ONE ROW PER CONTRACT PER HOUR. The primary key is
+// (chain, contract_address, captured_at) and `source` names the FIRST writer, so
+// nothing here has to de-duplicate across sources: a contract both lanes saw in
+// one hour is one row, and every count below is a count of contracts.
+//
 // The tables are service-role only; this read runs inside the `intel-capture`
 // Edge Function behind an authenticated Intel membership check.
 
 import { capByEntity, capWithinRuns } from './feed-entity-cap.ts'
+import { CHAIN_LABELS, COINGECKO_ATTRIBUTION, PAD_CHAINS, PAD_LABELS } from './launchpad-registry.ts'
 
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
 export interface ViewResult { view: string; asOf: string | null; coverage: Coverage; reason?: string | null; [key: string]: unknown }
@@ -115,13 +137,15 @@ export function histogram(values: number[]): { fromHours: number; toHours: numbe
   return buckets
 }
 
-const SNAPSHOT_COLUMNS = 'platform_id,chain,contract_address,captured_at,stage,name,symbol,price,market_cap,first_seen_at'
-const TRANSITION_COLUMNS = 'chain,contract_address,from_stage,to_stage,at,hours_since_first_seen'
+const SNAPSHOT_COLUMNS = 'platform_id,chain,contract_address,captured_at,stage,name,symbol,price,market_cap,first_seen_at,source,launchpad,graduation_pct,completed_at,migration_pool,fdv'
+const TRANSITION_COLUMNS = 'chain,contract_address,from_stage,to_stage,at,hours_since_first_seen,source,launchpad'
 
 interface Row {
   platformId: string | null
   chain: string; contractAddress: string; capturedAt: string; stage: string
   name: string | null; symbol: string | null; price: number | null; marketCap: number | null; firstSeenAt: string | null
+  source: string; launchpad: string | null; graduationPct: number | null
+  completedAt: string | null; migrationPool: string | null; fdv: number | null
 }
 
 const platformOf = (row: { platformId: string | null; chain: string }) => row.platformId ? `platform:${row.platformId}` : `chain:${row.chain}`
@@ -135,27 +159,140 @@ const snapshotRow = (row: any): Row | null => {
     chain, contractAddress, capturedAt, stage: str(row?.stage, 40) ?? '',
     name: str(row?.name, 200), symbol: str(row?.symbol, 50),
     price: num(row?.price), marketCap: num(row?.market_cap), firstSeenAt: str(row?.first_seen_at, 40),
+    // A row written before the `source` column existed is a CoinMarketCap row;
+    // that is what the column's DEFAULT says, and the read says the same rather
+    // than inventing an 'unknown' source the page would have to explain.
+    source: str(row?.source, 40) ?? 'coinmarketcap',
+    launchpad: str(row?.launchpad, 120), graduationPct: num(row?.graduation_pct),
+    completedAt: str(row?.completed_at, 40), migrationPool: str(row?.migration_pool, 120), fdv: num(row?.fdv),
   }
 }
+
+interface Move { chain: string; contractAddress: string; launchpad: string | null; hours: number | null }
+
+// deno-lint-ignore no-explicit-any
+const moveRow = (row: any): Move | null => {
+  const chain = str(row?.chain, 60), contractAddress = str(row?.contract_address, 200)
+  if (!chain || !contractAddress) return null
+  return { chain, contractAddress, launchpad: str(row?.launchpad, 120), hours: num(row?.hours_since_first_seen) }
+}
+
+export interface GroupStats {
+  key: string
+  label: string
+  chain: string | null
+  rows: number
+  contracts: number
+  latestCapturedAt: string | null
+  funnel: { stage: string; count: number }[]
+  cohort: { firstSeenInWindow: number; graduatedInWindow: number }
+  graduationRate: number | null
+  timeToGraduate: { median: number | null; p25: number | null; p75: number | null; sample: number } | null
+}
+
+/**
+ * The same three numbers — funnel, cohort rate, time to graduate — for each
+ * value of one grouping key.
+ *
+ * Every rule of the top-level answer is kept here rather than loosened for a
+ * smaller population: the funnel counts the NEWEST CAPTURE only, the cohort
+ * denominator is the contracts first seen inside the window, and a denominator
+ * of 0 yields `graduationRate: null` rather than 0. A group with members and no
+ * graduates is a measured zero and stays 0.
+ *
+ * Grouping by launchpad is the reason this exists. Pump.fun and Four.meme have
+ * nothing to do with each other; one rate over both of them is not a fact about
+ * either.
+ */
+function groupStats(
+  rows: Row[], moves: Move[], asOf: string | null, windowStartMs: number,
+  keyOf: (row: Row) => string | null,
+  moveKeyOf: (move: Move) => string | null,
+  labelOf: (key: string) => string,
+  chainOf: (key: string) => string | null,
+): GroupStats[] {
+  const keys: string[] = []
+  const byKey = new Map<string, Row[]>()
+  for (const row of rows) {
+    const key = keyOf(row)
+    if (!key) continue
+    if (!byKey.has(key)) { byKey.set(key, []); keys.push(key) }
+    byKey.get(key)!.push(row)
+  }
+  const movesByKey = new Map<string, number[]>()
+  for (const move of moves) {
+    const key = moveKeyOf(move)
+    if (!key || move.hours == null || move.hours < 0) continue
+    const bucket = movesByKey.get(key) ?? []
+    bucket.push(move.hours)
+    movesByKey.set(key, bucket)
+  }
+  return keys.map((key) => {
+    const mine = byKey.get(key) ?? []
+    const cohort = new Map<string, boolean>()
+    let latest: string | null = null
+    for (const row of mine) {
+      if (!latest || row.capturedAt > latest) latest = row.capturedAt
+      const firstSeen = Date.parse(String(row.firstSeenAt ?? ''))
+      if (!Number.isFinite(firstSeen) || firstSeen < windowStartMs) continue
+      const id = `${row.chain}|${row.contractAddress}`
+      cohort.set(id, (cohort.get(id) ?? false) || row.stage === 'graduates')
+    }
+    const denominator = cohort.size
+    const numerator = [...cohort.values()].filter(Boolean).length
+    const newest = asOf ? mine.filter((row) => row.capturedAt === asOf) : []
+    const hours = (movesByKey.get(key) ?? []).slice().sort((a, b) => a - b)
+    return {
+      key, label: labelOf(key), chain: chainOf(key),
+      rows: mine.length,
+      contracts: new Set(mine.map((row) => `${row.chain}|${row.contractAddress}`)).size,
+      latestCapturedAt: latest,
+      funnel: MEME_STAGES.map((stage) => ({ stage, count: newest.filter((row) => row.stage === stage).length })),
+      cohort: { firstSeenInWindow: denominator, graduatedInWindow: numerator },
+      graduationRate: denominator > 0 ? numerator / denominator : null,
+      timeToGraduate: hours.length
+        ? { median: percentile(hours, 0.5), p25: percentile(hours, 0.25), p75: percentile(hours, 0.75), sample: hours.length }
+        : null,
+    }
+  }).sort((a, b) => b.contracts - a.contracts || a.key.localeCompare(b.key))
+}
+
+/** Every row of a snapshot the page lists, with the provenance and the
+ * launchpad facts on the row itself so a list item never needs a second read. */
+const listRow = (row: Row) => ({
+  chain: row.chain, contractAddress: row.contractAddress, symbol: row.symbol, name: row.name,
+  marketCap: row.marketCap, firstSeenAt: row.firstSeenAt,
+  source: row.source, launchpad: row.launchpad, launchpadLabel: row.launchpad ? PAD_LABELS[row.launchpad] ?? null : null,
+  graduationPct: row.graduationPct, completedAt: row.completedAt, migrationPool: row.migrationPool, fdv: row.fdv,
+})
 
 /**
  * The meme graduation funnel, cohort rate, time-to-graduate distribution and
  * retention for one window, optionally for one chain.
  */
 // deno-lint-ignore no-explicit-any
-export async function readMemeGraduation(db: any, params: { days?: unknown; chain?: unknown } = {}, now: Date | number = Date.now()): Promise<ViewResult> {
+export async function readMemeGraduation(db: any, params: { days?: unknown; chain?: unknown; launchpad?: unknown; source?: unknown } = {}, now: Date | number = Date.now()): Promise<ViewResult> {
   const requested = Math.trunc(Number(params.days))
   const days = MEME_DAYS.includes(requested) ? requested : 7
   const chain = str(params.chain, 60)
+  // Filters are applied in the DATABASE, not after the row cap, so a filtered
+  // window is the newest SNAPSHOT_CAP rows OF THAT FILTER rather than whatever
+  // survived a cap applied to everything.
+  const launchpad = str(params.launchpad, 120)
+  const source = str(params.source, 40)
   const nowMs = at(now), windowStart = new Date(nowMs - days * 86_400_000).toISOString()
   const empty = (reason: string | null): ViewResult => ({
-    view: 'meme_graduation', days, chain, funnel: [], graduationRate: null,
-    timeToGraduate: null, retention: [], recent: [], asOf: null, coverage: emptyCoverage(), reason,
+    view: 'meme_graduation', days, chain, launchpad, source, funnel: [], graduationRate: null,
+    cohort: { firstSeenInWindow: 0, graduatedInWindow: 0 },
+    timeToGraduate: null, retention: [], recent: [], launchpads: [], chains: [], sources: [],
+    attribution: COINGECKO_ATTRIBUTION, asOf: null, coverage: emptyCoverage(), reason,
   })
 
   const snapshots = await readRows(() => {
     let q = db.from('intel_meme_stage_snapshots').select(SNAPSHOT_COLUMNS).gte('captured_at', windowStart)
     if (chain) q = q.eq('chain', chain)
+    if (launchpad) q = q.eq('launchpad', launchpad)
+    if (source) q = q.eq('source', source)
     return q.order('captured_at', { ascending: false }).limit(SNAPSHOT_CAP)
   })
   const rows = snapshots.rows.map(snapshotRow).filter((row): row is Row => !!row)
@@ -170,10 +307,7 @@ export async function readMemeGraduation(db: any, params: { days?: unknown; chai
     const members = newest.filter((row) => row.stage === stage)
     return {
       stage, count: members.length,
-      contracts: capByEntity(members, { entityOf: platformOf, perEntity: FUNNEL_PER_PLATFORM, limit: FUNNEL_CONTRACTS, overflow: 'backfill' }).rows.map((row) => ({
-        chain: row.chain, contractAddress: row.contractAddress, symbol: row.symbol, name: row.name,
-        marketCap: row.marketCap, firstSeenAt: row.firstSeenAt,
-      })),
+      contracts: capByEntity(members, { entityOf: platformOf, perEntity: FUNNEL_PER_PLATFORM, limit: FUNNEL_CONTRACTS, overflow: 'backfill' }).rows.map(listRow),
       contractsTruncated: members.length > FUNNEL_CONTRACTS,
     }
   })
@@ -201,9 +335,12 @@ export async function readMemeGraduation(db: any, params: { days?: unknown; chai
     let q = db.from('intel_meme_stage_transitions').select(TRANSITION_COLUMNS)
       .eq('to_stage', 'graduates').eq('from_stage', 'newCreations').gte('at', windowStart)
     if (chain) q = q.eq('chain', chain)
+    if (launchpad) q = q.eq('launchpad', launchpad)
+    if (source) q = q.eq('source', source)
     return q.order('at', { ascending: false }).limit(TRANSITION_CAP)
   })
-  const hours = moves.rows.map((row) => num(row?.hours_since_first_seen)).filter((v): v is number => v != null && v >= 0).sort((a, b) => a - b)
+  const graduations = moves.rows.map(moveRow).filter((row): row is Move => !!row)
+  const hours = graduations.map((row) => row.hours).filter((v): v is number => v != null && v >= 0).sort((a, b) => a - b)
   const timeToGraduate = hours.length ? {
     median: percentile(hours, 0.5), p25: percentile(hours, 0.25), p75: percentile(hours, 0.75),
     sample: hours.length, histogram: histogram(hours),
@@ -231,16 +368,29 @@ export async function readMemeGraduation(db: any, params: { days?: unknown; chai
     if (newestSightings.length >= RECENT_CANDIDATES) break
   }
   const recent: Record<string, unknown>[] = capWithinRuns(newestSightings, (row) => row.capturedAt, { entityOf: platformOf, perEntity: RECENT_PER_PLATFORM })
-    .rows.slice(0, RECENT_MAX).map((row) => ({
-      chain: row.chain, contractAddress: row.contractAddress, symbol: row.symbol, name: row.name,
-      stage: row.stage, firstSeenAt: row.firstSeenAt, capturedAt: row.capturedAt, marketCap: row.marketCap,
-    }))
+    .rows.slice(0, RECENT_MAX).map((row) => ({ ...listRow(row), stage: row.stage, capturedAt: row.capturedAt }))
+
+  // ── per-launchpad and per-chain, and which lane wrote what ──
+  const windowStartMs = Date.parse(windowStart)
+  const launchpads = groupStats(rows, graduations, asOf, windowStartMs,
+    (row) => row.launchpad, (move) => move.launchpad,
+    (key) => PAD_LABELS[key] ?? key, (key) => PAD_CHAINS[key] ?? null)
+  const chains = groupStats(rows, graduations, asOf, windowStartMs,
+    (row) => row.chain, (move) => move.chain,
+    (key) => CHAIN_LABELS[key] ?? key, (key) => key)
+  const sources = [...new Set(rows.map((row) => row.source))].sort().map((name) => {
+    const mine = rows.filter((row) => row.source === name)
+    return { source: name, latestCapturedAt: mine.map((row) => row.capturedAt).sort().at(-1) ?? null, rows: mine.length }
+  })
 
   return {
-    view: 'meme_graduation', days, chain,
+    view: 'meme_graduation', days, chain, launchpad, source,
     funnel, graduationRate,
     cohort: { firstSeenInWindow: denominator, graduatedInWindow: numerator },
     timeToGraduate, retention, recent,
+    launchpads, chains, sources,
+    // Required wherever this data is shown; see the header.
+    attribution: COINGECKO_ATTRIBUTION,
     asOf,
     coverage: {
       from: stamps[0] ?? null, to: asOf, count: snapshots.rows.length,

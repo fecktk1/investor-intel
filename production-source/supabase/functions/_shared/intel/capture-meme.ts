@@ -183,15 +183,21 @@ async function guardJob(db: any, job: string, feature: string, deps: CaptureDeps
 }
 
 /** Primary keys reject a duplicate inside one statement, so a provider page that
- * repeats an identity is collapsed before the write. */
-function dedupe<T>(rows: T[], key: (row: T) => string): T[] {
+ * repeats an identity is collapsed before the write.
+ *
+ * EXPORTED for `capture-launchpads.ts`: the CoinGecko launchpad lane writes the
+ * same two tables with the same keys, so it must collapse duplicates the same
+ * way rather than keep a second copy of this rule. */
+export function dedupe<T>(rows: T[], key: (row: T) => string): T[] {
   const byKey = new Map<string, T>()
   for (const row of rows) byKey.set(key(row), row)
   return [...byKey.values()]
 }
 
+/** EXPORTED for `capture-launchpads.ts` (see `dedupe` above): one chunked,
+ * never-throwing upsert shared by both lanes that write these tables. */
 // deno-lint-ignore no-explicit-any
-async function upsert(db: any, table: string, rows: Record<string, unknown>[], onConflict: string): Promise<{ rows: number; error?: string }> {
+export async function upsert(db: any, table: string, rows: Record<string, unknown>[], onConflict: string): Promise<{ rows: number; error?: string }> {
   if (!rows.length) return { rows: 0 }
   let written = 0
   for (let start = 0; start < rows.length; start += MAX_UPSERT_ROWS) {
@@ -301,13 +307,16 @@ function logCapture(entry: {
   } catch { /* a log must never fail a capture */ }
 }
 
-interface Prior { stage: string | null; firstSeenAt: string | null }
+export interface Prior { stage: string | null; firstSeenAt: string | null }
 
 /** Newest snapshot STRICTLY BEFORE this capture, per contract. `lt` on
  * `captured_at` is what makes re-running the same hour idempotent: the rows this
  * run already wrote are never read back as their own predecessor. */
+/** EXPORTED for `capture-launchpads.ts`: `first_seen_at` must be carried forward
+ * from whichever lane saw the contract first, so both lanes read the previous
+ * snapshot through THIS function and neither filters by source. */
 // deno-lint-ignore no-explicit-any
-async function priorSnapshots(db: any, chain: string, addresses: string[], capturedAt: string): Promise<{ byAddress: Map<string, Prior>; truncated: boolean; reason: string | null }> {
+export async function priorSnapshots(db: any, chain: string, addresses: string[], capturedAt: string): Promise<{ byAddress: Map<string, Prior>; truncated: boolean; reason: string | null }> {
   const byAddress = new Map<string, Prior>()
   if (!addresses.length) return { byAddress, truncated: false, reason: null }
   try {

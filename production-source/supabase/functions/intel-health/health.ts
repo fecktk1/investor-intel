@@ -33,6 +33,14 @@ export interface LaneSpec {
   /** false for a lane that is scheduled but not expected to produce rows today
    * (reported, but it cannot degrade the overall status). */
   required: boolean
+  /** Extra PostgREST filter, appended verbatim to the lane read, for a table
+   * that more than one lane writes. `intel_meme_stage_snapshots` is written by
+   * both the CoinMarketCap `meme_stages` lane and the CoinGecko
+   * `launchpad_stages` lane, so without a filter each lane would be reported as
+   * fresh whenever the OTHER one wrote — which is precisely the failure this
+   * route exists to catch. Filters select no row contents: they narrow which
+   * row's freshness column is read, and the answer is still one timestamp. */
+  filter?: string
 }
 
 const HOUR = 3600, DAY = 86400
@@ -64,7 +72,13 @@ export const HEALTH_LANES: LaneSpec[] = [
   { lane: 'rwa_token_concentration', table: 'intel_rwa_token_concentration', column: 'captured_at', policyProvider: 'primary-sources', policyFeature: 'rwa_token_concentration', scheduleSeconds: DAY, required: false },
   // Scheduled hourly but has never produced a row: the endpoint is not entitled
   // on the current account. Shown so a change is visible, never a degradation.
-  { lane: 'meme_stages', table: 'intel_meme_stage_snapshots', column: 'captured_at', policyProvider: 'coinmarketcap', policyFeature: 'meme_stages', scheduleSeconds: HOUR, required: false },
+  // FILTERED by source, because the launchpad lane below writes the same table.
+  { lane: 'meme_stages', table: 'intel_meme_stage_snapshots', column: 'captured_at', policyProvider: 'coinmarketcap', policyFeature: 'meme_stages', scheduleSeconds: HOUR, required: false, filter: 'source=eq.coinmarketcap' },
+  // The CoinGecko launchpad lane, scheduled hourly at :41 by
+  // 20260917184100_intel_launchpad_sources.sql. Reported but never required: it
+  // is new, its key tier is not yet proven in production, and a source that has
+  // not filled yet must not turn the whole route amber.
+  { lane: 'launchpad_stages', table: 'intel_meme_stage_snapshots', column: 'captured_at', policyProvider: 'coingecko', policyFeature: 'launchpad_stages', scheduleSeconds: HOUR, required: false, filter: 'source=eq.coingecko' },
 ]
 
 /** A capture that ran on time can still be up to one cadence old, plus cron
@@ -180,7 +194,8 @@ async function rest(deps: HealthDeps, path: string): Promise<unknown[] | null> {
 }
 
 export async function readLane(deps: HealthDeps, spec: LaneSpec): Promise<LaneRead> {
-  const rows = await rest(deps, `${spec.table}?select=${spec.column}&order=${spec.column}.desc.nullslast&limit=1`)
+  const filter = spec.filter ? `&${spec.filter}` : ''
+  const rows = await rest(deps, `${spec.table}?select=${spec.column}${filter}&order=${spec.column}.desc.nullslast&limit=1`)
   if (!rows) return { lane: spec.lane, ok: false, latestAt: null }
   const value = (rows[0] as Record<string, unknown> | undefined)?.[spec.column]
   return { lane: spec.lane, ok: true, latestAt: value == null ? null : String(value) }
