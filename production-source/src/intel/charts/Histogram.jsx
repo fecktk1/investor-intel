@@ -124,8 +124,11 @@ export default function Histogram({
         <line x1={PAD_L} x2={W - PAD_R} y1={PAD_T + plotH} y2={PAD_T + plotH} stroke={gridStroke} />
         {rows.length ? (
           <>
-            <text x={PAD_L} y={H - 10} textAnchor="start" fill={axisText}>{fmt(num(rows[0].from) ?? 0)}</text>
-            <text x={W - PAD_R} y={H - 10} textAnchor="end" fill={axisText}>{fmt(num(rows.at(-1).to) ?? 0)}</text>
+            {/* An open-ended outer bin has no outer edge to print. Its label
+                is the bound it does have (e.g. "≥ +50%"), never a made-up
+                zero at the end of the axis. */}
+            <text x={PAD_L} y={H - 10} textAnchor="start" fill={axisText}>{num(rows[0].from) != null ? fmt(num(rows[0].from)) : rows[0].label}</text>
+            <text x={W - PAD_R} y={H - 10} textAnchor="end" fill={axisText}>{num(rows.at(-1).to) != null ? fmt(num(rows.at(-1).to)) : rows.at(-1).label}</text>
           </>
         ) : null}
       </svg>

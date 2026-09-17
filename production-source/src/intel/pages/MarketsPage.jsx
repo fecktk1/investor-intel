@@ -7,7 +7,8 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { CHAINS, detectAddressKind, assetRef } from '../lib/chains'
 import { entityHref, listWatchlist } from '../lib/watchlist-api'
-import { loadMarkets, loadDegenMarkets, locateToken, loadMarketMacro } from '../lib/markets-api'
+import { loadMarkets, loadDegenMarkets, locateToken, loadMarketMacro, suggestMarketAssets } from '../lib/markets-api'
+import MarketSearchTypeahead from '../components/MarketSearchTypeahead'
 import { formatPrice, formatPct, formatUsd, timeAgo, pctClass } from '../lib/market-format'
 import { marketPanelHref } from '../lib/market-links'
 import AssetInspector from '../components/AssetInspector'
@@ -219,6 +220,14 @@ export default function MarketsPage() {
   // the page takes the working _contract synthetic path. assetRef lowercases EVM.
   const goToAsset = useCallback((chain, value) => navigate('/intel/asset/' + encodeURIComponent(assetRef(chain, value))), [navigate])
 
+  // The Markets search box asks the shared catalogue what the typed text names.
+  // One cached-table read on the free market_boards surface: it never reaches a
+  // provider, so a keystroke costs nothing and a free member may search.
+  const suggestAssets = useCallback((query, signal) => suggestMarketAssets(supabase, org?.id, query, { limit: 8, signal }), [supabase, org?.id])
+  // A chosen suggestion opens the asset at its EXACT identity, the same address
+  // the table rows link to, so a shared ticker is never resolved by guess.
+  const openSuggestion = useCallback(row => { if (row?.href) navigate(row.href, { state: { from: `${location.pathname}${location.search}` } }) }, [navigate, location.pathname, location.search])
+
   const onOpen = useCallback(async (e) => {
     e.preventDefault()
     const value = form.value.trim()
@@ -313,7 +322,7 @@ export default function MarketsPage() {
             </div>
             {/* search · sort · category · watchlist — one row, search flexes to fill */}
             <div className="intel-market-filter-toolbar">
-              <input aria-label={t('markets.search', { defaultValue: 'Search name, symbol, contract…' })} className="input text-[12px]" placeholder={t('markets.search', { defaultValue: 'Search name, symbol, contract…' })} value={params.search} onChange={(e) => setParam({ search: e.target.value })} />
+              <MarketSearchTypeahead value={params.search} onChange={value => setParam({ search: value })} suggest={suggestAssets} onOpen={openSuggestion} disabled={!org?.id}/>
               <details className="intel-market-filter-options"><summary>{t('markets.filter_and_sort', { defaultValue: 'Filters & sort' })}{(params.category || params.chain || params.watchlistOnly || params.provider !== 'auto' || params.sort !== 'market_cap' || columnSort.dir !== 'desc') ? ' · ' + t('markets.custom_screen', { defaultValue: 'Custom' }) : ''}</summary><div className="intel-market-filters">
               <label className="flex items-center gap-2"><span>{t('markets.catalogue', {defaultValue:'Catalogue'})}</span><select className="select text-[12px] py-1" aria-label="Market catalogue" value={params.provider} onChange={e=>setParam({provider:e.target.value})}><option value="auto">{t('markets.cmcPreferred', {defaultValue:'CoinMarketCap preferred'})}</option><option value="coinmarketcap">CoinMarketCap</option><option value="coingecko">CoinGecko</option></select></label>
               {/* Picking an order here keeps the current direction — the header

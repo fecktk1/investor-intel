@@ -9,6 +9,47 @@ export async function loadMarkets(supabase, orgId, params = {}, { signal } = {})
   return data
 }
 
+// Ranked catalogue suggestions for typed text — a ticker, a project name or a
+// pasted contract. One bounded read of the shared market catalogue: no provider
+// call, no credit, and the same free `market_boards` surface the screen uses, so
+// a member who may see the screen may also search it.
+export const SUGGEST_MIN_LENGTH = 2
+/** The matches that name ONE asset rather than merely starting like it. */
+export const SUGGEST_EXACT_MATCHES = ['contract', 'symbol_exact', 'name_exact']
+export async function suggestMarketAssets(supabase, orgId, query, { limit = 8, signal } = {}) {
+  const q = String(query ?? '').trim().slice(0, 100)
+  if (!orgId || q.length < SUGGEST_MIN_LENGTH) return []
+  const { data, error } = await supabase.functions.invoke('intel-markets', { body: { orgId, op: 'suggest', q, limit }, ...(signal ? { signal } : {}) })
+  if (error) { const details = await error.context?.json?.().catch(() => null); const failure = new Error(details?.error || error.message || 'suggest_failed'); failure.code = details?.error; throw failure }
+  if (data?.error) { const failure = new Error(data.error); failure.code = data.error; throw failure }
+  return Array.isArray(data?.matches) ? data.matches : []
+}
+
+/** The strongest exact bucket present, or [] when nothing names one asset. One
+ *  surviving row here is an unambiguous answer the caller may open directly. */
+export function exactSuggestMatches(matches = []) {
+  for (const kind of SUGGEST_EXACT_MATCHES) {
+    const bucket = (matches || []).filter(row => row?.match === kind)
+    if (bucket.length) return bucket
+  }
+  return []
+}
+
+/**
+ * What a typed `/intel/markets/<input>` address means.
+ *
+ * One surviving asset in the strongest exact bucket IS the answer: it is opened,
+ * never offered as a list of one. Several assets really do share the text, so
+ * those stay a choice — ranked, with the CoinMarketCap catalogue entry at its
+ * largest market cap first, exactly as the suggestions arrived.
+ */
+export function assetAddressTarget(matches = [], currentHref = '') {
+  const exact = exactSuggestMatches(matches)
+  const open = exact.length === 1 && exact[0].href && exact[0].href !== currentHref ? exact[0] : null
+  if (open) return { open, candidates: [] }
+  return { open: null, candidates: exact.length > 1 ? exact : (matches || []) }
+}
+
 // Global cached observations retain the clock of the selected field, not a combined age.
 export async function loadMarketMacro(supabase) {
   const { data, error } = await supabase.from('market_macro_available')

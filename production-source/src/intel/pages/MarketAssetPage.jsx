@@ -1,7 +1,7 @@
 import {useContractChartEvidence} from '../lib/useContractChartEvidence'
 import { useScreenParams } from '../lib/useScreenParams'
 import { mergeLinkedAssetMarkers } from '../lib/chart-history'
-import React, { useEffect, useMemo, useState, useCallback } from 'react'
+import React, { useEffect, useMemo, useRef, useState, useCallback } from 'react'
 import { useChartWorkingState, workingCandleInterval, workingInitialState, workingRangePreset } from '../lib/chart-working-state'
 import { useParams, Link, useLocation, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
@@ -9,12 +9,12 @@ import { ArrowLeft, TrendingUp, TrendingDown, Activity } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { useMarketDetailCache } from '../context/MarketDetailCache'
-import { DETAIL_CANDLE_RANGE, loadMarketDetail, loadMarketCandleSnapshot, loadMarkets } from '../lib/markets-api'
+import { DETAIL_CANDLE_RANGE, loadMarketDetail, loadMarketCandleSnapshot, assetAddressTarget, suggestMarketAssets } from '../lib/markets-api'
 // PriceWorkstation.jsx stays untouched (plan rule); the k-line source name is
 // mapped here, before the chart source reaches it.
 import { chartProviderLabel } from '../lib/chart-source-label'
 import { useTokenProfile } from '../lib/useTokenProfile'
-import { marketIdentityParams,marketNativeChain } from '../lib/asset-identity'
+import { marketNativeChain } from '../lib/asset-identity'
 import { useAssetThesisHistory } from '../lib/useAssetThesisHistory'
 import { useLiveHistoryEnd } from '../lib/useLiveHistoryEnd'
 import { intelReadError } from '../lib/read-error'
@@ -83,7 +83,11 @@ const EFFECT_DOT = { bullish: 'bg-[var(--ok)]', bearish: 'bg-red-400', caution: 
 // spread, RAG memory, and an optional analyst brief.
 export default function MarketAssetPage() {
   const { symbol } = useParams()
-  const routeSymbol = String(symbol || '').toUpperCase()
+  // The address is kept EXACTLY as it was typed as well as uppercased. A ticker
+  // reads the same either way; a contract address and a project name do not, and
+  // both have to survive to the catalogue lookup below.
+  const routeInput = String(symbol || '')
+  const routeSymbol = routeInput.toUpperCase()
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase, user } = useSupabase()
@@ -150,6 +154,11 @@ export default function MarketAssetPage() {
   const [tapeMarkers,setTapeMarkers]=useState([])
   const analysis = useArtifact(`${detailScope}:${canonicalKey || ''}`)
   const backTo = typeof location.state?.from === 'string' && /^\/intel(?:[/?]|$)/.test(location.state.from) ? location.state.from : '/intel/markets'
+  // The address as it stands right now, read WITHOUT making this page's asset
+  // read depend on it. Every chart control writes its own query parameter, so a
+  // location in the dependency list would re-fetch the asset on each of them.
+  const here = useRef(location)
+  here.current = location
 
   useEffect(() => {
     if (!org?.id || !routeSymbol) return
@@ -159,11 +168,27 @@ export default function MarketAssetPage() {
       try {
         const load = () => loadMarketDetail(supabase, org.id, routeSymbol, identity)
         const r = await (detailCache ? detailCache.read(identity, load, { force: retry > 0 }) : load()); if (!alive) return; setD({ scope: detailScope, data: r }); setLoading(false)
-      } catch (e) { if (alive) setError(e.message); if (alive && e.code === 'ambiguous_asset') { const matches = await loadMarkets(supabase, org.id, { search: routeSymbol, limit: 50 }).catch(() => null); if (alive) setCandidates((matches?.rows || []).filter(row => String(row.symbol).toUpperCase() === routeSymbol)) } }
+      } catch (e) {
+        if (!alive) return
+        setError(e.message)
+        // An address with an exact identity on it already said which asset it
+        // means, so a failure there is a failure, not an identity question.
+        // Without one the reader typed something: a ticker, a project name or a
+        // contract. Ask the shared catalogue what it names before reporting a
+        // dead end. This is the free market_boards read; nothing is spent.
+        if (sourceProvider && providerId) return
+        const matches = await suggestMarketAssets(supabase, org.id, routeInput, { limit: 8 }).catch(() => [])
+        if (!alive || !matches.length) return
+        // One surviving asset in the strongest exact bucket IS the answer:
+        // open it rather than asking the reader to confirm a list of one.
+        const target = assetAddressTarget(matches, `${here.current.pathname}${here.current.search}`)
+        if (target.open) { navigate(target.open.href, { replace: true, state: here.current.state }); return }
+        setCandidates(target.candidates)
+      }
       finally { if (alive) setLoading(false) }
     })()
     return () => { alive = false }
-  }, [org?.id, user?.id, supabase, routeSymbol, sourceProvider, providerId, detailScope, retry, detailCache])
+  }, [org?.id, user?.id, supabase, routeSymbol, routeInput, sourceProvider, providerId, detailScope, retry, detailCache, navigate])
 
   const sig = d?.signal
   const explain = useCallback((force = false) => {
@@ -232,7 +257,11 @@ export default function MarketAssetPage() {
       <Link to={backTo} className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
       {(!error || candidates.length > 0) && <p className="py-8 text-sm text-[var(--fg-4)]">{candidates.length ? t('markets.choose_identity', { defaultValue: 'This symbol identifies more than one asset. Choose the asset you want to investigate.' }) : t('markets.assetNotFound', { defaultValue: 'No exchange market data for this asset yet.' })}</p>}
       {error && !candidates.length && <p role="alert">{t('asset.read_failed', { defaultValue: 'The asset read could not be completed.' })} <button className="underline" onClick={() => setRetry(value => value + 1)}>{t('common.retry', { defaultValue: 'Retry' })}</button></p>}
-      {candidates.map(row => <Link className="block border-b border-[var(--border-default)] py-4" key={`${row.sourceProvider}:${row.providerId}`} to={`/intel/markets/${encodeURIComponent(row.symbol)}${marketIdentityParams(row)}`}>{row.displayName || row.symbol} · {row.chain || row.sourceProvider} · {row.providerId}</Link>)}
+      {candidates.map(row => <Link className="intel-asset-choice" key={`${row.sourceProvider}:${row.providerId}`} to={row.href} state={location.state}>
+        <strong>{row.displayName || row.symbol || row.providerId}</strong>
+        <span>{[row.symbol, row.chain, `${row.sourceProvider} ${row.providerId}`].filter(Boolean).join(' · ')}</span>
+        <em>{row.marketCap == null ? t('markets.suggest_no_market_cap', { defaultValue: 'No market cap' }) : money.formatMoney(row.marketCap)}</em>
+      </Link>)}
     </div>
   )
 
