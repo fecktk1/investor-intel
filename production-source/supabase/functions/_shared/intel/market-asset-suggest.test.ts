@@ -1,6 +1,6 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1'
 import { handleMarkets } from '../../intel-markets/index.ts'
-import { suggestMarketAssets, SUGGEST_DEFAULT_LIMIT, SUGGEST_MAX_LIMIT, contractReadings, splitChainPrefix } from './market-asset-suggest.ts'
+import { suggestMarketAssets, suggestTier, SUGGEST_DEFAULT_LIMIT, SUGGEST_MAX_LIMIT, contractReadings, splitChainPrefix } from './market-asset-suggest.ts'
 
 // ── The catalogue stand-in ───────────────────────────────────────────────────
 // One in-memory `market_assets` table that applies the three filters the suggest
@@ -18,6 +18,12 @@ const SOL_CG = asset({ source_provider: 'coingecko', provider_id: 'solana', symb
 const SOL_TOMATO = asset({ source_provider: 'coingecko', provider_id: 'sol-the-trophy-tomato', symbol: 'SOL', normalized_symbol: 'SOL', name: 'Sol The Trophy Tomato', market_cap: 281_690, market_cap_rank: 652 })
 const SOLAR = asset({ source_provider: 'coingecko', provider_id: 'solar', symbol: 'SXP', normalized_symbol: 'SXP', name: 'Solar', market_cap: 12_000_000 })
 const USDC = asset({ source_provider: 'coinmarketcap', provider_id: '3408', symbol: 'USDC', normalized_symbol: 'USDC', name: 'USDC', primary_chain: 'ethereum', market_cap: 40_000_000_000, platforms: { ethereum: '0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48' } })
+// The live "bitcoin" screen: two meme tokens whose TICKER is BITCOIN, and the
+// asset whose NAME is Bitcoin. Names taken from what production actually
+// returned on 2026-09-17.
+const BTC = asset({ source_provider: 'coinmarketcap', provider_id: '1', symbol: 'BTC', normalized_symbol: 'BTC', name: 'Bitcoin', primary_chain: 'bitcoin', market_cap: 1_540_000_000_000, market_cap_rank: 1 })
+const HPOS_CG = asset({ source_provider: 'coingecko', provider_id: 'harrypotterobamasonic10in', symbol: 'BITCOIN', normalized_symbol: 'BITCOIN', name: 'HarryPotterObamaSonic10Inu (ETH)', primary_chain: 'base', market_cap: 44_000_000 })
+const HPOS_CMC = asset({ source_provider: 'coinmarketcap', provider_id: '30323', symbol: 'BITCOIN', normalized_symbol: 'BITCOIN', name: 'HarryPotterObamaSonic10Inu (ERC-20)', primary_chain: 'ethereum', market_cap: 41_000_000 })
 
 function catalogue(rows: Row[], { fail = false } = {}) {
   const reads: Record<string, unknown>[] = []
@@ -86,6 +92,28 @@ Deno.test('A ticker ranks its exact symbol matches first and collapses one asset
   assertEquals(result.matches[0].href, '/intel/markets/SOL?provider=coinmarketcap&id=5426')
   // The larger market cap leads inside the same match strength.
   assert((result.matches[0].marketCap ?? 0) > (result.matches[1].marketCap ?? 0))
+})
+
+Deno.test('Matching the text exactly is ONE tier: the biggest asset leads whether the text was its ticker or its name', async () => {
+  // Seen live: typing "bitcoin" offered two meme tokens called BITCOIN above
+  // Bitcoin itself, because every ticker match outranked every name match.
+  // Being the asset the reader named is not weaker evidence than sharing a
+  // ticker with it, so the two are one tier and market cap decides inside it.
+  const db = catalogue([HPOS_CG, HPOS_CMC, BTC])
+  const result = await suggestMarketAssets(db, 'bitcoin')
+  assertEquals(result.matches.map((m) => `${m.sourceProvider}:${m.providerId}:${m.match}`), [
+    'coinmarketcap:1:name_exact',
+    'coingecko:harrypotterobamasonic10in:symbol_exact',
+    'coinmarketcap:30323:symbol_exact',
+  ])
+  assertEquals(result.matches[0].displayName, 'Bitcoin')
+  // The match each row reports is unchanged — only the order it is offered in.
+  assertEquals(suggestTier('symbol_exact'), suggestTier('name_exact'))
+  // A pasted address is still above both, and starting like the text is below.
+  assert(suggestTier('contract') < suggestTier('symbol_exact'))
+  assert(suggestTier('symbol_exact') < suggestTier('symbol_prefix'))
+  assert(suggestTier('symbol_prefix') < suggestTier('name_prefix'))
+  assert(suggestTier('name_prefix') < suggestTier('name_contains'))
 })
 
 Deno.test('A project name matches exactly and outranks every prefix and contains match', async () => {
