@@ -203,10 +203,12 @@ Deno.test('a heavily quoted asset still finds its day-old market capitalisation 
  const rows=[]
  for(let minute=0;minute<25*60;minute+=5){
   const at=new Date(NOW-minute*60_000).toISOString()
-  for(const metric of ['price','volume_24h','tvl','liquidations_1h','liquidations_4h','liquidations_24h'])rows.push(observation({metric,unit:'USD',periodSeconds:null,value:1,observedAt:at,recordedAt:at}))
-  for(const periodSeconds of [3600,86400,604800])rows.push(observation({metric:'price_change',periodSeconds,value:2,observedAt:at,recordedAt:at}))
-  rows.push(observation({metric:'volume_change',value:12,observedAt:at,recordedAt:at}))
-  rows.push(observation({metric:'market_cap',unit:'USD',periodSeconds:null,value:1_000+(25*60-minute),observedAt:at,recordedAt:at}))
+  // Production quote rows expire from the cache 60 seconds after recording.
+  const expiresAt=new Date(NOW-minute*60_000+60_000).toISOString()
+  for(const metric of ['price','volume_24h','tvl','liquidations_1h','liquidations_4h','liquidations_24h'])rows.push(observation({metric,unit:'USD',periodSeconds:null,value:1,observedAt:at,recordedAt:at,expiresAt}))
+  for(const periodSeconds of [3600,86400,604800])rows.push(observation({metric:'price_change',periodSeconds,value:2,observedAt:at,recordedAt:at,expiresAt}))
+  rows.push(observation({metric:'volume_change',value:12,observedAt:at,recordedAt:at,expiresAt}))
+  rows.push(observation({metric:'market_cap',unit:'USD',periodSeconds:null,value:1_000+(25*60-minute),observedAt:at,recordedAt:at,expiresAt}))
  }
  const result=await readMetricAgreement(filteringDatabase(rows),SUBJECT,NOW)
  assert.equal(result.agreement,'corroborated')
@@ -224,4 +226,18 @@ Deno.test('with no retained history a day back the heavily quoted asset still de
  const result=await readMetricAgreement(filteringDatabase(rows),SUBJECT,NOW)
  assert.equal(result.agreement,'incomplete')
  assert.ok(result.reasons.includes('market_cap_single_observation'))
+})
+
+Deno.test('a quote whose cache freshness lapsed is still dated evidence for the agreement test',async()=>{
+ // The last quote was recorded ten minutes ago and left the display cache after
+ // one. Its dated readings are still what the market did, so they still count.
+ const at=new Date(NOW-600_000).toISOString(),expiresAt=new Date(NOW-540_000).toISOString()
+ const dayAgo=new Date(NOW-600_000-86_400_000).toISOString(),dayAgoExpires=new Date(NOW-540_000-86_400_000).toISOString()
+ const result=await readMetricAgreement(filteringDatabase([
+  observation({metric:'price_change',value:5,observedAt:at,recordedAt:at,expiresAt}),
+  observation({metric:'volume_change',value:31,observedAt:at,recordedAt:at,expiresAt}),
+  observation({metric:'market_cap',unit:'USD',periodSeconds:null,value:1_100,observedAt:at,recordedAt:at,expiresAt}),
+  observation({metric:'market_cap',unit:'USD',periodSeconds:null,value:1_000,observedAt:dayAgo,recordedAt:dayAgo,expiresAt:dayAgoExpires}),
+ ]),SUBJECT,NOW)
+ assert.equal(result.agreement,'corroborated')
 })

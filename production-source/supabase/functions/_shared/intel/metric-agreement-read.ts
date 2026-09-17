@@ -83,9 +83,15 @@ function admit(data:unknown,subject:string,now:number,into:Row[],seen:Set<string
  for(const entry of (Array.isArray(data)?data:data?[data]:[])){
   const o=(entry as Row)?.observation
   if(!o||o.subject!==subject||o.provider!=='coinmarketcap'||!QUOTE_SOURCE.test(String(o.sourceRef||'')))continue
-  const observed=instant(o.observedAt),recorded=instant(o.recordedAt),expires=instant(o.expiresAt)
+  const observed=instant(o.observedAt),recorded=instant(o.recordedAt)
   if(observed==null||recorded==null||observed>now||recorded>now)continue
-  if(expires!=null&&expires<=now)continue
+  // `expiresAt` is NOT checked. On a quote row it is recordedAt plus 60 seconds:
+  // how long the cached quote may be SHOWN as current (cached-asset-quote.ts
+  // reads it as stale_after). A level observed a day ago is still a true dated
+  // reading of that moment, and the day-old baseline is exactly what this test
+  // needs. Filtering on it discarded every baseline and, a minute after the last
+  // quote, every row. Retention is bounded by retain_until in the query; age is
+  // bounded by the standard's own metric_stale rule.
   if(finite(o.value)==null)continue
   const key=`${o.metric}|${o.observedAt}|${o.periodSeconds??''}|${o.value}|${o.sourceRef}`
   if(seen.has(key))continue
