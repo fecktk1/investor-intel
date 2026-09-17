@@ -42,11 +42,17 @@ import RateInterval from './thesis/RateInterval'
 // Four.meme launches on BNB Chain, which is not one of them, so no Four.meme
 // cohort is captured and none is implied.
 //
-// THE HONEST EMPTY STATE. The hourly lane can run and be told by the provider
-// that every platform has an empty list. That is a successful read with an empty
-// funnel and `asOf: null`, and it renders as "the provider reported no launches
-// for these platforms at the last capture" — never an error, and never a
-// fabricated funnel.
+// THE TWO HONEST EMPTY STATES, which are not the same sentence.
+//   * A capture exists (`asOf` is a time) and the provider reported empty lists
+//     for every platform. That is a successful read: "the provider reported no
+//     launches for these platforms at the last capture".
+//   * NOTHING has ever been captured (`asOf` is null): the lane has not run yet,
+//     or the provider has been refusing it. Then the page says only that no
+//     capture is stored and points at the capture receipts above, which carry the
+//     last attempt, its time and the status the provider gave it. It never claims
+//     the provider "reported no launches", because the provider reported nothing.
+// Neither state is an error, and neither fabricates a funnel; the headings, the
+// controls, the receipts and both tables stay on the page in both.
 
 const DAYS = [1, 7, 30]
 const DEFAULT_DAYS = 7
@@ -175,13 +181,23 @@ export default function GraduationFunnel() {
   const funnelState = stated ? 'error' : (ready && funnel.length) ? 'ready' : 'empty'
   const binState = stated ? 'error' : (ready && bins.length) ? 'ready' : 'empty'
 
-  // The provider answering EMPTY lists for every platform is a successful read,
-  // not a failure and not "no observations": the honest line names what actually
-  // happened at the last capture.
+  // Two different empty states, and they must not borrow each other's sentence.
+  // `asOf` is the newest stored capture: with one, the provider answering EMPTY
+  // lists for every platform is a successful read and the line says so. With
+  // NONE, nothing has ever been captured — the lane has not run yet, or the
+  // provider has been refusing it — and claiming the provider "reported no
+  // launches" would state something we were never told. The receipts drawer above
+  // carries the last attempt, its time and the status it received, so the line
+  // points at it rather than guessing at a cause.
+  const captured = ready && payload?.asOf != null
   const emptyNote = (ready && !funnel.length)
-    ? t('graduation.empty_provider', {
-        defaultValue: 'The hourly capture ran and the provider reported no launches for these platforms at the last capture.',
-      })
+    ? (captured
+      ? t('graduation.empty_provider', {
+          defaultValue: 'The hourly capture ran and the provider reported no launches for these platforms at the last capture.',
+        })
+      : t('graduation.empty_never', {
+          defaultValue: 'No launch stage capture is stored yet. Capture receipts above shows when the hourly capture last ran and how the provider answered it.',
+        }))
     : null
   const frameText = (key, options) => (key === 'charts.empty' && emptyNote ? emptyNote : t(key, options))
 
@@ -201,9 +217,13 @@ export default function GraduationFunnel() {
   const rateLine = !ready
     ? ''
     : rate == null
-      ? t('graduation.rate_none', {
-          defaultValue: 'No graduation rate: no cohort completed the window, so there is no denominator to measure against.',
-        })
+      ? (captured
+        ? t('graduation.rate_none', {
+            defaultValue: 'No graduation rate: no cohort completed the window, so there is no denominator to measure against.',
+          })
+        // Nothing captured is not "no cohort completed the window": there was no
+        // window to complete. The same honest line stands in for the rate.
+        : emptyNote)
       : t('graduation.rate_line', {
           rate: `${(rate * 100).toFixed(1)}%`,
           graduated: fmtNum(num(cohort?.graduatedInWindow) ?? 0),

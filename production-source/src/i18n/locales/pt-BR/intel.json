@@ -618,6 +618,7 @@
     "funnel_sub": "O painel de estágios apenas da captura MAIS RECENTE, das novas criações, passando por prestes a graduar, até os graduados. O anel externo é o maior estágio; os anéis internos são lidos como fatia dele. Isto é um retrato de uma hora, nunca uma soma sobre a janela.",
     "clock": "As listas de lançamento são capturadas uma vez por hora. O provedor não publica relógio para uma lista de descoberta, então a hora da captura é NOSSA e todo número de horas aqui é o tempo desde que NÓS vimos o contrato pela primeira vez, não desde que ele foi implantado. A Four.meme não é coberta: ela lança na BNB Chain, que não é uma das quatro plataformas DEX do CoinMarketCap que esta faixa lê.",
     "empty_provider": "A captura horária foi executada e o provedor não informou lançamentos para estas plataformas na última captura.",
+    "empty_never": "Ainda não há nenhuma captura das fases de lançamento armazenada. Os recibos de captura acima mostram quando a captura horária foi executada pela última vez e como o provedor respondeu.",
     "stage_new": "Novas criações",
     "stage_about": "Prestes a graduar",
     "stage_graduates": "Graduados",

@@ -618,6 +618,7 @@
     "funnel_sub": "Pasqyra e fazave vetëm e kapjes MË TË RE, nga krijimet e reja, te gati për diplomim, deri te të diplomuarat. Unaza e jashtme është faza më e madhe; unazat brenda saj lexohen si pjesë e saj. Kjo është një pamje e një ore të vetme, kurrë një shumë përgjatë dritares.",
     "clock": "Listat e lansimeve kapen një herë në orë. Ofruesi nuk publikon orë për një listë zbulimi, prandaj ora e kapjes është E JONA dhe çdo shifër orësh këtu është koha që kur e pamë NE kontratën për herë të parë, jo që kur ajo u vendos. Four.meme nuk mbulohet: ajo lansohet në BNB Chain, e cila nuk është një nga katër platformat DEX të CoinMarketCap që lexon ky shirit.",
     "empty_provider": "Kapja orare u ekzekutua dhe ofruesi nuk raportoi asnjë lansim për këto platforma në kapjen e fundit.",
+    "empty_never": "Ende nuk është ruajtur asnjë kapje e fazave të lansimit. Faturat e kapjes më sipër tregojnë kur u ekzekutua për herë të fundit kapja orare dhe si u përgjigj ofruesi.",
     "stage_new": "Krijime të reja",
     "stage_about": "Gati për diplomim",
     "stage_graduates": "Të diplomuara",

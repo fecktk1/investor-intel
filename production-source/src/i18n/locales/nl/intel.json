@@ -618,6 +618,7 @@
     "funnel_sub": "Het fasenoverzicht van uitsluitend de NIEUWSTE vastlegging, van nieuwe creaties via bijna gegradueerd tot gegradueerd. De buitenste ring is de grootste fase; de ringen daarbinnen worden gelezen als aandeel daarvan. Dit is een momentopname van één uur, nooit een som over het venster.",
     "clock": "De lanceringslijsten worden eenmaal per uur vastgelegd. De aanbieder publiceert geen klok voor een ontdekkingslijst, dus het vastlegtijdstip is het ONZE en elk uurcijfer hier is de tijd sinds WIJ het contract voor het eerst zagen, niet sinds het werd uitgerold. Four.meme valt hier niet onder: het lanceert op BNB Chain, dat niet een van de vier CoinMarketCap-DEX-platformen is die deze baan leest.",
     "empty_provider": "De uurlijkse vastlegging is gedraaid en de aanbieder rapporteerde bij de laatste vastlegging geen lanceringen voor deze platformen.",
+    "empty_never": "Er is nog geen vastlegging van de lanceerfasen opgeslagen. De vastlegbonnen hierboven tonen wanneer de uurlijkse vastlegging voor het laatst draaide en hoe de aanbieder antwoordde.",
     "stage_new": "Nieuwe creaties",
     "stage_about": "Bijna gegradueerd",
     "stage_graduates": "Gegradueerd",

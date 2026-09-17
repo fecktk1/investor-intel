@@ -128,6 +128,15 @@ export async function reserveCmcStream(db:any,maxMessages:number) {
   return rpc(db,'cmc_request_reserve',{p_fingerprint:fingerprint,p_cache_key:`cmc:live-focus:${fingerprint}`,p_endpoint:'wss:/v1',p_feature:'live_focus',
     p_estimated:(maxMessages+5)*0.025,p_cap:cmcCreditCeiling(settings),p_feature_cap:Math.min(10800,cmcCreditCeiling(settings)*0.05)})
 }
+/** How long a refusal is remembered without asking again.
+ *
+ * A transient failure is re-asked a minute later. An ENTITLEMENT refusal is not
+ * transient: the plan does not include this request, and asking again every hour
+ * spends a reservation on an answer already given (the meme lane did exactly that
+ * 48 times in two days). The negative cache is keyed by the exact request params,
+ * so this backoff holds only the request that was refused: a corrected request
+ * hashes to a different key and is tried at the very next run, with no wait. */
+const NEGATIVE_TTL_MS=60_000,ENTITLEMENT_TTL_MS=6*3_600_000
 function errorKind(status:number,code:unknown):string {
   if(status===401) return 'credential_unavailable'
   if(status===403 || Number(code)===1006) return 'insufficient_entitlement'
@@ -218,13 +227,28 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
         status=res.status
         let raw:string
         try{raw=await readBoundedText(res,2_000_000)}catch(error){throw new Error(error instanceof RequestBodyError&&error.status===413?'response_too_large':'malformed_response')}
-        const body=JSON.parse(raw)
+        // A REFUSAL does not have to be JSON. The provider's documented error
+        // envelope is, but a gateway in front of it can answer an HTML or empty
+        // body, and parsing that first threw away the HTTP status: every
+        // /v1/dex/meme/list 403 since 2026-09-15 13:37 UTC was recorded as
+        // `provider_unavailable` instead of `insufficient_entitlement` because
+        // the parse failed before `errorKind` was ever reached. The status is the
+        // fact here; the body is only evidence, so an unreadable body on a failed
+        // response is logged (bounded, public text, the key travels in a header
+        // and never appears in a response) and the status decides the reason.
+        let body:any=null,unparsed=false
+        try{body=JSON.parse(raw)}catch{
+          if(res.ok)throw new Error('malformed_response')
+          unparsed=true
+          console.warn(JSON.stringify({cmc_error_body:{capability:name,endpoint:spec.path,status,sample:raw.slice(0,800)}}))
+        }
         actual=body?.status?.credit_count!=null && Number.isFinite(Number(body.status.credit_count)) ? Math.max(0,Number(body.status.credit_count)):null
-        if(!res.ok || Number(body?.status?.error_code||0)!==0) {
+        if(unparsed || !res.ok || Number(body?.status?.error_code||0)!==0) {
           reason=errorKind(status,body?.status?.error_code)
           // Keep last-good data intact; endpoint failures have a bounded negative
           // TTL only when there is no usable snapshot.
-          if(!cached) await db.from('market_data_response_cache').update({response_json:null,negative_cache:true,status_code:status,error_kind:reason,expires_at:new Date(Date.now()+60000).toISOString()}).eq('provider','coinmarketcap').eq('cache_key',cacheKey).eq('refresh_token',reservation)
+          if(!cached) await db.from('market_data_response_cache').update({response_json:null,negative_cache:true,status_code:status,error_kind:reason,
+            expires_at:new Date(Date.now()+(reason==='insufficient_entitlement'?ENTITLEMENT_TTL_MS:NEGATIVE_TTL_MS)).toISOString()}).eq('provider','coinmarketcap').eq('cache_key',cacheKey).eq('refresh_token',reservation)
           // A denial is still a call that was made and may have been charged, so it
           // keeps its own receipt. A retained snapshot keeps the cache receipt that
           // actually describes the figure being returned.

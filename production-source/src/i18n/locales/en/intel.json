@@ -744,6 +744,7 @@
     "funnel_sub": "The stage board of the NEWEST capture only, from new creations through about-to-graduate to graduates. The outer ring is the largest stage; the rings inside it are read as a share of it. This is a snapshot of one hour, never a sum over the window.",
     "clock": "The launch lists are captured once an hour. The provider publishes no clock for a discovery list, so the capture hour is OURS and every hour figure here is time since WE first saw the contract, not since it was deployed. Four.meme is not covered: it launches on BNB Chain, which is not one of the four CoinMarketCap DEX platforms this lane reads.",
     "empty_provider": "The hourly capture ran and the provider reported no launches for these platforms at the last capture.",
+    "empty_never": "No launch stage capture is stored yet. Capture receipts above shows when the hourly capture last ran and how the provider answered it.",
     "stage_new": "New creations",
     "stage_about": "About to graduate",
     "stage_graduates": "Graduates",

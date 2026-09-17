@@ -208,6 +208,25 @@ Deno.test('CMC HTTP denial and network failure do not retry and reconcile conser
   const broken=fakeDb();assert.equal((await requestCmc('quotes',{id:2},{supabase:broken})).state,'unavailable')
   assert.equal(broken.state.rpcs.find(r=>r.name==='cmc_request_reconcile').args.p_actual,null)
 }))
+Deno.test('a refusal that is not JSON keeps its HTTP meaning, and an entitlement refusal is remembered for six hours',()=>withEnvironment(async()=>{
+  // The production case: /v1/dex/meme/list answered 403 with a body that is not
+  // the documented CMC JSON envelope. Parsing it first turned every one of those
+  // refusals into `provider_unavailable` and hid the entitlement meaning.
+  let calls=0;globalThis.fetch=async()=>{calls++;return new Response('<html><body>403 Forbidden</body></html>',{status:403,headers:{'content-type':'text/html'}})}
+  const db=fakeDb()
+  assert.equal((await requestCmc('quotes',{id:1},{supabase:db})).reason,'insufficient_entitlement');assert.equal(calls,1)
+  assert.equal(db.state.cache.negative_cache,true);assert.equal(db.state.cache.status_code,403)
+  const held=Date.parse(db.state.cache.expires_at)-Date.now()
+  assert.ok(held>5.9*3600000&&held<=6*3600000,'an entitlement refusal is not re-asked every hour')
+  // A transient failure is still re-asked a minute later.
+  globalThis.fetch=async()=>new Response('upstream boom',{status:500})
+  const transient=fakeDb();assert.equal((await requestCmc('quotes',{id:3},{supabase:transient})).reason,'provider_unavailable')
+  const short=Date.parse(transient.state.cache.expires_at)-Date.now()
+  assert.ok(short>0&&short<=60000)
+  // A 200 that is not JSON is still a malformed response, never a silent empty.
+  globalThis.fetch=async()=>new Response('not json',{status:200})
+  const broken=fakeDb();assert.equal((await requestCmc('quotes',{id:4},{supabase:broken})).reason,'malformed_response')
+}))
 Deno.test('Hackathon profile automatically returns to verified baseline after expiry',()=>withEnvironment(async()=>{
   Deno.env.set('CMC_ACCESS_PROFILE','hackathon');Deno.env.set('CMC_VERIFIED_HACKATHON_PLAN','startup')
   assert.equal(cmcPlan(Date.parse('2026-09-20T00:00:00Z')),'startup')

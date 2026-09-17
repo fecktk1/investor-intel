@@ -9,13 +9,14 @@ import {digest,stableJson,finite} from './investigation-evidence.ts'
 const uuid=(v:unknown)=>typeof v==='string'&&/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(v)
 async function read(query:any){const {data,error}=await query;if(error)throw Error('dex_cohort_storage_unavailable');return data}
 const labels:Record<string,string>={dexTrending:'Trending contracts',dexNew:'New contracts',dexMeme:'Meme discovery',dexGainers:'Gainers and losers'}
-/** The verified platform a cohort is ABOUT. For a leaderboard capability the
- * provider itself was pinned (`platformIds` is a request field), so the pin comes
- * from the params it was asked with. /v1/dex/meme/list takes no platform filter —
- * its body is {protocol, exclusive, limit} — so the pin is OURS, supplied by the
- * caller and applied to the answer, never sent upstream. */
+/** The verified platform a cohort is ABOUT. `platformIds` is a request field on
+ * every discovery capability, /v1/dex/meme/list included (see the registry entry
+ * for why it is sent there again since 2026-09-17), so the pin comes from the
+ * params the capability was asked with. A caller-supplied pin is still accepted
+ * for a request that carries none, and it is applied to the answer only — for a
+ * meme board the pin never decides identity, each row's own `pid` does. */
 export function dexCohortPin(capability:string,params:Record<string,string>,pinnedPlatformId?:unknown):number{
- const pin=cmcDexInteger(capability==='dexMeme'?pinnedPlatformId:params.platformIds)
+ const pin=cmcDexInteger(params.platformIds??pinnedPlatformId)
  if(pin==null||!CMC_DEX_NETWORKS.some(n=>n.platformId===pin))throw Error('invalid_dex_cohort_platform')
  return pin
 }
@@ -72,15 +73,13 @@ export async function dexCohortService(db:any,input:any,actor:{userId:string;org
  let params:Record<string,string>={},key='',pin=0
  if(operation==='capture'){
   if(input.cohortId!=null||!isDexDiscovery(input.capability)||typeof input.payloadHash!=='string'||!/^[a-f0-9]{64}$/.test(input.payloadHash)||typeof input.retrievedAt!=='string'||!Number.isFinite(Date.parse(input.retrievedAt))||Date.parse(input.retrievedAt)>now)throw Error('invalid_dex_cohort_request')
-  // dexMeme accepts no platform filter, so `platformIds` on a meme request is
-  // OUR pin on the answer: it is taken out before the params are built and never
-  // reaches the provider. It still enters the cohort key, so two platforms
-  // reviewed from the same board keep two cohorts rather than colliding on one.
+  // `platformIds` travels with the request on every discovery capability, meme
+  // boards included, so the cohort key and the cached snapshot it must match are
+  // built from the same params the transport asked with. Two platforms reviewed
+  // from the same board keep two cohorts rather than colliding on one.
   const requested={...(input.parameters||{})}
-  const pinned=input.capability==='dexMeme'?requested.platformIds:undefined
-  if(input.capability==='dexMeme')delete requested.platformIds
   params=cmcParams(input.capability,requested)
-  pin=dexCohortPin(input.capability,params,pinned)
+  pin=dexCohortPin(input.capability,params)
   key=`dex:${input.capability}:${await digest(stableJson({params:{...params,platformIds:String(pin)},payloadHash:input.payloadHash,retrievedAt:input.retrievedAt}))}`
  }
  const settings=await loadCmcOperatingSettings(db),env=cmcPolicyEnvironment(settings,key=>Deno.env.get(key),now)

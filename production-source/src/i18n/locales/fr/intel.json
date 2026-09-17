@@ -618,6 +618,7 @@
     "funnel_sub": "Le tableau des étapes de la capture LA PLUS RÉCENTE uniquement, des créations nouvelles aux graduées, en passant par celles sur le point de graduer. L’anneau extérieur est l’étape la plus grande ; les anneaux qu’il contient se lisent comme une part de celle-ci. C’est un instantané d’une heure, jamais une somme sur la fenêtre.",
     "clock": "Les listes de lancements sont capturées une fois par heure. Le fournisseur ne publie aucune horloge pour une liste de découverte : l’heure de capture est donc la NÔTRE, et chaque chiffre horaire ici correspond au temps écoulé depuis que NOUS avons vu le contrat pour la première fois, pas depuis son déploiement. Four.meme n’est pas couvert : il lance sur BNB Chain, qui ne fait pas partie des quatre plateformes DEX CoinMarketCap que lit ce couloir.",
     "empty_provider": "La capture horaire s’est exécutée et le fournisseur n’a indiqué aucun lancement pour ces plateformes lors de la dernière capture.",
+    "empty_never": "Aucune capture des phases de lancement n’est encore enregistrée. Les reçus de capture ci-dessus indiquent quand la capture horaire s’est exécutée pour la dernière fois et comment le fournisseur a répondu.",
     "stage_new": "Créations nouvelles",
     "stage_about": "Sur le point de graduer",
     "stage_graduates": "Graduées",

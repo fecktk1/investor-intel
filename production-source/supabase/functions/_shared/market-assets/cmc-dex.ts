@@ -13,6 +13,10 @@ export const CMC_DEX_MEME_STAGES=['newCreations','aboutGraduates','graduates'] a
 /** Rows kept per stage array. The documented request field is `limit`, not
  * `pageSize`; 25 is what this platform asks for and what the lane budgets. */
 export const CMC_DEX_MEME_LIMIT=25
+/** The verified CMC DEX network id a meme request names by default. Solana is
+ * where the launchpads this lane is about live. It is a REQUEST field only: the
+ * answer is still attributed from each row's own `pid`, never from this default. */
+export const CMC_DEX_MEME_PLATFORM_ID=16
 /** Holder classifications returned by /v1/dex/holders/tag_count. Probed on
  * 2026-09-14 (docs/investor-intel/evidence/cmc-cost-probe-2026-09-14.json):
  * data.holders came back with exactly these eight rows. They are CMC's labels

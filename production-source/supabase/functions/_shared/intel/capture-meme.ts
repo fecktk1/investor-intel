@@ -14,19 +14,30 @@
 //   snapshot for 0 credits, so the billed total is never higher.
 //
 //   CORRECTED 2026-09-15. This lane used to make one call PER PLATFORM, sending
-//   {platformIds, interval, pageSize}. /v1/dex/meme/list accepts none of those
-//   three: its documented body is {protocol, exclusive, limit, newCreationFilter,
-//   aboutGraduateFilter, graduateFilter}, and it has NO platform filter at all.
-//   The four per-platform calls were therefore four identical, unfiltered
-//   questions — and because `limit` was missing the provider answered 200,
-//   error_code 0, 1 credit and three EMPTY arrays to each of them (36 calls,
-//   252 bytes each, 2026-09-15 03:57-11:37 UTC; zero rows stored). We now ask the
-//   documented question once, with `limit`, and SPLIT the answer by platform
-//   ourselves: every row names its own `pid`, and a row whose platform is not one
-//   of the four verified CMC DEX networks is DROPPED, never repaired.
+//   {platformIds, interval, pageSize}. Four calls asked the same question, and
+//   because the documented page field `limit` was missing the provider answered
+//   200, error_code 0, 1 credit and three EMPTY arrays to each of them (40 calls,
+//   252 bytes each, 2026-09-15 03:57-12:37 UTC; zero rows stored).
+//
+//   CORRECTED AGAIN 2026-09-17. The 2026-09-15 rewrite also DROPPED
+//   `platformIds`, on the reading that the published request schema does not list
+//   it. From the first run of that body (2026-09-15 13:37 UTC, minutes after the
+//   release deploy) the provider refused every call: HTTP 403, no credit, 48 runs
+//   and counting, while every other DEX endpoint on the same key and the same
+//   Startup plan still answers 200. So the request carries `platformIds` again
+//   NEXT TO `limit` — the pair the provider's own published example uses — and
+//   the answer is still SPLIT by platform ourselves: every row names its own
+//   `pid`, and a row whose platform is not one of the four verified CMC DEX
+//   networks is DROPPED, never repaired. The request field is a question, not an
+//   identity; only `pid` decides which chain a row belongs to.
 //
 //   The response still carries three arrays: `newCreations`, `aboutGraduates`,
 //   `graduates`.
+//
+//   A refused request is not asked again every hour: the transport keeps an
+//   entitlement refusal in its negative cache (keyed by the exact params) for six
+//   hours, so a refusal costs nothing until it is re-tested, and a CORRECTED
+//   request is tried at the very next run.
 //
 // FOUR.MEME IS NOT COVERED. The audit names Pump.fun, Moonshot and Four.meme.
 // Four.meme launches on BNB Chain, which is NOT one of the four platforms this
@@ -67,7 +78,7 @@
 // concurrently against it.
 
 import { cmcRows, planAllows, estimateCmcCredits } from '../market-assets/cmc-capabilities.ts'
-import { CMC_DEX_NETWORKS, CMC_DEX_MEME_LIMIT, cmcDexRowIdentity, cmcDexNumber } from '../market-assets/cmc-dex.ts'
+import { CMC_DEX_NETWORKS, CMC_DEX_MEME_LIMIT, CMC_DEX_MEME_PLATFORM_ID, cmcDexRowIdentity, cmcDexNumber } from '../market-assets/cmc-dex.ts'
 import type { MarketAssetsContext } from '../market-assets/types.ts'
 import { CAPTURE_PROVIDER, hourBucket, schedulePolicy } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult } from './capture-jobs.ts'
@@ -80,12 +91,16 @@ export type MemeStage = typeof MEME_STAGES[number]
 const STAGE_RANK: Record<string, number> = { newCreations: 1, aboutGraduates: 2, graduates: 3 }
 
 /** Reporting order of the platforms we can recognise in the answer. It is no
- * longer a PROBE order: the endpoint has no platform filter, so there is nothing
- * to probe per platform. Solana leads because that is where the launchpads live. */
+ * longer a PROBE order: one call a run answers for all of them, and the rows are
+ * attributed by the `pid` each names. Solana leads because that is where the
+ * launchpads live, and it is also the platform the request itself names. */
 export const MEME_PLATFORM_ORDER = ['solana', 'base', 'ethereum', 'arbitrum'] as const
 /** Rows requested per stage array. The documented request field is `limit`. */
 export const MEME_LIMIT = CMC_DEX_MEME_LIMIT
-/** One unfiltered call answers for every platform at once. */
+/** The verified CMC DEX network the request names. A REQUEST field only: what a
+ * row belongs to is decided by the row's own `pid`, never by this. */
+export const MEME_PLATFORM_ID = CMC_DEX_MEME_PLATFORM_ID
+/** One call answers the board; rows are split by platform afterwards. */
 export const MEME_MAX_CALLS = 1
 /** Previous-snapshot read ceiling per platform. Three stage arrays of 25 is at
  * most 75 contracts, so 2,000 rows is more than a full day of hourly history
@@ -304,8 +319,12 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
 
     // ── ONE unfiltered call. The endpoint has no platform filter; asking four
     // times only spent four credits on the same question. ──
-    credits += estimateCmcCredits('dexMeme', { limit: String(MEME_LIMIT) })
-    const result = await deps.request('dexMeme', { limit: MEME_LIMIT }, ctx).catch(() => null)
+    const params = { platformIds: String(MEME_PLATFORM_ID), limit: MEME_LIMIT }
+    const result = await deps.request('dexMeme', params, ctx).catch(() => null)
+    // A snapshot or a remembered refusal answered without asking the provider, so
+    // it costs nothing: only a live call carries the estimate onto the result.
+    const origin = (result as { receipt?: { origin?: string } } | null)?.receipt?.origin
+    if (origin !== 'cache' && origin !== 'negative-cache') credits += estimateCmcCredits('dexMeme', { platformIds: String(MEME_PLATFORM_ID), limit: String(MEME_LIMIT) })
     let candidates: MemeCandidate[] = []
     let callState: string, callReason: string | null = null
     if (!result?.payload) {
