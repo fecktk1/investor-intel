@@ -1,7 +1,7 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   captureMemeStages, memeCandidates, stageBreakdown, hoursBetween, MEME_CAPTURE_OPS,
-  MEME_PLATFORM_ORDER, MEME_LIMIT, MEME_MAX_CALLS, MEME_STAGES,
+  MEME_PLATFORM_ORDER, MEME_LIMIT, MEME_MAX_CALLS, MEME_PLATFORM_ID, MEME_STAGES,
 } from './capture-meme.ts'
 import { cmcParams, cmcRequestBody } from '../market-assets/cmc-capabilities.ts'
 import { validateCmcDexResponse } from '../market-assets/cmc-dex.ts'
@@ -90,32 +90,40 @@ const ok = (payload: unknown) => ({ payload, state: 'fresh', reason: null, prove
 const board = (rows: Partial<Record<typeof MEME_STAGES[number], unknown[]>>) =>
   fakeRequest(() => ok(memePayload(rows)))
 
-Deno.test('one unfiltered call a run, asking with the documented `limit`', async () => {
+Deno.test('one call a run, asking with the platform the provider answers and the documented `limit`', async () => {
   const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const db = fakeDb()
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
-  eq(calls.length, 1, 'the provider has no platform filter; four calls asked the same question')
+  eq(calls.length, 1, 'one call answers the board; four calls asked the same question')
   eq(MEME_MAX_CALLS, 1)
   eq(calls[0].name, 'dexMeme')
   eq(Number(calls[0].params.limit), MEME_LIMIT)
-  // The three fields that produced the empty boards must never be sent again.
-  eq(Object.keys(calls[0].params).some((k) => ['platformIds', 'interval', 'pageSize', 'nextPageIndex'].includes(k)), false)
+  // `platformIds` is back: dropping it is what the 403 streak followed.
+  eq(String(calls[0].params.platformIds), String(MEME_PLATFORM_ID))
+  // The fields the endpoint never read are still not sent.
+  eq(Object.keys(calls[0].params).some((k) => ['interval', 'pageSize', 'nextPageIndex'].includes(k)), false)
   eq(result.credits, 1, 'one credit a run, not four')
   eq(result.rows, 1)
   eq(MEME_PLATFORM_ORDER, ['solana', 'base', 'ethereum', 'arbitrum'])
 })
 
-Deno.test('the registry refuses the parameters the endpoint does not read', () => {
-  // The bug, pinned: platformIds/interval/pageSize are not this endpoint's fields.
-  for (const key of ['platformIds', 'interval', 'pageSize', 'nextPageIndex']) {
+Deno.test('the registry sends the platform and the documented limit, and nothing else', () => {
+  // The fields this endpoint never read stay refused.
+  for (const key of ['interval', 'pageSize', 'nextPageIndex']) {
     let threw = ''
     try { cmcParams('dexMeme', { [key]: '16' }) } catch (e) { threw = (e as Error).message }
     eq(threw, `invalid_parameter:${key}`, key)
   }
-  // The documented shape, with `limit` defaulted and sent as an int32.
-  eq(cmcParams('dexMeme', {}), { limit: String(MEME_LIMIT) })
-  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', {})), { limit: MEME_LIMIT })
-  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', { protocol: 1, limit: 10 })), { protocol: 1, limit: 10 })
+  // An unverified platform is refused rather than asked about.
+  let platform = ''
+  try { cmcParams('dexMeme', { platformIds: '56' }) } catch (e) { platform = (e as Error).message }
+  eq(platform, 'unverified_dex_platform')
+  // The shape that is sent: a verified platform id and the documented limit.
+  eq(cmcParams('dexMeme', {}), { platformIds: String(MEME_PLATFORM_ID), limit: String(MEME_LIMIT) })
+  // `limit` is an int32 in the body; `platformIds` travels as the string the
+  // other discovery bodies use, which is the shape the provider answered 200 to.
+  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', {})), { platformIds: String(MEME_PLATFORM_ID), limit: MEME_LIMIT })
+  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', { platformIds: '199', protocol: 1, limit: 10 })), { platformIds: '199', protocol: 1, limit: 10 })
 })
 
 Deno.test('the validator accepts a multi-chain board and rejects an unbounded or malformed one', () => {
@@ -259,6 +267,21 @@ Deno.test('a provider that does not answer is an error, never a stored zero', as
   eq(writes.intel_meme_stage_snapshots, undefined, 'nothing is written when nothing was read')
   const platforms = result.platforms as Record<string, unknown>[]
   eq(platforms.map((p) => p.state), ['unavailable', 'unavailable', 'unavailable', 'unavailable'])
+})
+
+Deno.test('a refusal already remembered by the transport costs the lane nothing', async () => {
+  // The transport holds an entitlement refusal in its negative cache for six
+  // hours, so the hourly run is answered without a provider call. The receipt
+  // says where the answer came from, and the lane must not report a credit for it.
+  const { request, calls } = fakeRequest(() => ({
+    payload: null, state: 'unavailable', reason: 'insufficient_entitlement',
+    receipt: { capability: 'dexMeme', origin: 'negative-cache', httpStatus: 403, creditCount: null },
+  }))
+  const result = await captureMemeStages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [] })
+  eq(calls.length, 1, 'the lane still asks; the transport is what declines to spend')
+  eq(result.credits, 0, 'a remembered refusal is not an hourly credit')
+  eq(result.rows, 0)
+  eq(result.error, 'insufficient_entitlement', 'the refusal keeps its own name on the result')
 })
 
 Deno.test('an empty board is an honest empty capture with its reason, not a no-op', async () => {

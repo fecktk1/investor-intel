@@ -614,6 +614,7 @@
     "funnel_sub": "Il quadro delle fasi della SOLA acquisizione più recente, dalle nuove creazioni a quelle prossime alla graduazione fino alle graduate. L’anello esterno è la fase più grande; gli anelli al suo interno si leggono come una quota di essa. Questa è un’istantanea di un’ora, mai una somma sulla finestra.",
     "clock": "Gli elenchi di lanci vengono acquisiti una volta all’ora. Il fornitore non pubblica alcun orologio per un elenco di scoperta, quindi l’ora di acquisizione è la NOSTRA e ogni cifra oraria qui è il tempo trascorso da quando NOI abbiamo visto il contratto per la prima volta, non dal suo deploy. Four.meme non è coperta: lancia su BNB Chain, che non è una delle quattro piattaforme DEX di CoinMarketCap lette da questa corsia.",
     "empty_provider": "L’acquisizione oraria è stata eseguita e il fornitore non ha riportato alcun lancio per queste piattaforme all’ultima acquisizione.",
+    "empty_never": "Non è ancora archiviata alcuna acquisizione delle fasi di lancio. Le ricevute di acquisizione qui sopra mostrano quando l’acquisizione oraria è stata eseguita l’ultima volta e come ha risposto il fornitore.",
     "stage_new": "Nuove creazioni",
     "stage_about": "Prossime alla graduazione",
     "stage_graduates": "Graduate",

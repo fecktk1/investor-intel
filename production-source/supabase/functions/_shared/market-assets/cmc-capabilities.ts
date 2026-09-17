@@ -1,4 +1,4 @@
-import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexInteger,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_DEX_MEME_STAGES,CMC_DEX_MEME_LIMIT,CMC_HOLDER_TAGS} from './cmc-dex.ts'
+import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexInteger,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_DEX_MEME_STAGES,CMC_DEX_MEME_LIMIT,CMC_DEX_MEME_PLATFORM_ID,CMC_HOLDER_TAGS} from './cmc-dex.ts'
 /** Re-exported from cmc-dex.ts, where the response validators also need it. */
 export {CMC_HOLDER_TAGS}
 // Reviewed against official CMC endpoint references 2026-09-09. Access is a
@@ -95,18 +95,34 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   dexSwaps: cap('/v1/dex/tokens/transactions','structure',['platform','address','limit','lastId'],{demand:false,tier:'startup',rows:'swaps',ttl:120,stale:900,required:['address']}),
   dexTrending: cap('/v1/dex/tokens/trending/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900,rows:'leaderboardList'}),
   dexNew: cap('/v1/dex/new/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900,rows:'leaderboardList'}),
-  // /v1/dex/meme/list does NOT share the discovery request shape. Read against
-  // the published DEX token reference on 2026-09-15: the body is
+  // /v1/dex/meme/list does NOT share the discovery RESPONSE shape (three stage
+  // arrays, not `leaderboardList`), and its published request schema is
   // {protocol, exclusive, limit, newCreationFilter, aboutGraduateFilter,
-  // graduateFilter}, and platformIds / interval / pageSize / nextPageIndex are
-  // not accepted. Until 2026-09-15 this entry sent platformIds+interval+pageSize;
-  // the provider answered 200, error_code 0, 1 credit and three EMPTY arrays
-  // every time (36 calls, 252 bytes each, 2026-09-15 03:57-11:37 UTC), because
-  // none of the three fields it actually reads was present. `protocol` (protocol
-  // code) and `exclusive` (Binance exclusive flag) are documented but have NO
-  // published value list, so this platform does not guess at them: they stay
-  // registered and unsent, and only `limit` is defaulted.
-  dexMeme: cap('/v1/dex/meme/list','attention',['protocol','exclusive','limit'],{demand:false,method:'POST',tier:'startup',ttl:300,stale:900}),
+  // graduateFilter}.
+  //
+  // CORRECTED AGAIN 2026-09-17, on production evidence. On 2026-09-15 this entry
+  // dropped `platformIds` and sent the published body alone ({limit:25}). Every
+  // one of the 40 calls that carried `platformIds` was answered 200 with 1 credit
+  // (2026-09-15 03:57 to 12:37 UTC, three EMPTY arrays each); from the first run
+  // of the new body (13:37 UTC, minutes after the release deploy) every call has
+  // been refused HTTP 403, no credit, with a body that is not the documented CMC
+  // JSON error envelope, while every other DEX endpoint on the same key and the
+  // same Startup plan still answers 200. The request body is the only thing that
+  // changed at that minute.
+  //
+  // So `platformIds` is sent again, beside the documented `limit`. That pair is
+  // also the shape CoinMarketCap's own published example for this endpoint uses
+  // (academy article "How to Build a Four.Meme Token Sniper with CoinMarketCap
+  // API": body {"platformIds": <id>, "limit": 50}). The value is a verified CMC
+  // DEX network id, and the answer is still attributed row by row from each row's
+  // own `pid` rather than trusted to have been filtered, so a board that spans
+  // chains stays readable and a row on an unverified chain is dropped.
+  //
+  // `protocol` (1001 Pump.fun, 1002 Moonshot, 2001 Four.meme, published as the
+  // response field `pt`) and `exclusive` (Binance exclusive flag) stay registered
+  // and unsent: narrowing the board to one launchpad is a product decision, not a
+  // transport default.
+  dexMeme: cap('/v1/dex/meme/list','attention',['platformIds','protocol','exclusive','limit'],{demand:false,method:'POST',tier:'startup',ttl:300,stale:900}),
   dexGainers: cap('/v1/dex/gainer-loser/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900,rows:'leaderboardList'}),
   // Registered 2026-09-15 and probed the same day on the Startup key: every one of these cost one credit.
   // tag_count returns data.holders [{tag,hc,tb,hr}] with tags tag_dev, tag_sniper, tag_kol, tag_whale, tag_bot,
@@ -186,12 +202,17 @@ export function cmcParams(name: string, input: Record<string,unknown> = {}): Rec
   if (['id','crypto_id','rwa_id','exchange_id','slug','rwa_slug','exchange_slug','symbol','address'].filter(k=>out[k]).length>1) throw new Error('multiple_identifier_types')
   if(['quotes','metadata','rwaInfo','rwaQuotes'].includes(name)&&out.symbol) throw new Error('stable_identifier_required')
   if(name==='dexMeme'){
-    // The only field this endpoint reads that we are entitled to fill in. A
-    // request without it is what produced the empty boards: the provider answers
-    // 200 with three empty arrays rather than an error, so an absent limit would
-    // be an invisible failure. `protocol`/`exclusive` are never defaulted —
-    // their value lists are unpublished, and a guessed code is a wrong question.
+    // `limit` is the documented page field and is always sent: without it the
+    // provider answered 200 with three empty arrays rather than an error, which
+    // is an invisible failure. `platformIds` is the field whose REMOVAL the 403
+    // followed (see the registry entry above); it is defaulted to the launch
+    // chain this lane is about rather than to the discovery default, and it is
+    // still only a request field — the answer is attributed from each row's pid.
+    // `protocol`/`exclusive` are never defaulted: a guessed code is a wrong
+    // question, even when the value list is published.
+    out.platformIds||=String(CMC_DEX_MEME_PLATFORM_ID)
     out.limit||=String(CMC_DEX_MEME_LIMIT)
+    if(!CMC_DEX_NETWORKS.some(n=>String(n.platformId)===out.platformIds))throw new Error('unverified_dex_platform')
     if(!/^[1-9][0-9]*$/.test(out.limit)||Number(out.limit)>250)throw new Error('invalid_discovery_page_size')
     for(const key of ['protocol','exclusive'])if(out[key]!=null&&!/^\d+$/.test(out[key]))throw new Error(`invalid_parameter:${key}`)
   }else if(isDexDiscovery(name)){
@@ -277,9 +298,12 @@ export function cmcParams(name: string, input: Record<string,unknown> = {}): Rec
  * caller never supplies JSON. List and numeric shapes are restored per
  * registered capability so the body matches the documented request schema. */
 export function cmcRequestBody(name: string, params: Record<string,string>): Record<string,unknown> {
-  // Every documented field of /v1/dex/meme/list is an int32; a JSON string where
+  // Every DOCUMENTED field of /v1/dex/meme/list is an int32; a JSON string where
   // the provider expects a number is another way to be silently ignored.
-  if(name==='dexMeme') return Object.fromEntries(Object.entries(params).map(([k,v])=>[k,Number(v)]))
+  // `platformIds` is not in that schema: it is sent exactly as the other
+  // discovery bodies send it (and as the provider's own example sends it), a
+  // string, because that is the shape this endpoint answered 200 to.
+  if(name==='dexMeme') return Object.fromEntries(Object.entries(params).map(([k,v])=>[k,k==='platformIds'?v:Number(v)]))
   if(isDexDiscovery(name)) return {...params,pageSize:Number(params.pageSize)}
   const body: Record<string,unknown>={...params}
   if(params.limit!=null) body.limit=Number(params.limit)

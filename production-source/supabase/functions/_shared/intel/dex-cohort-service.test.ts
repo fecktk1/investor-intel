@@ -22,29 +22,30 @@ Deno.test('discovery membership preserves exact contracts, zero and its source c
  const invalid={data:{leaderboardList:[{...row,pid:1}]}};assertThrows(()=>dexCohortMembers('dexNew',invalid,params,date,date),Error,'invalid_dex_cohort_source')
  const future=dexCohortMembers('dexNew',{data:{leaderboardList:[{...row,pt:now/1000+1}]}},params,date,date).members[0];eq(future.initialPrice,null);eq(future.initialObservedAt,null)
 })
-// CORRECTED 2026-09-15. /v1/dex/meme/list takes {protocol, exclusive, limit} and
-// has NO platform filter, so the board legitimately spans every chain the provider
-// indexes. The pin is OURS: we ask once with `limit` only, then attribute rows to
-// the requested platform by the `pid` each row names.
-const memeParams=cmcParams('dexMeme',{}),solRow={pid:16,addr:'So11111111111111111111111111111111111111112',n:'Sol meme',sym:'SOLM',p:0,mcap:0,pt:(now-2000)/1000}
+// CORRECTED 2026-09-17. /v1/dex/meme/list carries `platformIds` beside the
+// documented `limit` again (dropping it is what the 403 streak followed), but the
+// answer is still not trusted to have been filtered: the board legitimately spans
+// every chain the provider indexes, and rows are attributed by the `pid` each row
+// names, with anything else dropped and counted.
+const memeParams=cmcParams('dexMeme',{}),memeParamsBase=cmcParams('dexMeme',{platformIds:'199'}),solRow={pid:16,addr:'So11111111111111111111111111111111111111112',n:'Sol meme',sym:'SOLM',p:0,mcap:0,pt:(now-2000)/1000}
 const memeBody={data:{newCreations:[row],aboutGraduates:[row,solRow],graduates:[]}}
 Deno.test('a meme board is split by the pid each row names; other platforms are dropped and counted',()=>{
- // The pinned platform gets only its own rows, and a contract on two stage lists
- // stays ONE member carrying both stages.
- const base=dexCohortMembers('dexMeme',memeBody,memeParams,date,date,199)
+ // The platform asked for gets only its own rows, and a contract on two stage
+ // lists stays ONE member carrying both stages.
+ const base=dexCohortMembers('dexMeme',memeBody,memeParamsBase,date,date)
  eq(base.members.map(m=>m.subject),['eip155:8453:'+address]);eq(base.members.map(m=>m.stages),[['newCreations','aboutGraduates']])
  eq(base.dropped,1,'the solana row is not ours, and is not repaired into a base identity')
- const solana=dexCohortMembers('dexMeme',memeBody,memeParams,date,date,16)
+ const solana=dexCohortMembers('dexMeme',memeBody,memeParams,date,date)
  eq(solana.members.map(m=>m.subject),['solana:'+solRow.addr]);eq(solana.dropped,2)
- // An empty board for the pinned platform is an honest empty, not a throw.
- eq(dexCohortMembers('dexMeme',{data:{newCreations:[],aboutGraduates:[],graduates:[]}},memeParams,date,date,199),{members:[],dropped:0})
- // Fail-closed survives only where the answer is MALFORMED, or the pin is not ours.
- assertThrows(()=>dexCohortMembers('dexMeme',{data:{newCreations:[]}},memeParams,date,date,199),Error,'invalid_dex_cohort_source')
- assertThrows(()=>dexCohortMembers('dexMeme',memeBody,memeParams,date,date,56),Error,'invalid_dex_cohort_platform')
- assertThrows(()=>dexCohortMembers('dexMeme',memeBody,memeParams,date,date),Error,'invalid_dex_cohort_platform')
- assertThrows(()=>dexCohortMembers('dexMeme',{data:{...memeBody.data,graduates:[{...row,p:1}]}},memeParams,date,date,199),Error,'dex_cohort_conflicting_duplicate')
- // The pin is never sent upstream: the endpoint has no platform field to put it in.
- assertThrows(()=>cmcParams('dexMeme',{platformIds:'199'}),Error,'invalid_parameter:platformIds')
+ // An empty board for the platform asked about is an honest empty, not a throw.
+ eq(dexCohortMembers('dexMeme',{data:{newCreations:[],aboutGraduates:[],graduates:[]}},memeParamsBase,date,date),{members:[],dropped:0})
+ // Fail-closed survives only where the answer is MALFORMED, or the platform is not ours.
+ assertThrows(()=>dexCohortMembers('dexMeme',{data:{newCreations:[]}},memeParamsBase,date,date),Error,'invalid_dex_cohort_source')
+ assertThrows(()=>dexCohortMembers('dexMeme',memeBody,{limit:'25'},date,date),Error,'invalid_dex_cohort_platform')
+ assertThrows(()=>dexCohortMembers('dexMeme',{data:{...memeBody.data,graduates:[{...row,p:1}]}},memeParamsBase,date,date),Error,'dex_cohort_conflicting_duplicate')
+ // The platform travels WITH the request now; an unverified one is never asked about.
+ eq(memeParams.platformIds,'16');eq(memeParamsBase.platformIds,'199')
+ assertThrows(()=>cmcParams('dexMeme',{platformIds:'56'}),Error,'unverified_dex_platform')
  // A leaderboard answer WAS pinned in the request, so a foreign row is malformed.
  assertThrows(()=>dexCohortMembers('dexNew',{data:{leaderboardList:[solRow]}},params,date,date),Error,'invalid_dex_cohort_source')
 })
@@ -55,15 +56,15 @@ Deno.test('capture binds the reviewed response, retries preserve original member
  eq(first.cohort.source_reference.payloadHash,input.payloadHash);eq(first.cohort.created_at,new Date(now).toISOString())
  eq(first.quotes?.rows[0].observation,null)
 })
-Deno.test('a meme cohort captures one platform out of one unfiltered call, and an empty board is not a failure',async()=>{
+Deno.test('a meme cohort captures one platform out of one call, and an empty board is not a failure',async()=>{
  const memeFixture=(body:any)=>{const f=fixture();f.state.requests.length=0
   return {...f,request:async(...args:any[])=>{f.state.requests.push(args);return {state:'fresh',payload:body,provenance,reason:null} as any}}}
- const memeInput=async(body:any,platformIds:string)=>{const r=await marketSourceReference('dexMeme',memeParams,body,provenance)
-  return {operation:'capture',capability:r.capability,parameters:{...r.parameters,platformIds},payloadHash:r.payloadHash,retrievedAt:r.retrievedAt}}
+ const memeInput=async(body:any,platformIds:string)=>{const r=await marketSourceReference('dexMeme',cmcParams('dexMeme',{platformIds}),body,provenance)
+  return {operation:'capture',capability:r.capability,parameters:r.parameters,payloadHash:r.payloadHash,retrievedAt:r.retrievedAt}}
  const {db,state,request}=memeFixture(memeBody)
  const captured=await dexCohortService(db,await memeInput(memeBody,'199'),actor,now,request)
- eq(state.requests.length,1,'one unfiltered call a capture')
- eq(state.requests[0][1],{limit:'25'},'the pin is ours and never reaches the provider')
+ eq(state.requests.length,1,'one call a capture')
+ eq(state.requests[0][1],{platformIds:'199',limit:'25'},'the platform travels with the request')
  eq(captured.cohort.members.map((m:any)=>m.subject),['eip155:8453:'+address])
  eq(captured.cohort.name,'Meme discovery · Base')
  // The same board pinned to another platform is a DIFFERENT cohort, not a collision.

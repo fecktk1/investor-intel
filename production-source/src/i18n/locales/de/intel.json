@@ -614,6 +614,7 @@
     "funnel_sub": "Die Phasentafel ausschließlich der NEUESTEN Erfassung, von neuen Erstellungen über kurz vor der Graduierung bis zu den Graduierten. Der äußere Ring ist die größte Phase; die Ringe darin werden als Anteil daran gelesen. Das ist eine Momentaufnahme einer Stunde, nie eine Summe über das Zeitfenster.",
     "clock": "Die Launch-Listen werden einmal pro Stunde erfasst. Der Anbieter veröffentlicht für eine Entdeckungsliste keinen Zeitstempel, daher ist die Erfassungsstunde UNSERE, und jede Stundenangabe hier ist die Zeit, seit WIR den Vertrag zuerst gesehen haben, nicht seit seiner Bereitstellung. Four.meme ist nicht abgedeckt: es startet auf der BNB Chain, die keine der vier CoinMarketCap-DEX-Plattformen ist, die diese Spur liest.",
     "empty_provider": "Die stündliche Erfassung lief und der Anbieter hat bei der letzten Erfassung keine Launches für diese Plattformen gemeldet.",
+    "empty_never": "Es ist noch keine Erfassung der Launch-Phasen gespeichert. Die Erfassungsbelege oben zeigen, wann die stündliche Erfassung zuletzt lief und wie der Anbieter geantwortet hat.",
     "stage_new": "Neue Erstellungen",
     "stage_about": "Kurz vor der Graduierung",
     "stage_graduates": "Graduierte",
