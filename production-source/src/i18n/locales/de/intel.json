@@ -574,6 +574,10 @@
     "ring_sub_none": "Nichts, was die Erfassung aufgezeichnet hat, beginnt innerhalb dieses Zeitfensters."
   },
   "listings": {
+    "note_no_contract": "Kein Vertrag zum Prüfen",
+    "note_budget": "Noch nicht geprüft",
+    "note_no_record": "Kein Sicherheitseintrag",
+    "note_captured": "Kein Flag-Dokument",
     "eyebrow": "Neue Listings",
     "title": "Due Diligence für neue Listings",
     "subtitle": "Jedes Asset, das die tägliche Listing-Erfassung um 06:10 UTC aufgezeichnet hat, aufgebaut aus ihrem neuesten Snapshot, daneben die Sicherheits-Flags, die der Anbieter für seinen Vertrag gemeldet hat. Der Lauf prüft höchstens fünfundzwanzig Verträge pro Tag, daher ist der größte Teil einer Kohorte tatsächlich ungeprüft, und ein Listing, das niemand angesehen hat, wird nie als sauber dargestellt.",
@@ -645,6 +649,7 @@
     "col_market_cap": "Marktkapitalisierung"
   },
   "network": {
+    "plan_note": "Netzwerkstatistiken werden im CoinMarketCap-Tarif dieses Workspace nicht erfasst.",
     "title": "Netzwerkgesundheit",
     "eyebrow": "Netzwerkgesundheit",
     "sub": "Was die Chains selbst bei der letzten Erfassung gemeldet haben. Jede Anzeige nennt die Chain, die sie gelesen hat; eine Chain, die keine Zahl veröffentlicht hat, wird nicht aus einer anderen abgeleitet.",
@@ -1116,6 +1121,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "Im Tarif dieses Workspace nicht erfasst.",
+    "state_not_applicable": "Für diese Abbildung gibt es nichts zu prüfen.",
+    "state_no_data": "Noch nichts erfasst.",
     "empty": "Für dieses Diagramm sind keine Beobachtungen verfügbar.",
     "legend": "Reihen",
     "no_reason": "Es wurde kein Grund gemeldet.",

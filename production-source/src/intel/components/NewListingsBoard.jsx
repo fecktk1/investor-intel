@@ -100,6 +100,28 @@ export function listingStateText(t, state) {
   return code || t('listings.state_unknown', { defaultValue: 'Nothing was inspected and the capture recorded no reason.' })
 }
 
+// The same bounded reasons as a SHORT phrase, and the empty-state kind each one
+// is. Every one of them is an absence the capture records on purpose, so none
+// of them is an error: a board of thirty listings must not repeat a paragraph
+// thirty times. The full sentence above stays on the figure's title attribute,
+// so provenance is a hover away and the table twin is unchanged. A reason the
+// capture did not bound — a provider string, or nothing at all — is NOT in this
+// map and keeps the failure tone it has today.
+const STATE_NOTE = {
+  no_contract_on_verified_chain: ['not_applicable', 'listings.note_no_contract', 'No contract to inspect'],
+  due_diligence_budget: ['no_data', 'listings.note_budget', 'Not inspected yet'],
+  no_security_record: ['no_data', 'listings.note_no_record', 'No security record'],
+  captured: ['no_data', 'listings.note_captured', 'No flag document'],
+}
+
+/** { kind, note } for a bounded capture reason, or null when the reason is not
+ *  one the capture lane records on purpose. */
+export function listingStateNote(t, state) {
+  const known = STATE_NOTE[String(state ?? '').trim()]
+  if (!known) return null
+  return { kind: known[0], note: t(known[1], { defaultValue: known[2] }) }
+}
+
 /** The route the symbol cell opens: the CoinMarketCap identity, by id, with the
  *  symbol as the path label only. A row with no provider id is not linked —
  *  a guessed ticker is not an identity. */
@@ -111,6 +133,9 @@ export function listingHref(row) {
 
 function RowRisk({ row, t }) {
   const risk = listingRisk(row)
+  // An expected absence collapses to its short phrase; anything else keeps the
+  // failure tone, because an unbounded reason IS a failure.
+  const calm = risk.state === 'ready' ? null : listingStateNote(t, risk.reason)
   const label = row?.symbol || row?.name || String(row?.providerId ?? '—')
   const title = t('listings.gauge_title', { symbol: label, defaultValue: '{{symbol}} reported flags' })
   const max = Math.max(1, risk.items)
@@ -133,6 +158,8 @@ function RowRisk({ row, t }) {
       formatValue={value => fmtNum(value)}
       height={72}
       state={risk.state === 'ready' ? 'ready' : 'error'}
+      kind={calm ? calm.kind : 'error'}
+      note={calm ? calm.note : undefined}
       reason={risk.state === 'ready' ? undefined : listingStateText(t, risk.reason)}
     />
   )

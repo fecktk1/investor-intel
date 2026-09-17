@@ -574,6 +574,10 @@
     "ring_sub_none": "Nulla di ciò che l’acquisizione ha registrato inizia in questa finestra."
   },
   "listings": {
+    "note_no_contract": "Nessun contratto da ispezionare",
+    "note_budget": "Non ancora ispezionato",
+    "note_no_record": "Nessuna registrazione di sicurezza",
+    "note_captured": "Nessun documento dei flag",
     "eyebrow": "Nuove quotazioni",
     "title": "Due diligence delle nuove quotazioni",
     "subtitle": "Ogni asset registrato dall’acquisizione giornaliera delle quotazioni delle 06:10 UTC, costruita dal suo snapshot più recente, con accanto i flag di sicurezza che il fornitore ha riportato per il suo contratto. L’esecuzione ispeziona al massimo venticinque contratti al giorno, quindi gran parte di una coorte non è davvero ispezionata, e una quotazione che nessuno ha esaminato non viene mai mostrata come pulita.",
@@ -645,6 +649,7 @@
     "col_market_cap": "Capitalizzazione di mercato"
   },
   "network": {
+    "plan_note": "Le statistiche di rete non vengono acquisite con il piano CoinMarketCap di questo workspace.",
     "title": "Salute della rete",
     "eyebrow": "Salute della rete",
     "sub": "Ciò che le chain stesse hanno riportato all’ultima acquisizione. Ogni indicatore nomina la chain che ha letto; una chain che non ha pubblicato una cifra non viene ricavata da un’altra.",
@@ -1116,6 +1121,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "Non acquisito con il piano di questo workspace.",
+    "state_not_applicable": "Non c’è nulla da ispezionare per questa figura.",
+    "state_no_data": "Non è ancora stato acquisito nulla.",
     "empty": "Non ci sono osservazioni disponibili per questo grafico.",
     "legend": "Serie",
     "no_reason": "Non è stato riportato alcun motivo.",

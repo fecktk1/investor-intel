@@ -13,9 +13,15 @@ import { formatCompact } from '../lib/market-format'
 // PLAN GATE. CoinMarketCap publishes blockchain statistics from the Growth plan
 // upwards. On the plan this workspace runs the capture lane is skipped and the
 // read answers `rows: []` with `reason: 'plan_below_growth'` — a successful read
-// that reports nothing. The strip then renders all three gauges in their
-// unavailable state carrying that sentence. It must never fall back to a
-// derived, interpolated or remembered series: an unread network is unread.
+// that reports nothing. That is an EXPECTED absence, not a failure, so the strip
+// keeps its heading and says so ONCE, in one calm line where the three gauges
+// would have stood; three empty frames each carrying the same paragraph read as
+// a broken page. The full sentence stays on the line's title attribute and in
+// the `network_stats` lane of the page's capture receipts, so provenance is not
+// lost. A read that genuinely failed still reports itself on every figure.
+//
+// It must never fall back to a derived, interpolated or remembered series: an
+// unread network is unread.
 
 const PLAN_REASON = 'plan_below_growth'
 // One row per chain in reading order; the metric each chain is asked for first.
@@ -88,8 +94,9 @@ export default function NetworkHealthStrip() {
   const failed = read.status === 'unavailable'
   const stated = failed ? read.reason : bodyReason
 
+  const planGated = stated != null && String(stated) === PLAN_REASON
   const reason = stated
-    ? (String(stated) === PLAN_REASON
+    ? (planGated
         ? t('network.reason_plan', {
             defaultValue: 'CoinMarketCap publishes blockchain statistics from the Growth plan upwards; this workspace is below it, so the network lane is skipped and nothing was captured.',
           })
@@ -120,32 +127,40 @@ export default function NetworkHealthStrip() {
   return (
     <section className="intel-network-health space-y-2" aria-label={t('network.title', { defaultValue: 'Network health' })}>
       <div className="eyebrow">{t('network.eyebrow', { defaultValue: 'Network health' })}</div>
-      <p className="page-sub max-w-3xl">
-        {t('network.sub', { defaultValue: 'What the chains themselves reported at the last capture. Each gauge names the chain it read; a chain that did not publish a figure is not drawn from another one.' })}
-      </p>
-      <div className="grid gap-x-8 gap-y-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 17rem), 1fr))', alignItems: 'start' }}>
-        {gauges.map(gauge => {
-          const value = gauge.metric?.value ?? null
-          const state = reason ? 'error' : value == null ? 'empty' : 'ready'
-          const max = niceCeiling(value)
-          return (
-            <RadialGauge
-              key={gauge.key}
-              title={gauge.title}
-              description={gauge.metric?.symbol
-                ? `${gauge.description} ${t('network.read_from', { symbol: gauge.metric.symbol, defaultValue: 'Read from {{symbol}}.' })}`
-                : gauge.description}
-              value={value}
-              min={0}
-              max={max}
-              zones={value == null ? [] : [{ label: gauge.metric?.symbol || '—', to: max, tone: 'accent' }]}
-              formatValue={gaugeFormat}
-              state={state}
-              reason={reason}
-            />
-          )
-        })}
-      </div>
+      {planGated ? (
+        // One line in place of the whole group. The heading stays, so the lane is
+        // visibly still part of the page rather than quietly removed.
+        <p className="intel-chart-kit-note" role="status" title={reason} data-testid="network-plan-note">
+          {t('network.plan_note', { defaultValue: 'Network statistics are not captured on this workspace’s CoinMarketCap plan.' })}
+        </p>
+      ) : (<>
+        <p className="page-sub max-w-3xl">
+          {t('network.sub', { defaultValue: 'What the chains themselves reported at the last capture. Each gauge names the chain it read; a chain that did not publish a figure is not drawn from another one.' })}
+        </p>
+        <div className="grid gap-x-8 gap-y-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 17rem), 1fr))', alignItems: 'start' }}>
+          {gauges.map(gauge => {
+            const value = gauge.metric?.value ?? null
+            const state = reason ? 'error' : value == null ? 'empty' : 'ready'
+            const max = niceCeiling(value)
+            return (
+              <RadialGauge
+                key={gauge.key}
+                title={gauge.title}
+                description={gauge.metric?.symbol
+                  ? `${gauge.description} ${t('network.read_from', { symbol: gauge.metric.symbol, defaultValue: 'Read from {{symbol}}.' })}`
+                  : gauge.description}
+                value={value}
+                min={0}
+                max={max}
+                zones={value == null ? [] : [{ label: gauge.metric?.symbol || '—', to: max, tone: 'accent' }]}
+                formatValue={gaugeFormat}
+                state={state}
+                reason={reason}
+              />
+            )
+          })}
+        </div>
+      </>)}
     </section>
   )
 }

@@ -574,6 +574,10 @@
     "ring_sub_none": "Asgjë nga ç'ka regjistroi kapja nuk nis brenda kësaj dritareje."
   },
   "listings": {
+    "note_no_contract": "Asnjë kontratë për inspektim",
+    "note_budget": "Ende i painspektuar",
+    "note_no_record": "Asnjë regjistrim sigurie",
+    "note_captured": "Asnjë dokument shenjash",
     "eyebrow": "Listimet e reja",
     "title": "Due diligence për listimet e reja",
     "subtitle": "Çdo aktiv që regjistroi kapja ditore e listimeve në 06:10 UTC, ndërtuar nga gjendja e tij më e re, me shenjat e sigurisë që ofruesi raportoi për kontratën e tij pranë. Ekzekutimi inspekton më së shumti njëzet e pesë kontrata në ditë, prandaj pjesa më e madhe e një kohorte mbetet vërtet e painspektuar, dhe një listim që nuk e ka parë askush nuk shfaqet kurrë si i pastër.",
@@ -645,6 +649,7 @@
     "col_market_cap": "Kapitalizimi i tregut"
   },
   "network": {
+    "plan_note": "Statistikat e rrjetit nuk kapen në planin CoinMarketCap të kësaj hapësire pune.",
     "title": "Shëndeti i rrjetit",
     "eyebrow": "Shëndeti i rrjetit",
     "sub": "Çfarë raportuan vetë rrjetet në kapjen e fundit. Secili matës emërton rrjetin që lexoi; një rrjet që nuk publikoi shifër nuk vizatohet nga një tjetër.",
@@ -1116,6 +1121,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "Nuk kapet në planin e kësaj hapësire pune.",
+    "state_not_applicable": "Nuk ka asgjë për të inspektuar për këtë figurë.",
+    "state_no_data": "Ende nuk është kapur asgjë.",
     "empty": "Nuk ka vëzhgime të disponueshme për këtë grafik.",
     "legend": "Seritë",
     "no_reason": "Nuk u raportua asnjë arsye.",
