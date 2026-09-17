@@ -3179,7 +3179,8 @@
     "research_heading": "Marktkontext",
     "sections": "Auf dieser Asset-Seite",
     "workspace": "Preis, Position und Recherche",
-    "restoring_chart": "Dein zuletzt verlassener Chart wird wiederhergestellt…"
+    "restoring_chart": "Dein zuletzt verlassener Chart wird wiederhergestellt…",
+    "contract_address": "Vertragsadresse"
   },
   "coverage": {
     "available_count": "{{available}} von {{total}} Abschnitten verfügbar",
@@ -3931,5 +3932,10 @@
     "base_rate_resolved": "Basisrate über alle deine aufgelösten Thesen",
     "no_resolved": "Keine aufgelösten Thesen",
     "base_rate_line": "Basisrate: {{successes}} von {{n}} aufgelösten Thesen über alle Ausrichtungen wurden bestätigt oder teilweise bestätigt ({{rate}}). Offene Thesen werden nicht gezählt."
+  },
+  "copy_address": {
+    "copy": "Vertragsadresse kopieren",
+    "copied": "Kopiert",
+    "manual": "Dieser Browser kopiert nicht für uns. Die vollständige Adresse ist markiert, kopiere sie mit der Tastatur."
   }
 }

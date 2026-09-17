@@ -5,6 +5,7 @@ import { useSupabase } from '../../lib/useSupabase'
 import { useScreenParams } from '../lib/useScreenParams'
 import { HeatStrip, RadialBars, Sunburst } from '../charts'
 import { readAssetFacts } from '../lib/markets-api'
+import CopyAddress from './CopyAddress'
 import { formatCompact, formatPct, formatUsd } from '../lib/market-format'
 
 // What the provider has actually recorded about this asset: how much of its
@@ -244,6 +245,19 @@ export default function AssetFactsPanel({ sourceProvider, providerId, symbol }) 
           : t('asset_facts.deployment_many', { defaultValue: '{{addresses}} addresses', addresses: Number(value) || 0 }))}
         state={deployments.length ? 'ready' : 'empty'}
       />
+      {/* The sunburst names every chain; this list is where a reader actually
+          takes an address away with them. The arc label is a drawing, not a
+          value, so the copy control beside each row writes the full address. */}
+      {deployments.length > 0 && (
+        <ul className="intel-asset-facts-addresses space-y-1">
+          {deployments.map(deployment => (
+            <li key={`${deployment.platformSlug || deployment.platformName || deployment.chain}:${deployment.address}`} className="flex flex-wrap items-baseline gap-2 text-[12px]">
+              <span className="text-[var(--fg-4)]">{String(deployment.chain || deployment.platformName || deployment.platformSlug || '—')}</span>
+              <CopyAddress value={deployment.address} />
+            </li>
+          ))}
+        </ul>
+      )}
 
       {/* (d) Listing age and its cohort */}
       <div className="intel-asset-facts-age space-y-2">

@@ -3179,7 +3179,8 @@
     "research_heading": "Contexto de mercado",
     "sections": "Nesta página do ativo",
     "workspace": "Preço, posição e pesquisa",
-    "restoring_chart": "Restaurando o gráfico que você deixou…"
+    "restoring_chart": "Restaurando o gráfico que você deixou…",
+    "contract_address": "Endereço do contrato"
   },
   "coverage": {
     "available_count": "{{available}} de {{total}} seções disponíveis",
@@ -3931,5 +3932,10 @@
     "base_rate_resolved": "Taxa base de todas as suas teses resolvidas",
     "no_resolved": "Nenhuma tese resolvida",
     "base_rate_line": "Taxa base: {{successes}} de {{n}} teses resolvidas, em todas as posições, foram confirmadas ou confirmadas em parte ({{rate}}). Teses abertas não são contadas."
+  },
+  "copy_address": {
+    "copy": "Copiar o endereço do contrato",
+    "copied": "Copiado",
+    "manual": "Este navegador não copia por nós. O endereço completo está selecionado, copie-o com o teclado."
   }
 }

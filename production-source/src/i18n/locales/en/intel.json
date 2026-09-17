@@ -3179,7 +3179,8 @@
     "research_heading": "Market context",
     "sections": "On this asset page",
     "workspace": "Price, position and research",
-    "restoring_chart": "Restoring the chart you left…"
+    "restoring_chart": "Restoring the chart you left…",
+    "contract_address": "Contract address"
   },
   "coverage": {
     "available_count": "{{available}} of {{total}} sections available",
@@ -3931,5 +3932,10 @@
     "base_rate_resolved": "Base rate across all your resolved theses",
     "no_resolved": "No resolved theses",
     "base_rate_line": "Base rate: {{successes}} of {{n}} resolved theses across every stance were confirmed or partially confirmed ({{rate}}). Open theses are not counted."
+  },
+  "copy_address": {
+    "copy": "Copy contract address",
+    "copied": "Copied",
+    "manual": "This browser will not copy for us. The full address is selected, so copy it with your keyboard."
   }
 }

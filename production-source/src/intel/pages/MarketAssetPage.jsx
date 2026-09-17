@@ -23,6 +23,7 @@ import { useMarketPortfolioIdentity } from '../lib/useMarketPortfolioIdentity'
 import {useMarketQuote} from '../lib/useMarketQuote'
 import TokenAvatar from '../components/TokenAvatar'
 import AssetPortfolioPosition from '../components/AssetPortfolioPosition'
+import CopyAddress from '../components/CopyAddress'
 import { fmtPrice, fmtPct, fmtVol, fmtNum, pctClass, bucketConfidence } from '../lib/market-format'
 import { useDisplayCurrency } from '../lib/display-currency'
 import MarketSignalBadge from '../components/MarketSignalBadge'
@@ -300,6 +301,14 @@ export default function MarketAssetPage() {
             {riskAddress&&selectedNetwork?.chain&&<TokenRiskBadge key={canonicalKey} symbol={sym} chain={selectedNetwork.chain} address={riskAddress} />}
           </div>
           {d.bestPair && <p className="page-sub font-mono text-[12px]">{PROVIDER_LABELS[d.bestProvider] || d.bestProvider} · {d.bestPair}</p>}
+          {/* The contract this page IS. A reader who has to carry it into an
+              explorer or a wallet should never have to transcribe it off the
+              screen, so the short form is a label with the full address on its
+              title and the copy control writes the full address. */}
+          {riskAddress && <p className="page-sub text-[12px] flex flex-wrap items-baseline gap-2">
+            <span className="text-[var(--fg-4)]">{t('asset.contract_address', { defaultValue: 'Contract address' })}</span>
+            <CopyAddress value={riskAddress} />
+          </p>}
           {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'&&d.sourceFreshness!=='cached'?` · ${d.sourceFreshness}`:''}</p>}
           {/* Play 1 and 7: what answered the quote (the minute refresh replaces
               these with its own receipts) and what the price does not mean. */}

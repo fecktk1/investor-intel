@@ -3179,7 +3179,8 @@
     "research_heading": "Marktcontext",
     "sections": "Op deze activumpagina",
     "workspace": "Prijs, positie en research",
-    "restoring_chart": "Je laatst verlaten grafiek herstellen…"
+    "restoring_chart": "Je laatst verlaten grafiek herstellen…",
+    "contract_address": "Contractadres"
   },
   "coverage": {
     "available_count": "{{available}} van {{total}} secties beschikbaar",
@@ -3931,5 +3932,10 @@
     "base_rate_resolved": "Basispercentage over al jouw afgeronde theses",
     "no_resolved": "Geen afgeronde theses",
     "base_rate_line": "Basispercentage: {{successes}} van {{n}} afgeronde theses over alle standpunten zijn bevestigd of deels bevestigd ({{rate}}). Open theses worden niet meegeteld."
+  },
+  "copy_address": {
+    "copy": "Contractadres kopiëren",
+    "copied": "Gekopieerd",
+    "manual": "Deze browser kopieert niet voor ons. Het volledige adres is geselecteerd, kopieer het met je toetsenbord."
   }
 }
