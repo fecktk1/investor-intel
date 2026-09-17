@@ -202,7 +202,12 @@ Deno.test('recent is the newest sighting per contract, capped at fifty', async (
   const recent = result.recent as Record<string, unknown>[]
   eq(recent.length, 50)
   eq(new Set(recent.map((r) => r.contractAddress)).size, 50, 'one row per contract')
-  eq(Object.keys(recent[0]).sort(), ['capturedAt', 'chain', 'contractAddress', 'firstSeenAt', 'marketCap', 'name', 'stage', 'symbol'])
+  // Every key the page had before 20260917184100 is still here; the launchpad
+  // source added provenance and bonding-curve fields beside them.
+  eq(Object.keys(recent[0]).sort(), [
+    'capturedAt', 'chain', 'completedAt', 'contractAddress', 'fdv', 'firstSeenAt', 'graduationPct',
+    'launchpad', 'launchpadLabel', 'marketCap', 'migrationPool', 'name', 'source', 'stage', 'symbol',
+  ])
 })
 
 Deno.test('a chain filter narrows every part of the answer', async () => {

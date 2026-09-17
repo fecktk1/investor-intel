@@ -1,7 +1,7 @@
 import { assert, assertEquals } from 'https://deno.land/std@0.208.0/assert/mod.ts'
 import {
   ACCOUNT_SYNC_CURRENT_SECONDS, HEALTH_CACHE_CONTROL, HEALTH_LANES, SLACK_SECONDS, createHealthHandler, deriveHealth,
-  laneState, type HealthInput, type LaneRead, type LaneSpec,
+  laneState, collectHealth, type HealthInput, type LaneRead, type LaneSpec,
 } from './health.ts'
 
 const NOW = Date.parse('2026-09-16T21:00:00Z')
@@ -85,6 +85,34 @@ Deno.test('every registered lane names a distinct lane, a table and a positive s
     assert(/^[a-z_]+$/.test(spec.table) && /^[a-z_]+$/.test(spec.column), spec.lane)
     assert(spec.scheduleSeconds > 0, spec.lane)
   }
+})
+
+Deno.test('a table more than one lane writes is read through a filter, so one lane cannot report the other as fresh', () => {
+  const shared = new Map<string, LaneSpec[]>()
+  for (const spec of HEALTH_LANES) shared.set(spec.table, [...(shared.get(spec.table) ?? []), spec])
+  for (const [table, specs] of shared) {
+    if (specs.length < 2) continue
+    for (const spec of specs) assert(spec.filter, `${spec.lane} shares ${table} but reads it unfiltered`)
+    assertEquals(new Set(specs.map((s) => s.filter)).size, specs.length, `${table} lanes share a filter`)
+  }
+  // The two meme-graduation lanes are the case this rule exists for.
+  const meme = HEALTH_LANES.find((l) => l.lane === 'meme_stages')!
+  const launchpads = HEALTH_LANES.find((l) => l.lane === 'launchpad_stages')!
+  assertEquals(meme.table, launchpads.table)
+  assertEquals(meme.filter, 'source=eq.coinmarketcap')
+  assertEquals(launchpads.filter, 'source=eq.coingecko')
+  assertEquals(launchpads.policyProvider, 'coingecko')
+  assertEquals(launchpads.policyFeature, 'launchpad_stages')
+  // New, and its key tier is not yet proven in production: it must not be able
+  // to turn the public route amber on its own.
+  assertEquals(launchpads.required, false)
+})
+
+Deno.test('a lane filter reaches the PostgREST query', async () => {
+  const rest = fakeRest()
+  await collectHealth({ supabaseUrl: 'https://db.test', serviceKey: 'k', fetcher: rest.fetcher, now: () => NOW },
+    [HEALTH_LANES.find((l) => l.lane === 'launchpad_stages')!])
+  assert(rest.urls.some((url) => url.includes('source=eq.coingecko')), rest.urls.join(' | '))
 })
 
 // A fake PostgREST that answers what the handler selects and records every URL.

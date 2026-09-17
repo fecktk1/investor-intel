@@ -268,6 +268,82 @@ export async function fetchCoingeckoOnchainTokenInfo(
   })
 }
 
+// ─── Onchain (GeckoTerminal) transport ───────────────────────────────────────
+//
+// The DEX/launchpad half of CoinGecko is the same data GeckoTerminal serves, on
+// THREE different hosts depending on what key this deployment holds:
+//
+//   paid key  https://pro-api.coingecko.com/api/v3/onchain/<path>   x-cg-pro-api-key
+//   demo key  https://api.coingecko.com/api/v3/onchain/<path>       x-cg-demo-api-key
+//   no key    https://api.geckoterminal.com/api/v2/<path>           no header, shared
+//                                                                   30 requests a minute
+//
+// The PATHS are identical after the prefix (`networks/solana/new_pools?page=1`,
+// `networks/solana/tokens/multi/<addresses>`), so a caller writes the path once
+// and never learns which host answered — and never sees the key, which lives in
+// `authHeaders()` here and travels in a header `marketAssetsGet` sets.
+//
+// Everything goes through `marketAssetsGet`, so every onchain call lands in
+// `provider_call_logs` through `logProviderCall` exactly like every other
+// market-assets call, is single-flighted, is cached in memory and in
+// `market_data_response_cache`, and is negative-cached on a 4xx.
+
+export type CoingeckoOnchainTier = 'pro' | 'demo' | 'geckoterminal'
+
+/** Which host this deployment's key entitles, without reading the key. */
+export function coingeckoOnchainTier(): CoingeckoOnchainTier {
+  if (!env('COINGECKO_API_KEY')) return 'geckoterminal'
+  return isPro() ? 'pro' : 'demo'
+}
+
+/** Base URL for an onchain path, honouring COINGECKO_API_BASE when it is set
+ * (a deployment that pins a host pins it for onchain paths too). */
+export function coingeckoOnchainBase(): string {
+  const tier = coingeckoOnchainTier()
+  if (tier === 'geckoterminal') return 'https://api.geckoterminal.com/api/v2'
+  const pinned = env('COINGECKO_API_BASE')
+  if (pinned) return `${pinned.replace(/\/+$/, '')}/onchain`
+  return tier === 'pro' ? 'https://pro-api.coingecko.com/api/v3/onchain' : 'https://api.coingecko.com/api/v3/onchain'
+}
+
+export interface CoingeckoOnchainOpts {
+  /** Stable label for the cache key and the receipt, e.g. `/onchain/networks/{network}/new_pools`. */
+  endpoint: string
+  cacheKey: string
+  ttlMs?: number
+  ctx?: MarketAssetsContext
+  symbolCount?: number | null
+}
+
+/**
+ * One cached onchain GET. `path` is everything after the host prefix and must
+ * already be encoded.
+ *
+ * Returns null on ANY refusal or failure. The shared transport does not hand
+ * back a status code, so a 401, a 403, a 400 and a timed-out socket are
+ * indistinguishable here; every caller therefore has to treat null as
+ * "unavailable, fall back" rather than as a specific entitlement answer. That is
+ * why the launchpad lane probes `pools/megafilter` once and falls back to
+ * `new_pools` paging for the rest of the run instead of assuming a tier.
+ */
+export async function fetchCoingeckoOnchain<T = unknown>(path: string, opts: CoingeckoOnchainOpts): Promise<T | null> {
+  const clean = String(path || '').replace(/^\/+/, '')
+  if (!clean) return null
+  return await marketAssetsGet<T>({
+    provider: ID,
+    url: `${coingeckoOnchainBase()}/${clean}`,
+    endpoint: opts.endpoint,
+    // The tier is part of the cache key: the three hosts can legitimately
+    // answer differently, and a cached pro answer must not be served to a
+    // deployment that has since lost its key.
+    cacheKey: `onchain:${coingeckoOnchainTier()}:${opts.cacheKey}`,
+    headers: authHeaders(),
+    ttlMs: opts.ttlMs,
+    symbolCount: opts.symbolCount ?? null,
+    ctx: opts.ctx,
+  })
+}
+
 /** Deep: coin ids belonging to a CoinGecko category (top by market cap). Lets us
  *  tag the canonical universe with category buckets for the Markets filter
  *  without a per-coin call. One call per category; bad/unknown ids return []. */
