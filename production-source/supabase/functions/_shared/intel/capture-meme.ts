@@ -9,9 +9,10 @@
 // the module tests without a network or a database.
 //
 // What one hourly run does:
-//   ONE `dexMeme` call, full stop — 1 credit, 24 a day, ~720 a month against the
-//   scaled `attention` feature cap. The shared transport serves a still-fresh
-//   snapshot for 0 credits, so the billed total is never higher.
+//   ONE `dexMeme` call PER LAUNCHPAD PROTOCOL — two today (Pump.fun and
+//   Moonshot), so 2 credits, 48 a day, ~1,440 a month against the scaled
+//   `attention` feature cap. The shared transport serves a still-fresh snapshot
+//   for 0 credits, so the billed total is never higher.
 //
 //   CORRECTED 2026-09-15. This lane used to make one call PER PLATFORM, sending
 //   {platformIds, interval, pageSize}. Four calls asked the same question, and
@@ -38,6 +39,17 @@
 //   entitlement refusal in its negative cache (keyed by the exact params) for six
 //   hours, so a refusal costs nothing until it is re-tested, and a CORRECTED
 //   request is tried at the very next run.
+//
+//   CORRECTED A THIRD TIME 2026-09-17, after the deploy of the above (v18). With
+//   `platformIds` restored the provider answered 200 and 1 credit again — and
+//   three EMPTY arrays again, the same 252-byte answer as every call before the
+//   403 streak. The one documented field never sent was `protocol`, the LAUNCHPAD
+//   code, and the published response carries it as `pt`: 1001 Pump.fun, 1002
+//   Moonshot, 2001 Four.meme. The board is therefore read per launchpad: one call
+//   for each protocol that lives on a verified CMC DEX network, merged by
+//   contract with the furthest stage winning, each one its own cache key so each
+//   is tried fresh and each answer is reported on its own line. 2001 Four.meme is
+//   NOT asked: it launches on BNB Chain, which this platform does not verify.
 //
 // FOUR.MEME IS NOT COVERED. The audit names Pump.fun, Moonshot and Four.meme.
 // Four.meme launches on BNB Chain, which is NOT one of the four platforms this
@@ -97,11 +109,30 @@ const STAGE_RANK: Record<string, number> = { newCreations: 1, aboutGraduates: 2,
 export const MEME_PLATFORM_ORDER = ['solana', 'base', 'ethereum', 'arbitrum'] as const
 /** Rows requested per stage array. The documented request field is `limit`. */
 export const MEME_LIMIT = CMC_DEX_MEME_LIMIT
-/** The verified CMC DEX network the request names. A REQUEST field only: what a
- * row belongs to is decided by the row's own `pid`, never by this. */
+/** The verified CMC DEX network the request names by default. A REQUEST field
+ * only: what a row belongs to is decided by the row's own `pid`, never by this. */
 export const MEME_PLATFORM_ID = CMC_DEX_MEME_PLATFORM_ID
-/** One call answers the board; rows are split by platform afterwards. */
-export const MEME_MAX_CALLS = 1
+/**
+ * The launchpads this lane asks about, one call each.
+ *
+ * `protocol` is the provider's own launchpad code, published as the response
+ * field `pt` (1001 Pump.fun, 1002 Moonshot, 2001 Four.meme). Nothing here is
+ * guessed: a protocol is asked for only when the provider publishes its code AND
+ * the chain it launches on is a verified CMC DEX network.
+ *
+ * FOUR.MEME (2001) IS DELIBERATELY ABSENT. It launches on BNB Chain, which is not
+ * in `CMC_DEX_NETWORKS`, so its rows could not be given an identity even if they
+ * were returned. Adding it is the same work as adding the chain (proposal 31).
+ *
+ * `launchpad` is OUR stable key for the run result and the log line; the label is
+ * the provider's own name for the launchpad and is never shown as a chain.
+ */
+export const MEME_PROTOCOLS = [
+  { protocol: 1001, launchpad: 'pump_fun', label: 'Pump.fun', platformId: CMC_DEX_MEME_PLATFORM_ID },
+  { protocol: 1002, launchpad: 'moonshot', label: 'Moonshot', platformId: CMC_DEX_MEME_PLATFORM_ID },
+] as const
+/** One call per launchpad protocol, and never more than the lane asks for. */
+export const MEME_MAX_CALLS = MEME_PROTOCOLS.length
 /** Previous-snapshot read ceiling per platform. Three stage arrays of 25 is at
  * most 75 contracts, so 2,000 rows is more than a full day of hourly history
  * for every one of them. */
@@ -223,6 +254,13 @@ export function memeCandidates(payload: any): { candidates: MemeCandidate[]; dro
 }
 
 export interface MemeStageLine { platform: string; stage: MemeStage; rows: number; reason: string | null }
+/** One asked launchpad, and what it answered. `rows` is the contracts THIS call
+ * contributed before the merge across protocols, so a still-empty board says
+ * which launchpad was asked rather than looking like one silent lane. */
+export interface MemeProtocolLine {
+  protocol: number; launchpad: string; label: string; platformId: number
+  state: string; reason: string | null; rows: number; dropped: number
+}
 
 /** Every platform × every stage, zeros included. A stage that answered nothing
  * has to appear as a zero with a reason; an absent line would be indistinguishable
@@ -245,15 +283,18 @@ export function stageBreakdown(candidates: MemeCandidate[], reason: string | nul
  * API key travels in a transport header this module never sees. */
 function logCapture(entry: {
   capturedAt: string; calls: number; credits: number; state: string
-  reason: string | null; dropped: number; stages: MemeStageLine[]
+  reason: string | null; dropped: number; stages: MemeStageLine[]; protocols: MemeProtocolLine[]
 }): void {
   try {
     console.info(JSON.stringify({
       intel_meme_capture: {
-        lane: 'meme_stages', capability: 'dexMeme', limit: MEME_LIMIT,
+        lane: 'meme_stages', capability: 'dexMeme', limit: MEME_LIMIT, platformIds: String(MEME_PLATFORM_ID),
         capturedAt: entry.capturedAt, calls: entry.calls, credits: entry.credits,
         state: entry.state, reason: entry.reason ?? null, droppedRows: entry.dropped,
         rows: entry.stages.reduce((sum, line) => sum + line.rows, 0),
+        // The asked launchpads come FIRST on the line: an empty board is only
+        // diagnosable if the question is on the same line as the answer.
+        protocols: entry.protocols,
         stages: entry.stages,
       },
     }))
@@ -317,33 +358,74 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
     const platforms: Record<string, unknown>[] = []
     let priorTruncated = false, reason: string | null = null, dropped = 0
 
-    // ── ONE unfiltered call. The endpoint has no platform filter; asking four
-    // times only spent four credits on the same question. ──
-    const params = { platformIds: String(MEME_PLATFORM_ID), limit: MEME_LIMIT }
-    const result = await deps.request('dexMeme', params, ctx).catch(() => null)
-    // A snapshot or a remembered refusal answered without asking the provider, so
-    // it costs nothing: only a live call carries the estimate onto the result.
-    const origin = (result as { receipt?: { origin?: string } } | null)?.receipt?.origin
-    if (origin !== 'cache' && origin !== 'negative-cache') credits += estimateCmcCredits('dexMeme', { platformIds: String(MEME_PLATFORM_ID), limit: String(MEME_LIMIT) })
-    let candidates: MemeCandidate[] = []
-    let callState: string, callReason: string | null = null
-    if (!result?.payload) {
-      callState = 'unavailable'
-      callReason = reason = result?.reason || 'provider_unavailable'
-    } else {
+    // ── ONE call per launchpad protocol. The board is published per launchpad:
+    // asking without `protocol` answered 200, 1 credit and three empty arrays,
+    // both before and after the platform filter was restored. Each protocol is
+    // its own request, so each has its own cache key and is tried fresh. ──
+    const byContract = new Map<string, MemeCandidate>()
+    const protocols: MemeProtocolLine[] = []
+    let requested = 0
+    for (const launchpad of MEME_PROTOCOLS) {
+      const line: MemeProtocolLine = {
+        protocol: launchpad.protocol, launchpad: launchpad.launchpad, label: launchpad.label, platformId: launchpad.platformId,
+        state: 'skipped', reason: 'call_budget', rows: 0, dropped: 0,
+      }
+      protocols.push(line)
+      // The ceiling is the lane's, not the loop's: a narrowed context stops the
+      // run where it is instead of asking one launchpad more than it may.
+      if (requested >= budget) continue
+      requested += 1
+      const params = { platformIds: String(launchpad.platformId), protocol: launchpad.protocol, limit: MEME_LIMIT }
+      const result = await deps.request('dexMeme', params, ctx).catch(() => null)
+      // A snapshot or a remembered refusal answered without asking the provider,
+      // so it costs nothing: only a live call carries the estimate onto the result.
+      const origin = (result as { receipt?: { origin?: string } } | null)?.receipt?.origin
+      if (origin !== 'cache' && origin !== 'negative-cache') {
+        credits += estimateCmcCredits('dexMeme', { platformIds: String(launchpad.platformId), protocol: String(launchpad.protocol), limit: String(MEME_LIMIT) })
+      }
+      if (!result?.payload) {
+        line.state = 'unavailable'
+        line.reason = result?.reason || 'provider_unavailable'
+        reason = reason || line.reason
+        continue
+      }
       try {
         const read = memeCandidates(result.payload)
-        candidates = read.candidates
-        dropped = read.dropped
-        callState = candidates.length ? 'captured' : 'empty'
+        dropped += read.dropped
+        line.dropped = read.dropped
+        line.rows = read.candidates.length
+        line.state = read.candidates.length ? 'captured' : 'empty'
         // An empty board is an answer, and it is reported as one. `dropped` says
         // whether the board was genuinely empty or only empty of chains we verify.
-        if (!candidates.length) callReason = dropped ? 'unverified_platforms_only' : 'provider_reported_empty'
+        line.reason = read.candidates.length ? null : (read.dropped ? 'unverified_platforms_only' : 'provider_reported_empty')
+        // Merge across launchpads by contract: two launchpads can name the same
+        // contract, and the FURTHEST stage wins, exactly as inside one answer.
+        for (const candidate of read.candidates) {
+          const subject = `${candidate.chain}:${candidate.address}`
+          const previous = byContract.get(subject)
+          if (!previous || STAGE_RANK[candidate.stage] > STAGE_RANK[previous.stage]) byContract.set(subject, candidate)
+        }
       } catch (e) {
-        callState = 'unreadable'
-        callReason = reason = ((e as Error)?.message || 'invalid_response').slice(0, 120)
+        line.state = 'unreadable'
+        line.reason = ((e as Error)?.message || 'invalid_response').slice(0, 120)
+        reason = reason || line.reason
       }
     }
+    const candidates = [...byContract.values()]
+    // The run's own state is the state of the launchpads it asked, never of one
+    // of them: rows anywhere is a capture, and an empty board stays an empty
+    // board rather than being reported as a provider failure.
+    const answered = protocols.filter((p) => p.state === 'empty' || p.state === 'captured')
+    const callState = candidates.length
+      ? 'captured'
+      : answered.length
+        ? 'empty'
+        : protocols.some((p) => p.state === 'unreadable')
+          ? 'unreadable'
+          : protocols.some((p) => p.state === 'unavailable') ? 'unavailable' : 'skipped'
+    const callReason: string | null = candidates.length
+      ? null
+      : (protocols.find((p) => p.state === callState)?.reason ?? (callState === 'skipped' ? 'call_budget' : null))
 
     // ── split the one answer by the platform each ROW named ──
     for (const platform of MEME_PLATFORM_ORDER) {
@@ -382,14 +464,14 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
     }
 
     const stages = stageBreakdown(candidates, callReason)
-    logCapture({ capturedAt, calls: 1, credits, state: callState, reason: callReason ?? reason, dropped, stages })
+    logCapture({ capturedAt, calls: requested, credits, state: callState, reason: callReason ?? reason, dropped, stages, protocols })
 
     if (!snapshots.length) {
       // An honest empty capture: the reason travels on the result and on the log
       // line above. Nothing is written, because there is no contract-less row the
       // snapshot table could hold — and a zero is never invented to fill the gap.
       return {
-        job, rows: 0, credits, capturedAt, platforms, stages, dropped,
+        job, rows: 0, credits, capturedAt, calls: requested, protocols, platforms, stages, dropped,
         ...(callState === 'unavailable' || callState === 'unreadable'
           ? { error: callReason ?? 'provider_unavailable' }
           : { skipped: callReason ?? 'no_reported_contracts' }),
@@ -402,7 +484,7 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
       : { rows: 0 }
     const error = wroteSnapshots.error || wroteTransitions.error || null
     return {
-      job, rows: wroteSnapshots.rows, credits, capturedAt, platforms, stages, dropped,
+      job, rows: wroteSnapshots.rows, credits, capturedAt, calls: requested, protocols, platforms, stages, dropped,
       transitions: wroteTransitions.rows, contracts: snapshots.length,
       ...(priorTruncated ? { priorTruncated: true } : {}),
       ...(reason ? { partial: reason } : {}), ...(error ? { error } : {}),

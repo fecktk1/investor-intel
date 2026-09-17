@@ -1,7 +1,7 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   captureMemeStages, memeCandidates, stageBreakdown, hoursBetween, MEME_CAPTURE_OPS,
-  MEME_PLATFORM_ORDER, MEME_LIMIT, MEME_MAX_CALLS, MEME_PLATFORM_ID, MEME_STAGES,
+  MEME_PLATFORM_ORDER, MEME_LIMIT, MEME_MAX_CALLS, MEME_PLATFORM_ID, MEME_PROTOCOLS, MEME_STAGES,
 } from './capture-meme.ts'
 import { cmcParams, cmcRequestBody } from '../market-assets/cmc-capabilities.ts'
 import { validateCmcDexResponse } from '../market-assets/cmc-dex.ts'
@@ -86,25 +86,73 @@ const memePayload = (stages: Partial<Record<typeof MEME_STAGES[number], unknown[
   ({ data: { newCreations: stages.newCreations ?? [], aboutGraduates: stages.aboutGraduates ?? [], graduates: stages.graduates ?? [] } })
 const ok = (payload: unknown) => ({ payload, state: 'fresh', reason: null, provenance: { provider: 'coinmarketcap', fetchedAt: CAPTURED } })
 
-/** The endpoint has no platform filter, so one answer serves every platform. */
+/** Every launchpad answers the same board. Rows are merged by contract, so the
+ * same answer twice is the same contracts once. */
 const board = (rows: Partial<Record<typeof MEME_STAGES[number], unknown[]>>) =>
   fakeRequest(() => ok(memePayload(rows)))
+/** A different board per launchpad protocol, which is what the provider does. */
+const boards = (byProtocol: Record<number, Partial<Record<typeof MEME_STAGES[number], unknown[]>>>) =>
+  fakeRequest((_name, params) => ok(memePayload(byProtocol[Number(params.protocol)] ?? {})))
+const protocolLines = (result: Record<string, unknown>) => result.protocols as Record<string, unknown>[]
 
-Deno.test('one call a run, asking with the platform the provider answers and the documented `limit`', async () => {
+Deno.test('one call per launchpad protocol, each with the platform and the documented `limit`', async () => {
   const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
   const db = fakeDb()
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
-  eq(calls.length, 1, 'one call answers the board; four calls asked the same question')
-  eq(MEME_MAX_CALLS, 1)
-  eq(calls[0].name, 'dexMeme')
-  eq(Number(calls[0].params.limit), MEME_LIMIT)
-  // `platformIds` is back: dropping it is what the 403 streak followed.
-  eq(String(calls[0].params.platformIds), String(MEME_PLATFORM_ID))
-  // The fields the endpoint never read are still not sent.
-  eq(Object.keys(calls[0].params).some((k) => ['interval', 'pageSize', 'nextPageIndex'].includes(k)), false)
-  eq(result.credits, 1, 'one credit a run, not four')
+  // Pump.fun and Moonshot: the launchpads whose code the provider publishes and
+  // whose chain this platform verifies. Four.meme (2001) is on BNB, so it is not asked.
+  eq(MEME_MAX_CALLS, 2)
+  eq(MEME_PROTOCOLS.map((p) => p.protocol), [1001, 1002])
+  eq(MEME_PROTOCOLS.some((p) => p.protocol === 2001), false, 'Four.meme launches on a chain this platform does not verify')
+  eq(calls.length, 2, 'the board is published per launchpad; asking without one answered empty')
+  eq(calls.map((c) => c.name), ['dexMeme', 'dexMeme'])
+  eq(calls.map((c) => Number(c.params.protocol)), [1001, 1002])
+  for (const call of calls) {
+    eq(Number(call.params.limit), MEME_LIMIT)
+    // `platformIds` is still sent: dropping it is what the 403 streak followed.
+    eq(String(call.params.platformIds), String(MEME_PLATFORM_ID))
+    // The fields the endpoint never read are still not sent.
+    eq(Object.keys(call.params).some((k) => ['interval', 'pageSize', 'nextPageIndex'].includes(k)), false)
+  }
+  eq(result.credits, 2, 'one credit per launchpad asked')
+  eq(result.calls, 2)
+  // The same contract from two launchpads is one contract, not two rows.
   eq(result.rows, 1)
+  eq(protocolLines(result).map((p) => [p.protocol, p.state, p.rows]), [[1001, 'captured', 1], [1002, 'captured', 1]])
   eq(MEME_PLATFORM_ORDER, ['solana', 'base', 'ethereum', 'arbitrum'])
+})
+
+Deno.test('each launchpad answers on its own line, and the furthest stage wins across them', async () => {
+  const writes: Record<string, unknown[]> = {}
+  // Pump.fun reports the contract as a new creation; Moonshot reports the same
+  // contract as a graduate, and a second contract of its own.
+  const { request, calls } = boards({
+    1001: { newCreations: [memeRow(16, SOL, 'AAA')] },
+    1002: { graduates: [memeRow(16, SOL, 'AAA'), memeRow(1, EVM, 'BBB')] },
+  })
+  const result = await captureMemeStages(fakeDb({}, writes), ctxFor, NOW, 'startup', { request, policy: [] })
+  eq(calls.length, 2)
+  eq(result.rows, 2)
+  const rows = writes.intel_meme_stage_snapshots as Record<string, unknown>[]
+  eq(rows.find((r) => r.contract_address === SOL)?.stage, 'graduates', 'the furthest stage wins across launchpads')
+  eq(protocolLines(result).map((p) => [p.launchpad, p.state, p.rows]), [['pump_fun', 'captured', 1], ['moonshot', 'captured', 2]])
+})
+
+Deno.test('a launchpad that answers nothing says so beside one that answered', async () => {
+  const { request } = boards({ 1001: { graduates: [memeRow(16, SOL, 'AAA')] }, 1002: {} })
+  const result = await captureMemeStages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [] })
+  eq(result.rows, 1)
+  // A still-empty launchpad is named, with its own reason, so the run says WHICH
+  // question was asked and what came back rather than looking silent.
+  eq(protocolLines(result).map((p) => [p.protocol, p.state, p.reason]), [[1001, 'captured', null], [1002, 'empty', 'provider_reported_empty']])
+})
+
+Deno.test('a narrowed call budget stops at the launchpads it may ask, and says which it skipped', async () => {
+  const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
+  const result = await captureMemeStages(fakeDb(), (name, _max) => ctxFor(name, 1), NOW, 'startup', { request, policy: [] })
+  eq(calls.length, 1, 'the lane never asks one launchpad more than its budget')
+  eq(result.credits, 1)
+  eq(protocolLines(result).map((p) => [p.protocol, p.state, p.reason]), [[1001, 'captured', null], [1002, 'skipped', 'call_budget']])
 })
 
 Deno.test('the registry sends the platform and the documented limit, and nothing else', () => {
@@ -118,12 +166,22 @@ Deno.test('the registry sends the platform and the documented limit, and nothing
   let platform = ''
   try { cmcParams('dexMeme', { platformIds: '56' }) } catch (e) { platform = (e as Error).message }
   eq(platform, 'unverified_dex_platform')
+  // Only a PUBLISHED launchpad code may be asked for; anything else is refused
+  // rather than guessed at.
+  let protocol = ''
+  try { cmcParams('dexMeme', { protocol: 42 }) } catch (e) { protocol = (e as Error).message }
+  eq(protocol, 'unverified_meme_protocol')
+  // The registry accepts every published code, including the one this lane does
+  // not ask about: which launchpads to ask is the lane's decision, not the
+  // transport's, and the transport never defaults one.
+  eq(cmcParams('dexMeme', { protocol: 2001 }).protocol, '2001')
   // The shape that is sent: a verified platform id and the documented limit.
   eq(cmcParams('dexMeme', {}), { platformIds: String(MEME_PLATFORM_ID), limit: String(MEME_LIMIT) })
-  // `limit` is an int32 in the body; `platformIds` travels as the string the
-  // other discovery bodies use, which is the shape the provider answered 200 to.
+  // `limit` and `protocol` are int32 in the body; `platformIds` travels as the
+  // string the other discovery bodies use, the shape the provider answered 200 to.
   eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', {})), { platformIds: String(MEME_PLATFORM_ID), limit: MEME_LIMIT })
-  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', { platformIds: '199', protocol: 1, limit: 10 })), { platformIds: '199', protocol: 1, limit: 10 })
+  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', { protocol: 1001 })), { platformIds: String(MEME_PLATFORM_ID), protocol: 1001, limit: MEME_LIMIT })
+  eq(cmcRequestBody('dexMeme', cmcParams('dexMeme', { platformIds: '199', protocol: 1002, limit: 10 })), { platformIds: '199', protocol: 1002, limit: 10 })
 })
 
 Deno.test('the validator accepts a multi-chain board and rejects an unbounded or malformed one', () => {
@@ -278,7 +336,7 @@ Deno.test('a refusal already remembered by the transport costs the lane nothing'
     receipt: { capability: 'dexMeme', origin: 'negative-cache', httpStatus: 403, creditCount: null },
   }))
   const result = await captureMemeStages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [] })
-  eq(calls.length, 1, 'the lane still asks; the transport is what declines to spend')
+  eq(calls.length, 2, 'the lane still asks; the transport is what declines to spend')
   eq(result.credits, 0, 'a remembered refusal is not an hourly credit')
   eq(result.rows, 0)
   eq(result.error, 'insufficient_entitlement', 'the refusal keeps its own name on the result')
@@ -288,10 +346,11 @@ Deno.test('an empty board is an honest empty capture with its reason, not a no-o
   const writes: Record<string, unknown[]> = {}
   const { request, calls } = board({})
   const result = await captureMemeStages(fakeDb({}, writes), ctxFor, NOW, 'startup', { request, policy: [] })
-  eq(calls.length, 1, 'the credit was spent, so the run is reported')
+  eq(calls.length, 2, 'the credits were spent, so the run is reported')
   eq(result.rows, 0)
-  eq(result.credits, 1)
+  eq(result.credits, 2)
   eq(result.skipped, 'provider_reported_empty')
+  eq(protocolLines(result).every((p) => p.state === 'empty' && p.reason === 'provider_reported_empty'), true)
   eq(result.error, undefined, 'an empty answer is not a failure')
   assert(result.capturedAt, 'the empty capture still names the hour it covers')
   eq(writes.intel_meme_stage_snapshots, undefined)
@@ -305,8 +364,10 @@ Deno.test('a board of unverified chains only says so rather than reading as empt
   const { request } = board({ newCreations: [{ pid: 56, addr: EVM, n: 'x', sym: 'X' }] })
   const result = await captureMemeStages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [] })
   eq(result.rows, 0)
-  eq(result.dropped, 1)
+  // Both launchpads answered the same unverified row, and both say so.
+  eq(result.dropped, 2)
   eq(result.skipped, 'unverified_platforms_only')
+  eq(protocolLines(result).map((p) => [p.state, p.dropped]), [['empty', 1], ['empty', 1]])
 })
 
 Deno.test('a call budget of zero stops the lane before it spends', async () => {
@@ -324,7 +385,7 @@ Deno.test('one answer is split across the chains its rows name', async () => {
     graduates: [memeRow(1, EVM, 'BBB'), memeRow(1, EVM2, 'CCC')],
   })
   const result = await captureMemeStages(fakeDb({}, writes), ctxFor, NOW, 'startup', { request, policy: [] })
-  eq(calls.length, 1)
+  eq(calls.length, 2)
   eq(result.rows, 3)
   const rows = writes.intel_meme_stage_snapshots as Record<string, unknown>[]
   eq(new Set(rows.map((r) => r.chain)).size, 2)

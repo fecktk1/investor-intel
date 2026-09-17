@@ -17,6 +17,13 @@ export const CMC_DEX_MEME_LIMIT=25
  * where the launchpads this lane is about live. It is a REQUEST field only: the
  * answer is still attributed from each row's own `pid`, never from this default. */
 export const CMC_DEX_MEME_PLATFORM_ID=16
+/** Launchpad protocol codes /v1/dex/meme/list accepts, exactly as the published
+ * response field `pt` names them: 1001 Pump.fun, 1002 Moonshot, 2001 Four.meme.
+ * A code outside this list is refused rather than asked about — the registry is
+ * where a reviewed provider fact lives, and a guessed code is a wrong question.
+ * Which of these the meme lane actually asks is its own decision (Four.meme
+ * launches on BNB Chain, which is not a verified network here). */
+export const CMC_DEX_MEME_PROTOCOLS=[1001,1002,2001]
 /** Holder classifications returned by /v1/dex/holders/tag_count. Probed on
  * 2026-09-14 (docs/investor-intel/evidence/cmc-cost-probe-2026-09-14.json):
  * data.holders came back with exactly these eight rows. They are CMC's labels
