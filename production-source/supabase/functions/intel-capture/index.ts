@@ -41,6 +41,12 @@ import { LISTING_CAPTURE_OPS } from '../_shared/intel/capture-listings.ts'
 import { LISTING_CAPTURE_VIEWS } from '../_shared/intel/capture-listings-read.ts'
 import { MEME_CAPTURE_OPS } from '../_shared/intel/capture-meme.ts'
 import { MEME_CAPTURE_VIEWS } from '../_shared/intel/capture-meme-read.ts'
+// DIAGNOSTIC, TO BE REMOVED. `op:'meme_probe'` sends the documented
+// /v1/dex/meme/list request variants once, stores nothing and answers with the
+// body that produced each answer. It is registered here ONLY to inherit the
+// capture gate below; delete this import, its entry in LANE_OPS and
+// _shared/intel/meme-probe.ts once the empty meme board is explained.
+import { MEME_PROBE_OPS } from '../_shared/intel/meme-probe.ts'
 import { CANDLE_CAPTURE_OPS } from '../_shared/intel/capture-candles.ts'
 import { CANDLE_CAPTURE_VIEWS } from '../_shared/intel/capture-candles-read.ts'
 // RWA yield provenance and NAV integrity. This lane calls no CoinMarketCap
@@ -60,7 +66,7 @@ import { readCaptureReceipts } from '../_shared/intel/source-receipt.ts'
 // Both keyless RWA lanes are registered here. Dropping either spread silently
 // removes a whole capture lane while every test still passes, so both must
 // appear in both objects.
-const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS }
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS, ...MEME_PROBE_OPS }
 const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS, ...CANDLE_CAPTURE_VIEWS, ...RWA_YIELD_CAPTURE_VIEWS, ...RWA_ISSUER_CAPTURE_VIEWS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
@@ -100,6 +106,9 @@ Deno.serve(async (req) => {
     if (!CAPTURE_OPS.includes(op as typeof CAPTURE_OPS[number])) return json({ error: 'unsupported_op', ops: [...CAPTURE_OPS, 'read'] }, 400)
 
     // ── Capture half: operational cron secret, or a super admin by hand ──
+    // `authority` names which of the two let this run through. It is passed to
+    // the lane ops, so an op that must refuse without the gate can say so itself
+    // rather than trusting that it was mounted behind one (see meme-probe.ts).
     const cronOk = req.headers.get('x-cron-secret') === Deno.env.get('CRON_SECRET')
     if (!cronOk) {
       const authHeader = req.headers.get('Authorization')
@@ -109,6 +118,7 @@ Deno.serve(async (req) => {
       const { data: profile } = user ? await asUser.from('profiles').select('is_super_admin').eq('id', user.id).maybeSingle() : { data: null }
       if (!profile?.is_super_admin) return json({ error: 'forbidden' }, 403)
     }
+    const authority = cronOk ? 'cron_secret' : 'super_admin'
 
     const now = new Date()
     const [policy, settings, observed] = await Promise.all([loadSchedulePolicy(admin), loadCmcOperatingSettings(admin), loadAccountObservations(admin)])
@@ -146,7 +156,7 @@ Deno.serve(async (req) => {
       // Lane ops take the request BODY as a sixth argument. Every lane before
       // the candle history one ignores it; `history_backfill` reads `assetKey`
       // from it so one named asset can be filled by hand.
-      ...Object.fromEntries(Object.entries(LANE_OPS).map(([name, run]) => [name, () => (run as (...args: unknown[]) => Promise<JobResult>)(admin, ctxFor, now, plan, deps, body)])),
+      ...Object.fromEntries(Object.entries(LANE_OPS).map(([name, run]) => [name, () => (run as (...args: unknown[]) => Promise<JobResult>)(admin, ctxFor, now, plan, deps, body, authority)])),
     }
 
     const sequence = op === 'all_hourly' ? [...HOURLY_SEQUENCE] : [op]
