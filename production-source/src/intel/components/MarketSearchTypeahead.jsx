@@ -13,8 +13,22 @@ import { useDisplayCurrency } from '../lib/display-currency'
 // The read is the free `market_boards` catalogue read: no provider call, no
 // credit, nothing per-member. It waits for a pause in typing and for at least
 // two characters, and every superseded request is aborted.
+//
+// WHO OWNS THE TEXT. The screen filter lives in the address bar (`m_search`), and
+// writing it there is a navigation: the route re-renders and the field is handed
+// back whatever the URL now says. Binding the field straight to that value loses
+// keystrokes — typed at speed, "bitcoin" arrived as one surviving character, and
+// a pasted address as one digit. So the field keeps its OWN value while it has
+// focus and is the only writer of it; the URL is caught up on a trailing pause.
+// The URL is copied back into the field only on mount and while the field is not
+// focused, which is what makes Back and Forward still work. A paste is a single
+// change event and therefore a single edit, never a race.
 
 const DEBOUNCE_MS = 200
+/** Trailing pause before the typed text reaches the address bar and the screen
+ *  filter. Longer than a fast typist's gap between keys, short enough that the
+ *  filtered rows follow the moment they stop. */
+const SYNC_MS = 250
 /** Mirrors SUGGEST_MIN_LENGTH in markets-api (and the server's own floor). Held
  *  here so this field never depends on the read module it is given. */
 const MIN_LENGTH = 2
@@ -45,7 +59,47 @@ export default function MarketSearchTypeahead({ value, onChange, onOpen, suggest
   const cache = useRef(new Map())
   const box = useRef(null)
 
-  const query = String(value || '').trim().slice(0, 100)
+  // `draft` is what the reader is looking at. `sent` is the last text this field
+  // handed upward, so an inbound value that is merely our own write echoing back
+  // is never mistaken for someone else changing the address.
+  const [draft, setDraft] = useState(() => String(value ?? ''))
+  const draftRef = useRef(draft)
+  const sentRef = useRef(String(value ?? ''))
+  const focusedRef = useRef(false)
+  const syncTimer = useRef(null)
+
+  const push = useCallback(next => {
+    if (next === sentRef.current) return
+    sentRef.current = next
+    onChange(next)
+  }, [onChange])
+
+  /** Hand the current text upward now, cancelling any pending pause. */
+  const flush = useCallback(() => {
+    if (syncTimer.current) { clearTimeout(syncTimer.current); syncTimer.current = null }
+    push(draftRef.current)
+  }, [push])
+
+  const edit = useCallback(next => {
+    draftRef.current = next
+    setDraft(next)
+    if (syncTimer.current) clearTimeout(syncTimer.current)
+    syncTimer.current = setTimeout(() => { syncTimer.current = null; push(draftRef.current) }, SYNC_MS)
+  }, [push])
+
+  // The address changed under us — Back, Forward, a restored screen. Adopt it,
+  // but never while the reader is mid-word in this field.
+  useEffect(() => {
+    const incoming = String(value ?? '')
+    if (focusedRef.current || incoming === sentRef.current) return
+    sentRef.current = incoming
+    draftRef.current = incoming
+    setDraft(incoming)
+  }, [value])
+
+  useEffect(() => () => { if (syncTimer.current) clearTimeout(syncTimer.current) }, [])
+
+  const query = draft.trim().slice(0, 100)
   const rows = state?.query === query && !state.pending ? (state.rows || []) : []
   const pending = state?.query === query && state.pending === true
   const failed = state?.query === query ? state.error || null : null
@@ -79,8 +133,11 @@ export default function MarketSearchTypeahead({ value, onChange, onOpen, suggest
   const choose = useCallback(row => {
     if (!row) return
     setDismissed(true)
+    // The screen this reader is leaving keeps the text they typed, so the way
+    // back from the asset lands on the same filtered rows.
+    flush()
     onOpen(row)
-  }, [onOpen])
+  }, [onOpen, flush])
 
   const keyDown = event => {
     if (event.isComposing) return
@@ -104,7 +161,7 @@ export default function MarketSearchTypeahead({ value, onChange, onOpen, suggest
   }, [pending, open, rows.length, t])
 
   return (
-    <div className="intel-market-typeahead" ref={box} onBlur={event => { if (!box.current?.contains(event.relatedTarget)) setFocused(false) }}>
+    <div className="intel-market-typeahead" ref={box} onBlur={event => { if (!box.current?.contains(event.relatedTarget)) { focusedRef.current = false; setFocused(false); flush() } }}>
       <input
         role="combobox"
         aria-label={fieldLabel}
@@ -117,9 +174,9 @@ export default function MarketSearchTypeahead({ value, onChange, onOpen, suggest
         disabled={disabled}
         className="input text-[12px]"
         placeholder={placeholder || fieldLabel}
-        value={value}
-        onFocus={() => setFocused(true)}
-        onChange={event => onChange(event.target.value)}
+        value={draft}
+        onFocus={() => { focusedRef.current = true; setFocused(true) }}
+        onChange={event => edit(event.target.value)}
         onKeyDown={keyDown}
       />
       <div id={listId} role="listbox" aria-label={t('markets.suggest_results', { defaultValue: 'Matching assets' })} className="intel-market-typeahead-list" hidden={!open}>
