@@ -804,3 +804,83 @@ Deno.test('the read can be filtered down to the trongrid source alone', async ()
   eq(mine.sources, [{ source: 'trongrid', latestCapturedAt: CAPTURED, rows: 1 }])
   eq((mine.launchpads as unknown[]).length, 1)
 })
+
+Deno.test('a CoinMarketCap row in this hour does not make the TronGrid lane skip either', async () => {
+  // The companion of the CoinGecko case above. Three lanes write this table at
+  // :37, :41 and :43; each measures its OWN cadence, against rows whose `source`
+  // is its own. Proven in production on 2026-09-17: this lane wrote 3 rows at the
+  // 14:00 capture hour in which the CoinGecko lane had already written 116.
+  __resetSunpumpNameCacheForTests()
+  const db = fakeDb({
+    market_assets: [TRX_ROW],
+    intel_meme_stage_snapshots: [
+      { chain: 'solana', contract_address: 'So11111111111111111111111111111111111111112', captured_at: CAPTURED, source: 'coinmarketcap' },
+    ],
+  })
+  const { calls, tron } = fakeTron(sunpumpWorld())
+  const result = await captureSunpumpStages(db, ctxFor, new Date(NOW.getTime() + 60_000), 'basic', deps(tron))
+  eq(result.skipped, undefined)
+  assert(calls.length > 0)
+
+  // Its OWN row in the same hour still stops it.
+  const mine = fakeDb({ intel_meme_stage_snapshots: [{ chain: 'tron', contract_address: TOKEN_CREATED, captured_at: CAPTURED, source: SUNPUMP_SOURCE }] })
+  const second = fakeTron(sunpumpWorld())
+  const skipped = await captureSunpumpStages(mine, ctxFor, new Date(NOW.getTime() + 60_000), 'basic', deps(second.tron))
+  eq(skipped.skipped, 'within_cadence')
+  eq(second.calls.length, 0)
+})
+
+Deno.test('a name lookup is a call: it counts against the budget and is paced like every other', async () => {
+  // THE DEFECT THIS PINS. On the first production run (2026-09-17, keyless) the
+  // lane spent its six budgeted calls on the feeds and the transactions and then
+  // fired FOUR MORE, unbudgeted and unpaced, at wallet/triggerconstantcontract.
+  // The anonymous host answered 429 to the last four of them. A keyless run has
+  // to make six calls in total, names included.
+  __resetSunpumpNameCacheForTests()
+  const at = NOW.getTime() - 60_000
+  const { calls, tron } = fakeTron((path: string) => {
+    if (path.includes('event_name=TokenCreate')) return eventPage([{ event: 'TokenCreate', tx: 'tx-create', at }])
+    if (path.includes('event_name=')) return eventPage([])
+    if (path.includes('value=tx-create')) return { blockTimeStamp: at, log: CREATE_LOGS }
+    return null
+  })
+  let paced = 0
+  const named: string[] = []
+  const result = await captureSunpumpStages(fakeDb({ market_assets: [TRX_ROW] }), ctxFor, NOW, 'basic', deps(tron, {
+    keyed: false,
+    sleep: () => { paced += 1; return Promise.resolve() },
+    constantCall: (token: string, selector: string) => { named.push(`${token}:${selector}`); return Promise.resolve(selector === 'name()' ? 'Name' : 'SYM') },
+  }))
+  // 3 event feeds + 1 transaction + 2 name calls = the whole keyless budget.
+  eq(calls.length, 4, 'four TronGrid GETs')
+  eq(named, [`${TOKEN_CREATED}:name()`, `${TOKEN_CREATED}:symbol()`])
+  eq(result.nameCalls, 2)
+  eq(result.calls, KEYLESS_MAX_CALLS, 'names are inside the budget, not beside it')
+  eq(paced, 5, 'every live call after the first is paced, the name calls included')
+})
+
+Deno.test('a name lookup that would overrun the budget is not started', async () => {
+  __resetSunpumpNameCacheForTests()
+  const at = NOW.getTime() - 60_000
+  // Two transactions keyless: 3 feeds + 2 transactions = 5 of 6, so a PAIR of
+  // name calls does not fit and neither is started. A half-named token would
+  // cost a call and buy nothing.
+  const { tron } = fakeTron((path: string) => {
+    if (path.includes('event_name=TokenCreate')) return eventPage([{ event: 'TokenCreate', tx: 'tx-a', at }, { event: 'TokenCreate', tx: 'tx-b', at: at - 1 }])
+    if (path.includes('event_name=')) return eventPage([])
+    if (path.includes('value=tx-a')) return { blockTimeStamp: at, log: CREATE_LOGS }
+    if (path.includes('value=tx-b')) return { blockTimeStamp: at - 1, log: PENDING_LOGS }
+    return null
+  })
+  let namedCalls = 0
+  const result = await captureSunpumpStages(fakeDb({ market_assets: [TRX_ROW] }), ctxFor, NOW, 'basic', deps(tron, {
+    keyed: false, constantCall: () => { namedCalls += 1; return Promise.resolve('X') },
+  }))
+  eq(namedCalls, 0)
+  eq(result.nameCalls, 0)
+  assert(Number(result.calls) <= KEYLESS_MAX_CALLS)
+  eq(result.callBudgetExhausted, true)
+  // The rows are still written; only the names are missing, which is the honest
+  // degradation: a NULL name, never a skipped contract.
+  eq(result.contracts, 2)
+})

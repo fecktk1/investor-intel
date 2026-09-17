@@ -1,6 +1,6 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  captureMemeStages, memeCandidates, stageBreakdown, hoursBetween, MEME_CAPTURE_OPS,
+  captureMemeStages, MEME_SOURCE, memeCandidates, stageBreakdown, hoursBetween, MEME_CAPTURE_OPS,
   MEME_PLATFORM_ORDER, MEME_LIMIT, MEME_MAX_CALLS, MEME_PLATFORM_ID, MEME_PROTOCOLS, MEME_STAGES,
 } from './capture-meme.ts'
 import { cmcParams, cmcRequestBody } from '../market-assets/cmc-capabilities.ts'
@@ -293,7 +293,10 @@ Deno.test('re-running the same hour is idempotent: the run never reads its own r
 
 Deno.test('the cadence guard skips a run inside the hour', async () => {
   const { request, calls } = board({ newCreations: [memeRow(16, SOL, 'AAA')] })
-  const db = fakeDb({ intel_meme_stage_snapshots: [{ chain: 'solana', contract_address: SOL, captured_at: new Date(NOW.getTime() - 60_000).toISOString(), stage: 'newCreations', first_seen_at: hourBefore(2) }] })
+  // `source` is on the fixture because it is NOT NULL DEFAULT 'coinmarketcap' on
+  // the table: a row this lane wrote always carries it, and the guard now filters
+  // on it so another lane's row cannot stop this one.
+  const db = fakeDb({ intel_meme_stage_snapshots: [{ chain: 'solana', contract_address: SOL, captured_at: new Date(NOW.getTime() - 60_000).toISOString(), stage: 'newCreations', first_seen_at: hourBefore(2), source: MEME_SOURCE }] })
   const result = await captureMemeStages(db, ctxFor, NOW, 'startup', { request, policy: [] })
   eq(result.skipped, 'within_cadence')
   eq(calls.length, 0)
@@ -418,4 +421,39 @@ Deno.test('the lane is reachable as the meme_stages op', async () => {
   const result = await MEME_CAPTURE_OPS.meme_stages(fakeDb(), ctxFor, NOW, 'startup', { request, policy: [] })
   eq(result.job, 'meme_stages')
   assert(result.capturedAt)
+})
+
+Deno.test('a CoinGecko or TronGrid row in this hour does not make the CoinMarketCap lane skip', async () => {
+  // THE BUG THIS PINS. `intel_meme_stage_snapshots` is written by three lanes.
+  // Until 2026-09-17 this lane's freshness guard read "the newest row of the
+  // table" with no source filter, so once the CoinGecko lane started writing at
+  // :41 the CoinMarketCap lane at :37 skipped with `within_cadence` and never
+  // asked the provider again. Verified in production that day: 116 CoinGecko
+  // rows and 3 TronGrid rows at one capture hour, and 0 CoinMarketCap rows.
+  const now = new Date()
+  const thisHour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000).toISOString()
+  const db = fakeDb({
+    intel_meme_stage_snapshots: [
+      { chain: 'solana', contract_address: 'A', captured_at: thisHour, source: 'coingecko' },
+      { chain: 'tron', contract_address: 'B', captured_at: thisHour, source: 'trongrid' },
+    ],
+  })
+  let asked = 0
+  const result = await captureMemeStages(db, ctxFor, now, 'startup', {
+    request: () => { asked += 1; return Promise.resolve({ payload: { data: { newCreations: [], aboutGraduates: [], graduates: [] } } }) },
+  })
+  eq(result.skipped !== 'within_cadence', true, `skipped on another lane's row: ${result.skipped}`)
+  eq(asked > 0, true, 'the lane has to actually ask the provider')
+
+  // Its OWN row in the same hour still stops it, which is the guard working.
+  const mine = fakeDb({
+    intel_meme_stage_snapshots: [{ chain: 'solana', contract_address: 'A', captured_at: thisHour, source: 'coinmarketcap' }],
+  })
+  let askedAgain = 0
+  const skipped = await captureMemeStages(mine, ctxFor, now, 'startup', {
+    request: () => { askedAgain += 1; return Promise.resolve(null) },
+  })
+  eq(skipped.skipped, 'within_cadence')
+  eq(askedAgain, 0, 'a skipped run spends nothing')
+  eq(MEME_SOURCE, 'coinmarketcap')
 })

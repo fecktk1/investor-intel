@@ -182,7 +182,14 @@ export const EVENTS_PER_PAGE = 200
  * run once the three event lists are read. */
 export const TX_INFO_CAP = 24
 /** Constant calls (`name()`/`symbol()`) per run, across all tokens. Two per
- * token, so twelve tokens are named in a full run. */
+ * token, so ten tokens are named in a full run.
+ *
+ * This is a SECOND ceiling under the run's own call budget, not beside it. The
+ * first production run (2026-09-17, keyless) spent its six budgeted calls on the
+ * feeds and the transactions and then fired four unbudgeted, unpaced constant
+ * calls; the anonymous host answered 429 to the last four of them. Every constant
+ * call now goes through the same counter and the same pacing as everything else,
+ * so a keyless run really does make six calls. */
 export const NAME_CALL_CAP = 20
 /** Addresses per DexScreener request. Their documented ceiling. */
 export const DEX_BATCH = 30
@@ -1133,20 +1140,28 @@ export async function captureSunpumpStages(db: any, ctxFor: (name: string, maxCa
       for (const [address, quote] of dexQuotesFrom(payload)) quotes.set(address, quote)
     }
 
-    // ── 4. name and symbol, hard-capped, cached for a day ──
+    // ── 4. name and symbol, inside the run budget, hard-capped, cached a day ──
+    // The pair is SEQUENTIAL and paced keyless, not fired together: the anonymous
+    // host answered 429 to a burst on the first production run.
     let nameCalls = 0
     const nowMs = now.getTime()
+    const askName = async (token: string, selector: 'name()' | 'symbol()'): Promise<string | null> => {
+      if (calls >= budget || clock() - startedAt > RUN_BUDGET_MS) { budgetExhausted = true; return null }
+      if (keyless && live > 0) await sleep(KEYLESS_SPACING_MS)
+      calls += 1
+      live += 1
+      nameCalls += 1
+      return await constantCall(token, selector, ctx).catch(() => null)
+    }
     for (const member of members) {
       const cached = _names.get(member.token)
       if (cached && nowMs - cached.at < NAME_TTL_MS) continue
       const quote = quotes.get(member.token)
       if (quote?.name || quote?.symbol) { _names.set(member.token, { name: quote.name, symbol: quote.symbol, at: nowMs }); continue }
       if (nameCalls + 2 > NAME_CALL_CAP) break
-      nameCalls += 2
-      const [name, symbol] = await Promise.all([
-        constantCall(member.token, 'name()', ctx).catch(() => null),
-        constantCall(member.token, 'symbol()', ctx).catch(() => null),
-      ])
+      if (calls + 2 > budget) { budgetExhausted = true; break }
+      const name = await askName(member.token, 'name()')
+      const symbol = await askName(member.token, 'symbol()')
       if (name || symbol) _names.set(member.token, { name, symbol, at: nowMs })
     }
 

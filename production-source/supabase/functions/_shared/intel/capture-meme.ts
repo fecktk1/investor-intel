@@ -97,6 +97,20 @@ import type { CaptureDeps, JobResult } from './capture-jobs.ts'
 
 /** The provider's own stage names, kept verbatim so a stored row and a
  * `discoveryStage` on a live response are the same string. */
+/**
+ * The value `source` carries on a row THIS lane wrote.
+ *
+ * It is never written explicitly: the column's DEFAULT is 'coinmarketcap' and
+ * this lane predates the column. It is named here because the FRESHNESS GUARD
+ * has to filter on it. Two other lanes now write this table, and a guard that
+ * reads "the newest row of intel_meme_stage_snapshots" would see one of theirs
+ * and skip this lane with `within_cadence` for as long as either of them keeps
+ * running. Verified in production on 2026-09-17: the table held 116 CoinGecko
+ * rows and 3 TronGrid rows at the same capture hour, and the CoinMarketCap lane
+ * has no rows of its own at all, so unfiltered it would have skipped forever.
+ */
+export const MEME_SOURCE = 'coinmarketcap'
+
 export const MEME_STAGES = ['newCreations', 'aboutGraduates', 'graduates'] as const
 export type MemeStage = typeof MEME_STAGES[number]
 /** Furthest stage wins when one response names a contract twice. */
@@ -170,12 +184,15 @@ async function newestAt(db: any, table: string, column: string, filters: [string
   } catch { return null }
 }
 
+/** `freshness.filters` are applied to the freshness read. A table only one lane
+ * writes needs none; a table several lanes write needs the lane's OWN source, or
+ * the guard measures somebody else's cadence. */
 // deno-lint-ignore no-explicit-any
 async function guardJob(db: any, job: string, feature: string, deps: CaptureDeps, now: Date,
-  freshness: { table: string; column: string }): Promise<JobResult | null> {
+  freshness: { table: string; column: string; filters?: [string, unknown][] }): Promise<JobResult | null> {
   const policy = lanePolicy(deps, feature)
   if (!policy.enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
-  const newest = await newestAt(db, freshness.table, freshness.column)
+  const newest = await newestAt(db, freshness.table, freshness.column, freshness.filters ?? [])
   if (newest != null && now.getTime() - newest < policy.cadenceSeconds * 1000 * CADENCE_GRACE) {
     return { job, rows: 0, credits: 0, skipped: 'within_cadence', newestAt: new Date(newest).toISOString() }
   }
@@ -355,7 +372,10 @@ export async function captureMemeStages(db: any, ctxFor: (name: string, maxCalls
   let credits = 0
   try {
     if (!planAllows(plan, 'startup')) return { job, rows: 0, credits: 0, skipped: 'plan_below_startup' }
-    const skip = await guardJob(db, job, 'meme_stages', deps, now, { table: 'intel_meme_stage_snapshots', column: 'captured_at' })
+    // FILTERED BY SOURCE. Three lanes write this table; without the filter a
+    // CoinGecko or TronGrid row written minutes earlier makes this lane skip.
+    const skip = await guardJob(db, job, 'meme_stages', deps, now,
+      { table: 'intel_meme_stage_snapshots', column: 'captured_at', filters: [['source', MEME_SOURCE]] })
     if (skip) return skip
     const ctx = ctxFor('meme-stages', MEME_MAX_CALLS)
     const budget = callBudget(ctx, MEME_MAX_CALLS)
