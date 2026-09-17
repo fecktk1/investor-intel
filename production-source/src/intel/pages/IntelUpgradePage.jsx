@@ -142,7 +142,7 @@ export default function IntelUpgradePage() {
 
   const navigate = useNavigate()
   const { session } = useAuth() ?? {}
-  const { org, profileLoading, paymentStatus, refreshProfile } = useProfile() ?? {}
+  const { org, profileLoading, paymentStatus, refreshProfile, intelTier } = useProfile() ?? {}
   const [searchParams] = useSearchParams()
 
   // ?plan= preselects a tier (paid-intent funnel from /investors → /intel/signup).
@@ -182,13 +182,15 @@ export default function IntelUpgradePage() {
 
   const tier = INTEL_TIERS.find((p) => p.id === tierId) ?? INTEL_TIERS[1]
   const baseAmountCents = tier.priceCents
-  const currentTier = org?.plan_overrides?.intel_tier ?? null
+  // The tier the SERVER will enforce, not just the one recorded on the row: a
+  // trial that has lapsed is a free membership and this page must read as one.
+  const currentTier = intelTier ?? null
   const isIntelOrg = org?.product_mode === 'intel'
   // A free membership (start_intel_free / intel_set_free_tier) has no trial
   // clock and no payment_required_since, so paymentStatus reads 'paid'. It is
   // a working membership, not a lapsed trial. A free-tier row that has gone
   // into grace or expired keeps the lapsed copy.
-  const isFreeMember = currentTier === 'free' && (paymentStatus === 'paid' || paymentStatus === 'bypass')
+  const isFreeMember = currentTier === 'free' && (paymentStatus === 'free' || paymentStatus === 'paid' || paymentStatus === 'bypass')
 
   // ── Tokenizer mount (copied from ReactivatePage; amount = tier price) ──
   const mountTokenizer = useCallback(async () => {
@@ -627,6 +629,9 @@ export default function IntelUpgradePage() {
       <SEO title={t('intel_upgrade.seo_title', { defaultValue: 'Upgrade Investor Intel' })} path="/intel/upgrade" noindex />
       <PublicNav />
       <div className="max-w-3xl mx-auto px-6 py-12">
+        {/* A member who still has a workspace to go back to gets the way back.
+            That is everyone in a trial and everyone on the free tier, whether
+            they signed up free or their trial lapsed into it. */}
         {(paymentStatus === 'trial' || isFreeMember) && (
           <Link
             to="/intel"

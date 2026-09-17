@@ -15,6 +15,7 @@ import ThemeSwitcher from '../../components/ThemeSwitcher'
 import SubmitTicketModal from '../../components/support/SubmitTicketModal'
 import SupportEventLogger from '../../components/support/SupportEventLogger'
 import IntelDisclaimer from './IntelDisclaimer'
+import IntelMembershipNotice from './IntelMembershipNotice'
 import { useScrollRestoration } from '../lib/useScrollRestoration'
 import { markSurfaceSeen } from '../lib/changes-api'
 import WorkspaceSearch from '../../components/navigation/WorkspaceSearch'
@@ -148,6 +149,10 @@ export default function IntelModeShell({ children }) {
             </div>
           </div>
         )}
+
+        {/* Says, once, that the trial ended and nothing was lost. Renders
+            itself only for a workspace that reached the free tier that way. */}
+        <IntelMembershipNotice />
 
         <nav className="flex-1 overflow-y-auto p-3 intel-nav-groups">
           {navGroups.map((group) => {
