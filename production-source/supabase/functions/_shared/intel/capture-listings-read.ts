@@ -47,6 +47,9 @@ const LISTINGS_PER_CHAIN_PER_DAY = 5
 const MARKET_LOOKUP_BATCH = 100
 /** Batches attempted. 5 x 100 covers the widest page the board renders. */
 const MARKET_LOOKUP_BATCHES = 5
+/** Flag codes named in one side of a change. A document reports tens of items;
+ * this only ever truncates a detail line, never a count. */
+const FLAG_CODE_MAX = 20
 /** Edges of the "change since first capture" distribution, in percent.
  *
  * The edges are FIXED and published here rather than derived from the day's
@@ -113,6 +116,34 @@ export function sinceCapture(first: unknown, last: unknown): number | null {
   const from = num(first), to = num(last)
   if (from == null || to == null || from <= 0) return null
   return ((to - from) / from) * 100
+}
+
+/** The codes the provider marked as HIT in one flag document, sorted so two
+ * documents can be compared without their item order mattering. */
+export function hitCodes(security: unknown): string[] {
+  const doc = security && typeof security === 'object' && !Array.isArray(security) ? security as Record<string, unknown> : null
+  if (!doc || !Array.isArray(doc.items)) return []
+  // deno-lint-ignore no-explicit-any
+  return [...new Set((doc.items as any[]).filter((item) => item?.hit === true).map((item) => str(item?.code, 120)).filter((code): code is string => !!code))].sort()
+}
+
+/** Which reported hits differ between two flag documents.
+ *
+ * WHY THIS EXISTS BESIDE THE HASH. `changed` is a comparison of `security_hash`,
+ * and a hash moves for anything inside the document — the provider rewording an
+ * item's description moves it too. "Something changed" that a reader cannot act
+ * on is not worth a row, so the board says WHICH hits appeared and which went
+ * away, and says plainly when the hash moved and no hit did.
+ *
+ * Bounded: each list is capped, so a malformed document cannot widen the
+ * payload, and the cap is a silent truncation of a detail line, never of a count. */
+export function flagDelta(newest: unknown, previous: unknown): { added: string[]; removed: string[] } {
+  const now = hitCodes(newest), before = hitCodes(previous)
+  const beforeSet = new Set(before), nowSet = new Set(now)
+  return {
+    added: now.filter((code) => !beforeSet.has(code)).slice(0, FLAG_CODE_MAX),
+    removed: before.filter((code) => !nowSet.has(code)).slice(0, FLAG_CODE_MAX),
+  }
 }
 
 /** Whole days between the provider's own `date_added` and the newest capture of
@@ -206,6 +237,9 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
     // OLDEST captured price this window holds for the asset, which is not always
     // the oldest ROW: a capture day can record a null price.
     const priced = [...ordered].reverse().filter((row) => num(row.price) != null)
+    // Two INSPECTED captures, or there is nothing to compare. A snapshot with no
+    // hash is a capture nobody looked at, which is not evidence of anything.
+    const comparable = !!(newest.securityHash && previous?.securityHash)
     const stamps = ordered.map((row) => row.capturedAt).filter((v): v is string => !!v).sort()
     const lastSeenAt = stamps.at(-1) ?? null
     return {
@@ -222,7 +256,17 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
       firstPrice: priced.length > 1 ? priced[0].price : null,
       firstPriceAt: priced.length > 1 ? priced[0].snapshotDate : null,
       sinceCapturePct: priced.length > 1 ? sinceCapture(priced[0].price, priced.at(-1)?.price) : null,
-      changed: !!(newest.securityHash && previous?.securityHash && newest.securityHash !== previous.securityHash),
+      changed: comparable && newest.securityHash !== previous?.securityHash,
+      // WHY A STATE AND NOT JUST A BOOLEAN. `changed: false` answers two
+      // different questions with one word: "we compared and nothing moved" and
+      // "there was nothing to compare with". The second is the common one — a
+      // contract inspected for the first time, or one the previous day's budget
+      // never reached — and reporting it as "unchanged" would be a claim the
+      // capture never made.
+      changeState: !comparable ? 'first_inspection' : newest.securityHash !== previous?.securityHash ? 'changed' : 'unchanged',
+      changedFlags: comparable && newest.securityHash !== previous?.securityHash
+        ? { ...flagDelta(newest.security, previous?.security), since: previous?.snapshotDate ?? null }
+        : null,
     }
   }).sort((a, b) => String(b.dateAdded ?? '').localeCompare(String(a.dateAdded ?? '')) || String(a.providerId).localeCompare(String(b.providerId)))
 

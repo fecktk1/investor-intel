@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import SortableHeader, { StaticHeader } from './SortableHeader'
+import SortableHeader from './SortableHeader'
 import { BOARD_CELL_CLASS } from './BoardTableHeader'
 import { Link } from 'react-router'
 import { useProfile } from '../../lib/profile-context'
@@ -25,6 +25,16 @@ import { fmtNum, formatPct, formatPrice, formatUsd, pctClass } from '../lib/mark
 // with the columns the capture always fills, and the inspection result — which
 // is the rarer and more valuable reading — is one word per row with the flag
 // document behind a disclosure.
+//
+// WHAT IS NOT A COLUMN, AND WHY IT IS NOT LOST. Holder count and the changed
+// flag set were dashes in 85 and 105 of 105 live rows, and both are readings
+// that exist ONLY where a contract was inspected: no captured row has ever
+// carried a holder count without a flag document, and `changed` needs two
+// inspected captures before it can be true. So both moved INTO the inspection
+// disclosure, where the row they describe is the row that has them, and where
+// each can say what it means instead of showing a dash. The cohort sentence
+// above the table still counts the assets whose flag set moved, so the window's
+// claim is unchanged.
 //
 // Contract: `new_listings` takes { days: 7|30|90, status: 'flagged'|'inspected'|
 // 'all' } and answers { rows, cohort, sinceListing, changed, asOf, coverage,
@@ -54,6 +64,13 @@ const DEFAULT_DIR = 'desc'
 // Columns whose natural first reading is smallest-first. Everything else — a
 // price, a volume, a date, a flag count — opens largest or newest first.
 const ASCENDING_FIRST = new Set(['symbol', 'name', 'chain'])
+// Every column the table renders a header for, in order. A sort key the table
+// cannot draw as an active header is not honoured: an order no header describes
+// is an order the reader cannot see, and a stale shared URL naming a column this
+// board no longer has must fall back rather than reorder the rows silently.
+const SORT_KEYS = [
+  'symbol', 'name', 'dateAdded', 'price', 'change24hPct', 'volume24h', 'marketCap', 'sinceCapturePct', 'chain', 'flagCount',
+]
 // Hoisted so useUrlState's memo/callback identities stay stable across renders.
 const URL_DEFAULTS = {
   l_days: String(DEFAULT_DAYS), l_status: DEFAULT_STATUS,
@@ -196,6 +213,52 @@ export function listingHref(row) {
   return `/intel/markets/${encodeURIComponent(row?.symbol || providerId)}?provider=coinmarketcap&id=${encodeURIComponent(providerId)}`
 }
 
+/** The holder count for one listing, and the capture clock it was read on.
+ *
+ *  A holder count exists only where a contract was inspected, so this lives in
+ *  the inspection detail rather than in a table column that was a dash in 85 of
+ *  105 rows. An inspected contract the provider published no holder count for
+ *  says so: "not read" is a reading, and a dash was not. */
+export function holderLine(t, row) {
+  const holders = num(row?.holderCount)
+  if (holders == null) {
+    return t('listings.detail_holders_unread', { defaultValue: 'The capture read no holder count for this contract.' })
+  }
+  const at = clockTime(row?.lastSeenAt)
+  return at
+    ? t('listings.detail_holders', { holders: fmtNum(holders), at, defaultValue: '{{holders}} holders at the {{at}} capture.' })
+    : t('listings.detail_holders_noclock', { holders: fmtNum(holders), defaultValue: '{{holders}} holders, on a capture that recorded no clock.' })
+}
+
+/** What moved in this contract's flag document since the previous capture, as
+ *  the lines the detail prints.
+ *
+ *  `changeState` separates the two things a bare `changed: false` used to
+ *  conflate: "we compared two inspected captures and nothing moved" and "there
+ *  was no earlier inspected capture to compare with". The second is the common
+ *  case and reporting it as unchanged would be a claim the capture never made.
+ *
+ *  A hash can also move without any reported hit moving — the provider rewording
+ *  an item does it — so when the codes are equal on both sides that is said
+ *  plainly instead of being dressed up as a finding. */
+export function changeLines(t, row) {
+  const state = String(row?.changeState || '').trim()
+  if (state === 'unchanged') {
+    return [t('listings.detail_unchanged', { defaultValue: 'The flag document matches the previous inspected capture.' })]
+  }
+  if (state !== 'changed') {
+    return [t('listings.detail_first_inspection', { defaultValue: 'There is no earlier inspected capture of this contract to compare with, so no change can be reported.' })]
+  }
+  const delta = row?.changedFlags && typeof row.changedFlags === 'object' ? row.changedFlags : null
+  const added = Array.isArray(delta?.added) ? delta.added.filter(Boolean) : []
+  const removed = Array.isArray(delta?.removed) ? delta.removed.filter(Boolean) : []
+  const lines = []
+  if (added.length) lines.push(t('listings.detail_changed_added', { codes: added.join(', '), defaultValue: 'Newly hit at this capture: {{codes}}.' }))
+  if (removed.length) lines.push(t('listings.detail_changed_removed', { codes: removed.join(', '), defaultValue: 'No longer hit at this capture: {{codes}}.' }))
+  if (!lines.length) lines.push(t('listings.detail_changed_hash', { defaultValue: 'The flag document changed at this capture, but no reported hit changed.' }))
+  return lines
+}
+
 /** The read's own bins, as Histogram's caller-computed bins. The edges are the
  *  read's; this never re-derives them, and an empty bin keeps its slot. */
 export function listingSinceBins(histogram) {
@@ -288,8 +351,12 @@ export default function NewListingsBoard() {
   const cohort = payload?.cohort && typeof payload.cohort === 'object' ? payload.cohort : null
   const since = payload?.sinceListing && typeof payload.sinceListing === 'object' ? payload.sinceListing : null
 
+  // A direction without a column this board draws is not an order anyone chose,
+  // so an unrecognised sort key drops the direction with it rather than leaving
+  // the default column pointing the way a stale URL happened to name.
+  const urlSort = SORT_KEYS.includes(urlState.l_sort) ? urlState.l_sort : null
   const { sort, dir, toggle } = useColumnSort({
-    sort: urlState.l_sort, dir: urlState.l_dir,
+    sort: urlSort, dir: urlSort ? urlState.l_dir : null,
     setSort: next => setUrlState({ l_sort: next.sort, l_dir: next.dir }),
     defaultSort: DEFAULT_SORT, defaultDir: DEFAULT_DIR,
     initialDir: key => (ASCENDING_FIRST.has(key) ? 'asc' : 'desc'),
@@ -362,7 +429,6 @@ export default function NewListingsBoard() {
     { key: 'sinceCapturePct', label: t('listings.col_since', { defaultValue: 'Since first capture' }), align: 'right' },
     { key: 'chain', label: t('listings.col_chain', { defaultValue: 'Chain' }), align: 'left' },
     { key: 'flagCount', label: t('listings.col_inspection', { defaultValue: 'Inspection' }), align: 'left' },
-    { key: 'holderCount', label: t('listings.col_holders', { defaultValue: 'Holders' }), align: 'right' },
   ]
 
   const control = (label, options, current, apply, format) => (
@@ -471,7 +537,6 @@ export default function NewListingsBoard() {
                     ? <SortableHeader key={column.key} sortKey={column.key} label={column.label} sort={sort} dir={dir} onToggle={toggle} align="right" />
                     : <SortableHeader key={column.key} sortKey={column.key} label={column.label} sort={sort} dir={dir} onToggle={toggle} align="left" />
                   ))}
-                  <StaticHeader label={t('listings.col_changed', { defaultValue: 'Changed' })} />
                 </tr>
               </thead>
               <tbody>
@@ -545,18 +610,16 @@ export default function NewListingsBoard() {
                             <span className="text-[var(--fg-4)]" title={inspection.title}>{inspection.label}</span>
                           )}
                         </td>
-                        <td className={`intel-number ${BOARD_CELL_CLASS}`}>{fmtNum(num(row?.holderCount))}</td>
-                        <td className={BOARD_CELL_CLASS}>
-                          {row?.changed === true
-                            ? t('listings.changed_yes', { defaultValue: 'Changed' })
-                            : '—'}
-                        </td>
                       </tr>
                       {expanded ? (
                         <tr id={`listing-flags-${key}`} data-testid={`listing-flags-${key}`}>
-                          <td className={BOARD_CELL_CLASS} colSpan={columns.length + 1}>
+                          <td className={BOARD_CELL_CLASS} colSpan={columns.length}>
                             <div className="space-y-2 pb-2">
                               <RowRisk row={row} t={t} />
+                              <p className="intel-analysis-caption" data-testid="listing-detail-holders">{holderLine(t, row)}</p>
+                              {changeLines(t, row).map(line => (
+                                <p key={line} className="intel-analysis-caption" data-testid="listing-detail-change">{line}</p>
+                              ))}
                               <FlagItems row={row} t={t} />
                             </div>
                           </td>

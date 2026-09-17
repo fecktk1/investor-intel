@@ -1,6 +1,7 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   readNewListings, flagCount, medianOf, sinceCapture, daysOnProvider, sinceHistogram, readMarketPages,
+  hitCodes, flagDelta,
   LISTING_CAPTURE_VIEWS, LISTING_VIEWS,
 } from './capture-listings-read.ts'
 
@@ -161,7 +162,8 @@ Deno.test('the returned row carries exactly the documented shape', async () => {
   // deno-lint-ignore no-explicit-any
   const row = (r.rows as any[])[0]
   eq(Object.keys(row).sort(), [
-    'chain', 'change24hPct', 'changed', 'contractAddress', 'dateAdded', 'daysOnProvider', 'firstPrice', 'firstPriceAt',
+    'chain', 'change24hPct', 'changed', 'changeState', 'changedFlags',
+    'contractAddress', 'dateAdded', 'daysOnProvider', 'firstPrice', 'firstPriceAt',
     'firstSeenAt', 'flagCount', 'hasMarketPage', 'holderCount',
     'lastSeenAt', 'marketCap', 'name', 'price', 'providerId', 'securityState', 'security', 'sinceCapturePct', 'slug',
     'snapshots', 'symbol', 'volume24h',
@@ -204,6 +206,47 @@ Deno.test('a changed hash is only asserted when both sides were actually inspect
   eq(await changed(HASH('a'), null), false, 'a first inspection is a baseline, not a change')
   eq(await changed(null, HASH('b')), false, 'losing coverage is not a change')
   eq(await changed(null, null), false)
+
+  // `changed: false` answers two different questions, so the row also carries
+  // WHICH of them it is: compared and equal, or nothing to compare with.
+  // deno-lint-ignore no-explicit-any
+  const state = async (a: string | null, b: string | null) => ((await readNewListings(fakeDb({ intel_new_listing_snapshots: pair(a, b) }), {}, NOW)).rows as any[])[0].changeState
+  eq(await state(HASH('a'), HASH('b')), 'changed')
+  eq(await state(HASH('a'), HASH('a')), 'unchanged')
+  eq(await state(HASH('a'), null), 'first_inspection', 'no second inspected capture is not "unchanged"')
+  eq(await state(null, HASH('b')), 'first_inspection')
+})
+
+Deno.test('a changed flag set names the hits that moved, and says so when none did', async () => {
+  const pair = (now: string[], before: string[], hashes: [string, string] = [HASH('a'), HASH('b')]) => [
+    { ...snapshot({ provider_id: '9', snapshot_date: dayOf(0), security_hash: hashes[0], captured_at: daysAgo(0) }), security: { items: now.map((code) => ({ code, hit: true })) } },
+    { ...snapshot({ provider_id: '9', snapshot_date: dayOf(1), security_hash: hashes[1], captured_at: daysAgo(1) }), security: { items: before.map((code) => ({ code, hit: true })) } },
+  ]
+  // deno-lint-ignore no-explicit-any
+  const delta = async (now: string[], before: string[], hashes?: [string, string]) => ((await readNewListings(fakeDb({ intel_new_listing_snapshots: pair(now, before, hashes) }), {}, NOW)).rows as any[])[0].changedFlags
+
+  const moved = await delta(['mintable', 'honeypot'], ['honeypot', 'rug_pull'])
+  eq(moved.added, ['mintable'])
+  eq(moved.removed, ['rug_pull'])
+  eq(moved.since, dayOf(1), 'the delta names the capture it is measured against')
+
+  // A hash moves for anything inside the document, a reworded description
+  // included. When no reported hit moved, the row says so rather than dressing
+  // it up as a finding.
+  const wording = await delta(['honeypot'], ['honeypot'])
+  eq(wording.added, [])
+  eq(wording.removed, [])
+
+  // Nothing to compare with is no delta at all, not an empty one.
+  eq(await delta(['honeypot'], ['honeypot'], [HASH('a'), HASH('a')]), null)
+
+  eq(hitCodes({ items: [{ code: 'b', hit: true }, { code: 'a', hit: true }, { code: 'c', hit: false }] }), ['a', 'b'])
+  eq(hitCodes({ items: [{ code: 'a', hit: true }, { code: 'a', hit: true }] }), ['a'], 'one code named twice is one hit')
+  eq(hitCodes(null), [])
+  eq(flagDelta(null, null), { added: [], removed: [] })
+  // Bounded: a malformed document truncates a detail line, never a count.
+  const wide = { items: Array.from({ length: 40 }, (_, i) => ({ code: `c${String(i).padStart(2, '0')}`, hit: true })) }
+  eq(flagDelta(wide, null).added.length, 20)
 })
 
 Deno.test('a failed read is a reason on an empty result, never a silently short list', async () => {
