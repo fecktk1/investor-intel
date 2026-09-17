@@ -20,11 +20,14 @@
 // `capture-rwa-issuer-read.ts`, builds its board from stored rows rather than
 // from the source records `legitimacyView` takes, so it cannot call
 // `legitimacyView` directly. Until 2026-09-16 it therefore did not apply this
-// guard at all: an EXPIRED assertion kept showing its registration status,
-// sanctions pointer, jurisdiction and admission terms, although
-// docs/investor-intel/issuer-review-schedule.md says expiry withholds them.
-// The guard now lives in `identityGate` below, and both `legitimacyView` and the
-// read view decide what to withhold through it, so the two cannot drift apart.
+// guard at all: a subject with no mapping in force kept showing its registration
+// status, sanctions pointer, jurisdiction and admission terms. The guard now
+// lives in `identityGate` below, and both `legitimacyView` and the read view
+// decide what to withhold through it, so the two cannot drift apart.
+//
+// A mapping falls out of force only through an EXPLICIT LAPSE appended to
+// rwa-issuer-aliases.ts, or at a replay instant before it was asserted. Nothing
+// here expires on a clock; see docs/investor-intel/issuer-review-schedule.md.
 
 import {
   aliasState, collisionsFor, resolveAlias, unmappedRecord,

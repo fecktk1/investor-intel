@@ -16,11 +16,16 @@ Deno.test('issuer deployment review matches exact networks and tokens, never tic
  assertEquals(representationReview('tron:TDfX64Ariz5usffBJjtDbiMuCXVpKiDCEb',now)?.network,'Tron')
  assertEquals(representationReview('tron:tdfx64ariz5usffbjjtdbimucxvpKidceb',now),null)
 })
-Deno.test('review clocks do not backdate knowledge or turn expired review into clearance',()=>{
+Deno.test('review clocks do not backdate knowledge, and the review does not expire on one',()=>{
  assertEquals(representationReview(polygon,Date.parse('2026-09-12T05:02:36Z')),null)
  const original=representationReview(polygon,now)!,saved=JSON.stringify(original)
- const expired=representationReview(polygon,Date.parse('2026-09-20T00:00:00Z'))!
- assertEquals(expired.status,'review_expired');assertEquals(expired.sourceRef,original.sourceRef);assertEquals(expired.summary,original.summary)
+ // Eight days on, then seven years on. The retirement notice is still current:
+ // a deployment does not become un-retired because a review window closed.
+ for(const later of [Date.parse('2026-09-20T00:00:00Z'),Date.parse('2033-09-20T00:00:00Z')]){
+  const still=representationReview(polygon,later)!
+  assertEquals(still.status,'reviewed');assertEquals(still.sourceRef,original.sourceRef);assertEquals(still.summary,original.summary)
+  assertEquals(still.reviewLapsedAt,null)
+ }
  assertEquals(JSON.stringify(original),saved);assertEquals(representationReview(polygon,NaN),null)
 })
 Deno.test('human notice stays in the named thesis version while AI sees a reference and explicit restriction',()=>{

@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import { identityGate, legitimacyView } from './rwa-legitimacy.ts'
-import { ALIAS_REVIEWED_AT, ALIAS_REVIEW_EXPIRES, ALIAS_V2_REVIEWED_AT } from './rwa-issuer-aliases.ts'
+import { ALIAS_REVIEWED_AT, ALIAS_V2_REVIEWED_AT } from './rwa-issuer-aliases.ts'
 import { parseSdnCsv } from './rwa-sources/ofac.ts'
 import { concentration } from './rwa-sources/blockscout.ts'
 import { detectRestrictions } from './rwa-sources/sourcify.ts'
@@ -140,9 +140,24 @@ Deno.test('a name collision is surfaced on a mapped subject without becoming a m
   assert.equal(view.identity.assertion?.entity.cik, '0002004367')
 })
 
-Deno.test('an expired mapping loses its legal facts the same way an unmapped one never had them', () => {
-  const view = legitimacyView({ subject: USTB, at: Date.parse('2026-10-01T00:00:00.000Z'), lei: lapsedLei, admissions: SERIES })
-  assert.equal(view.identity.state, 'expired')
+Deno.test('a mapping keeps its legal facts however long after it was asserted', () => {
+  // Two weeks past the old seven-day window, and then five years past it. The
+  // mapping is still in force, so the legal facts are still shown.
+  for (const when of [Date.parse('2026-10-01T00:00:00.000Z'), Date.parse('2031-01-01T00:00:00.000Z')]) {
+    const view = legitimacyView({ subject: USTB, at: when, lei: lapsedLei, admissions: SERIES })
+    assert.equal(view.identity.state, 'mapped')
+    assert.equal(view.identity.assertion?.entity.cik, '0002004367')
+    assert.equal(view.signals.some((s) => s.type === 'lei_registration'), true)
+    assert.equal(view.admission.timeline.length, SERIES.length)
+  }
+})
+
+Deno.test('a subject with no mapping in force loses its legal facts the same way an unmapped one never had them', () => {
+  // Before the assertion existed, nothing may be said about the legal person.
+  const before = Date.parse(ALIAS_REVIEWED_AT) - 1000
+  const view = legitimacyView({ subject: USTB, at: before, lei: lapsedLei, admissions: SERIES })
+  assert.equal(view.identity.state, 'unknown')
+  assert.equal(view.identity.assertion, null)
   assert.deepEqual(view.signals, [])
   assert.deepEqual(view.admission.timeline, [])
 })
@@ -152,14 +167,13 @@ Deno.test('the identity gate is one decision shared by the view and the shipped 
   assert.equal(live.legalFactsAllowed, true)
   assert.equal(live.assertion?.entity.cik, '0002004367')
   assert.equal(live.unmapped, null)
-  // Expired: no assertion is handed out, so no legal fact can be built from it.
-  const lapsed = identityGate(USTB, Date.parse(ALIAS_REVIEW_EXPIRES) + 1000)
-  assert.deepEqual([lapsed.state, lapsed.legalFactsAllowed, lapsed.assertion], ['expired', false, null])
+  // Still one decision, and still allowed, years later: no clock closes it.
+  const later = identityGate(USTB, Date.parse('2031-01-01T00:00:00.000Z'))
+  assert.deepEqual([later.state, later.legalFactsAllowed, later.assertion?.entity.cik], ['mapped', true, '0002004367'])
+  // Not yet asserted: no assertion is handed out, so no legal fact can be built.
+  const notYet = identityGate(USTB, Date.parse(ALIAS_REVIEWED_AT) - 1000)
+  assert.deepEqual([notYet.state, notYet.legalFactsAllowed, notYet.assertion], ['unknown', false, null])
   // A refusal is read as of the instant asked: version 2 re-probed Ondo.
   assert.equal(identityGate(ONDO, at).unmapped?.version, 'rwa-issuer-alias-1')
   assert.equal(identityGate(ONDO, Date.parse(ALIAS_V2_REVIEWED_AT) + 1000).unmapped?.version, 'rwa-issuer-alias-2')
-  const view = legitimacyView({ subject: USTB, at: Date.parse(ALIAS_REVIEW_EXPIRES) + 1000, lei: lapsedLei, admissions: SERIES })
-  assert.equal(view.identity.state, 'expired')
-  assert.deepEqual(view.signals, [])
-  assert.deepEqual(view.admission.timeline, [])
 })

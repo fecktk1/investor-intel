@@ -1,8 +1,15 @@
 // Versioned original editorial summaries. Add a revision; never rewrite the
 // words or dates of one used by a saved evidence pack. No provider requests,
 // wallet reads, accounting adjustments or implied current trading prices.
+//
+// A review does NOT expire on a clock. It stays current until a later revision
+// supersedes it or until an explicit lapse is declared, matching
+// _shared/intel/rwa-issuer-evidence.ts.
 const REVIEWED_AT = '2026-09-12T05:02:37.000Z'
-const EXPIRES_AT = '2026-09-19T05:02:37.000Z'
+/** Set only when a reviewer decides this summary can no longer be relied on,
+ * with the instant it stopped being current. Null means it is still current and
+ * will stay so until someone says otherwise. */
+const LAPSED_AT: string | null = null
 const SOURCE = 'https://matrixdock.gitbook.io/matrixdock-docs/english/gold-token-xaum/smart-contract/contract-address.md'
 const CONTRACTS = [
   ['eip155:137:0xa7e22972a19dd924afeedf3db28033b146801081', 'Polygon'],
@@ -24,10 +31,10 @@ export function representationReview(input: unknown, asOf = Date.now()) {
   const key = exactKey(input), match = CONTRACTS.find(([contract]) => contract === key)
   if (!match || !Number.isFinite(asOf) || asOf < Date.parse(REVIEWED_AT)) return null
   return {
-    status: asOf < Date.parse(EXPIRES_AT) ? 'reviewed' : 'review_expired',
+    status: LAPSED_AT && asOf >= Date.parse(LAPSED_AT) ? 'review_expired' : 'reviewed',
     canonicalAssetKey: match[0], network: match[1], issuer: 'Matrixdock',
     sourceRef: `issuer-network-review-1:${match[0]}`, reviewVersion: 'issuer-network-review-1',
-    sourceUrl: SOURCE, reviewedAt: REVIEWED_AT, reviewExpiresAt: EXPIRES_AT,
+    sourceUrl: SOURCE, reviewedAt: REVIEWED_AT, reviewLapsedAt: LAPSED_AT,
     effectiveDate: '2026-08-07', effectiveTime: null,
     summary: 'Matrixdock lists this exact deployment as retired and does not recognize its balances as valid XAUm. The notice does not determine a market price or erase your recorded holdings and transactions.',
     timeMeaning: 'The issuer gives a date without a time or timezone. The review time records our source check, not the retirement event or a transaction.',

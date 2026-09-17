@@ -22,12 +22,14 @@
 // asserted it and when. AN UNMAPPED ISSUER STAYS UNMAPPED.
 //
 // EDITORIAL CONTRACT, mirroring _shared/intel/rwa-issuer-evidence.ts: every
-// assertion is dated, carries a seven-day review window, links its source, and
-// is append only. A deployed assertion is never edited; it is superseded by a
-// later version or it expires. Expiry is our freshness policy, not a claim that
-// a legal entity ceased to exist on that date.
+// assertion is dated, links its source, and is append only. A deployed
+// assertion is never edited. IT DOES NOT EXPIRE ON A CLOCK: it stays in force
+// until a later version supersedes it for the same subject, or until an
+// explicit LAPSE is appended saying it can no longer be relied on. A register
+// record does not stop being what it was because a week passed, so nothing here
+// stops resolving because a date arrived.
 //
-// FOUR KINDS OF RECORD, and the distinction is the honesty mechanism:
+// FIVE KINDS OF RECORD, and the distinction is the honesty mechanism:
 //   ALIAS_ASSERTIONS  a subject IS this legal entity. Both sides evidenced.
 //   VERIFIED_ENTITIES a register record we read and can quote. It is NOT a
 //                     claim that any token belongs to it.
@@ -38,35 +40,36 @@
 //                     asserted. This is where a lapsed registration that may or
 //                     may not be related shows up, without ever being attached
 //                     to a token by similarity.
+//   ALIAS_LAPSES      an explicit, dated withdrawal of a mapping. This is the
+//                     ONLY way an assertion stops being in force other than a
+//                     later version restating the same subject.
 
-// VERSIONS. Each version is one dated review with one seven-day window. A later
-// version only ADDS records: it never edits an earlier one. A subject may carry
-// records in several versions; the assertion in force at a given instant is the
-// one whose window contains it, and a non-mapping is read as of the newest
+// VERSIONS. Each version is one dated review. A later version only ADDS records:
+// it never edits an earlier one. A subject may carry records in several
+// versions; the assertion in force at a given instant is the newest one asserted
+// by then that has not been lapsed, and a non-mapping is read as of the newest
 // probe made by then. The version 1 constants keep their original names so every
 // replay and test that names them still means exactly what it meant.
 export const ALIAS_REVIEWED_AT = '2026-09-16T14:30:00.000Z'
-export const ALIAS_REVIEW_EXPIRES = '2026-09-23T14:30:00.000Z'
-export const ALIAS_REVIEW_WINDOW_MS = 7 * 86_400_000
 export const ALIAS_VERSION = 'rwa-issuer-alias-1'
 /** Version 2, dated when its last source was read (2026-09-16 20:46:51 UTC).
  * Evidence: docs/investor-intel/evidence/rwa-issuer-alias-2-20260916.md. It
  * adds the OUSG mapping, re-probes all five version 1 non-mappings and records
- * one new one (USDY). It does NOT restate USTB or BUIDL, which were not re-read,
- * so those two still expire with version 1. */
+ * one new one (USDY). It does NOT restate USTB or BUIDL, which were not re-read;
+ * those two therefore keep resolving under version 1, because a version that
+ * does not mention a subject says nothing about it. */
 export const ALIAS_V2_REVIEWED_AT = '2026-09-16T20:47:00.000Z'
-export const ALIAS_V2_REVIEW_EXPIRES = '2026-09-23T20:47:00.000Z'
 export const ALIAS_V2_VERSION = 'rwa-issuer-alias-2'
 /** Who asserted every mapping in this version, recorded so a reader can ask. */
 export const ALIAS_REVIEWER = 'investor-intel-editorial'
 
-export interface AliasVersion { version: string; reviewedAt: string; expiresAt: string; evidenceFile: string }
+export interface AliasVersion { version: string; reviewedAt: string; evidenceFile: string }
 
 /** Every review, oldest first. A record naming a version not listed here, or
  * dated differently from its version, is a structural problem. */
 export const ALIAS_VERSIONS: readonly AliasVersion[] = [
-  { version: ALIAS_VERSION, reviewedAt: ALIAS_REVIEWED_AT, expiresAt: ALIAS_REVIEW_EXPIRES, evidenceFile: 'docs/investor-intel/evidence/rwa-issuer-alias-1-20260916.md' },
-  { version: ALIAS_V2_VERSION, reviewedAt: ALIAS_V2_REVIEWED_AT, expiresAt: ALIAS_V2_REVIEW_EXPIRES, evidenceFile: 'docs/investor-intel/evidence/rwa-issuer-alias-2-20260916.md' },
+  { version: ALIAS_VERSION, reviewedAt: ALIAS_REVIEWED_AT, evidenceFile: 'docs/investor-intel/evidence/rwa-issuer-alias-1-20260916.md' },
+  { version: ALIAS_V2_VERSION, reviewedAt: ALIAS_V2_REVIEWED_AT, evidenceFile: 'docs/investor-intel/evidence/rwa-issuer-alias-2-20260916.md' },
 ]
 
 /** What was actually compared to justify a mapping. There is no 'similar_name'
@@ -103,7 +106,23 @@ export interface AliasAssertion {
   evidence: string
   assertedBy: string
   assertedAt: string
-  expiresAt: string
+  version: string
+}
+
+/**
+ * An explicit, dated withdrawal of a mapping.
+ *
+ * This is the deliberate escape hatch, and the ONLY thing other than a later
+ * version that stops an assertion resolving. It is appended like every other
+ * record: the assertion it withdraws is never edited, so a replay before
+ * `lapsedAt` still shows the mapping that was in force then.
+ */
+export interface AliasLapse {
+  subject: string
+  lapsedAt: string
+  /** Why the mapping can no longer be relied on, in a reviewer's words. */
+  reason: string
+  declaredBy: string
   version: string
 }
 
@@ -129,8 +148,8 @@ export interface NameCollision {
   version: string
 }
 
-const review = { assertedBy: ALIAS_REVIEWER, assertedAt: ALIAS_REVIEWED_AT, expiresAt: ALIAS_REVIEW_EXPIRES, version: ALIAS_VERSION }
-const reviewV2 = { assertedBy: ALIAS_REVIEWER, assertedAt: ALIAS_V2_REVIEWED_AT, expiresAt: ALIAS_V2_REVIEW_EXPIRES, version: ALIAS_V2_VERSION }
+const review = { assertedBy: ALIAS_REVIEWER, assertedAt: ALIAS_REVIEWED_AT, version: ALIAS_VERSION }
+const reviewV2 = { assertedBy: ALIAS_REVIEWER, assertedAt: ALIAS_V2_REVIEWED_AT, version: ALIAS_V2_VERSION }
 
 /**
  * Subject IS this legal entity.
@@ -353,32 +372,60 @@ export const NAME_COLLISIONS: readonly NameCollision[] = [
   },
 ]
 
+/**
+ * Explicit withdrawals.
+ *
+ * EMPTY BY DESIGN. Nothing has been withdrawn, and nothing withdraws itself: a
+ * mapping is either superseded by a later version or it stays in force. Append a
+ * record here only when a reviewer has decided a mapping can no longer be relied
+ * on, and say why in `reason`.
+ */
+export const ALIAS_LAPSES: readonly AliasLapse[] = []
+
 const normalizeSubject = (value: unknown): string => String(value ?? '').trim().toLowerCase()
 
-const inWindow = (a: AliasAssertion, at: number): boolean => at >= Date.parse(a.assertedAt) && at < Date.parse(a.expiresAt)
+/** The newest explicit withdrawal recorded for this subject by `at`, or null.
+ * `lapses` is a parameter so the mechanism stays testable while the shipped list
+ * is empty; callers pass nothing. */
+export function lapseFor(subject: unknown, at: number, lapses: readonly AliasLapse[] = ALIAS_LAPSES): AliasLapse | null {
+  const key = normalizeSubject(subject)
+  if (!key) return null
+  return lapses
+    .filter((l) => normalizeSubject(l.subject) === key && Date.parse(l.lapsedAt) <= at)
+    .sort((a, b) => Date.parse(b.lapsedAt) - Date.parse(a.lapsedAt))[0] ?? null
+}
+
+/** Had this assertion been made by `at`, and not withdrawn since? Time alone
+ * never makes this false: only a lapse recorded at or after the assertion. */
+export function assertionInForce(a: AliasAssertion, at: number, lapses: readonly AliasLapse[] = ALIAS_LAPSES): boolean {
+  if (at < Date.parse(a.assertedAt)) return false
+  const lapse = lapseFor(a.subject, at, lapses)
+  return !lapse || Date.parse(lapse.lapsedAt) < Date.parse(a.assertedAt)
+}
+
+const inForce = (a: AliasAssertion, at: number): boolean => assertionInForce(a, at)
 
 /** The mapping for a subject, or null. Exact subject equality only.
  *
  * Several versions may assert the same subject. The one returned is the newest
- * assertion whose window contains `at`; no window containing it means no
- * mapping. */
+ * assertion made by `at`. It keeps resolving however long ago it was made; only
+ * an explicit lapse recorded after it, or a replay instant before it existed,
+ * removes it. */
 export function resolveAlias(subject: unknown, at: number = Date.parse(ALIAS_REVIEWED_AT)): AliasAssertion | null {
   const key = normalizeSubject(subject)
   if (!key) return null
-  // An expired assertion is not a mapping. It keeps its words for replay, but
-  // it stops resolving until a later version restates it.
   const current = ALIAS_ASSERTIONS
-    .filter((a) => normalizeSubject(a.subject) === key && inWindow(a, at))
+    .filter((a) => normalizeSubject(a.subject) === key && inForce(a, at))
     .sort((a, b) => Date.parse(b.assertedAt) - Date.parse(a.assertedAt))
   return current[0] ?? null
 }
 
 /**
  * One assertion per subject that had been asserted by `at`: the one in force,
- * or, when none is, the most recently asserted one (which is then expired).
- * A subject first asserted AFTER `at` is absent: a replay must not show a
- * mapping that did not exist yet. Ordered by first assertion, so earlier
- * subjects keep their place.
+ * or, when none is, the most recently asserted one (which has then been
+ * explicitly lapsed). A subject first asserted AFTER `at` is absent: a replay
+ * must not show a mapping that did not exist yet. Ordered by first assertion, so
+ * earlier subjects keep their place.
  */
 export function assertionsAsOf(at: number): AliasAssertion[] {
   const out = new Map<string, AliasAssertion>()
@@ -391,8 +438,8 @@ export function assertionsAsOf(at: number): AliasAssertion[] {
 }
 
 /** The assertions in force at `at`, one per subject. This is what a capture
- * lane may act on: an expired assertion no longer identifies anyone. */
-export const currentAssertions = (at: number): AliasAssertion[] => assertionsAsOf(at).filter((a) => inWindow(a, at))
+ * lane may act on: an explicitly lapsed assertion no longer identifies anyone. */
+export const currentAssertions = (at: number): AliasAssertion[] => assertionsAsOf(at).filter((a) => inForce(a, at))
 
 /** A deliberate non-mapping, if one was recorded for this subject by `at`: the
  * newest probe made by then. */
@@ -415,20 +462,21 @@ export function unmappedAsOf(at: number): UnmappedRecord[] {
     .filter((u): u is UnmappedRecord => !!u)
 }
 
-export type AliasState = 'mapped' | 'deliberately_unmapped' | 'expired' | 'unknown'
+export type AliasState = 'mapped' | 'deliberately_unmapped' | 'lapsed' | 'unknown'
 
 /**
  * What we are willing to say about this subject's legal identity.
  *
- * 'unknown' means nobody has reviewed it. 'deliberately_unmapped' means somebody
- * did and the sources did not support a mapping. The two must never be
- * collapsed: the second is a finding.
+ * 'unknown' means nobody has reviewed it YET at this instant. 'lapsed' means an
+ * assertion existed and was EXPLICITLY withdrawn; it is never reached by elapsed
+ * time. 'deliberately_unmapped' means somebody looked and the sources did not
+ * support a mapping. The three must never be collapsed: each is a finding.
  */
 export function aliasState(subject: unknown, at: number = Date.parse(ALIAS_REVIEWED_AT)): AliasState {
   const key = normalizeSubject(subject)
   if (!key) return 'unknown'
   if (resolveAlias(key, at)) return 'mapped'
-  if (ALIAS_ASSERTIONS.some((a) => normalizeSubject(a.subject) === key)) return 'expired'
+  if (lapseFor(key, at) && ALIAS_ASSERTIONS.some((a) => normalizeSubject(a.subject) === key && Date.parse(a.assertedAt) <= at)) return 'lapsed'
   if (unmappedRecord(key, at)) return 'deliberately_unmapped'
   return 'unknown'
 }
@@ -446,26 +494,24 @@ const CIK = /^[0-9]{10}$/
  * Structural problems in the map, for the test to assert is empty.
  *
  * This is the guard that keeps a future edit honest: a subject asserted twice at
- * the same time, a malformed identifier, a review window that is not seven days,
- * a record whose dates are not its version's, a subject asserted and recorded as
- * unmapped at the same instant, or a record with no evidence.
+ * the same instant, a malformed identifier, a record whose date is not its
+ * version's, a subject asserted and recorded as unmapped at the same instant, a
+ * withdrawal of a mapping that was never asserted, or a record with no evidence.
+ * There is deliberately NO window check: a review has no window.
  */
 export function aliasProblems(): string[] {
   const problems: string[] = []
   const versions = new Map(ALIAS_VERSIONS.map((v) => [v.version, v]))
   ALIAS_VERSIONS.forEach((v, i) => {
-    if (Date.parse(v.expiresAt) - Date.parse(v.reviewedAt) !== ALIAS_REVIEW_WINDOW_MS) problems.push(`${v.version}: review window must be seven days`)
     if (i > 0 && Date.parse(v.reviewedAt) <= Date.parse(ALIAS_VERSIONS[i - 1].reviewedAt)) problems.push(`${v.version}: must be reviewed after the version before it`)
   })
   for (const a of ALIAS_ASSERTIONS) {
     const key = normalizeSubject(a.subject)
     // A later version may restate a subject; nothing may assert it twice at once.
-    const overlapping = ALIAS_ASSERTIONS.some((b) => b !== a && normalizeSubject(b.subject) === key
-      && Date.parse(b.assertedAt) < Date.parse(a.expiresAt) && Date.parse(a.assertedAt) < Date.parse(b.expiresAt))
-    if (overlapping) problems.push(`${a.subject}: asserted more than once`)
+    if (ALIAS_ASSERTIONS.some((b) => b !== a && normalizeSubject(b.subject) === key && b.assertedAt === a.assertedAt)) problems.push(`${a.subject}: asserted more than once`)
     const version = versions.get(a.version)
     if (!version) problems.push(`${a.subject}: unknown version ${a.version}`)
-    else if (version.reviewedAt !== a.assertedAt || version.expiresAt !== a.expiresAt) problems.push(`${a.subject}: dates differ from ${a.version}`)
+    else if (version.reviewedAt !== a.assertedAt) problems.push(`${a.subject}: dates differ from ${a.version}`)
     if (!a.entity.lei && !a.entity.cik) problems.push(`${a.subject}: mapping carries no identifier`)
     if (a.entity.lei && !LEI.test(a.entity.lei)) problems.push(`${a.subject}: malformed LEI`)
     if (a.entity.cik && !CIK.test(a.entity.cik)) problems.push(`${a.subject}: malformed CIK`)
@@ -474,12 +520,19 @@ export function aliasProblems(): string[] {
     // entire point of the map.
     if (a.evidence.trim().length < 60) problems.push(`${a.subject}: evidence is too thin to review`)
     if (!a.assertedBy.trim()) problems.push(`${a.subject}: no asserter recorded`)
-    if (Date.parse(a.expiresAt) - Date.parse(a.assertedAt) !== ALIAS_REVIEW_WINDOW_MS) problems.push(`${a.subject}: review window must be seven days`)
+  }
+  for (const l of ALIAS_LAPSES) {
+    const key = normalizeSubject(l.subject)
+    if (!versions.has(l.version)) problems.push(`${l.subject}: unknown version ${l.version}`)
+    if (!Number.isFinite(Date.parse(l.lapsedAt))) problems.push(`${l.subject}: lapse has no date`)
+    else if (!ALIAS_ASSERTIONS.some((a) => normalizeSubject(a.subject) === key && Date.parse(a.assertedAt) <= Date.parse(l.lapsedAt))) problems.push(`${l.subject}: lapses a mapping that was never asserted`)
+    if (l.reason.trim().length < 20) problems.push(`${l.subject}: a lapse must say why`)
+    if (!l.declaredBy.trim()) problems.push(`${l.subject}: no declarer recorded`)
   }
   for (const u of UNMAPPED) {
     const key = normalizeSubject(u.subject)
     const probed = Date.parse(u.probedAt)
-    if (ALIAS_ASSERTIONS.some((a) => normalizeSubject(a.subject) === key && inWindow(a, probed))) problems.push(`${u.subject}: recorded as both mapped and unmapped`)
+    if (ALIAS_ASSERTIONS.some((a) => normalizeSubject(a.subject) === key && inForce(a, probed))) problems.push(`${u.subject}: recorded as both mapped and unmapped`)
     if (UNMAPPED.some((o) => o !== u && normalizeSubject(o.subject) === key && o.version === u.version)) problems.push(`${u.subject}: recorded as unmapped twice in ${u.version}`)
     const version = versions.get(u.version)
     if (!version) problems.push(`${u.subject}: unknown version ${u.version}`)
