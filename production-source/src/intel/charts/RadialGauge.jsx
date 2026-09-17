@@ -8,7 +8,7 @@ const CX = 170, CY = 156, R = 108, BAND = 18, A0 = -120, A1 = 120
 // Arc gauge with zone bands, a needle at the value and the value printed in the
 // centre. Zones are keyboard reachable; activating one calls onSelect(zone).
 export default function RadialGauge({
-  title, description, value, min = 0, max = 100, zones = [], formatValue, state = 'ready', reason, onSelect, height = 180,
+  title, description, value, min = 0, max = 100, zones = [], formatValue, state = 'ready', kind = 'error', note, reason, onSelect, height = 180,
 }) {
   const t = useChartText()
   const reduced = useReducedMotion()
@@ -29,7 +29,7 @@ export default function RadialGauge({
 
   return (
     <ChartFrame
-      t={t} title={title} description={description} state={state} reason={reason}
+      t={t} title={title} description={description} state={state} kind={kind} note={note} reason={reason}
       plot={{ width: 420, height: 246, radial: true, maxHeight: `${height * 1.4}px` }}
       legend={<ChartLegend t={t} items={bands.map((b, i) => ({ key: b.label ?? i, color: toneColor(b.tone), label: b.label, value: fmt(b.to) }))} />}
       table={

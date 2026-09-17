@@ -54,10 +54,29 @@ export function plotBoxStyle(plot) {
   return style
 }
 
+// Not every undrawn figure is a failure. "This chart could not be built" is
+// reserved for a read that actually failed; a KNOWN, EXPECTED absence — a lane
+// this workspace's plan does not carry, a row with nothing to inspect, a
+// capture that has not run yet — is reported in one calm line in the figure's
+// own small type, with the full sentence kept on the title attribute so
+// provenance is still a hover away. `kind` defaults to 'error', so a caller
+// that says nothing keeps the tone it has always had.
+export const CALM_STATE_TEXT = {
+  unavailable_on_plan: ['charts.state_unavailable_on_plan', 'Not captured on this workspace’s plan.'],
+  not_applicable: ['charts.state_not_applicable', 'Nothing to inspect for this figure.'],
+  no_data: ['charts.state_no_data', 'Nothing captured yet.'],
+}
+
+/** True when `kind` names an expected absence rather than a failed read. */
+export function isCalmKind(kind) {
+  return Object.prototype.hasOwnProperty.call(CALM_STATE_TEXT, String(kind == null ? '' : kind))
+}
+
 // A chart is a plain figure: no border, no background, no card. Legends are text
 // rows with a small colour swatch; every chart carries a table twin.
-export function ChartFrame({ t, title, description, state = 'ready', reason, legend, table, readout, plot, children }) {
+export function ChartFrame({ t, title, description, state = 'ready', kind = 'error', note, reason, legend, table, readout, plot, children }) {
   const failed = state === 'error'
+  const calm = failed && isCalmKind(kind)
   const empty = state !== 'error' && state !== 'ready'
   const box = plotBoxStyle(plot)
   return (
@@ -66,7 +85,13 @@ export function ChartFrame({ t, title, description, state = 'ready', reason, leg
         <span className="intel-chart-kit-title">{title}</span>
         {description ? <span className="intel-chart-kit-description">{description}</span> : null}
       </figcaption>
-      {failed ? (
+      {calm ? (
+        // No reserved plot: an expected absence collapses to its own line, so a
+        // group of them never stacks into a page of empty frames.
+        <p className="intel-chart-kit-note" role="status" title={reason || undefined}>
+          {note || t(CALM_STATE_TEXT[kind][0], { defaultValue: CALM_STATE_TEXT[kind][1] })}
+        </p>
+      ) : failed ? (
         <div className="intel-chart-kit-plot" style={box} data-reserved={box ? 'true' : undefined}>
           <p className="intel-chart-kit-state" role="alert">
             {t('charts.unavailable', { defaultValue: 'This chart could not be built.' })}{' '}

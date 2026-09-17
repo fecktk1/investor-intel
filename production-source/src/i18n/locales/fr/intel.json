@@ -574,6 +574,10 @@
     "ring_sub_none": "Rien de ce que la capture a enregistré ne commence dans cette fenêtre."
   },
   "listings": {
+    "note_no_contract": "Aucun contrat à inspecter",
+    "note_budget": "Pas encore inspecté",
+    "note_no_record": "Aucun enregistrement de sécurité",
+    "note_captured": "Aucun document de marqueurs",
     "eyebrow": "Nouveaux listings",
     "title": "Due diligence des nouveaux listings",
     "subtitle": "Chaque actif enregistré par la capture quotidienne des listings de 06h10 UTC, construite à partir de son instantané le plus récent, avec à côté les marqueurs de sécurité indiqués par le fournisseur pour son contrat. L’exécution inspecte au plus vingt-cinq contrats par jour : la majeure partie d’une cohorte n’est donc réellement pas inspectée, et un listing que personne n’a examiné n’est jamais présenté comme propre.",
@@ -645,6 +649,7 @@
     "col_market_cap": "Capitalisation"
   },
   "network": {
+    "plan_note": "Les statistiques réseau ne sont pas capturées avec l’offre CoinMarketCap de cet espace de travail.",
     "title": "Santé du réseau",
     "eyebrow": "Santé du réseau",
     "sub": "Ce que les chaînes elles-mêmes ont indiqué lors de la dernière capture. Chaque jauge nomme la chaîne qu’elle a lue ; une chaîne qui n’a publié aucun chiffre n’est pas déduite d’une autre.",
@@ -1116,6 +1121,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "Non capturé avec l’offre de cet espace de travail.",
+    "state_not_applicable": "Rien à inspecter pour cette figure.",
+    "state_no_data": "Rien n’a encore été capturé.",
     "empty": "Aucune observation n’est disponible pour ce graphique.",
     "legend": "Séries",
     "no_reason": "Aucun motif n’a été indiqué.",

@@ -574,6 +574,10 @@
     "ring_sub_none": "Nada de lo que registró la captura empieza dentro de esta ventana."
   },
   "listings": {
+    "note_no_contract": "Sin contrato que inspeccionar",
+    "note_budget": "Todavía sin inspeccionar",
+    "note_no_record": "Sin registro de seguridad",
+    "note_captured": "Sin documento de marcas",
     "eyebrow": "Nuevos listados",
     "title": "Diligencia debida de nuevos listados",
     "subtitle": "Todos los activos que registró la captura diaria de listados de las 06:10 UTC, construida a partir de su instantánea más reciente, con al lado las marcas de seguridad que el proveedor reportó para su contrato. La ejecución inspecciona como mucho veinticinco contratos al día, así que la mayor parte de una cohorte está realmente sin inspeccionar, y un listado que nadie miró nunca se muestra como limpio.",
@@ -645,6 +649,7 @@
     "col_market_cap": "Capitalización"
   },
   "network": {
+    "plan_note": "Las estadísticas de red no se capturan en el plan de CoinMarketCap de este workspace.",
     "title": "Salud de la red",
     "eyebrow": "Salud de la red",
     "sub": "Lo que las propias cadenas reportaron en la última captura. Cada indicador nombra la cadena que leyó; una cadena que no publicó una cifra no se deduce de otra.",
@@ -1116,6 +1121,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "No se captura en el plan de este workspace.",
+    "state_not_applicable": "No hay nada que inspeccionar en esta figura.",
+    "state_no_data": "Todavía no se ha capturado nada.",
     "empty": "No hay observaciones disponibles para este gráfico.",
     "legend": "Series",
     "no_reason": "No se reportó ningún motivo.",

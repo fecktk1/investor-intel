@@ -574,6 +574,10 @@
     "ring_sub_none": "Nada do que a captura registrou começa dentro desta janela."
   },
   "listings": {
+    "note_no_contract": "Sem contrato para inspecionar",
+    "note_budget": "Ainda não inspecionado",
+    "note_no_record": "Sem registro de segurança",
+    "note_captured": "Sem documento de sinalizações",
     "eyebrow": "Novas listagens",
     "title": "Due diligence de novas listagens",
     "subtitle": "Todo ativo registrado pela captura diária de listagens das 06:10 UTC, construído a partir do snapshot mais recente, com as sinalizações de segurança que o provedor informou para o contrato dele ao lado. A execução inspeciona no máximo vinte e cinco contratos por dia, então boa parte de uma coorte fica de fato sem inspeção, e uma listagem que ninguém examinou nunca é exibida como limpa.",
@@ -645,6 +649,7 @@
     "col_market_cap": "Capitalização"
   },
   "network": {
+    "plan_note": "As estatísticas de rede não são capturadas no plano CoinMarketCap deste workspace.",
     "title": "Saúde da rede",
     "eyebrow": "Saúde da rede",
     "sub": "O que as próprias redes informaram na última captura. Cada medidor nomeia a rede que leu; uma rede que não publicou um número não é desenhada a partir de outra.",
@@ -1116,6 +1121,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "Não é capturado no plano deste workspace.",
+    "state_not_applicable": "Não há nada a inspecionar nesta figura.",
+    "state_no_data": "Nada foi capturado ainda.",
     "empty": "Não há observações disponíveis para este gráfico.",
     "legend": "Séries",
     "no_reason": "Nenhum motivo foi informado.",

@@ -700,6 +700,10 @@
     "ring_sub_none": "Nothing the capture recorded starts inside this window."
   },
   "listings": {
+    "note_no_contract": "No contract to inspect",
+    "note_budget": "Not inspected yet",
+    "note_no_record": "No security record",
+    "note_captured": "No flag document",
     "eyebrow": "New listings",
     "title": "New-listing due diligence",
     "subtitle": "Every asset the daily 06:10 UTC listing capture recorded, built from its newest snapshot, with the security flags the provider reported for its contract beside it. The run inspects at most twenty-five contracts a day, so most of a cohort is genuinely uninspected — and a listing nobody looked at is never shown as a clean one.",
@@ -771,6 +775,7 @@
     "col_market_cap": "Market cap"
   },
   "network": {
+    "plan_note": "Network statistics are not captured on this workspace’s CoinMarketCap plan.",
     "title": "Network health",
     "eyebrow": "Network health",
     "sub": "What the chains themselves reported at the last capture. Each gauge names the chain it read; a chain that did not publish a figure is not drawn from another one.",
@@ -1938,6 +1943,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "Not captured on this workspace’s plan.",
+    "state_not_applicable": "Nothing to inspect for this figure.",
+    "state_no_data": "Nothing captured yet.",
     "empty": "No observations are available for this chart.",
     "legend": "Series",
     "no_reason": "No reason was reported.",

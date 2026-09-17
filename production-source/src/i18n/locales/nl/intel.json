@@ -574,6 +574,10 @@
     "ring_sub_none": "Niets wat de vastlegging registreerde begint binnen dit venster."
   },
   "listings": {
+    "note_no_contract": "Geen contract om te inspecteren",
+    "note_budget": "Nog niet geïnspecteerd",
+    "note_no_record": "Geen veiligheidsregistratie",
+    "note_captured": "Geen markeringsdocument",
     "eyebrow": "Nieuwe noteringen",
     "title": "Due diligence voor nieuwe noteringen",
     "subtitle": "Elk activum dat de dagelijkse noteringsvastlegging van 06:10 UTC registreerde, opgebouwd uit de nieuwste momentopname, met daarnaast de veiligheidsmarkeringen die de aanbieder voor het contract rapporteerde. De run inspecteert hooguit vijfentwintig contracten per dag, dus het grootste deel van een cohort is echt niet geïnspecteerd, en een notering waar niemand naar heeft gekeken wordt nooit als schoon getoond.",
@@ -645,6 +649,7 @@
     "col_market_cap": "Marktkapitalisatie"
   },
   "network": {
+    "plan_note": "Netwerkstatistieken worden niet vastgelegd in het CoinMarketCap-abonnement van deze werkruimte.",
     "title": "Netwerkgezondheid",
     "eyebrow": "Netwerkgezondheid",
     "sub": "Wat de chains zelf rapporteerden bij de laatste vastlegging. Elke meter noemt de chain die hij las; een chain die geen cijfer publiceerde wordt niet uit een andere afgeleid.",
@@ -1116,6 +1121,9 @@
     }
   },
   "charts": {
+    "state_unavailable_on_plan": "Niet vastgelegd in het abonnement van deze werkruimte.",
+    "state_not_applicable": "Er is niets te inspecteren voor deze figuur.",
+    "state_no_data": "Er is nog niets vastgelegd.",
     "empty": "Voor deze grafiek zijn geen waarnemingen beschikbaar.",
     "legend": "Reeksen",
     "no_reason": "Er is geen reden gerapporteerd.",
