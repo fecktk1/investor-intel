@@ -1,4 +1,4 @@
-import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexInteger,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_DEX_MEME_STAGES,CMC_DEX_MEME_LIMIT,CMC_DEX_MEME_PLATFORM_ID,CMC_HOLDER_TAGS} from './cmc-dex.ts'
+import {isCmcDexCursor,isDexDiscovery,cmcDexNetwork,cmcDexAddress,cmcDexInteger,cmcDexNumber,cmcDexHolderPage,cmcDexHolderAddress,cmcDexHolderTagList,CMC_DEX_NETWORKS,CMC_DEX_DISCOVERY,CMC_DEX_MEME_STAGES,CMC_DEX_MEME_LIMIT,CMC_DEX_MEME_PLATFORM_ID,CMC_DEX_MEME_PROTOCOLS,CMC_HOLDER_TAGS} from './cmc-dex.ts'
 /** Re-exported from cmc-dex.ts, where the response validators also need it. */
 export {CMC_HOLDER_TAGS}
 // Reviewed against official CMC endpoint references 2026-09-09. Access is a
@@ -119,9 +119,12 @@ export const CMC_CAPABILITIES: Record<string,CmcCapability> = {
   // chains stays readable and a row on an unverified chain is dropped.
   //
   // `protocol` (1001 Pump.fun, 1002 Moonshot, 2001 Four.meme, published as the
-  // response field `pt`) and `exclusive` (Binance exclusive flag) stay registered
-  // and unsent: narrowing the board to one launchpad is a product decision, not a
-  // transport default.
+  // response field `pt`) IS sent, once per launchpad, since 2026-09-17: with
+  // `platformIds` restored the provider answered 200 and 1 credit but still three
+  // empty arrays, and the launchpad code was the one documented field never sent.
+  // It is validated against the published codes and never defaulted here: which
+  // launchpads to ask about belongs to the lane (`MEME_PROTOCOLS`), not to the
+  // transport. `exclusive` (Binance exclusive flag) stays registered and unsent.
   dexMeme: cap('/v1/dex/meme/list','attention',['platformIds','protocol','exclusive','limit'],{demand:false,method:'POST',tier:'startup',ttl:300,stale:900}),
   dexGainers: cap('/v1/dex/gainer-loser/list','attention',dexDiscovery,{demand:false,method:'POST',tier:'startup',ttl:300,stale:900,rows:'leaderboardList'}),
   // Registered 2026-09-15 and probed the same day on the Startup key: every one of these cost one credit.
@@ -214,7 +217,13 @@ export function cmcParams(name: string, input: Record<string,unknown> = {}): Rec
     out.limit||=String(CMC_DEX_MEME_LIMIT)
     if(!CMC_DEX_NETWORKS.some(n=>String(n.platformId)===out.platformIds))throw new Error('unverified_dex_platform')
     if(!/^[1-9][0-9]*$/.test(out.limit)||Number(out.limit)>250)throw new Error('invalid_discovery_page_size')
-    for(const key of ['protocol','exclusive'])if(out[key]!=null&&!/^\d+$/.test(out[key]))throw new Error(`invalid_parameter:${key}`)
+    // `protocol` is the LAUNCHPAD code the board is published under. Sending none
+    // is what produced the 252-byte answer with three empty arrays, both before
+    // and after the platform filter was restored (2026-09-15 and the v18 run of
+    // 2026-09-17). It is never defaulted here — which launchpads a lane asks about
+    // is the lane's decision — but only a published code may be asked for.
+    if(out.protocol!=null&&!CMC_DEX_MEME_PROTOCOLS.includes(Number(out.protocol)))throw new Error('unverified_meme_protocol')
+    if(out.exclusive!=null&&!/^\d+$/.test(out.exclusive))throw new Error('invalid_parameter:exclusive')
   }else if(isDexDiscovery(name)){
     out.platformIds||='1';out.interval||='24h';out.pageSize||='25'
     if(!CMC_DEX_NETWORKS.some(n=>String(n.platformId)===out.platformIds))throw new Error('unverified_dex_platform')
