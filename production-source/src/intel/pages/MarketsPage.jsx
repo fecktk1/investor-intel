@@ -208,6 +208,10 @@ export default function MarketsPage() {
   }, [org?.id, supabase, degenKey, mode, ownerScope, degenRetry])
 
   const setParam = useCallback((patch, keepPage = false) => setParams((p) => ({ ...p, ...patch, page: keepPage ? (patch.page ?? p.page) : 0 })), [setParams])
+  // The search box hands its text over on a trailing pause, so this writes the
+  // screen filter once per pause rather than once per keystroke. Stable, so the
+  // field is never handed a new writer mid-word.
+  const setSearchText = useCallback(search => setParam({ search }), [setParam])
   const setDegenParam = useCallback((patch, keepPage = false) => setDegenParams((p) => ({ ...p, ...patch, page: keepPage ? (patch.page ?? p.page) : 0 })), [setDegenParams])
   // The Degen table headers and the drawer select write the same two params, so
   // d_dir is a control a reader can actually reach rather than a URL-only value.
@@ -322,7 +326,7 @@ export default function MarketsPage() {
             </div>
             {/* search · sort · category · watchlist — one row, search flexes to fill */}
             <div className="intel-market-filter-toolbar">
-              <MarketSearchTypeahead value={params.search} onChange={value => setParam({ search: value })} suggest={suggestAssets} onOpen={openSuggestion} disabled={!org?.id}/>
+              <MarketSearchTypeahead value={params.search} onChange={setSearchText} suggest={suggestAssets} onOpen={openSuggestion} disabled={!org?.id}/>
               <details className="intel-market-filter-options"><summary>{t('markets.filter_and_sort', { defaultValue: 'Filters & sort' })}{(params.category || params.chain || params.watchlistOnly || params.provider !== 'auto' || params.sort !== 'market_cap' || columnSort.dir !== 'desc') ? ' · ' + t('markets.custom_screen', { defaultValue: 'Custom' }) : ''}</summary><div className="intel-market-filters">
               <label className="flex items-center gap-2"><span>{t('markets.catalogue', {defaultValue:'Catalogue'})}</span><select className="select text-[12px] py-1" aria-label="Market catalogue" value={params.provider} onChange={e=>setParam({provider:e.target.value})}><option value="auto">{t('markets.cmcPreferred', {defaultValue:'CoinMarketCap preferred'})}</option><option value="coinmarketcap">CoinMarketCap</option><option value="coingecko">CoinGecko</option></select></label>
               {/* Picking an order here keeps the current direction — the header
