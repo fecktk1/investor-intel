@@ -61,7 +61,7 @@ export default function ExplainPage() {
       <IntelSurfaceGate surface="ai_generation" title={t('access.surface_ai_generation', { defaultValue: 'AI generation' })}>
       <form onSubmit={(e) => { e.preventDefault(); ask() }} className="card p-4 space-y-3">
         {entity && <div className="text-[12px] text-[var(--fg-4)] font-mono break-all">{entity.canonical_ref_key}</div>}
-        <textarea className="textarea w-full" rows={3} placeholder={t('explain.placeholder', { defaultValue: 'Ask anything — e.g. “What is liquidity and why does it matter?”' })} value={question} onChange={(e) => setQuestion(e.target.value)} />
+        <textarea className="textarea w-full" rows={3} placeholder={t('explain.placeholder', { defaultValue: 'Ask anything, e.g. “What is liquidity and why does it matter?”' })} value={question} onChange={(e) => setQuestion(e.target.value)} />
         <div className="flex flex-wrap gap-2">
           {QUICK.map(([k, def]) => (
             <button key={k} type="button" className="chip" onClick={() => { const q = t(`explain.quick.${k}`, { defaultValue: def }); setQuestion(q); ask(q) }}>{t(`explain.quick.${k}`, { defaultValue: def })}</button>

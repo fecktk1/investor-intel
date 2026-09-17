@@ -74,7 +74,7 @@ export default function MarketsTable({ rows = [], pageOffset = 0, linkBase = '/i
   // column headings — and when the reader asked for a currency the capture
   // cannot supply, the line says so instead of letting dollars pass as euros.
   const currencyNote = money.fallback
-    ? t('markets.currency_fallback', { currency: money.currency, defaultValue: 'Rates unavailable — money figures shown in USD.' })
+    ? t('markets.currency_fallback', { currency: money.currency, defaultValue: 'Rates unavailable, so money figures are shown in USD.' })
     : money.currency !== 'USD'
       ? t('markets.currency_note', { currency: money.currency, defaultValue: 'Money figures in {{currency}}, converted from USD at display time.' })
       : null

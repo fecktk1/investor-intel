@@ -53,7 +53,7 @@ export default function CuratedNewsCard({ c }) {
       <div className="flex items-center gap-2 flex-wrap text-[11px] text-[var(--fg-4)]">
         {c.news_category && <span className="chip text-[9px]">{String(c.news_category).replace(/_/g, ' ')}</span>}
         {q && <span className={`text-[10px] inline-flex items-center gap-0.5 ${q.cls}`} title={t('news.source_quality', { defaultValue: 'Source quality' })}><ShieldCheck className="h-3 w-3" />{t(`news.${q.key}`, { defaultValue: q.def })}</span>}
-        {c.needs_confirmation && <span className="text-[10px] text-amber-400 inline-flex items-center gap-0.5" title={t('news.unverified_hint', { defaultValue: 'Single-source or developing — not yet corroborated.' })}><AlertTriangle className="h-3 w-3" />{t('news.unverified', { defaultValue: 'Unverified' })}</span>}
+        {c.needs_confirmation && <span className="text-[10px] text-amber-400 inline-flex items-center gap-0.5" title={t('news.unverified_hint', { defaultValue: 'Single-source or developing, not yet corroborated.' })}><AlertTriangle className="h-3 w-3" />{t('news.unverified', { defaultValue: 'Unverified' })}</span>}
         {(sourceCount > 1 || hasSourceDetail) && (
           <button type="button" onClick={() => setShowSources((v) => !v)} className="inline-flex items-center gap-0.5 hover:text-[var(--fg-2)]" aria-expanded={showSources}>
             {sourceCount ? `${sourceCount} ` : ''}{t('news.sources', { defaultValue: 'sources' })}

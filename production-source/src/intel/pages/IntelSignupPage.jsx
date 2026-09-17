@@ -192,7 +192,7 @@ export default function IntelSignupPage() {
                     })
                   : wantsFree
                     ? t('signup.free_body', { defaultValue: 'Your account opens the free tier of Investor Intel: the market boards, the regime figures and every recorded capture. No card, no trial clock.' })
-                    : t('signup.body', { defaultValue: 'Your account unlocks the 7-day free trial of Investor Intel — full access, no card required.' })}
+                    : t('signup.body', { defaultValue: 'Your account unlocks the 7-day free trial of Investor Intel: full access, no card required.' })}
               </p>
 
               {!plan && (

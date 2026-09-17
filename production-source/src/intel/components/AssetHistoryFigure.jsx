@@ -177,7 +177,7 @@ export default function AssetHistoryFigure({ sourceProvider, providerId, symbol 
           ? t('asset_history.loading', { defaultValue: 'Reading price history…' })
           : requested
             ? t('asset_history.budget_note', { defaultValue: 'Each range is sampled once and then shared. The cost beside a range is what a live refresh of that range spends from the shared provider budget; a cached window costs nothing.' })
-            : t('asset_history.prompt', { defaultValue: 'Price history is read only when you ask for it. Choose a range above — the cost beside each one is what a live refresh of that range spends from the shared provider budget.' })}
+            : t('asset_history.prompt', { defaultValue: 'Price history is read only when you ask for it. Choose a range above. The cost beside each one is what a live refresh of that range spends from the shared provider budget.' })}
       </p>
 
       {requested && result ? (

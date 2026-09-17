@@ -688,10 +688,10 @@
   "pages": {
     "market_pulse_sub": "Ce qui a changé depuis votre dernière visite, et ce qui compte maintenant.",
     "watchlist_sub": "Suivez des jetons, wallets, narratifs, écosystèmes, protocoles et marchés DeFi.",
-    "narratives_sub": "Quels narratifs crypto chauffent, refroidissent, sont précoces, saturés, haussiers ou risqués — détectés automatiquement.",
+    "narratives_sub": "Quels narratifs crypto chauffent, refroidissent, sont précoces, saturés, haussiers ou risqués ? Détectés automatiquement.",
     "wallets_sub": "Suivez les wallets baleines, smart, dev et influenceurs en langage simple.",
-    "defi_sub": "Protocoles, vaults, rendements et risque collatéral — avec l'historique TVL/APY.",
-    "execution_sub": "Ce trade passe-t-il proprement ? Slippage, impact prix et qualité de route — pas un conseil.",
+    "defi_sub": "Protocoles, vaults, rendements et risque collatéral, avec l'historique TVL/APY.",
+    "execution_sub": "Ce trade passe-t-il proprement ? Slippage, impact prix et qualité de route. Pas un conseil.",
     "compare_sub": "Comparez des actifs sur les plans marché, risque, narratif et exécution.",
     "theses_sub": "Sauvegardez vos scénarios haussiers, baissiers et neutres avec des bases de référence à suivre.",
     "briefs_sub": "Votre brief investisseur quotidien personnalisé.",
@@ -715,8 +715,8 @@
     "skip": "Passer à la recherche"
   },
   "trial": {
-    "banner_one": "Essai — {{count}} jour restant",
-    "banner_other": "Essai — {{count}} jours restants"
+    "banner_one": "Essai : {{count}} jour restant",
+    "banner_other": "Essai : {{count}} jours restants"
   },
   "disclaimer": {
     "label": "Note de recherche",
@@ -754,7 +754,7 @@
     "largest": "la plus grande",
     "concentrated": "concentrée",
     "by_basis": "selon votre base de coût, pas la valeur en direct",
-    "limit_items": "Limite de la watchlist atteinte pour votre forfait — passez à un plan supérieur pour en ajouter.",
+    "limit_items": "Limite de la watchlist atteinte pour votre forfait. Passez à un plan supérieur pour en ajouter.",
     "limit_wallets": "Limite de wallets atteinte pour votre forfait.",
     "add_to_portfolio": "Ajouter au portefeuille (crée une transaction manuelle)",
     "added": "Actif enregistré dans la watchlist sélectionnée.",
@@ -1396,10 +1396,10 @@
     "pair": "Paire",
     "history": "Historique TVL / APY",
     "universe": "Meilleurs vaults",
-    "universe_hint": "Suivi sur tous les espaces — choisissez-en un à analyser",
+    "universe_hint": "Suivi sur tous les espaces : choisissez-en un à analyser",
     "empty": "Saisissez une adresse de vault, protocole ou marché ci-dessus pour générer un rapport DeFi avec l'historique TVL/APY.",
     "il7d": "IL 7j",
-    "metrics_unavailable": "Métriques en direct indisponibles — vérifiez l'adresse et la chaîne.",
+    "metrics_unavailable": "Métriques en direct indisponibles. Vérifiez l'adresse et la chaîne.",
     "analyze_on": "Analyser n'importe quelle adresse sur",
     "deep_dive": "Analyse approfondie",
     "back": "Retour à l'explorateur",
@@ -1441,7 +1441,7 @@
     "no_chart": "Pas encore de données historiques pour ce pool.",
     "chart_tvl_apy": "Historique TVL & APY",
     "chart_apy": "Historique APY",
-    "chart_breakdown": "Répartition APY — base vs récompense",
+    "chart_breakdown": "Répartition APY : base vs récompense",
     "ai_what": "De quoi il s'agit",
     "ai_yield": "Analyse du rendement",
     "ai_reward_dep": "dépendance aux récompenses",
@@ -1504,7 +1504,7 @@
     "news_failed": "Impossible de charger les actualités macro. La couverture des titres est inconnue."
   },
   "explain": {
-    "placeholder": "Posez n'importe quelle question — ex. : « Qu'est-ce que la liquidité et pourquoi est-ce important ? »",
+    "placeholder": "Posez n'importe quelle question, ex. : « Qu'est-ce que la liquidité et pourquoi est-ce important ? »",
     "ask": "Demander",
     "quick": {
       "explain_new": "Expliquer comme si j'étais débutant",
@@ -1543,7 +1543,7 @@
     "recent_alerts": "Alertes récentes",
     "brief_research": "Brief & recherche",
     "all": "Tout",
-    "no_news": "Pas encore d'actualités — ajoutez des sources dans la page Actualités.",
+    "no_news": "Pas encore d'actualités. Ajoutez des sources dans la page Actualités.",
     "no_narr": "Suivez des narratifs pour voir ce qui s'emballe.",
     "no_alerts": "Aucune alerte déclenchée. Définissez des règles dans la page Alertes.",
     "no_brief": "Générez votre premier brief.",
@@ -1681,7 +1681,7 @@
     "attention_list_losers": "Plus fortes baisses",
     "attention_hours_label": "Heures consécutives",
     "attention_explanation": "Se déclenche lorsque cet actif figure dans la liste d’attention choisie pendant ce nombre de captures horaires consécutives. Elle lit la liste publiée par le fournisseur lui-même : elle indique donc vers quoi les lecteurs sont orientés, et rien d’autre. L’attention n’est ni une valorisation, ni un flux, ni une prévision, et un actif peut quitter la liste entre deux captures sans que la règle le voie jamais. Il n’y a pas de direction à choisir : la règle correspond à un niveau à l’horloge de capture horaire et se réarme après son délai.",
-    "limit": "Limite d'alertes actives atteinte pour votre forfait — passez à un plan supérieur pour en ajouter.",
+    "limit": "Limite d'alertes actives atteinte pour votre forfait. Passez à un plan supérieur pour en ajouter.",
     "why": "Pourquoi c'est important",
     "apply": "Appliquer la suggestion",
     "confirm_weaken": "Ce qui confirmerait ou affaiblirait cela",
@@ -1764,8 +1764,8 @@
     "all_categories": "Toutes les catégories",
     "all_chains": "Toutes les chaînes",
     "none_in_filter": "Aucun narratif ne correspond à ce filtre pour le moment. Essayez un autre onglet.",
-    "degraded": "Certaines données sont indisponibles pour le moment — nous affichons ce que nous avons.",
-    "custom_hint": "Avancé. La plupart des narratifs sont détectés automatiquement — cherchez d'abord là. Créer un narratif personnalisé tente d'abord de le rattacher à un narratif existant avant d'en créer un privé.",
+    "degraded": "Certaines données sont indisponibles pour le moment. Nous affichons ce que nous avons.",
+    "custom_hint": "Avancé. La plupart des narratifs sont détectés automatiquement, alors cherchez d'abord là. Créer un narratif personnalisé tente d'abord de le rattacher à un narratif existant avant d'en créer un privé.",
     "no_custom": "Aucun narratif personnalisé pour le moment.",
     "private": "privé",
     "mapped_to": "Cela correspond à un narratif existant",
@@ -1943,7 +1943,7 @@
     "column_quote_observed": "Cotation observée"
   },
   "settings": {
-    "beginner": "Protection Débutant — avertissements de risque renforcés et explications simplifiées.",
+    "beginner": "Protection Débutant : avertissements de risque renforcés et explications simplifiées.",
     "saved": "Enregistré",
     "save": "Enregistrer les modifications",
     "plan_heading": "Plan",
@@ -2030,7 +2030,7 @@
     "source_type": "Source",
     "value": "Valeur",
     "sources_label": "sources",
-    "limit": "Limite de sources atteinte pour votre forfait — passez à un plan supérieur pour en ajouter.",
+    "limit": "Limite de sources atteinte pour votre forfait. Passez à un plan supérieur pour en ajouter.",
     "rate": "Limite de rafraîchissement d'actualités quotidien atteinte pour votre forfait.",
     "dup": "Vous suivez déjà cette source.",
     "empty": "Pas encore d'actualités. Ajoutez des sources ou des jetons à votre watchlist, puis récupérez les news.",
@@ -2104,9 +2104,9 @@
     "title": "Configurez votre espace",
     "sub": "Cela personnalise vos briefs, explications et cadrage du risque. Vous pouvez le modifier à tout moment dans les Paramètres.",
     "finish": "Commencer à explorer",
-    "ack": "Je comprends qu'Investor Intel est un outil de recherche, d'éducation et de contexte de risque — pas un conseil financier.",
+    "ack": "Je comprends qu'Investor Intel est un outil de recherche, d'éducation et de contexte de risque, pas un conseil financier.",
     "error": "Impossible d'enregistrer. Veuillez réessayer.",
-    "beginner_on": "Protection Débutant activée — avertissements de risque renforcés et explications simplifiées.",
+    "beginner_on": "Protection Débutant activée : avertissements de risque renforcés et explications simplifiées.",
     "q_experience": "Quelle est votre expérience ?",
     "q_style": "Quel niveau de détail souhaitez-vous ?",
     "q_risk": "Quelle est votre posture face au risque ?",
@@ -2294,7 +2294,7 @@
     "support_note": {
       "full": "Soldes, transactions, prix et P&L.",
       "beta_history": "L'historique des transactions est en bêta et peut être incomplet.",
-      "balance_only": "Soldes uniquement — le prix de revient et le P&L ne sont pas disponibles pour cette chaîne.",
+      "balance_only": "Soldes uniquement. Le prix de revient et le P&L ne sont pas disponibles pour cette chaîne.",
       "all_evm": "Analyse toutes les chaînes EVM prises en charge pour cette adresse et importe les soldes et l'historique partout où il y a de l'activité."
     },
     "chain_note": {
@@ -2304,7 +2304,7 @@
     "cost_basis_status": {
       "known": "Prix de revient suivi",
       "incomplete": "Prix de revient incomplet",
-      "none": "Solde uniquement — pas de P&L",
+      "none": "Solde uniquement, pas de P&L",
       "manual_override": "Prix de revient manuel",
       "estimated": "Prix de revient estimé"
     },
@@ -2329,7 +2329,7 @@
       "quantity": "Quantité",
       "avg_cost": "Coût moyen",
       "unknown": "Actif inconnu",
-      "pnl_withheld": "Le P&L est masqué tant que le prix de revient n'est pas connu — la valeur et l'allocation sont affichées au prix actuel.",
+      "pnl_withheld": "Le P&L est masqué tant que le prix de revient n'est pas connu. La valeur et l'allocation sont affichées au prix actuel.",
       "market_cap": "Capitalisation",
       "liquidity": "Liquidité",
       "open_market": "Ouvrir les données de marché complètes",

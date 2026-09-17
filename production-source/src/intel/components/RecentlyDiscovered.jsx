@@ -135,7 +135,7 @@ export default function RecentlyDiscovered({ limit = DISCOVERED_LIMIT }) {
     <section className="intel-recently-discovered space-y-2 pt-4" aria-label={heading}>
       <div className="eyebrow">{heading}</div>
       <p className="intel-event-meta">
-        {t('discovered.subtitle', { defaultValue: 'Assets someone resolved for the first time, now indexed for everyone. These are counts of how often each asset was asked for — who asked is never recorded.' })}
+        {t('discovered.subtitle', { defaultValue: 'Assets someone resolved for the first time, now indexed for everyone. These are counts of how often each asset was asked for. Who asked is never recorded.' })}
       </p>
       {loading ? (
         <p role="status" className="py-2 text-[12px] text-[var(--fg-4)]">{t('discovered.loading', { defaultValue: 'Loading recent discoveries…' })}</p>

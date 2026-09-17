@@ -66,7 +66,7 @@ export const CLARITY_META = {
   crowded_risky:          { label: 'Crowded & risky',           cls: 'chip--err',  why: 'Attention is crowded and risk indicators are elevated.' },
   cooling_strong_onchain: { label: 'Cooling, strong on-chain',  cls: 'chip--info', why: 'Social attention is cooling but on-chain activity remains strong.' },
   mostly_social_hype:     { label: 'Mostly social hype',        cls: 'chip--err',  why: 'High chatter with little market or on-chain confirmation.' },
-  needs_more_evidence:    { label: 'Needs more evidence',       cls: '',           why: 'Low confidence, few sources, or unverified on-chain — treat as a watch item.' },
+  needs_more_evidence:    { label: 'Needs more evidence',       cls: '',           why: 'Low confidence, few sources, or unverified on-chain, so treat as a watch item.' },
   portfolio_relevant:     { label: 'Portfolio relevant',        cls: 'chip--accent', why: 'Includes assets you hold.' },
   watchlist_relevant:     { label: 'Watchlist relevant',        cls: 'chip--accent', why: 'Includes assets on your watchlist.' },
   chain_relevant:         { label: 'Your chain',                cls: 'chip--accent', why: 'On a chain you selected in onboarding.' },

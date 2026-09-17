@@ -193,7 +193,7 @@ export default function ExchangeReserves() {
   const driftable = exchange?.priorAvailable === true
 
   const caption = t('structure.er_caption', {
-    defaultValue: 'Wallet balances the provider attributes to each exchange, read once a day on the capture clock — a provider reading, not an exchange statement.',
+    defaultValue: 'Wallet balances the provider attributes to each exchange, read once a day on the capture clock. This is a provider reading, not an exchange statement.',
   })
 
   const columns = [
@@ -247,7 +247,7 @@ export default function ExchangeReserves() {
                   exchange: exchange ? exchangeLabel(exchange) : '—',
                   total: formatUsd(num(exchange?.totalUsdValue)),
                   drift: driftLabel(exchange?.driftPct),
-                  defaultValue: '{{exchange}} — reported total {{total}}, window drift {{drift}}.',
+                  defaultValue: '{{exchange}}: reported total {{total}}, window drift {{drift}}.',
                 })}
               </caption>
               <thead>

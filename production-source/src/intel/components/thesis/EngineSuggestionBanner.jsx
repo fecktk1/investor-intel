@@ -28,7 +28,7 @@ export default function EngineSuggestionBanner({ thesis, onResolve, busy }) {
         <button disabled={busy} onClick={() => onResolve('keep')} className="btn btn--quiet btn--sm disabled:opacity-50">{t('journal.keep_active', { defaultValue: 'Keep as is' })}</button>
         <button disabled={busy} onClick={() => onResolve('revise')} className="btn btn--quiet btn--sm disabled:opacity-50">{t('journal.revise', { defaultValue: 'Revise thesis' })}</button>
       </div>
-      <div className="text-[10px] text-[var(--fg-5)]">{t('journal.engine_note', { defaultValue: 'The app never changes your conclusion — it only flags what your own criteria suggest.' })}</div>
+      <div className="text-[10px] text-[var(--fg-5)]">{t('journal.engine_note', { defaultValue: 'The app never changes your conclusion. It only flags what your own criteria suggest.' })}</div>
     </div>
   )
 }

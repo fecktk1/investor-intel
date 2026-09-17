@@ -266,7 +266,7 @@ export default function DefiPage() {
       <div>
         <div className="eyebrow">{t('brand.name', { defaultValue: 'Investor Intel' })}</div>
         <h1 className="page-title">{t('nav.defi', { defaultValue: 'DeFi Intelligence' })}</h1>
-        <p className="page-sub">{t('pages.defi_sub', { defaultValue: 'Vaults, pools, yields and collateral risk across chains — with AI analysis and TVL/APY history.' })}</p>
+        <p className="page-sub">{t('pages.defi_sub', { defaultValue: 'Protocols, vaults, yields and collateral risk, with TVL/APY history.' })}</p>
       </div>
 
       <DefiMarketSummary summary={summary} view={view} loading={loadingRows} />
@@ -318,7 +318,7 @@ export default function DefiPage() {
           </div>
 
           {ddErr && <div className="border-b border-[var(--border-default)] rounded-none p-3 text-[13px] text-red-400">{ddErr}</div>}
-          {metrics?._error && !detail && <div className="border-b border-[var(--border-default)] rounded-none p-3 text-[13px] text-[var(--fg-4)]">{t('defi.metrics_unavailable', { defaultValue: 'Live metrics unavailable — verify the address and chain.' })}</div>}
+          {metrics?._error && !detail && <div className="border-b border-[var(--border-default)] rounded-none p-3 text-[13px] text-[var(--fg-4)]">{t('defi.metrics_unavailable', { defaultValue: 'Live metrics unavailable. Verify the address and chain.' })}</div>}
 
           {/* Key stats */}
           {detail && (

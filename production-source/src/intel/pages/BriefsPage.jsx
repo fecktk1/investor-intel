@@ -36,12 +36,12 @@ function AssembledBrief({ b }) {
       {Object.values(s.context_coverage || {}).some(Boolean) && <p className="text-[12px] text-[var(--fg-4)]">Personal context uses up to 200 recent watchlist items, 200 holdings by value, and 8 recent transfers. Some older or smaller records are outside this brief.</p>}
       {s.market_regime && (
         <Section title="Market regime">
-          <p className="text-[13px] text-[var(--fg-2)]"><b className="uppercase">{s.market_regime.regime}</b>{s.market_regime.flavor ? ` · ${s.market_regime.flavor}` : ''} — {s.market_regime.rationale}</p>
+          <p className="text-[13px] text-[var(--fg-2)]"><b className="uppercase">{s.market_regime.regime}</b>{s.market_regime.flavor ? ` · ${s.market_regime.flavor}` : ''}: {s.market_regime.rationale}</p>
         </Section>
       )}
       {has(s.what_changed_overnight) && (
         <Section title="What changed overnight">
-          {s.what_changed_overnight.map((c, i) => <p key={i} className="text-[12px] text-[var(--fg-2)]">· <b>{c.subject}</b> — {c.summary}</p>)}
+          {s.what_changed_overnight.map((c, i) => <p key={i} className="text-[12px] text-[var(--fg-2)]">· <b>{c.subject}</b>: {c.summary}</p>)}
         </Section>
       )}
       {s.watchlist_impact && (has(s.watchlist_impact.signals) || has(s.watchlist_impact.news)) && (
@@ -70,12 +70,12 @@ function AssembledBrief({ b }) {
       )}
       {has(s.major_risks) && (
         <Section title="Major risks">
-          {s.major_risks.map((r, i) => <p key={i} className="text-[12px] text-[var(--fg-2)]">· <b>{r.subject}</b> — {r.note}</p>)}
+          {s.major_risks.map((r, i) => <p key={i} className="text-[12px] text-[var(--fg-2)]">· <b>{r.subject}</b>: {r.note}</p>)}
         </Section>
       )}
       {has(s.news_that_matters) && (
         <Section title="News that matters">
-          {s.news_that_matters.map((x, i) => <p key={i} className="text-[12px] text-[var(--fg-2)]">· {x.title}{x.watchlist_match ? ' ★' : ''}{x.why ? <span className="text-[var(--fg-4)]"> — {x.why}</span> : null}</p>)}
+          {s.news_that_matters.map((x, i) => <p key={i} className="text-[12px] text-[var(--fg-2)]">· {x.title}{x.watchlist_match ? ' ★' : ''}{x.why ? <span className="text-[var(--fg-4)]"> · {x.why}</span> : null}</p>)}
         </Section>
       )}
       {has(s.what_to_watch_next) && (

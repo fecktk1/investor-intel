@@ -22,7 +22,7 @@ export default function AirdropsPage() {
         eyebrow={t('airdrops.eyebrow', { defaultValue: 'Airdrops' })}
         title={t('airdrops.title', { defaultValue: 'Airdrop calendar' })}
         subtitle={t('airdrops.subtitle', {
-          defaultValue: 'Every airdrop the daily capture recorded, laid out over the next ninety days and ranked by what is still ahead. Dates, prize pools and winner counts are what the provider published — they are not a promise that a distribution happens.',
+          defaultValue: 'Every airdrop the daily capture recorded, laid out over the next ninety days and ranked by what is still ahead. Dates, prize pools and winner counts are what the provider published. They are not a promise that a distribution happens.',
         })}
       />
       <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />

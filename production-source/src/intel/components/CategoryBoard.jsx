@@ -164,7 +164,7 @@ export default function CategoryBoard() {
         title={t('categories.board_title', { defaultValue: 'Category breadth' })}
         description={`${t('categories.board_sub', {
           ring: RING,
-          defaultValue: 'The {{ring}} largest CoinMarketCap categories by market capitalisation. A green arc rose over the last 24 hours, a red arc fell, a grey arc did not move. This is the CoinMarketCap category list — a second source beside the CoinGecko categories used elsewhere in Intel, never a blend of the two.',
+          defaultValue: 'The {{ring}} largest CoinMarketCap categories by market capitalisation. A green arc rose over the last 24 hours, a red arc fell, a grey arc did not move. This is the CoinMarketCap category list, a second source beside the CoinGecko categories used elsewhere in Intel, never a blend of the two.',
         })} ${depth
           ? t('categories.board_depth', { captures: depth, days, defaultValue: 'Hourly category captures began on 15 September 2026; the last {{days}} days hold {{captures}} captures.' })
           : t('categories.board_no_depth', { defaultValue: 'No category capture has been recorded for this window yet.' })}`}

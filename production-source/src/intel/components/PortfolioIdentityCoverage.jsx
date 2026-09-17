@@ -301,7 +301,7 @@ export default function PortfolioIdentityCoverage({ portfolioId = null }) {
       chain: row.chain,
       priced: row.priced,
       total: row.total,
-      defaultValue: '{{chain}} — {{priced}} of {{total}} priced',
+      defaultValue: '{{chain}}: {{priced}} of {{total}} priced',
     }),
   }), [payload, t])
   const totals = coverageTotals(payload?.totals)

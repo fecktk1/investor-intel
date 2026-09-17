@@ -282,7 +282,7 @@ export default function MarketAssetPage() {
               the reader asked for a currency the hourly capture cannot supply,
               the figures stay in dollars and say so rather than misprice. */}
           {money.fallback
-            ? <p className="intel-event-meta" data-display-currency={money.currency}>{t('markets.currency_fallback', { currency: money.currency, defaultValue: 'Rates unavailable — money figures shown in USD.' })}</p>
+            ? <p className="intel-event-meta" data-display-currency={money.currency}>{t('markets.currency_fallback', { currency: money.currency, defaultValue: 'Rates unavailable, so money figures are shown in USD.' })}</p>
             : money.currency !== 'USD' && <p className="intel-event-meta" data-display-currency={money.currency}>{t('markets.currency_note', { currency: money.currency, defaultValue: 'Money figures in {{currency}}, converted from USD at display time.' })}</p>}
         </div>
         {sig && d.price == null && <MarketSignalBadge direction={sig.direction} />}

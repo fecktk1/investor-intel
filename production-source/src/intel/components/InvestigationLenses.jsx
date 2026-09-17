@@ -100,7 +100,7 @@ export function CohortLens({cohort,quotes,at,onCapture,onAsset,busy,reason}) {
 }
 export function SessionsLens({at,market}) {
   const result=equitySession(at,market)
-  return <><p className="intel-analysis-caption">Token trading, the underlying market and redemption are separate clocks.</p><div className="intel-session-ruler">{result.sessions?.slice(0,5).map(s=><div key={s.date}><time>{s.date}</time><span className="intel-session-bar">{time(s.open)} — {time(s.close)}</span><span>{s.earlyClose?'Early close':'Core session'}</span></div>)}</div>
+  return <><p className="intel-analysis-caption">Token trading, the underlying market and redemption are separate clocks.</p><div className="intel-session-ruler">{result.sessions?.slice(0,5).map(s=><div key={s.date}><time>{s.date}</time><span className="intel-session-bar">{time(s.open)} to {time(s.close)}</span><span>{s.earlyClose?'Early close':'Core session'}</span></div>)}</div>
     <InvestigationTable rows={[
       {id:'underlying',name:'Underlying core equity session',state:result.state,detail:result.reason},
       {id:'token',name:'Token venue',state:'Requires venue evidence',detail:'An underlying exchange calendar does not establish token trading hours.'},

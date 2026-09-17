@@ -165,7 +165,7 @@ export default function LiquidationClock({ ids = [], rows = [] }) {
 
   const readout = picked
     ? (picked.value == null
-        ? t('structure.clock_readout_gap', { hour: picked.label, defaultValue: '{{hour}} — no capture recorded for this hour.' })
+        ? t('structure.clock_readout_gap', { hour: picked.label, defaultValue: '{{hour}}: no capture recorded for this hour.' })
         : t('structure.clock_readout', { hour: picked.label, total: formatUsd(picked.value), assets: picked.assets, defaultValue: '{{hour}} · {{total}} across {{assets}} asset captures' }))
     : ''
 
@@ -173,7 +173,7 @@ export default function LiquidationClock({ ids = [], rows = [] }) {
     <section className="intel-structure-clock space-y-3" aria-label={t('structure.clock_title', { defaultValue: 'Liquidation clock' })}>
       <PolarClock
         title={t('structure.clock_title', { defaultValue: 'Liquidation clock' })}
-        description={`${t('structure.clock_sub', { defaultValue: 'Liquidation intensity by hour of day for the assets in view — one mark per hour, each the freshest rolling one-hour total captured in that hour. An hour nobody captured is a gap, not a zero.' })} ${caption}`}
+        description={`${t('structure.clock_sub', { defaultValue: 'Liquidation intensity by hour of day for the assets in view: one mark per hour, each the freshest rolling one-hour total captured in that hour. An hour nobody captured is a gap, not a zero.' })} ${caption}`}
         period="24h"
         buckets={buckets}
         formatValue={clockValue}

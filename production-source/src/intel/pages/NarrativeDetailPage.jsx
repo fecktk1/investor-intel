@@ -267,7 +267,7 @@ function NarrativeDossier({slug, org, user, isSuperAdmin, supabase}) {
       {chatter?.raw?.why && (
         <div className="intel-narrative-note p-3 text-[13px] text-[var(--fg-2)]">
           <span className="text-[var(--fg-4)] text-[11px] uppercase tracking-wide">{t('narratives.why_chatter', { defaultValue: 'Why it’s being discussed' })}: </span>
-          {chatter.raw.why}{chatter.raw.what_changed ? ` — ${chatter.raw.what_changed}` : ''}
+          {chatter.raw.why}{chatter.raw.what_changed ? ` · ${chatter.raw.what_changed}` : ''}
         </div>
       )}
 

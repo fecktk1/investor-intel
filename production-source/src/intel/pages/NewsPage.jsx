@@ -176,7 +176,7 @@ export default function NewsPage() {
           <form onSubmit={(e) => { e.preventDefault(); setQ(qInput.trim()) }} className="flex items-center gap-2">
             <div className="relative flex-1">
               <Search className="h-3.5 w-3.5 absolute left-2.5 top-1/2 -translate-y-1/2 text-[var(--fg-5)]" />
-              <input className="input w-full pl-8" placeholder={t('news.search_ph', { defaultValue: 'Search all news — stories, tokens, narratives…' })} value={qInput} onChange={(e) => setQInput(e.target.value)} />
+              <input className="input w-full pl-8" placeholder={t('news.search_ph', { defaultValue: 'Search all news: stories, tokens, narratives…' })} value={qInput} onChange={(e) => setQInput(e.target.value)} />
             </div>
             <button type="submit" className="btn btn--primary btn--sm">{t('news.search', { defaultValue: 'Search' })}</button>
           </form>
@@ -199,7 +199,7 @@ export default function NewsPage() {
             </span>
             {anyActive && <button type="button" onClick={clearFilters} className="text-[11px] text-[var(--fg-4)] hover:text-[var(--fg-1)] inline-flex items-center gap-1"><X className="h-3 w-3" />{t('news.clear', { defaultValue: 'Clear' })}</button>}
           </div>
-          {searchMode && <p className="text-[11px] text-[var(--fg-5)]">{t('news.search_scope', { defaultValue: 'Searching the full history — newest first.' })}</p>}
+          {searchMode && <p className="text-[11px] text-[var(--fg-5)]">{t('news.search_scope', { defaultValue: 'Searching the full history, newest first.' })}</p>}
         </div>
       )}
 

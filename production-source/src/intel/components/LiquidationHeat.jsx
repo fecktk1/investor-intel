@@ -200,7 +200,7 @@ export default function LiquidationHeat({ ids = [], rows = [] }) {
     <section className="intel-structure-liq space-y-3" aria-label={t('structure.liq_title', { defaultValue: 'Liquidation heat' })}>
       <HeatStrip
         title={t('structure.liq_title', { defaultValue: 'Liquidation heat' })}
-        description={`${t('structure.liq_sub', { defaultValue: 'Hourly liquidation totals over the last seven days — one row per day, one cell per hour.' })} ${caption}`}
+        description={`${t('structure.liq_sub', { defaultValue: 'Hourly liquidation totals over the last seven days: one row per day, one cell per hour.' })} ${caption}`}
         cells={cells}
         columns={HOURS_PER_ROW}
         formatValue={formatUsd}

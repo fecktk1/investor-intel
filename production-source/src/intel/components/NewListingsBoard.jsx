@@ -188,7 +188,7 @@ export default function NewListingsBoard() {
     : t('listings.changed_line', { changed: fmtNum(changed), defaultValue: '{{changed}} assets recorded a different flag set than at their previous capture.' })
 
   const caption = t('listings.caption', {
-    defaultValue: 'Flags are the provider’s reported security observations for the contract at the daily capture, not a verdict. A listing with no reported flag count was never inspected — the daily run inspects at most twenty-five contracts — and its gauge carries the capture’s own reason rather than a clean zero.',
+    defaultValue: 'Flags are the provider’s reported security observations for the contract at the daily capture, not a verdict. A listing with no reported flag count was never inspected (the daily run inspects at most twenty-five contracts), and its gauge carries the capture’s own reason rather than a clean zero.',
   })
 
   const columns = [

@@ -63,10 +63,10 @@ export default function ArtifactView({ result, loading, onRefresh, alreadySaved 
       <History className="h-3.5 w-3.5 text-[var(--accent)] flex-shrink-0" />
       <span className="text-[var(--fg-3)]">
         {reuseKind === 'delta'
-          ? t('artifact.reuse_delta', { defaultValue: 'Updated since the last analysis — only what changed was re-analyzed.' })
+          ? t('artifact.reuse_delta', { defaultValue: 'Updated since the last analysis. Only what changed was re-analyzed.' })
           : reuseKind === 'explain_similar'
             ? t('artifact.reuse_similar', { defaultValue: 'Reused a recent answer to a very similar question.' })
-            : t('artifact.reuse_unchanged', { defaultValue: 'Reused — underlying data unchanged since the last analysis.' })}
+            : t('artifact.reuse_unchanged', { defaultValue: 'Reused: underlying data unchanged since the last analysis.' })}
       </span>
       {Array.isArray(drivers) && drivers.slice(0, 3).map((d, i) => <span key={i} className="chip text-[10px] text-[var(--fg-4)]">{d}</span>)}
       {onRefresh && (

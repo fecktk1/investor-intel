@@ -75,7 +75,7 @@ export default function SignalCard({ s }) {
             {s.corroboration.divergence ? <AlertTriangle className="h-3 w-3" /> : <Layers className="h-3 w-3" />}{s.corroboration.divergence ? 'Layers disagree' : `${s.corroboration.count} layers agree`}
           </span>
         )}
-        {fresh && <span title={fresh === 'fresh' ? 'Fresh signal' : 'Aging — past its refresh window'} className={`h-2 w-2 rounded-full ${fresh === 'fresh' ? 'bg-emerald-400' : 'bg-amber-400/80'}`} />}
+        {fresh && <span title={fresh === 'fresh' ? 'Fresh signal' : 'Aging: past its refresh window'} className={`h-2 w-2 rounded-full ${fresh === 'fresh' ? 'bg-emerald-400' : 'bg-amber-400/80'}`} />}
         {s.has_official && <span className="chip text-[9px] chip--ok uppercase">Official</span>}
         {typeof s.change_24h === 'number' && <span className={`text-[11px] font-semibold flex items-center gap-0.5 ${s.change_24h >= 0 ? 'text-[var(--ok)]' : 'text-red-400'}`}>{s.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{fmtPct(s.change_24h)}</span>}
         {s.ref && <Link to={assetHref(s.ref)} className="ml-auto text-[11px] text-[var(--accent)] flex items-center gap-0.5">Chart <ArrowRight className="h-3 w-3" /></Link>}

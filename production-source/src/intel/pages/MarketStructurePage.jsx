@@ -58,7 +58,7 @@ export default function MarketStructurePage() {
         icon={Network}
         eyebrow={t('structure.eyebrow', { defaultValue: 'Market structure' })}
         title={t('structure.title', { defaultValue: 'Structure figures' })}
-        subtitle={t('structure.subtitle', { defaultValue: 'Rank history, the tokenized real-world asset universe, published index concentration and liquidation heat — read straight from the capture tables. Every figure states its own coverage and says why it is unavailable rather than drawing an empty chart.' })}
+        subtitle={t('structure.subtitle', { defaultValue: 'Rank history, the tokenized real-world asset universe, published index concentration and liquidation heat, read straight from the capture tables. Every figure states its own coverage and says why it is unavailable rather than drawing an empty chart.' })}
       />
       <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />
       <RankMap onLoad={seed} />

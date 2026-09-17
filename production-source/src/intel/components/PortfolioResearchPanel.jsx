@@ -44,7 +44,7 @@ export default function PortfolioResearchPanel({intel,loading,reading=false,erro
    <div className="intel-source-strip">
     {artifact.observedAt&&<span>Evidence checked <time dateTime={artifact.observedAt}>{date(artifact.observedAt)}</time></span>}
     {intel.cache==='hit'&&<span>Analysis reused · evidence unchanged</span>}
-    {intel.cache==='saved'&&<span>{t('portfolio.previous_reading',{defaultValue:'Previous reading — original evidence retained'})}</span>}
+    {intel.cache==='saved'&&<span>{t('portfolio.previous_reading',{defaultValue:'Previous reading (original evidence retained)'})}</span>}
     {intel.generatedAt&&<span>{t('portfolio.prepared_at',{defaultValue:'Prepared'})} <time dateTime={intel.generatedAt}>{date(intel.generatedAt)}</time></span>}
     {intel.pending&&<span role="status">Analysis in progress · recorded facts shown</span>}
     <span>Private · only you</span>

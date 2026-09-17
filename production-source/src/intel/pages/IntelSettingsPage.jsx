@@ -85,7 +85,7 @@ export function DisplayCurrencySection() {
           onChange={(e) => setCurrency(e.target.value)}
           aria-label={t('settings.currency_label', { defaultValue: 'Currency' })}
         >
-          {options.map((c) => <option key={c.code} value={c.code}>{c.code} — {c.name}</option>)}
+          {options.map((c) => <option key={c.code} value={c.code}>{c.code} · {c.name}</option>)}
         </select>
       </label>
       {currency === 'USD' ? (

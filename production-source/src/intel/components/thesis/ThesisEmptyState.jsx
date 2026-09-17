@@ -30,7 +30,7 @@ export default function ThesisEmptyState() {
     <div className="card p-8 space-y-5 text-center">
       <div>
         <h2 className="text-lg font-semibold text-[var(--fg-1)]">{t('journal.empty.title', { defaultValue: 'Build your first investment thesis' })}</h2>
-        <p className="page-sub mt-1">{t('journal.empty.sub', { defaultValue: 'Start from where you already are — the app pulls the evidence for you.' })}</p>
+        <p className="page-sub mt-1">{t('journal.empty.sub', { defaultValue: 'Start from where you already are. The app pulls the evidence for you.' })}</p>
       </div>
       <div className="grid gap-3 sm:grid-cols-3 max-w-2xl mx-auto">
         {STARTERS.map((s) => {

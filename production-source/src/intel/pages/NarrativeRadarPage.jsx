@@ -124,7 +124,7 @@ function NarrativeWorkspace() {
         <div>
           <div className="eyebrow flex items-center gap-1.5"><Radar className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
           <h1 className="page-title">{t('nav.narratives', { defaultValue: 'Narrative Radar' })}</h1>
-          <p className="page-sub">{t('pages.narratives_sub', { defaultValue: 'Which crypto narratives are heating up, cooling, early, crowded, bullish or high-risk — detected automatically.' })}</p>
+          <p className="page-sub">{t('pages.narratives_sub', { defaultValue: 'Which crypto narratives are heating up, cooling, early, crowded, bullish or high-risk, detected automatically.' })}</p>
         </div>
         <button onClick={() => load(true)} disabled={refreshing} className="btn btn--quiet btn--sm flex-shrink-0">
           <RefreshCw className={`h-4 w-4 ${refreshing ? 'animate-spin' : ''}`} /> {t('common.refresh', { defaultValue: 'Refresh' })}
@@ -155,7 +155,7 @@ function NarrativeWorkspace() {
         )}
       </div>
 
-      {err && <div className="card--flat p-3 text-[13px] text-amber-400 flex items-center gap-2"><Info className="h-4 w-4" /> {t('narratives.degraded', { defaultValue: 'Some data is unavailable right now — showing what we have.' })}</div>}
+      {err && <div className="card--flat p-3 text-[13px] text-amber-400 flex items-center gap-2"><Info className="h-4 w-4" /> {t('narratives.degraded', { defaultValue: 'Some data is unavailable right now. Showing what we have.' })}</div>}
       <IntelErrorNotice error={followErr} />
       <NarrativeBookOverlap/>
 
@@ -215,7 +215,7 @@ function CustomNarratives({ onOpen }) {
     <div className="space-y-4">
       <div className="card--flat p-3 text-[12px] text-[var(--fg-3)] flex items-start gap-2">
         <Info className="h-4 w-4 flex-shrink-0 mt-0.5" />
-        {t('narratives.custom_hint', { defaultValue: 'Advanced. Most narratives are detected automatically — search those first. Creating a custom narrative tries to map your idea to an existing one before creating a private one.' })}
+        {t('narratives.custom_hint', { defaultValue: 'Advanced. Most narratives are detected automatically, so search those first. Creating a custom narrative tries to map your idea to an existing one before creating a private one.' })}
       </div>
       <form onSubmit={add} className="card p-4 flex flex-wrap items-end gap-3">
         <label className="block flex-1 min-w-[200px]">

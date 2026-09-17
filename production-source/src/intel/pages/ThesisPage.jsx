@@ -97,7 +97,7 @@ function ThesisWorkspace() {
             <label className="block"><span className="text-[11px] text-[var(--fg-4)]">{t('theses.chain', { defaultValue: 'Chain (optional)' })}</span>
               <select className="select" value={ent.chain} onChange={(e) => setEnt((s) => ({ ...s, chain: e.target.value }))}>{CHAINS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}</select>
             </label>
-            <label className="block flex-1 min-w-[180px]"><span className="text-[11px] text-[var(--fg-4)]">{t('theses.entity', { defaultValue: 'Token address (optional — enables drift review)' })}</span>
+            <label className="block flex-1 min-w-[180px]"><span className="text-[11px] text-[var(--fg-4)]">{t('theses.entity', { defaultValue: 'Token address (optional, enables drift review)' })}</span>
               <input className="input w-full" value={ent.value} onChange={(e) => setEnt((s) => ({ ...s, value: e.target.value }))} />
             </label>
           </div>
@@ -121,10 +121,10 @@ function ThesisWorkspace() {
           <div className="eyebrow">{t('theses.needs_review', { defaultValue: 'Theses needing review' })}</div>
           {list.filter((th) => th.needs_review).map((th) => (
             <div key={th.id} className="text-[12px] text-[var(--fg-2)]">
-              <b>{th.title}</b> — {t('theses.drift_' + (th.drift_state || 'unknown'), { defaultValue: th.drift_state === 'weakens' ? 'current data weakens this thesis' : th.drift_state === 'supports' ? 'current data supports this thesis' : 'data shifted materially' })}
+              <b>{th.title}</b>: {t('theses.drift_' + (th.drift_state || 'unknown'), { defaultValue: th.drift_state === 'weakens' ? 'current data weakens this thesis' : th.drift_state === 'supports' ? 'current data supports this thesis' : 'data shifted materially' })}
             </div>
           ))}
-          <div className="text-[11px] text-[var(--fg-5)]">{t('theses.review_note', { defaultValue: 'Research context to help you review your own reasoning — not advice.' })}</div>
+          <div className="text-[11px] text-[var(--fg-5)]">{t('theses.review_note', { defaultValue: 'Research context to help you review your own reasoning, not advice.' })}</div>
         </div>
       )}
 
@@ -151,7 +151,7 @@ function ThesisWorkspace() {
                 <div className="text-[11px] text-[var(--fg-4)]">{th.thesis_date}</div>
                 {th.drift_state && (
                   <span className={`chip text-[10px] ${th.drift_state === 'supports' ? 'chip--ok' : th.drift_state === 'weakens' ? 'chip--err' : ''}`}
-                    title={t('theses.drift_tip', { defaultValue: 'Deterministic comparison of current stored signals vs your thesis — research context, not advice.' })}>
+                    title={t('theses.drift_tip', { defaultValue: 'Deterministic comparison of current stored signals vs your thesis. Research context, not advice.' })}>
                     {t(`theses.drift_chip_${th.drift_state}`, { defaultValue: th.drift_state === 'supports' ? 'Data currently supports' : th.drift_state === 'weakens' ? 'Data currently weakens' : th.drift_state === 'no_effect' ? 'No material effect' : 'Drift unknown' })}
                   </span>
                 )}

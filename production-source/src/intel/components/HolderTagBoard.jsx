@@ -99,7 +99,7 @@ export default function HolderTagBoard({ result, loading = false, selection = {}
     defaultValue: 'Every date here is a capture time: the hour we asked CoinMarketCap. Neither endpoint publishes an observation time, so nothing on this board dates the provider’s own measurement.',
   })
   const ratioNote = t('holder_tags.ratio_unit', {
-    defaultValue: 'The provider states no unit for the holding ratio — fraction or percent is unconfirmed — so it is printed exactly as reported and never converted.',
+    defaultValue: 'The provider states no unit for the holding ratio (fraction or percent is unconfirmed), so it is printed exactly as reported and never converted.',
   })
 
   if (result?.state === 'unsupported') {
@@ -160,7 +160,7 @@ export default function HolderTagBoard({ result, loading = false, selection = {}
       </div>
       <p className="intel-analysis-caption">
         {t('holder_tags.refresh_cost', {
-          defaultValue: 'A refresh takes a new capture: 1 CoinMarketCap credit for the tag board plus 1 for each tag with holders — at most 9. Captures are hourly, so a second refresh inside the same hour is skipped and costs nothing.',
+          defaultValue: 'A refresh takes a new capture: 1 CoinMarketCap credit for the tag board plus 1 for each tag with holders, at most 9. Captures are hourly, so a second refresh inside the same hour is skipped and costs nothing.',
         })}
       </p>
 
@@ -247,7 +247,7 @@ export default function HolderTagBoard({ result, loading = false, selection = {}
           and an empty address table would both be figures about nothing. */}
       {captures.length ? <>
       <Histogram
-        title={t('holder_tags.realized_title', { tag: opened?.tag || '—', defaultValue: 'Realized gains — {{tag}}' })}
+        title={t('holder_tags.realized_title', { tag: opened?.tag || '—', defaultValue: 'Realized gains: {{tag}}' })}
         description={`${t('holder_tags.realized_sub', {
           defaultValue: 'Addresses in this tag’s captured page, by the size of the realized gain the provider reports for each. Losses and gains are binned separately, so no bin crosses zero. A realized figure is the provider’s, not a valuation and not advice.',
         })} ${clock}`}
@@ -262,7 +262,7 @@ export default function HolderTagBoard({ result, loading = false, selection = {}
             {t('holder_tags.realized_counts', {
               profit: num(realized.inProfit) ?? 0, loss: num(realized.atLoss) ?? 0,
               flat: num(realized.flat) ?? 0, unknown: num(realized.unknown) ?? 0,
-              defaultValue: '{{profit}} addresses in profit, {{loss}} at a loss. {{flat}} reported exactly zero and {{unknown}} reported no realized figure at all — neither is binned, because an explicit zero cannot be log-binned and “we do not know” is not “no gain”.',
+              defaultValue: '{{profit}} addresses in profit, {{loss}} at a loss. {{flat}} reported exactly zero and {{unknown}} reported no realized figure at all. Neither is binned, because an explicit zero cannot be log-binned and “we do not know” is not “no gain”.',
             })}
           </p>
         )
@@ -273,7 +273,7 @@ export default function HolderTagBoard({ result, loading = false, selection = {}
           <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">
             {t('holder_tags.cohort_caption', {
               tag: opened?.tag || '—', at: captureLabel(cohort?.capturedAt),
-              defaultValue: '{{tag}} — one page of at most 50 addresses as the provider returned them at the capture of {{at}}. The cursor is not followed, so this is neither the holder base nor a ranking this platform produced.',
+              defaultValue: '{{tag}}: one page of at most 50 addresses as the provider returned them at the capture of {{at}}. The cursor is not followed, so this is neither the holder base nor a ranking this platform produced.',
             })}
           </caption>
           <thead>

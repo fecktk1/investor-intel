@@ -267,7 +267,7 @@ export default function VenueShare() {
       {gap ? (
         <p className="text-[12px] text-[var(--fg-3)]" role="status">
           {t('structure.vs_spot_gap', {
-            defaultValue: 'Spot venue share is not available on this plan: the capture returned no spot days. Derivatives is the half that is recorded — select it to read the share.',
+            defaultValue: 'Spot venue share is not available on this plan: the capture returned no spot days. Derivatives is the half that is recorded, so select it to read the share.',
           })}
           {reported ? ` ${t('structure.vs_reported', { reason: reported, defaultValue: 'The capture reported: {{reason}}' })}` : ''}
         </p>

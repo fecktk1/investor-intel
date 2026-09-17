@@ -189,7 +189,7 @@ function WatchlistPageBody({ selection }) {
           <span className="eyebrow">{t('watchlist.concentration', { defaultValue: 'Holdings' })}</span>
           <span>${totalCost.toLocaleString(undefined, { maximumFractionDigits: 0 })} {t('watchlist.cost_basis', { defaultValue: 'cost basis across' })} {positions.length} {t('watchlist.positions', { defaultValue: 'positions' })}</span>
           {topPos && <span>· {t('watchlist.largest', { defaultValue: 'largest' })} <b className="text-[var(--fg-1)]">{topPos.name}</b> {topPos.pct.toFixed(0)}%{topPos.pct >= 50 && <span className="text-amber-400"> · {t('watchlist.concentrated', { defaultValue: 'concentrated' })}</span>}</span>}
-          <span className="text-[var(--fg-5)]">· {t('watchlist.by_basis', { defaultValue: 'an exposure estimate by your cost basis — not portfolio P&L' })}</span>
+          <span className="text-[var(--fg-5)]">· {t('watchlist.by_basis', { defaultValue: 'by your cost basis, not live value' })}</span>
           <Link to="/intel/portfolio" className="text-[var(--accent)] hover:underline">· {t('watchlist.track_in_portfolio', { defaultValue: 'track real P&L in Portfolio' })}</Link>
         </div>
       )}

@@ -236,7 +236,7 @@ export default function AssetProvenance({ sourceProvider = null, providerId = nu
       <div className="grid gap-x-8 gap-y-3 lg:grid-cols-[minmax(0,22rem)_minmax(0,1fr)] items-start">
         <RadialBars
           title={t('provenance.ring_title', { defaultValue: 'Where the resolution spent its time' })}
-          description={t('provenance.ring_sub', { defaultValue: 'One arc per source, in ladder order, sized by the milliseconds that source took. A source that was never asked draws no arc at all — only its track.' })}
+          description={t('provenance.ring_sub', { defaultValue: 'One arc per source, in ladder order, sized by the milliseconds that source took. A source that was never asked draws no arc at all, only its track.' })}
           series={arcs}
           formatValue={value => t('provenance.ms', { ms: Math.round(Number(value) || 0), defaultValue: '{{ms}} ms' })}
           state={loading ? 'empty' : arcs.length ? 'ready' : 'empty'}
@@ -309,7 +309,7 @@ export default function AssetProvenance({ sourceProvider = null, providerId = nu
       ) : null}
 
       <p className="text-[12px] text-[var(--fg-4)]">
-        {t('provenance.caption', { defaultValue: 'A resolution walks the sources in order and stops asking once it has an identity, so a source that reads “not asked” was never reached — it did not refuse. Timings are this resolution’s own, not an average.' })}
+        {t('provenance.caption', { defaultValue: 'A resolution walks the sources in order and stops asking once it has an identity, so a source that reads “not asked” was never reached. It did not refuse. Timings are this resolution’s own, not an average.' })}
       </p>
     </section>
   )

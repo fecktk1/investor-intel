@@ -59,7 +59,7 @@ export default function ReviewsPage() {
         <>
           <div className="space-y-2">
             <div className="eyebrow">{t('journal.due_now', { defaultValue: 'Due now' })} ({due.length})</div>
-            {due.length === 0 ? <div className="card--flat p-3 text-[12px] text-[var(--ok)]">{t('journal.nothing_due', { defaultValue: 'Nothing due — all theses are current.' })}</div> : due.map((th) => <Row key={th.id} th={th} showEngine />)}
+            {due.length === 0 ? <div className="card--flat p-3 text-[12px] text-[var(--ok)]">{t('journal.nothing_due', { defaultValue: 'Nothing due. All theses are current.' })}</div> : due.map((th) => <Row key={th.id} th={th} showEngine />)}
           </div>
           {upcoming.length > 0 && (
             <div className="space-y-2">

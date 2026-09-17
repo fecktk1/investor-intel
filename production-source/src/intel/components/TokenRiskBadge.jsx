@@ -70,7 +70,7 @@ export default function TokenRiskBadge({ chain, address, symbol, source = 'looku
   const flags = (row.hard_fail_flags || []).join(', ')
   const concerns = Object.keys(row.penalties || {}).join(', ')
   const conf = row.cross_provider_confidence != null ? ` · confidence ${row.cross_provider_confidence}` : ''
-  const title = `Token risk ${row.score}/100${row.hard_fail && flags ? ` — HIGH RISK: ${flags}` : ''}${concerns ? ` · concerns: ${concerns}` : ''}${conf}. Deterministic (Birdeye security + CoinGecko GT). Not advice.`
+  const title = `Token risk ${row.score}/100${row.hard_fail && flags ? ` (HIGH RISK: ${flags})` : ''}${concerns ? ` · concerns: ${concerns}` : ''}${conf}. Deterministic (Birdeye security + CoinGecko GT). Not advice.`
 
   return (
     <span className={`${cls} text-[11px] inline-flex items-center`} title={title}>

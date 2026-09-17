@@ -110,7 +110,7 @@ function StateChips({ h, t }) {
   const cb = h.cost_basis_status
   if (cb === 'manual_override') chips.push(['cbm', t('portfolio.cost_basis_status.manual_override', { defaultValue: 'Manual cost basis' }), 'text-[var(--accent)]'])
   else if (cb === 'estimated') chips.push(['cbe', t('portfolio.cost_basis_status.estimated', { defaultValue: 'Estimated cost basis' }), 'text-[var(--accent)]'])
-  else if (cb === 'none') chips.push(['cbn', t('portfolio.cost_basis_status.none', { defaultValue: 'Balance only — no P&L' }), 'text-[var(--fg-4)]'])
+  else if (cb === 'none') chips.push(['cbn', t('portfolio.cost_basis_status.none', { defaultValue: 'Balance only, no P&L' }), 'text-[var(--fg-4)]'])
   else if (cb === 'incomplete' || cb === 'partial' || (!cb && h.pnl_state === 'incomplete_history')) chips.push(['inc', t('portfolio.cost_basis_status.incomplete', { defaultValue: 'Cost basis incomplete' }), 'text-[var(--fg-4)]'])
   if (h.reconciliation_status === 'wallet_only') chips.push(['wo', t('portfolio.states.wallet_only', { defaultValue: 'Wallet synced, tx history incomplete' }), 'text-[var(--fg-5)]'])
   else if (h.reconciliation_status === 'wallet_higher' || h.reconciliation_status === 'wallet_lower') chips.push(['drift', cb === 'estimated'
@@ -151,7 +151,7 @@ function Overview({ portfolio, holdings, warnHoldings, summary, hideDust, t }) {
         <div className="border-b border-[var(--border-default)] rounded-none p-2.5 text-[12px] text-[var(--fg-3)] flex items-start gap-2">
           <Clock className="h-3.5 w-3.5 mt-0.5 flex-shrink-0 text-amber-400" />
           <div className="leading-relaxed">
-            <span className="text-amber-400">{t('portfolio.states.pnl_incomplete', { defaultValue: 'Market pricing has gaps' })}</span> — {unpriced} {t('portfolio.unpriced_n', { defaultValue: 'unpriced' })}, {stale} {t('portfolio.stale_n', { defaultValue: 'stale' })}.{' '}
+            <span className="text-amber-400">{t('portfolio.states.pnl_incomplete', { defaultValue: 'Market pricing has gaps' })}</span>: {unpriced} {t('portfolio.unpriced_n', { defaultValue: 'unpriced' })}, {stale} {t('portfolio.stale_n', { defaultValue: 'stale' })}.{' '}
             {oldestQuote&&<>Oldest quote <time dateTime={oldestQuote}>{new Date(oldestQuote).toLocaleString(undefined,{timeZoneName:'short'})}</time>. </>}
             Use Sync now to request shared quote refreshes; missing provider coverage stays visible.
           </div>
@@ -494,7 +494,7 @@ export default function PortfolioPage() {
         <div>
           <div className="eyebrow flex items-center gap-1.5"><Briefcase className="h-3.5 w-3.5" /> {t('brand.name', { defaultValue: 'Investor Intel' })}</div>
           <h1 className="page-title">{t('nav.portfolio', { defaultValue: 'Portfolio' })}</h1>
-          <p className="page-sub">{t('pages.portfolio_sub', { defaultValue: 'Your holdings, P&L, performance, and grounded AI context — read-only, not financial or tax advice.' })}</p>
+          <p className="page-sub">{t('pages.portfolio_sub', { defaultValue: 'Your holdings, P&L, performance, and grounded AI context. Read-only, not financial or tax advice.' })}</p>
         </div>
           <div className="flex items-center gap-2 flex-wrap">
             {waitingForSelection?<select className="select" aria-label={t('portfolio.select', { defaultValue: 'Select portfolio' })} disabled><option>Loading portfolios…</option></select>:portfolios.length > 1 && (

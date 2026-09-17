@@ -122,14 +122,14 @@ export default function IntelOnboardingPage() {
         {beginnerProtection && (
           <div className="card--flat p-3 text-[12px] text-[var(--fg-3)] flex items-center gap-2">
             <Check className="h-4 w-4 text-[var(--accent)]" />
-            {t('onboarding.beginner_on', { defaultValue: 'Beginner Protection is on — stronger risk warnings and simpler explanations.' })}
+            {t('onboarding.beginner_on', { defaultValue: 'Beginner Protection is on: stronger risk warnings and simpler explanations.' })}
           </div>
         )}
 
         <label className="card p-4 flex items-start gap-3 cursor-pointer">
           <input type="checkbox" checked={ack} onChange={(e) => setAck(e.target.checked)} className="mt-0.5" />
           <span className="text-[13px] text-[var(--fg-2)]">
-            {t('onboarding.ack', { defaultValue: 'I understand Investor Intel is research, education and risk context — not financial advice.' })}
+            {t('onboarding.ack', { defaultValue: 'I understand Investor Intel is research, education and risk context, not financial advice.' })}
           </span>
         </label>
 
@@ -143,7 +143,7 @@ export default function IntelOnboardingPage() {
 
         <div className="card--flat p-3 text-[12px] text-[var(--fg-3)] flex items-start gap-2">
           <MessageSquare className="h-4 w-4 text-[var(--accent)] flex-shrink-0 mt-0.5" />
-          <span>{t('onboarding.feedback', { defaultValue: 'Feedback welcome — TheContentForge is always improving. During your free trial, use Report Issue in the sidebar to send bug reports, feature requests, or ideas that would make the platform better.' })}</span>
+          <span>{t('onboarding.feedback', { defaultValue: 'Feedback welcome. TheContentForge is always improving. During your free trial, use Report Issue in the sidebar to send bug reports, feature requests, or ideas that would make the platform better.' })}</span>
         </div>
 
         <IntelDisclaimer variant="block" />

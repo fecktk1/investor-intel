@@ -426,7 +426,7 @@ export default function MarketsPage() {
                 ))}
               </div>
               {(params.view === 'thin_liquidity' || params.view === 'price_up_liq_weak') && (
-                <p className="text-[11px] text-amber-400">{t('markets.thin_liq_caution', { defaultValue: 'Caution: thin liquidity amplifies slippage and price impact — moves here are less reliable. Research context, not advice.' })}</p>
+                <p className="text-[11px] text-amber-400">{t('markets.thin_liq_caution', { defaultValue: 'Caution: thin liquidity amplifies slippage and price impact, so moves here are less reliable. Research context, not advice.' })}</p>
               )}
             </section>
           )}
@@ -515,7 +515,7 @@ export default function MarketsPage() {
           </form>
           {candidates && candidates.length > 0 && (
             <div className="card--flat p-3 space-y-2">
-              <div className="text-[12px] text-[var(--fg-3)]">{t('markets.locate_choose', { defaultValue: 'Found on multiple chains — pick one:' })}</div>
+              <div className="text-[12px] text-[var(--fg-3)]">{t('markets.locate_choose', { defaultValue: 'Found on multiple chains. Pick one:' })}</div>
               <div className="flex flex-wrap gap-1.5">
                 {candidates.map((c) => (
                   <button key={c.chain} type="button" onClick={() => goToAsset(c.chain, form.value.trim())} className="chip text-[11px]">

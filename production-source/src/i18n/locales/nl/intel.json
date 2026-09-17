@@ -688,10 +688,10 @@
   "pages": {
     "market_pulse_sub": "Wat er is veranderd terwijl je weg was, en wat er nu toe doet.",
     "watchlist_sub": "Volg tokens, wallets, narratives, ecosystemen, protocollen en DeFi-markten.",
-    "narratives_sub": "Welke crypto-narratieven warmen op, koelen af, zijn vroeg, druk, bullish of risicovol — automatisch gedetecteerd.",
+    "narratives_sub": "Welke crypto-narratieven warmen op, koelen af, zijn vroeg, druk, bullish of risicovol? Automatisch gedetecteerd.",
     "wallets_sub": "Volg whale-, smart-, dev- en influencer-wallets in begrijpelijk Nederlands.",
-    "defi_sub": "Protocollen, vaults, yields en onderpandrisico — met TVL/APY-geschiedenis.",
-    "execution_sub": "Kan deze trade schoon uitgevoerd worden? Slippage, prijsimpact en routekwaliteit — geen advies.",
+    "defi_sub": "Protocollen, vaults, yields en onderpandrisico, met TVL/APY-geschiedenis.",
+    "execution_sub": "Kan deze trade schoon uitgevoerd worden? Slippage, prijsimpact en routekwaliteit. Geen advies.",
     "compare_sub": "Vergelijk assets op markt, risico, narrative en uitvoering.",
     "theses_sub": "Sla bull-, bear- en neutrale scenario's op met basislijnen om later te volgen.",
     "briefs_sub": "Jouw gepersonaliseerde dagelijkse investeerdersbrief.",
@@ -715,8 +715,8 @@
     "skip": "Direct naar research"
   },
   "trial": {
-    "banner_one": "Proefperiode — {{count}} dag resterend",
-    "banner_other": "Proefperiode — {{count}} dagen resterend"
+    "banner_one": "Proefperiode: {{count}} dag resterend",
+    "banner_other": "Proefperiode: {{count}} dagen resterend"
   },
   "disclaimer": {
     "label": "Onderzoeksnotitie",
@@ -754,7 +754,7 @@
     "largest": "grootste",
     "concentrated": "geconcentreerd",
     "by_basis": "op basis van je kostprijs, niet de live waarde",
-    "limit_items": "Watchlist-limiet bereikt voor je abonnement — upgrade voor meer.",
+    "limit_items": "Watchlist-limiet bereikt voor je abonnement. Upgrade voor meer.",
     "limit_wallets": "Wallet-limiet bereikt voor je abonnement.",
     "add_to_portfolio": "Toevoegen aan Portfolio (maakt een handmatige transactie aan)",
     "added": "Activum opgeslagen in de geselecteerde watchlist.",
@@ -1396,10 +1396,10 @@
     "pair": "Paar",
     "history": "TVL / APY-geschiedenis",
     "universe": "Beste vaults",
-    "universe_hint": "Gevolgd over alle werkruimten — kies er één om te analyseren",
+    "universe_hint": "Gevolgd over alle werkruimten: kies er één om te analyseren",
     "empty": "Voer hierboven een vault-, protocol- of marktadres in om een DeFi-rapport te genereren met TVL/APY-geschiedenis.",
     "il7d": "IL 7d",
-    "metrics_unavailable": "Live-statistieken niet beschikbaar — controleer het adres en de chain.",
+    "metrics_unavailable": "Live-statistieken niet beschikbaar. Controleer het adres en de chain.",
     "analyze_on": "Analyseer elk adres op",
     "deep_dive": "Diepgaande analyse",
     "back": "Terug naar explorer",
@@ -1441,7 +1441,7 @@
     "no_chart": "Nog geen historische grafiekgegevens voor deze pool.",
     "chart_tvl_apy": "TVL- en APY-historie",
     "chart_apy": "APY-historie",
-    "chart_breakdown": "APY-uitsplitsing — basis vs. beloning",
+    "chart_breakdown": "APY-uitsplitsing: basis vs. beloning",
     "ai_what": "Wat dit is",
     "ai_yield": "Yield-analyse",
     "ai_reward_dep": "beloningsafhankelijkheid",
@@ -1504,7 +1504,7 @@
     "news_failed": "Macronieuws kon niet worden geladen. De dekking van headlines is onbekend."
   },
   "explain": {
-    "placeholder": "Stel een vraag — bv. “Wat is liquiditeit en waarom doet het ertoe?”",
+    "placeholder": "Stel een vraag, bv. “Wat is liquiditeit en waarom doet het ertoe?”",
     "ask": "Vragen",
     "quick": {
       "explain_new": "Leg uit alsof ik nieuw ben",
@@ -1534,7 +1534,7 @@
     "watchlist": "Jouw watchlist",
     "manage": "Beheren",
     "empty": "Voeg tokens, wallets of narratives toe aan je watchlist om ze hier te zien.",
-    "empty_home": "Voeg tokens, wallets en narratives toe aan je watchlist en volg enkele bronnen — je dashboard vult zich automatisch.",
+    "empty_home": "Voeg tokens, wallets en narratives toe aan je watchlist en volg enkele bronnen. Je dashboard vult zich automatisch.",
     "following": "Volgend",
     "unread_alerts": "Nieuwe alarmen",
     "notable_changes": "Opvallende wijzigingen",
@@ -1543,7 +1543,7 @@
     "recent_alerts": "Recente alarmen",
     "brief_research": "Brief & research",
     "all": "Alles",
-    "no_news": "Nog geen nieuws — voeg bronnen toe op de Nieuws-pagina.",
+    "no_news": "Nog geen nieuws. Voeg bronnen toe op de Nieuws-pagina.",
     "no_narr": "Volg narratives om te zien wat er opwarmt.",
     "no_alerts": "Geen alarmen afgegaan. Stel regels in op de Alarmen-pagina.",
     "no_brief": "Genereer je eerste brief.",
@@ -1626,7 +1626,7 @@
     "save": "These opslaan",
     "empty": "Nog geen theses. Leg je eerste vast.",
     "chain": "Chain (optioneel)",
-    "entity": "Tokenadres (optioneel — activeert drift-review)",
+    "entity": "Tokenadres (optioneel, activeert drift-review)",
     "review": "Bekijken",
     "drift_tip": "Deterministische vergelijking van de huidige opgeslagen signalen met je these: researchcontext, geen advies.",
     "needs_review": "Theses die beoordeling nodig hebben",
@@ -1681,7 +1681,7 @@
     "attention_list_losers": "Grootste dalers",
     "attention_hours_label": "Opeenvolgende uren",
     "attention_explanation": "Gaat af wanneer dit activum zoveel opeenvolgende uurlijkse vastleggingen op de gekozen aandachtslijst heeft gestaan. De regel leest de lijst die de aanbieder zelf publiceert, dus zegt hij waar lezers naartoe worden gewezen en verder niets: aandacht is geen waardering, geen stroom en geen voorspelling, en een activum kan tussen twee vastleggingen door de lijst verlaten zonder dat de regel het ooit ziet. Er valt geen richting te kiezen: de regel toetst een niveau op het uurlijkse vastlegritme en wordt na de wachttijd opnieuw scherpgesteld.",
-    "limit": "Actieve alarmlimiet bereikt voor je abonnement — upgrade voor meer.",
+    "limit": "Actieve alarmlimiet bereikt voor je abonnement. Upgrade voor meer.",
     "why": "Waarom het ertoe doet",
     "apply": "Suggestie toepassen",
     "confirm_weaken": "Wat dit zou bevestigen of verzwakken",
@@ -1764,8 +1764,8 @@
     "all_categories": "Alle categorieën",
     "all_chains": "Alle chains",
     "none_in_filter": "Geen narratieven passen nu bij dit filter. Probeer een ander tabblad.",
-    "degraded": "Sommige data is momenteel niet beschikbaar — we tonen wat we hebben.",
-    "custom_hint": "Geavanceerd. De meeste narratieven worden automatisch gedetecteerd — zoek daar eerst. Een eigen narratief wordt eerst aan een bestaand narratief gekoppeld voordat er een privé-narratief wordt gemaakt.",
+    "degraded": "Sommige data is momenteel niet beschikbaar. We tonen wat we hebben.",
+    "custom_hint": "Geavanceerd. De meeste narratieven worden automatisch gedetecteerd, dus zoek daar eerst. Een eigen narratief wordt eerst aan een bestaand narratief gekoppeld voordat er een privé-narratief wordt gemaakt.",
     "no_custom": "Nog geen eigen narratieven.",
     "private": "privé",
     "mapped_to": "Dat komt overeen met een bestaand narratief",
@@ -1943,7 +1943,7 @@
     "column_quote_observed": "Koers waargenomen"
   },
   "settings": {
-    "beginner": "Beginnersbescherming — sterkere risicowaarschuwingen en eenvoudigere uitleg.",
+    "beginner": "Beginnersbescherming: sterkere risicowaarschuwingen en eenvoudigere uitleg.",
     "saved": "Opgeslagen",
     "save": "Wijzigingen opslaan",
     "plan_heading": "Plan",
@@ -2030,7 +2030,7 @@
     "source_type": "Bron",
     "value": "Waarde",
     "sources_label": "bronnen",
-    "limit": "Bronlimiet bereikt voor je abonnement — upgrade voor meer.",
+    "limit": "Bronlimiet bereikt voor je abonnement. Upgrade voor meer.",
     "rate": "Dagelijkse nieuws-verversslimiet bereikt voor je abonnement.",
     "dup": "Deze bron wordt al gevolgd.",
     "empty": "Nog geen nieuws. Voeg bronnen of tokens toe aan je watchlist en haal daarna nieuws op.",
@@ -2089,7 +2089,7 @@
   },
   "start": {
     "title": "Start je crypto-intelligence-werkruimte",
-    "body": "Onderzoek tokens, wallets, narratives, DeFi en uitvoeringskwaliteit — met begrijpelijke uitleg en risicocontext. 7 dagen gratis proberen, geen creditcard vereist.",
+    "body": "Onderzoek tokens, wallets, narratives, DeFi en uitvoeringskwaliteit, met begrijpelijke uitleg en risicocontext. 7 dagen gratis proberen, geen creditcard vereist.",
     "cta": "7 dagen gratis starten",
     "already_used": "Je hebt je Investor Intel-proefperiode al gebruikt.",
     "error": "Kon je proefperiode niet starten. Probeer het opnieuw.",
@@ -2104,9 +2104,9 @@
     "title": "Stel je werkruimte in",
     "sub": "Dit personaliseert je briefs, uitleg en risicoframing. Je kunt dit op elk moment wijzigen via Instellingen.",
     "finish": "Beginnen met verkennen",
-    "ack": "Ik begrijp dat Investor Intel research, educatie en risicocontext biedt — geen financieel advies.",
+    "ack": "Ik begrijp dat Investor Intel research, educatie en risicocontext biedt, geen financieel advies.",
     "error": "Kon niet opslaan. Probeer het opnieuw.",
-    "beginner_on": "Beginnersbescherming is ingeschakeld — sterkere risicowaarschuwingen en eenvoudigere uitleg.",
+    "beginner_on": "Beginnersbescherming is ingeschakeld: sterkere risicowaarschuwingen en eenvoudigere uitleg.",
     "q_experience": "Hoe ervaren ben je?",
     "q_style": "Hoeveel detail wil je?",
     "q_risk": "Wat is je risicohouding?",
@@ -2294,7 +2294,7 @@
     "support_note": {
       "full": "Saldi, transacties, prijzen en P&L.",
       "beta_history": "De transactiehistorie is in bèta en kan onvolledig zijn.",
-      "balance_only": "Alleen saldi — kostprijs en P&L zijn niet beschikbaar voor deze chain.",
+      "balance_only": "Alleen saldi. Kostprijs en P&L zijn niet beschikbaar voor deze chain.",
       "all_evm": "Scant elke ondersteunde EVM-chain voor dit adres en importeert saldi en historie overal waar activiteit is."
     },
     "chain_note": {
@@ -2304,7 +2304,7 @@
     "cost_basis_status": {
       "known": "Kostprijs bijgehouden",
       "incomplete": "Kostprijs onvolledig",
-      "none": "Alleen saldo — geen P&L",
+      "none": "Alleen saldo, geen P&L",
       "manual_override": "Handmatige kostprijs",
       "estimated": "Geschatte kostprijs"
     },
@@ -2329,7 +2329,7 @@
       "quantity": "Hoeveelheid",
       "avg_cost": "Gem. kostprijs",
       "unknown": "Onbekend activum",
-      "pnl_withheld": "P&L wordt achtergehouden tot de kostprijs bekend is — waarde en allocatie worden op de huidige prijs getoond.",
+      "pnl_withheld": "P&L wordt achtergehouden tot de kostprijs bekend is. Waarde en allocatie worden op de huidige prijs getoond.",
       "market_cap": "Marktkapitalisatie",
       "liquidity": "Liquiditeit",
       "open_market": "Volledige marktgegevens openen",

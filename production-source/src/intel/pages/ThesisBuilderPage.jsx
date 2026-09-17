@@ -280,7 +280,7 @@ export default function ThesisBuilderPage() {
                   <RecordedEvidence version={ai.draft.evidence_version} sources={ai.draft.source_evidence} omitted={ai.draft.omitted_evidence_count} />
                 {ai.draft.why_now && <div className="text-[11px] text-[var(--fg-4)]">Why now: {ai.draft.why_now}</div>}
                   <button onClick={applyAiDraft} className="btn btn--primary btn--sm"><Check className="h-3.5 w-3.5" /> {t('journal.use_draft', { defaultValue: 'Use this draft' })}</button>
-                  <div className="text-[10px] text-[var(--fg-5)]">{t('journal.ai_note', { defaultValue: 'Research framing, not advice — review and edit before saving.' })}</div>
+                  <div className="text-[10px] text-[var(--fg-5)]">{t('journal.ai_note', { defaultValue: 'Research framing, not advice. Review and edit before saving.' })}</div>
                 </div>
               )}
               {[['statement', 'My thesis in one sentence'], ['why_now', 'Why now?'], ['whats_missing', 'What is the market missing?'], ['supports', 'What supports this?'], ['weakens', 'What weakens this?'], ['proves_wrong', 'What would prove me wrong?'], ['opposing', 'Strongest opposing argument']].map(([k, label]) => (
@@ -320,7 +320,7 @@ export default function ThesisBuilderPage() {
                 <div>{t('journal.selected_evidence', { defaultValue: 'Evidence' })}: <b>{selectedCards.length}</b></div>
                 <div>{t('journal.rules_step_short', { defaultValue: 'Rules' })}: <b>{rules.length}</b></div>
               </div>
-              <p className="text-[11px] text-[var(--fg-5)]">{t('journal.baseline_note', { defaultValue: 'Saving snapshots an immutable baseline (price, benchmark, fundamentals, selected evidence) so the Journal can show what changed since this call — forever.' })}</p>
+              <p className="text-[11px] text-[var(--fg-5)]">{t('journal.baseline_note', { defaultValue: 'Saving snapshots an immutable baseline (price, benchmark, fundamentals, selected evidence) so the Journal can show what changed since this call, forever.' })}</p>
               <div className="flex items-center gap-2">
                 <button onClick={runCritique} disabled={ai.loading} className="btn btn--quiet btn--sm"><Sparkles className="h-4 w-4" /> {t('journal.ai_critique', { defaultValue: 'AI critique' })}</button>
                 <button onClick={() => save('draft')} disabled={saving || !entity} className="btn btn--quiet btn--sm">{t('journal.save_draft', { defaultValue: 'Save draft' })}</button>

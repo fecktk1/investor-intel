@@ -255,7 +255,7 @@ export default function IntelUpgradePage() {
         submission: (resp) => {
           const handler = submissionHandlerRef.current
           if (!handler) {
-            setError('Card form not ready — please refresh and try again.')
+            setError('Card form not ready. Please refresh and try again.')
             setStep('form')
             setSubmitting(false)
             return
@@ -401,7 +401,7 @@ export default function IntelUpgradePage() {
       return
     }
     if (!tokenizerInstanceRef.current || !tokenizerReady) {
-      setError('Card form is still loading — try again in a moment.')
+      setError('Card form is still loading. Try again in a moment.')
       return
     }
 
@@ -724,7 +724,7 @@ export default function IntelUpgradePage() {
         </div>
 
         <p className="text-center text-xs text-gray-500 -mt-5 mb-8">
-          {t('intel_upgrade.included_products', { defaultValue: 'Every plan includes Narrative Radar, the Markets terminal, Thesis Journal, Compare, DeFi, Wallet Watch, Daily Brief, and explainable AI — these limits just scale with your tier.' })}
+          {t('intel_upgrade.included_products', { defaultValue: 'Every plan includes Narrative Radar, the Markets terminal, Thesis Journal, Compare, DeFi, Wallet Watch, Daily Brief, and explainable AI. These limits just scale with your tier.' })}
         </p>
 
         {/* payment method tabs */}
@@ -889,7 +889,7 @@ export default function IntelUpgradePage() {
                 {tokenizerStatus === 'retrying' && (
                   <p className="text-[11px] text-yellow-400">
                     {t('reactivate.form.tokenizer_retrying', {
-                      defaultValue: 'Card session refreshed — please re-enter card details.',
+                      defaultValue: 'Card session refreshed. Please re-enter card details.',
                     })}
                   </p>
                 )}

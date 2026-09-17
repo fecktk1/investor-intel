@@ -688,10 +688,10 @@
   "pages": {
     "market_pulse_sub": "O que mudou desde sua última visita e o que importa agora.",
     "watchlist_sub": "Acompanhe tokens, wallets, narrativas, ecossistemas, protocolos e mercados DeFi.",
-    "narratives_sub": "Quais narrativas cripto estão esquentando, esfriando, são iniciais, saturadas, de alta ou de alto risco — detectadas automaticamente.",
+    "narratives_sub": "Quais narrativas cripto estão esquentando, esfriando, são iniciais, saturadas, de alta ou de alto risco? Detectadas automaticamente.",
     "wallets_sub": "Siga wallets de whales, smart money, devs e influenciadores em linguagem simples.",
-    "defi_sub": "Protocolos, vaults, yields e risco de colateral — com histórico de TVL/APY.",
-    "execution_sub": "Este trade executa bem? Slippage, impacto no preço e qualidade de rota — não é conselho.",
+    "defi_sub": "Protocolos, vaults, yields e risco de colateral, com histórico de TVL/APY.",
+    "execution_sub": "Este trade executa bem? Slippage, impacto no preço e qualidade de rota. Não é conselho.",
     "compare_sub": "Compare ativos por mercado, risco, narrativa e execução.",
     "theses_sub": "Salve teses de alta, baixa e neutras com baselines para acompanhar depois.",
     "briefs_sub": "Seu briefing diário personalizado para investidores.",
@@ -715,8 +715,8 @@
     "skip": "Pular para a pesquisa"
   },
   "trial": {
-    "banner_one": "Trial — {{count}} dia restante",
-    "banner_other": "Trial — {{count}} dias restantes"
+    "banner_one": "Trial: {{count}} dia restante",
+    "banner_other": "Trial: {{count}} dias restantes"
   },
   "disclaimer": {
     "label": "Nota de pesquisa",
@@ -754,7 +754,7 @@
     "largest": "maior",
     "concentrated": "concentrado",
     "by_basis": "pelo seu custo médio, não pelo valor atual",
-    "limit_items": "Limite da watchlist do seu plano atingido — faça upgrade para mais.",
+    "limit_items": "Limite da watchlist do seu plano atingido. Faça upgrade para mais.",
     "limit_wallets": "Limite de wallets do seu plano atingido.",
     "add_to_portfolio": "Adicionar à carteira (cria uma transação manual)",
     "added": "Ativo salvo na watchlist selecionada.",
@@ -1396,10 +1396,10 @@
     "pair": "Par",
     "history": "Histórico de TVL / APY",
     "universe": "Principais vaults",
-    "universe_hint": "Acompanhados em todos os workspaces — escolha um para analisar",
+    "universe_hint": "Acompanhados em todos os workspaces: escolha um para analisar",
     "empty": "Insira um endereço de vault, protocolo ou mercado acima para gerar um relatório DeFi com histórico de TVL/APY.",
     "il7d": "IL 7d",
-    "metrics_unavailable": "Métricas ao vivo indisponíveis — verifique o endereço e a rede.",
+    "metrics_unavailable": "Métricas ao vivo indisponíveis. Verifique o endereço e a rede.",
     "analyze_on": "Analise qualquer endereço em",
     "deep_dive": "Análise detalhada",
     "back": "Voltar ao explorador",
@@ -1441,7 +1441,7 @@
     "no_chart": "Ainda não há dados históricos de gráfico para este pool.",
     "chart_tvl_apy": "Histórico de TVL e APY",
     "chart_apy": "Histórico de APY",
-    "chart_breakdown": "Detalhamento do APY — base vs. recompensa",
+    "chart_breakdown": "Detalhamento do APY: base vs. recompensa",
     "ai_what": "O que é isto",
     "ai_yield": "Análise de rendimento",
     "ai_reward_dep": "dependência de recompensas",
@@ -1504,7 +1504,7 @@
     "news_failed": "Não foi possível carregar as notícias macro. A cobertura de manchetes é desconhecida."
   },
   "explain": {
-    "placeholder": "Pergunte qualquer coisa — ex.: “O que é liquidez e por que ela importa?”",
+    "placeholder": "Pergunte qualquer coisa, ex.: “O que é liquidez e por que ela importa?”",
     "ask": "Perguntar",
     "quick": {
       "explain_new": "Explique como se eu fosse iniciante",
@@ -1534,7 +1534,7 @@
     "watchlist": "Sua watchlist",
     "manage": "Gerenciar",
     "empty": "Adicione tokens, wallets ou narrativas à sua watchlist para vê-los aqui.",
-    "empty_home": "Adicione tokens, wallets e narrativas à sua watchlist e siga algumas fontes — seu painel se preenche automaticamente.",
+    "empty_home": "Adicione tokens, wallets e narrativas à sua watchlist e siga algumas fontes. Seu painel se preenche automaticamente.",
     "following": "Seguindo",
     "unread_alerts": "Novos alertas",
     "notable_changes": "Mudanças notáveis",
@@ -1543,7 +1543,7 @@
     "recent_alerts": "Alertas recentes",
     "brief_research": "Briefing e pesquisa",
     "all": "Tudo",
-    "no_news": "Ainda sem notícias — adicione fontes na página de Notícias.",
+    "no_news": "Ainda sem notícias. Adicione fontes na página de Notícias.",
     "no_narr": "Acompanhe narrativas para ver o que está esquentando.",
     "no_alerts": "Nenhum alerta disparado. Defina regras na página de Alertas.",
     "no_brief": "Gere seu primeiro briefing.",
@@ -1626,7 +1626,7 @@
     "save": "Salvar tese",
     "empty": "Nenhuma tese ainda. Registre a primeira.",
     "chain": "Chain (opcional)",
-    "entity": "Endereço do token (opcional — habilita revisão de desvio)",
+    "entity": "Endereço do token (opcional, habilita revisão de desvio)",
     "review": "Revisar",
     "drift_tip": "Comparação determinística dos sinais armazenados atuais com a sua tese: contexto de pesquisa, não é conselho.",
     "needs_review": "Teses que precisam de revisão",
@@ -1681,7 +1681,7 @@
     "attention_list_losers": "Maiores quedas",
     "attention_hours_label": "Horas consecutivas",
     "attention_explanation": "Dispara quando este ativo esteve na lista de atenção escolhida por esse número de capturas horárias consecutivas. A regra lê a lista que o próprio provedor publica, então diz para onde os leitores estão sendo apontados e nada mais: atenção não é avaliação, não é fluxo e não é previsão, e um ativo pode sair da lista entre duas capturas sem que a regra o veja. Não há direção a escolher: a regra verifica um nível no relógio de captura horária e é rearmada após o intervalo mínimo.",
-    "limit": "Limite de alertas ativos do seu plano atingido — faça upgrade para mais.",
+    "limit": "Limite de alertas ativos do seu plano atingido. Faça upgrade para mais.",
     "why": "Por que isso importa",
     "apply": "Aplicar sugestão",
     "confirm_weaken": "O que confirmaria ou enfraqueceria isto",
@@ -1764,8 +1764,8 @@
     "all_categories": "Todas as categorias",
     "all_chains": "Todas as redes",
     "none_in_filter": "Nenhuma narrativa corresponde a este filtro agora. Tente outra aba.",
-    "degraded": "Alguns dados estão indisponíveis no momento — mostrando o que temos.",
-    "custom_hint": "Avançado. A maioria das narrativas é detectada automaticamente — pesquise lá primeiro. Criar uma narrativa personalizada tenta mapeá-la para uma existente antes de criar uma privada.",
+    "degraded": "Alguns dados estão indisponíveis no momento. Mostrando o que temos.",
+    "custom_hint": "Avançado. A maioria das narrativas é detectada automaticamente, então pesquise lá primeiro. Criar uma narrativa personalizada tenta mapeá-la para uma existente antes de criar uma privada.",
     "no_custom": "Ainda não há narrativas personalizadas.",
     "private": "privada",
     "mapped_to": "Isso corresponde a uma narrativa existente",
@@ -1943,7 +1943,7 @@
     "column_quote_observed": "Cotação observada"
   },
   "settings": {
-    "beginner": "Proteção para Iniciantes — avisos de risco mais fortes e explicações mais simples.",
+    "beginner": "Proteção para Iniciantes: avisos de risco mais fortes e explicações mais simples.",
     "saved": "Salvo",
     "save": "Salvar alterações",
     "plan_heading": "Plano",
@@ -2030,7 +2030,7 @@
     "source_type": "Fonte",
     "value": "Valor",
     "sources_label": "fontes",
-    "limit": "Limite de fontes do seu plano atingido — faça upgrade para mais.",
+    "limit": "Limite de fontes do seu plano atingido. Faça upgrade para mais.",
     "rate": "Limite diário de atualização de notícias do seu plano atingido.",
     "dup": "Essa fonte já está sendo acompanhada.",
     "empty": "Ainda sem notícias. Adicione fontes ou tokens à sua watchlist e clique em Buscar notícias.",
@@ -2089,7 +2089,7 @@
   },
   "start": {
     "title": "Inicie seu workspace de inteligência cripto",
-    "body": "Pesquise tokens, wallets, narrativas, DeFi e qualidade de execução — com explicações em linguagem simples e contexto de risco. Trial gratuito de 7 dias, sem cartão.",
+    "body": "Pesquise tokens, wallets, narrativas, DeFi e qualidade de execução, com explicações em linguagem simples e contexto de risco. Trial gratuito de 7 dias, sem cartão.",
     "cta": "Iniciar trial gratuito de 7 dias",
     "already_used": "Você já utilizou seu trial do Investor Intel.",
     "error": "Não foi possível iniciar seu trial. Tente novamente.",
@@ -2104,9 +2104,9 @@
     "title": "Configure seu workspace",
     "sub": "Isso personaliza seus briefings, explicações e enquadramento de risco. Você pode alterar a qualquer momento em Configurações.",
     "finish": "Começar a explorar",
-    "ack": "Entendo que o Investor Intel oferece pesquisa, educação e contexto de risco — não conselho financeiro.",
+    "ack": "Entendo que o Investor Intel oferece pesquisa, educação e contexto de risco, não conselho financeiro.",
     "error": "Não foi possível salvar. Tente novamente.",
-    "beginner_on": "Proteção para Iniciantes ativada — avisos de risco mais fortes e explicações mais simples.",
+    "beginner_on": "Proteção para Iniciantes ativada: avisos de risco mais fortes e explicações mais simples.",
     "q_experience": "Qual é a sua experiência?",
     "q_style": "Quanto detalhe você quer?",
     "q_risk": "Qual é o seu perfil de risco?",
@@ -2294,7 +2294,7 @@
     "support_note": {
       "full": "Saldos, transações, preços e P&L.",
       "beta_history": "O histórico de transações está em beta e pode estar incompleto.",
-      "balance_only": "Apenas saldos — o custo base e o P&L não estão disponíveis para esta rede.",
+      "balance_only": "Apenas saldos. O custo base e o P&L não estão disponíveis para esta rede.",
       "all_evm": "Verifica todas as redes EVM compatíveis para este endereço e importa saldos e histórico onde houver atividade."
     },
     "chain_note": {
@@ -2304,7 +2304,7 @@
     "cost_basis_status": {
       "known": "Custo base rastreado",
       "incomplete": "Custo base incompleto",
-      "none": "Apenas saldo — sem P&L",
+      "none": "Apenas saldo, sem P&L",
       "manual_override": "Custo base manual",
       "estimated": "Custo base estimado"
     },
@@ -2329,7 +2329,7 @@
       "quantity": "Quantidade",
       "avg_cost": "Custo médio",
       "unknown": "Ativo desconhecido",
-      "pnl_withheld": "O P&L fica retido até o custo base ser conhecido — valor e alocação são exibidos pelo preço atual.",
+      "pnl_withheld": "O P&L fica retido até o custo base ser conhecido. Valor e alocação são exibidos pelo preço atual.",
       "market_cap": "Capitalização",
       "liquidity": "Liquidez",
       "open_market": "Abrir dados de mercado completos",

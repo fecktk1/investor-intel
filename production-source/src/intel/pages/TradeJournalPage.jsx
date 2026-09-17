@@ -98,7 +98,7 @@ export default function TradeJournalPage() {
       {loading ? (
         <div className="card p-8 grid place-items-center"><div className="animate-spin rounded-full h-6 w-6 border-b-2 border-[var(--accent)]" /></div>
       ) : loadedScope !== scope ? null : trades.length === 0 ? (
-        <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('journal.trade.empty', { defaultValue: 'No trades yet. Plan one above — link it to a thesis to keep your reasoning and execution aligned.' })}</div>
+        <div className="card p-6 text-center text-[13px] text-[var(--fg-4)]">{t('journal.trade.empty', { defaultValue: 'No trades yet. Plan one above and link it to a thesis to keep your reasoning and execution aligned.' })}</div>
       ) : (
         <div className="space-y-2">
           {trades.map((tr) => <TradeCard portfolioEvents={linkedActivity.markers.filter(event => event.canonicalAssetKey === canonicalPortfolioKey(tr.subject_canonical_key || theses.find(th => th.id === tr.thesis_id)?.subject_canonical_key))} key={tr.id} trade={tr} thesisTitle={thesisTitles[tr.thesis_id]} onClose={onClose} onDelete={onDelete} busy={busy} />)}

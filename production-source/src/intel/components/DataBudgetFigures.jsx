@@ -137,7 +137,7 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
   const gaugeDescription = t('data_budget.gauge_sub', {
     used: credits(used ?? 0), reserved: credits(reserved ?? 0), ceiling: credits(ceiling),
     projected: projected == null ? t('data_budget.not_reported', { defaultValue: 'not reported' }) : credits(projected),
-    defaultValue: '{{used}} used and {{reserved}} reserved of {{ceiling}} credits. The needle marks {{projected}} — the month projected from the cadences now in force.',
+    defaultValue: '{{used}} used and {{reserved}} reserved of {{ceiling}} credits. The needle marks {{projected}}, the month projected from the cadences now in force.',
   })
 
   // ---- (b) the plan line ----------------------------------------------------
@@ -213,7 +213,7 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
             {degraded.map((entry, i) => (
               <li key={`${entry?.part ?? 'part'}-${i}`}>
                 {String(entry?.part ?? t('data_budget.unnamed_part', { defaultValue: 'unnamed part' }))}
-                {' — '}
+                {': '}
                 {String(entry?.reason || t('data_budget.no_reason', { defaultValue: 'no reason was reported' }))}
               </li>
             ))}
@@ -272,7 +272,7 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
             ? t('data_budget.plan_expired', { date: stamp(plan.expiresAt), defaultValue: 'The promotional profile expired on {{date}}; the baseline plan is what is enforced.' })
             : daysLeft == null
               ? t('data_budget.plan_no_expiry', { defaultValue: 'No expiry date was reported for the promotional profile.' })
-              : t('data_budget.plan_countdown', { date: stamp(plan.expiresAt), days: daysLeft, defaultValue: 'The promotional profile expires {{date}} — {{days}} days from this read.' })}
+              : t('data_budget.plan_countdown', { date: stamp(plan.expiresAt), days: daysLeft, defaultValue: 'The promotional profile expires {{date}}, {{days}} days from this read.' })}
         </p>
         <ul className="intel-analysis-caption space-y-1">
           {projectionRows.map(([key, value]) => {

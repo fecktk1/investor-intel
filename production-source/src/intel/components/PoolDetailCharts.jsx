@@ -58,7 +58,7 @@ export default function PoolDetailCharts({ history, loading }) {
 
       {hasReward && (
         <div className="card p-3">
-          <div className="eyebrow mb-1">{t('defi.chart_breakdown', { defaultValue: 'APY breakdown — base vs reward' })}</div>
+          <div className="eyebrow mb-1">{t('defi.chart_breakdown', { defaultValue: 'APY breakdown: base vs reward' })}</div>
           <ResponsiveContainer width="100%" height={200}>
             <AreaChart data={data} margin={{ top: 8, right: 8, bottom: 0, left: 0 }}>
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" vertical={false} />

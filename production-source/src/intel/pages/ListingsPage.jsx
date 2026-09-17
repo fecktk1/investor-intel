@@ -25,7 +25,7 @@ export default function ListingsPage() {
         eyebrow={t('listings.eyebrow', { defaultValue: 'New listings' })}
         title={t('listings.title', { defaultValue: 'New-listing due diligence' })}
         subtitle={t('listings.subtitle', {
-          defaultValue: 'Every asset the daily 06:10 UTC listing capture recorded, built from its newest snapshot, with the security flags the provider reported for its contract beside it. The run inspects at most twenty-five contracts a day, so most of a cohort is genuinely uninspected — and a listing nobody looked at is never shown as a clean one.',
+          defaultValue: 'Every asset the daily 06:10 UTC listing capture recorded, built from its newest snapshot, with the security flags the provider reported for its contract beside it. The run inspects at most twenty-five contracts a day, so most of a cohort is genuinely uninspected, and a listing nobody looked at is never shown as a clean one.',
         })}
       />
       <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />

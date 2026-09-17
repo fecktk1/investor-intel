@@ -293,7 +293,7 @@ export default function MarketPulsePage() {
       {empty ? (
         <IntelEmptyState
           title={t('pulse.empty_title', { defaultValue: 'No personal signal feed yet' })}
-          body={t('pulse.empty_home', { defaultValue: 'Add tokens, wallets and narratives to your watchlist and follow some sources — your dashboard fills in automatically.' })}
+          body={t('pulse.empty_home', { defaultValue: 'Add tokens, wallets and narratives to your watchlist and follow some sources. Your dashboard fills in automatically.' })}
           action={<div className="flex justify-center gap-2 flex-wrap"><Link to="/intel/watchlist" className="btn btn--primary btn--sm">{t('nav.watchlist', { defaultValue: 'My Watchlist' })}</Link><Link to="/intel/news" className="btn btn--ghost btn--sm">{t('nav.news', { defaultValue: 'News' })}</Link></div>}
         />
       ) : (

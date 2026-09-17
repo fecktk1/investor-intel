@@ -152,7 +152,7 @@ function PortfolioAssetPageBody() {
 
       {!pnlOk && !realizedOk && (
         <div className="border-b border-[var(--border-default)] rounded-none p-2.5 text-[12px] text-[var(--fg-4)]">
-          {t('portfolio.asset.pnl_withheld', { defaultValue: 'P&L is withheld until cost basis is known — value and allocation are shown from the current price.' })}
+          {t('portfolio.asset.pnl_withheld', { defaultValue: 'P&L is withheld until cost basis is known. Value and allocation are shown from the current price.' })}
         </div>
       )}
 

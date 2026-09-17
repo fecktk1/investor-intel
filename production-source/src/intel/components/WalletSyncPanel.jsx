@@ -174,7 +174,7 @@ function Panel({ supabase, orgId, userId, portfolioId, sources, onChange, t }) {
             {evmChain === 'evm' ? t('portfolio.support_note.all_evm', { defaultValue: 'Scans every supported EVM chain for this address and imports balances + history wherever it has activity.' })
               : selNote === 'hyperevm' ? t('portfolio.chain_note.hyperevm', { defaultValue: 'HyperEVM supported; HyperCore trading history needs a later adapter.' })
               : selNote === 'sei_evm' ? t('portfolio.chain_note.sei_evm', { defaultValue: 'Sei here is EVM-style; not Cosmos-native Sei.' })
-                : selLevel === 'balance_only' ? t('portfolio.support_note.balance_only', { defaultValue: 'Balances only — cost basis and P&L are not available for this chain.' })
+                : selLevel === 'balance_only' ? t('portfolio.support_note.balance_only', { defaultValue: 'Balances only. Cost basis and P&L are not available for this chain.' })
                   : selLevel === 'beta_history' ? t('portfolio.support_note.beta_history', { defaultValue: 'Transaction history is in beta and may be incomplete.' })
                     : t('portfolio.support_note.full', { defaultValue: 'Balances, transactions, prices, and P&L.' })}
           </div>

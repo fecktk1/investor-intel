@@ -688,10 +688,10 @@
   "pages": {
     "market_pulse_sub": "Çfarë ndryshoi që kur mungoje dhe çfarë ka rëndësi tani.",
     "watchlist_sub": "Ndiq token-e, wallet-e, narrativa, ekosisteme, protokolle dhe tregje DeFi.",
-    "narratives_sub": "Cilat narrativa kripto po nxehen, po ftohen, janë të hershme, të mbipopulluara, rritëse apo me rrezik të lartë — të zbuluara automatikisht.",
-    "wallets_sub": "Ndiq wallet-et e balenave, të mençurave, dev-eve dhe influencerëve — me shpjegime të thjeshta.",
-    "defi_sub": "Protokolle, vault-e, yield-e dhe rrezik kolaterali — me historikun TVL/APY.",
-    "execution_sub": "A mund të ekzekutohet ky tregti pa probleme? Slippage, ndikim çmimi dhe cilësia e rrugës — jo këshillë.",
+    "narratives_sub": "Cilat narrativa kripto po nxehen, po ftohen, janë të hershme, të mbipopulluara, rritëse apo me rrezik të lartë? Të zbuluara automatikisht.",
+    "wallets_sub": "Ndiq wallet-et e balenave, të mençurave, dev-eve dhe influencerëve, me shpjegime të thjeshta.",
+    "defi_sub": "Protokolle, vault-e, yield-e dhe rrezik kolaterali, me historikun TVL/APY.",
+    "execution_sub": "A mund të ekzekutohet ky tregti pa probleme? Slippage, ndikim çmimi dhe cilësia e rrugës. Jo këshillë.",
     "compare_sub": "Krahaso asetet sipas tregut, rrezikut, narrativave dhe ekzekutimit.",
     "theses_sub": "Ruaj rastet bullish, bearish dhe neutrale me bazat e tyre për t'i gjurmuar më vonë.",
     "briefs_sub": "Brifingu yt ditor i personalizuar si investitor.",
@@ -715,8 +715,8 @@
     "skip": "Kalo te hulumtimi"
   },
   "trial": {
-    "banner_one": "Provë — {{count}} ditë e mbetur",
-    "banner_other": "Provë — {{count}} ditë të mbetura"
+    "banner_one": "Provë: {{count}} ditë e mbetur",
+    "banner_other": "Provë: {{count}} ditë të mbetura"
   },
   "disclaimer": {
     "label": "Shënim kërkimor",
@@ -754,7 +754,7 @@
     "largest": "më i madhi",
     "concentrated": "i koncentruar",
     "by_basis": "sipas bazës suaj të kostos, jo vlerës live",
-    "limit_items": "Kufiri i watchlist-it për planin tënd u arrit — përmirëso për më shumë.",
+    "limit_items": "Kufiri i watchlist-it për planin tënd u arrit. Përmirëso për më shumë.",
     "limit_wallets": "Kufiri i wallet-eve për planin tënd u arrit.",
     "add_to_portfolio": "Shto në portofol (krijon një transaksion manual)",
     "added": "Aktivi u ruajt në watchlist-in e zgjedhur.",
@@ -1396,10 +1396,10 @@
     "pair": "Çifti",
     "history": "Historiku TVL / APY",
     "universe": "Vault-et kryesore",
-    "universe_hint": "Gjurmohet nëpër të gjitha hapësirat e punës — zgjidh një për ta analizuar",
+    "universe_hint": "Gjurmohet nëpër të gjitha hapësirat e punës: zgjidh një për ta analizuar",
     "empty": "Fut një adresë vault-i, protokolli ose tregu më lart për të gjeneruar një raport DeFi me historikun TVL/APY.",
     "il7d": "IL 7d",
-    "metrics_unavailable": "Metrikat live nuk janë të disponueshme — verifiko adresën dhe rrjetin.",
+    "metrics_unavailable": "Metrikat live nuk janë të disponueshme. Verifiko adresën dhe rrjetin.",
     "analyze_on": "Analizo çdo adresë në",
     "deep_dive": "Analizë e thelluar",
     "back": "Kthehu te explorer-i",
@@ -1441,7 +1441,7 @@
     "no_chart": "Ende nuk ka të dhëna historike grafiku për këtë pool.",
     "chart_tvl_apy": "Historia e TVL dhe APY",
     "chart_apy": "Historia e APY",
-    "chart_breakdown": "Ndarja e APY — bazë vs shpërblim",
+    "chart_breakdown": "Ndarja e APY: bazë vs shpërblim",
     "ai_what": "Çfarë është kjo",
     "ai_yield": "Analiza e yield-it",
     "ai_reward_dep": "varësia nga shpërblimet",
@@ -1504,7 +1504,7 @@
     "news_failed": "Lajmet makro nuk mund të ngarkoheshin. Mbulimi i titujve është i panjohur."
   },
   "explain": {
-    "placeholder": "Pyet çdo gjë — p.sh. “Çfarë është likuiditeti dhe pse ka rëndësi?”",
+    "placeholder": "Pyet çdo gjë, p.sh. “Çfarë është likuiditeti dhe pse ka rëndësi?”",
     "ask": "Pyet",
     "quick": {
       "explain_new": "Shpjego si të jem i ri",
@@ -1534,7 +1534,7 @@
     "watchlist": "Watchlist-i yt",
     "manage": "Menaxho",
     "empty": "Shto token-e, wallet-e ose narrativa në watchlist-in tënd për t'i parë këtu.",
-    "empty_home": "Shto token-e, wallet-e dhe narrativa në watchlist-in tënd dhe ndiq disa burime — paneli yt plotësohet automatikisht.",
+    "empty_home": "Shto token-e, wallet-e dhe narrativa në watchlist-in tënd dhe ndiq disa burime. Paneli yt plotësohet automatikisht.",
     "following": "Ndjekur",
     "unread_alerts": "Alarme të reja",
     "notable_changes": "Ndryshime të dukshme",
@@ -1543,7 +1543,7 @@
     "recent_alerts": "Alarmet e fundit",
     "brief_research": "Brifing dhe hulumtim",
     "all": "Të gjitha",
-    "no_news": "Asnjë lajm ende — shto burime në faqen e Lajmeve.",
+    "no_news": "Asnjë lajm ende. Shto burime në faqen e Lajmeve.",
     "no_narr": "Ndiq narrativa për të parë çfarë po nxehet.",
     "no_alerts": "Asnjë alarm nuk u aktivizua. Vendos rregulla në faqen e Alarmeve.",
     "no_brief": "Gjenero brifun tënd të parë.",
@@ -1626,7 +1626,7 @@
     "save": "Ruaj tezën",
     "empty": "Asnjë tezë ende. Kap tezën tënde të parë.",
     "chain": "Chain (opsionale)",
-    "entity": "Adresa e token-it (opsionale — mundëson shqyrtimin e devijimit)",
+    "entity": "Adresa e token-it (opsionale, mundëson shqyrtimin e devijimit)",
     "review": "Shqyrto",
     "drift_tip": "Krahasim determinist i sinjaleve aktuale të ruajtura me tezën tënde: kontekst hulumtimi, jo këshillë.",
     "needs_review": "Teza që kërkojnë rishikim",
@@ -1681,7 +1681,7 @@
     "attention_list_losers": "Humbësit kryesorë",
     "attention_hours_label": "Orë radhazi",
     "attention_explanation": "Aktivizohet kur ky aktiv ka qenë në listën e zgjedhur të vëmendjes për aq kapje orare radhazi. Rregulli lexon listën që publikon vetë ofruesi, prandaj tregon nga po drejtohen lexuesit dhe asgjë tjetër: vëmendja nuk është vlerësim, nuk është fluks dhe nuk është parashikim, dhe një aktiv mund të dalë nga lista midis dy kapjeve pa e parë kurrë rregulli. Nuk ka drejtim për të zgjedhur: rregulli kontrollon një nivel sipas orës orare të kapjes dhe riaktivizohet pas pushimit të vet.",
-    "limit": "Kufiri i alarmeve aktive për planin tënd u arrit — përmirëso për më shumë.",
+    "limit": "Kufiri i alarmeve aktive për planin tënd u arrit. Përmirëso për më shumë.",
     "why": "Pse ka rëndësi",
     "apply": "Zbato sugjerimin",
     "confirm_weaken": "Çfarë do ta konfirmonte ose do ta dobësonte këtë",
@@ -1764,8 +1764,8 @@
     "all_categories": "Të gjitha kategoritë",
     "all_chains": "Të gjithë zinxhirët",
     "none_in_filter": "Asnjë narrativë nuk përputhet me këtë filtër tani. Provo një skedë tjetër.",
-    "degraded": "Disa të dhëna nuk janë të disponueshme tani — po tregojmë çfarë kemi.",
-    "custom_hint": "E avancuar. Shumica e narrativave zbulohen automatikisht — kërko aty fillimisht. Krijimi i një narrative të personalizuar provon ta lidhë idenë me një ekzistuese para se të krijojë një private.",
+    "degraded": "Disa të dhëna nuk janë të disponueshme tani. Po tregojmë çfarë kemi.",
+    "custom_hint": "E avancuar. Shumica e narrativave zbulohen automatikisht, prandaj kërko aty fillimisht. Krijimi i një narrative të personalizuar provon ta lidhë idenë me një ekzistuese para se të krijojë një private.",
     "no_custom": "Ende asnjë narrativë e personalizuar.",
     "private": "private",
     "mapped_to": "Kjo përputhet me një narrativë ekzistuese",
@@ -1943,7 +1943,7 @@
     "column_quote_observed": "Kuotimi i vëzhguar"
   },
   "settings": {
-    "beginner": "Mbrojtja për fillestarët — paralajmërime rreziku më të forta dhe shpjegime më të thjeshta.",
+    "beginner": "Mbrojtja për fillestarët: paralajmërime rreziku më të forta dhe shpjegime më të thjeshta.",
     "saved": "U ruajt",
     "save": "Ruaj ndryshimet",
     "plan_heading": "Plani",
@@ -2030,7 +2030,7 @@
     "source_type": "Burimi",
     "value": "Vlera",
     "sources_label": "burime",
-    "limit": "Kufiri i burimeve për planin tënd u arrit — përmirëso për më shumë.",
+    "limit": "Kufiri i burimeve për planin tënd u arrit. Përmirëso për më shumë.",
     "rate": "Kufiri ditor i rifreskimit të lajmeve për planin tënd u arrit.",
     "dup": "Ky burim është tashmë i gjurmuar.",
     "empty": "Asnjë lajm ende. Shto burime ose token-e në watchlist-in tënd, pastaj Merr lajme.",
@@ -2089,7 +2089,7 @@
   },
   "start": {
     "title": "Fillo hapësirën tënde të inteligjencës kripto",
-    "body": "Hulumto token-e, wallet-e, narrativa, DeFi dhe cilësi ekzekutimi — me shpjegime të thjeshta dhe kontekst rreziku. 7 ditë provë falas, pa kartë të kërkuar.",
+    "body": "Hulumto token-e, wallet-e, narrativa, DeFi dhe cilësi ekzekutimi, me shpjegime të thjeshta dhe kontekst rreziku. 7 ditë provë falas, pa kartë të kërkuar.",
     "cta": "Fillo provën 7-ditore falas",
     "already_used": "Ke përdorur tashmë provën tënde të Investor Intel.",
     "error": "Nuk u mund të nisej prova. Ju lutem provo përsëri.",
@@ -2104,9 +2104,9 @@
     "title": "Konfiguro hapësirën tënde të punës",
     "sub": "Kjo personalizon brifet, shpjegimet dhe kontekstin e rrezikut. Mund ta ndryshosh në çdo kohë te Cilësimet.",
     "finish": "Fillo eksplorimin",
-    "ack": "Kuptoj që Investor Intel është hulumtim, edukim dhe kontekst rreziku — jo këshillë financiare.",
+    "ack": "Kuptoj që Investor Intel është hulumtim, edukim dhe kontekst rreziku, jo këshillë financiare.",
     "error": "Nuk u mund të ruhet. Ju lutem provo përsëri.",
-    "beginner_on": "Mbrojtja për fillestarët është aktive — paralajmërime rreziku më të forta dhe shpjegime më të thjeshta.",
+    "beginner_on": "Mbrojtja për fillestarët është aktive: paralajmërime rreziku më të forta dhe shpjegime më të thjeshta.",
     "q_experience": "Sa me përvojë je?",
     "q_style": "Sa detaje dëshiron?",
     "q_risk": "Cila është qëndrimi yt ndaj rrezikut?",
@@ -2294,7 +2294,7 @@
     "support_note": {
       "full": "Balancat, transaksionet, çmimet dhe P&L.",
       "beta_history": "Historia e transaksioneve është në beta dhe mund të jetë e paplotë.",
-      "balance_only": "Vetëm balancat — kostoja bazë dhe P&L nuk janë të disponueshme për këtë rrjet.",
+      "balance_only": "Vetëm balancat. Kostoja bazë dhe P&L nuk janë të disponueshme për këtë rrjet.",
       "all_evm": "Skanon çdo rrjet EVM të mbështetur për këtë adresë dhe importon balancat dhe historinë kudo që ka aktivitet."
     },
     "chain_note": {
@@ -2304,7 +2304,7 @@
     "cost_basis_status": {
       "known": "Kostoja bazë e ndjekur",
       "incomplete": "Kostoja bazë e paplotë",
-      "none": "Vetëm balanca — pa P&L",
+      "none": "Vetëm balanca, pa P&L",
       "manual_override": "Kosto bazë manuale",
       "estimated": "Kosto bazë e vlerësuar"
     },
@@ -2329,7 +2329,7 @@
       "quantity": "Sasia",
       "avg_cost": "Kosto mesatare",
       "unknown": "Aset i panjohur",
-      "pnl_withheld": "P&L mbahet derisa kostoja bazë të njihet — vlera dhe alokimi shfaqen me çmimin aktual.",
+      "pnl_withheld": "P&L mbahet derisa kostoja bazë të njihet. Vlera dhe alokimi shfaqen me çmimin aktual.",
       "market_cap": "Kapitalizimi i tregut",
       "liquidity": "Likuiditeti",
       "open_market": "Hap të dhënat e plota të tregut",

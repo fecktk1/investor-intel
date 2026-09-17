@@ -187,7 +187,7 @@ export default function ExecutionPage() {
       <div>
         <div className="eyebrow">{t('brand.name', { defaultValue: 'Investor Intel' })}</div>
         <h1 className="page-title">{t('nav.execution', { defaultValue: 'Execution Intelligence' })}</h1>
-        <p className="page-sub">{t('pages.execution_sub', { defaultValue: 'Can this trade clean? Slippage, price impact and route quality — not advice.' })}</p>
+        <p className="page-sub">{t('pages.execution_sub', { defaultValue: 'Can this trade clean? Slippage, price impact and route quality. Not advice.' })}</p>
       </div>
 
       {/* Input form */}

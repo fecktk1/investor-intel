@@ -85,7 +85,7 @@ export default function PortfolioPerformanceChart({ series = [], compare = null,
         <div className="py-4 text-[13px] text-[var(--fg-4)]">
           {view === 'pnl'
             ? t('portfolio.pnl_empty', { defaultValue: 'P&L history builds from daily snapshots once your cost basis is known.' })
-            : t('portfolio.perf_empty', { defaultValue: 'Performance builds from daily snapshots — today\'s value is saved on each sync. The chart appears once you have two or more days of history.' })}
+            : t('portfolio.perf_empty', { defaultValue: 'Performance builds from daily snapshots, and today\'s value is saved on each sync. The chart appears once you have two or more days of history.' })}
         </div>
       ) : view === 'pnl' ? (
         <ResponsiveContainer width="100%" height={240}>

@@ -208,7 +208,7 @@ export default function GraduationFunnel() {
           rate: `${(rate * 100).toFixed(1)}%`,
           graduated: fmtNum(num(cohort?.graduatedInWindow) ?? 0),
           seen: fmtNum(num(cohort?.firstSeenInWindow) ?? 0),
-          defaultValue: '{{graduated}} of the {{seen}} contracts first seen inside this window reached the graduates list inside it — {{rate}}.',
+          defaultValue: '{{graduated}} of the {{seen}} contracts first seen inside this window reached the graduates list inside it: {{rate}}.',
         })
 
   const control = (label, options, current, apply, format) => (

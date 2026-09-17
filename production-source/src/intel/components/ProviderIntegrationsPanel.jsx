@@ -72,7 +72,7 @@ export default function ProviderIntegrationsPanel({ supabase }) {
     return (
       <section className="rounded-lg border border-[var(--border-subtle)] bg-[var(--bg-1)] p-4">
         <h3 className="text-[13px] font-semibold text-[var(--fg-1)] flex items-center gap-2"><Database className="h-4 w-4" /> Provider Integrations</h3>
-        <p className="mt-2 text-[12px] text-[var(--fg-4)]">Registry not installed yet — apply migration <code>363_provider_integration_registry.sql</code> to enable the provider integration dashboard.</p>
+        <p className="mt-2 text-[12px] text-[var(--fg-4)]">Registry not installed yet. Apply migration <code>363_provider_integration_registry.sql</code> to enable the provider integration dashboard.</p>
       </section>
     )
   }

@@ -8,10 +8,10 @@ import { Settings, ShieldCheck } from 'lucide-react'
 export default function ThesisSettingsPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const items = [
-    t('journal.about.1', { defaultValue: 'Every thesis captures an immutable baseline (price, benchmark, fundamentals, selected evidence) at creation — so the Journal can always show what changed since your call.' }),
-    t('journal.about.2', { defaultValue: 'The engine SUGGESTS status changes (strengthening, weakening, needs review) from your own evidence and rules — it never changes your conclusion. You confirm.' }),
+    t('journal.about.1', { defaultValue: 'Every thesis captures an immutable baseline (price, benchmark, fundamentals, selected evidence) at creation, so the Journal can always show what changed since your call.' }),
+    t('journal.about.2', { defaultValue: 'The engine SUGGESTS status changes (strengthening, weakening, needs review) from your own evidence and rules. It never changes your conclusion. You confirm.' }),
     t('journal.about.3', { defaultValue: 'Confirmation and invalidation rules can become alerts. Partnerships are treated skeptically: announced is not measurable adoption.' }),
-    t('journal.about.4', { defaultValue: 'Your theses and trades are private to you. Trade Journal is for planning and review only — Investor Intel never executes trades.' }),
+    t('journal.about.4', { defaultValue: 'Your theses and trades are private to you. Trade Journal is for planning and review only. Investor Intel never executes trades.' }),
   ]
   return (
     <div className="space-y-4">

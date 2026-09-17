@@ -144,7 +144,7 @@ export default function IntelModeShell({ children }) {
         {trialDaysRemaining != null && (
           <div className="px-3 pt-3">
             <div className="intel-surface intel-surface--accent px-3 py-2 text-[12px] text-[var(--fg-2)]">
-              {t('trial.banner', { count: trialDaysRemaining, defaultValue: `Trial — ${trialDaysRemaining} days left` })}
+              {t('trial.banner', { count: trialDaysRemaining, defaultValue: `Trial: ${trialDaysRemaining} days left` })}
             </div>
           </div>
         )}

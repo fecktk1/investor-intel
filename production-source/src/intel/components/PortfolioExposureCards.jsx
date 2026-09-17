@@ -48,7 +48,7 @@ export default function PortfolioExposureCards({ portfolioId, revision }) {
     <section className="space-y-3">
       <div className="flex items-center justify-between">
         <div className="eyebrow flex items-center gap-1.5"><PieChart className="h-3.5 w-3.5" /> Exposure context</div>
-        <span className="text-[11px] text-[var(--fg-5)]">Research context only — not a recommendation</span>
+        <span className="text-[11px] text-[var(--fg-5)]">Research context only, not a recommendation</span>
       </div>
 
       {exp.total_value_usd===0&&<p className="text-sm text-[var(--fg-4)]">No priced holdings currently contribute to exposure. Closed positions remain in your history.</p>}
@@ -66,7 +66,7 @@ export default function PortfolioExposureCards({ portfolioId, revision }) {
                 <span className="tabular-nums text-[var(--fg-3)] w-12 text-right">{c.pct != null ? `${c.pct}%` : '—'}</span>
               </div>
             ))}
-            {exp.top_chain_pct >= 70 && <div className="text-[11px] text-amber-400">High single-chain concentration ({exp.top_chain_pct}%) — descriptive note, not advice.</div>}
+            {exp.top_chain_pct >= 70 && <div className="text-[11px] text-amber-400">High single-chain concentration ({exp.top_chain_pct}%). Descriptive note, not advice.</div>}
           </div>
         )}
 

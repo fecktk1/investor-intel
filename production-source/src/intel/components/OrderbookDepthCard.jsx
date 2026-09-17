@@ -46,7 +46,7 @@ export default function OrderbookDepthCard({ orderbook }) {
           </div>
         ))}
       </div>
-      <p className="text-[10px] text-[var(--fg-5)]">{t('markets.orderbookNote', { defaultValue: 'Aggregated top-of-book depth — informational, not a tradable quote.' })}</p>
+      <p className="text-[10px] text-[var(--fg-5)]">{t('markets.orderbookNote', { defaultValue: 'Aggregated top-of-book depth. Informational, not a tradable quote.' })}</p>
     </section>
   )
 }
