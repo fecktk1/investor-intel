@@ -14,7 +14,12 @@
 import { capWithinRuns } from './feed-entity-cap.ts'
 
 const LISTING_DAYS = [7, 30, 90]
-const LISTING_STATUSES = ['flagged', 'all']
+/** 'inspected' is the cohort the due-diligence budget actually reached, which is
+ * a different question from 'flagged' (reached AND something was hit). Both
+ * narrow the ROWS only: every `cohort` count below is measured over the whole
+ * window before either filter, so narrowing the table never narrows the claim
+ * the summary line makes about the window. */
+const LISTING_STATUSES = ['flagged', 'inspected', 'all']
 /** One row per listing per day. 100 listings x 90 days is the widest window the
  * view can be asked for, plus headroom for a day the provider listed more. */
 const LISTING_CAP = 12_000
@@ -35,6 +40,23 @@ const LISTING_ROW_MAX = 500
  * were tied anyway. No row is dropped, the cohort counts are computed before the
  * cap, and a day with one chain in it keeps its original order. */
 const LISTINGS_PER_CHAIN_PER_DAY = 5
+/** Provider ids asked of `market_assets` in one `in(...)` filter. The answer only
+ * decides whether a symbol is a LINK or plain text, so it is asked in small
+ * batches rather than as one 500-id URL, and a failed batch leaves those rows
+ * unlinked instead of failing the board. */
+const MARKET_LOOKUP_BATCH = 100
+/** Batches attempted. 5 x 100 covers the widest page the board renders. */
+const MARKET_LOOKUP_BATCHES = 5
+/** Edges of the "change since first capture" distribution, in percent.
+ *
+ * The edges are FIXED and published here rather than derived from the day's
+ * cohort, so the same bar means the same thing on every window and on every
+ * capture day. -100 is the floor a price change cannot pass, which also lets the
+ * figure draw its zero crossing; the top bin is open ended because a new listing
+ * can and does multiply. */
+const SINCE_BINS: Array<[number, number | null]> = [
+  [-100, -50], [-50, -25], [-25, -10], [-10, 0], [0, 10], [10, 25], [25, 50], [50, null],
+]
 
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
 export interface ViewResult { view: string; asOf: string | null; coverage: Coverage; reason?: string | null; [key: string]: unknown }
@@ -78,6 +100,56 @@ export function medianOf(values: number[]): number | null {
   return sorted.length % 2 ? sorted[middle] : (sorted[middle - 1] + sorted[middle]) / 2
 }
 
+/** Percent change between the OLDEST and the NEWEST captured price this window
+ * holds for one asset.
+ *
+ * This is a reading of OUR capture, not of the listing: the daily run began on
+ * 2026-09-15 and an asset the provider added before that was already trading
+ * when we first saw it. So the claim is "since the first price this capture
+ * recorded", and it needs two captures to exist at all — one snapshot is a
+ * single observation, never a move. A first price of zero or below has no
+ * percentage to report and returns null rather than an infinity. */
+export function sinceCapture(first: unknown, last: unknown): number | null {
+  const from = num(first), to = num(last)
+  if (from == null || to == null || from <= 0) return null
+  return ((to - from) / from) * 100
+}
+
+/** Whole days between the provider's own `date_added` and the newest capture of
+ * this asset. Negative clock skew is clamped to zero: a listing cannot have been
+ * on the provider for a negative number of days. */
+export function daysOnProvider(dateAdded: unknown, asOf: unknown): number | null {
+  const added = Date.parse(String(dateAdded ?? '')), seen = Date.parse(String(asOf ?? ''))
+  if (!Number.isFinite(added) || !Number.isFinite(seen)) return null
+  return Math.max(0, Math.floor((seen - added) / 86_400_000))
+}
+
+/** The fixed distribution, as counts on the published edges. Every bin is
+ * returned even when it is empty: a missing bar reads as "no range here", which
+ * is a different statement from "nothing landed in this range". */
+export function sinceHistogram(values: number[]): Array<{ from: number; to: number | null; count: number }> {
+  return SINCE_BINS.map(([from, to]) => ({
+    from, to,
+    count: values.filter((v) => Number.isFinite(v) && v >= from && (to == null || v < to)).length,
+  }))
+}
+
+/** Which of these provider ids `market_assets` already holds, so the board links
+ * only a symbol that opens onto a real Markets page. Bounded, batched, and
+ * fail-soft: a batch that errors simply contributes no ids. */
+// deno-lint-ignore no-explicit-any
+export async function readMarketPages(db: any, providerIds: string[]): Promise<Set<string>> {
+  const known = new Set<string>()
+  const ids = [...new Set(providerIds.filter((id) => !!id))]
+  for (let i = 0; i < ids.length && i < MARKET_LOOKUP_BATCH * MARKET_LOOKUP_BATCHES; i += MARKET_LOOKUP_BATCH) {
+    const batch = ids.slice(i, i + MARKET_LOOKUP_BATCH)
+    const page = await readRows(() => db.from('market_assets').select('provider_id')
+      .eq('source_provider', 'coinmarketcap').in('provider_id', batch).limit(MARKET_LOOKUP_BATCH))
+    for (const row of page.rows) { const id = str(row?.provider_id, 40); if (id) known.add(id) }
+  }
+  return known
+}
+
 const LISTING_COLUMNS = 'provider_id,snapshot_date,symbol,name,slug,date_added,chain,contract_address,price,market_cap,volume_24h,change_24h_pct,holder_count,security,security_hash,security_state,captured_at'
 
 // deno-lint-ignore no-explicit-any
@@ -115,7 +187,11 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
   if (!all.length) {
     return {
       view: 'new_listings', days, status, rows: [],
-      cohort: { count: 0, withContract: 0, flagged: 0, medianHolderCount: null },
+      cohort: {
+        count: 0, withContract: 0, inspected: 0, flagged: 0,
+        medianHolderCount: null, medianVolume24h: null,
+      },
+      sinceListing: { sample: 0, excluded: 0, fell: 0, histogram: sinceHistogram([]) },
       asOf: null, coverage: emptyCoverage(), reason: page.reason,
     }
   }
@@ -127,31 +203,62 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
   const rows = [...byAsset.values()].map((history) => {
     const ordered = [...history].sort((a, b) => String(b.snapshotDate ?? '').localeCompare(String(a.snapshotDate ?? '')))
     const newest = ordered[0], previous = ordered[1] ?? null
+    // OLDEST captured price this window holds for the asset, which is not always
+    // the oldest ROW: a capture day can record a null price.
+    const priced = [...ordered].reverse().filter((row) => num(row.price) != null)
     const stamps = ordered.map((row) => row.capturedAt).filter((v): v is string => !!v).sort()
+    const lastSeenAt = stamps.at(-1) ?? null
     return {
       providerId: newest.providerId, symbol: newest.symbol, name: newest.name, slug: newest.slug,
       dateAdded: newest.dateAdded, chain: newest.chain, contractAddress: newest.contractAddress,
       price: newest.price, marketCap: newest.marketCap, volume24h: newest.volume24h, change24hPct: newest.change24hPct,
       holderCount: newest.holderCount, security: newest.security,
       securityState: newest.securityState, flagCount: flagCount(newest.security),
-      firstSeenAt: stamps[0] ?? null, lastSeenAt: stamps.at(-1) ?? null,
+      firstSeenAt: stamps[0] ?? null, lastSeenAt,
       snapshots: ordered.length,
+      daysOnProvider: daysOnProvider(newest.dateAdded, lastSeenAt),
+      // Two PRICED captures or it does not exist. `firstPriceAt` names the clock
+      // the percentage is measured from, so the figure never has to guess it.
+      firstPrice: priced.length > 1 ? priced[0].price : null,
+      firstPriceAt: priced.length > 1 ? priced[0].snapshotDate : null,
+      sinceCapturePct: priced.length > 1 ? sinceCapture(priced[0].price, priced.at(-1)?.price) : null,
       changed: !!(newest.securityHash && previous?.securityHash && newest.securityHash !== previous.securityHash),
     }
   }).sort((a, b) => String(b.dateAdded ?? '').localeCompare(String(a.dateAdded ?? '')) || String(a.providerId).localeCompare(String(b.providerId)))
 
-  const filtered = status === 'flagged' ? rows.filter((row) => (row.flagCount ?? 0) > 0) : rows
+  const filtered = status === 'flagged'
+    ? rows.filter((row) => (row.flagCount ?? 0) > 0)
+    : status === 'inspected'
+      ? rows.filter((row) => row.flagCount != null)
+      : rows
   const shown = capWithinRuns(filtered, (row) => String(row.dateAdded ?? '').slice(0, 10), {
     entityOf: (row) => row.chain, perEntity: LISTINGS_PER_CHAIN_PER_DAY,
   }).rows.slice(0, LISTING_ROW_MAX)
+  // Asked only for the rows actually returned: the answer decides whether a
+  // symbol is a link, and a row nobody is shown needs no link.
+  const linked = await readMarketPages(db, shown.map((row) => String(row.providerId ?? '')))
   const stamps = all.map((row) => row.capturedAt).filter((v): v is string => !!v).sort()
+  // Measured over the WHOLE window, before the status filter and before the
+  // per-chain cap, so the summary describes the capture rather than the table.
+  const moves = rows.map((row) => row.sinceCapturePct).filter((v): v is number => v != null)
   return {
-    view: 'new_listings', days, status, rows: shown,
+    view: 'new_listings', days, status,
+    rows: shown.map((row) => ({ ...row, hasMarketPage: linked.has(String(row.providerId ?? '')) })),
     cohort: {
       count: rows.length,
       withContract: rows.filter((row) => !!row.contractAddress).length,
+      inspected: rows.filter((row) => row.flagCount != null).length,
       flagged: rows.filter((row) => (row.flagCount ?? 0) > 0).length,
       medianHolderCount: medianOf(rows.map((row) => row.holderCount).filter((v): v is number => v != null)),
+      medianVolume24h: medianOf(rows.map((row) => row.volume24h).filter((v): v is number => v != null)),
+    },
+    // A listing with one priced capture is EXCLUDED and counted as excluded; it
+    // is never drawn at zero, which would read as "it did not move".
+    sinceListing: {
+      sample: moves.length,
+      excluded: rows.length - moves.length,
+      fell: moves.filter((v) => v < 0).length,
+      histogram: sinceHistogram(moves),
     },
     changed: rows.filter((row) => row.changed).length,
     asOf: stamps.at(-1) ?? null,
