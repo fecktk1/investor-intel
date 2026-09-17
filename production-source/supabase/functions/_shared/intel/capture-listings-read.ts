@@ -40,13 +40,6 @@ const LISTING_ROW_MAX = 500
  * were tied anyway. No row is dropped, the cohort counts are computed before the
  * cap, and a day with one chain in it keeps its original order. */
 const LISTINGS_PER_CHAIN_PER_DAY = 5
-/** Provider ids asked of `market_assets` in one `in(...)` filter. The answer only
- * decides whether a symbol is a LINK or plain text, so it is asked in small
- * batches rather than as one 500-id URL, and a failed batch leaves those rows
- * unlinked instead of failing the board. */
-const MARKET_LOOKUP_BATCH = 100
-/** Batches attempted. 5 x 100 covers the widest page the board renders. */
-const MARKET_LOOKUP_BATCHES = 5
 /** Flag codes named in one side of a change. A document reports tens of items;
  * this only ever truncates a detail line, never a count. */
 const FLAG_CODE_MAX = 20
@@ -165,23 +158,7 @@ export function sinceHistogram(values: number[]): Array<{ from: number; to: numb
   }))
 }
 
-/** Which of these provider ids `market_assets` already holds, so the board links
- * only a symbol that opens onto a real Markets page. Bounded, batched, and
- * fail-soft: a batch that errors simply contributes no ids. */
-// deno-lint-ignore no-explicit-any
-export async function readMarketPages(db: any, providerIds: string[]): Promise<Set<string>> {
-  const known = new Set<string>()
-  const ids = [...new Set(providerIds.filter((id) => !!id))]
-  for (let i = 0; i < ids.length && i < MARKET_LOOKUP_BATCH * MARKET_LOOKUP_BATCHES; i += MARKET_LOOKUP_BATCH) {
-    const batch = ids.slice(i, i + MARKET_LOOKUP_BATCH)
-    const page = await readRows(() => db.from('market_assets').select('provider_id')
-      .eq('source_provider', 'coinmarketcap').in('provider_id', batch).limit(MARKET_LOOKUP_BATCH))
-    for (const row of page.rows) { const id = str(row?.provider_id, 40); if (id) known.add(id) }
-  }
-  return known
-}
-
-const LISTING_COLUMNS = 'provider_id,snapshot_date,symbol,name,slug,date_added,chain,contract_address,price,market_cap,volume_24h,change_24h_pct,holder_count,security,security_hash,security_state,captured_at'
+const LISTING_COLUMNS = 'provider_id,snapshot_date,symbol,name,slug,date_added,chain,contract_address,platform_name,platform_slug,platform_token_address,price,market_cap,self_reported_market_cap,fully_diluted_market_cap,circulating_supply,cmc_rank,volume_24h,change_24h_pct,holder_count,security,security_hash,security_state,captured_at'
 
 // deno-lint-ignore no-explicit-any
 const listingRow = (row: any) => ({
@@ -189,7 +166,14 @@ const listingRow = (row: any) => ({
   symbol: str(row?.symbol, 50), name: str(row?.name, 200), slug: str(row?.slug, 200),
   dateAdded: str(row?.date_added, 40),
   chain: str(row?.chain, 60), contractAddress: str(row?.contract_address, 200),
+  // The provider's own platform, beside the verified identity and never folded
+  // into it: `chain` still means "a chain the inspection lane can act on".
+  platformName: str(row?.platform_name, 120), platformSlug: str(row?.platform_slug, 120),
+  platformTokenAddress: str(row?.platform_token_address, 200),
   price: num(row?.price), marketCap: num(row?.market_cap),
+  selfReportedMarketCap: num(row?.self_reported_market_cap),
+  fullyDilutedMarketCap: num(row?.fully_diluted_market_cap),
+  circulatingSupply: num(row?.circulating_supply), cmcRank: num(row?.cmc_rank),
   volume24h: num(row?.volume_24h), change24hPct: num(row?.change_24h_pct),
   holderCount: num(row?.holder_count),
   security: row?.security && typeof row.security === 'object' && !Array.isArray(row.security) ? row.security as Record<string, unknown> : null,
@@ -219,7 +203,7 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
     return {
       view: 'new_listings', days, status, rows: [],
       cohort: {
-        count: 0, withContract: 0, inspected: 0, flagged: 0,
+        count: 0, withContract: 0, withKnownChain: 0, inspected: 0, flagged: 0,
         medianHolderCount: null, medianVolume24h: null,
       },
       sinceListing: { sample: 0, excluded: 0, fell: 0, histogram: sinceHistogram([]) },
@@ -245,7 +229,11 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
     return {
       providerId: newest.providerId, symbol: newest.symbol, name: newest.name, slug: newest.slug,
       dateAdded: newest.dateAdded, chain: newest.chain, contractAddress: newest.contractAddress,
-      price: newest.price, marketCap: newest.marketCap, volume24h: newest.volume24h, change24hPct: newest.change24hPct,
+      platformName: newest.platformName, platformSlug: newest.platformSlug, platformTokenAddress: newest.platformTokenAddress,
+      price: newest.price, marketCap: newest.marketCap,
+      selfReportedMarketCap: newest.selfReportedMarketCap, fullyDilutedMarketCap: newest.fullyDilutedMarketCap,
+      circulatingSupply: newest.circulatingSupply, cmcRank: newest.cmcRank,
+      volume24h: newest.volume24h, change24hPct: newest.change24hPct,
       holderCount: newest.holderCount, security: newest.security,
       securityState: newest.securityState, flagCount: flagCount(newest.security),
       firstSeenAt: stamps[0] ?? null, lastSeenAt,
@@ -278,19 +266,27 @@ export async function readNewListings(db: any, params: { days?: unknown; status?
   const shown = capWithinRuns(filtered, (row) => String(row.dateAdded ?? '').slice(0, 10), {
     entityOf: (row) => row.chain, perEntity: LISTINGS_PER_CHAIN_PER_DAY,
   }).rows.slice(0, LISTING_ROW_MAX)
-  // Asked only for the rows actually returned: the answer decides whether a
-  // symbol is a link, and a row nobody is shown needs no link.
-  const linked = await readMarketPages(db, shown.map((row) => String(row.providerId ?? '')))
   const stamps = all.map((row) => row.capturedAt).filter((v): v is string => !!v).sort()
   // Measured over the WHOLE window, before the status filter and before the
   // per-chain cap, so the summary describes the capture rather than the table.
   const moves = rows.map((row) => row.sinceCapturePct).filter((v): v is number => v != null)
   return {
     view: 'new_listings', days, status,
-    rows: shown.map((row) => ({ ...row, hasMarketPage: linked.has(String(row.providerId ?? '')) })),
+    // EVERY row is a link. The Markets asset page resolves any CoinMarketCap id
+    // (verified live 2026-09-17: /intel/markets/MALA?...id=42311 and ARGUS id
+    // 42308 both open in full while neither is in `market_assets`), so gating
+    // the link on the local catalogue hid working pages behind plain text.
+    rows: shown,
     cohort: {
       count: rows.length,
+      // TWO different questions. `withContract` is the cohort the inspection
+      // lane can act on (a contract on one of the four verified DEX chains);
+      // `withKnownChain` is the cohort the provider named a chain for at all,
+      // which is nearly all of them and is why the Chain column is no longer
+      // mostly empty. Reporting only the first made the board look blinder than
+      // the capture is.
       withContract: rows.filter((row) => !!row.contractAddress).length,
+      withKnownChain: rows.filter((row) => !!row.platformName).length,
       inspected: rows.filter((row) => row.flagCount != null).length,
       flagged: rows.filter((row) => (row.flagCount ?? 0) > 0).length,
       medianHolderCount: medianOf(rows.map((row) => row.holderCount).filter((v): v is number => v != null)),

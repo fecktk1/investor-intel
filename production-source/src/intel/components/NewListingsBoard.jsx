@@ -43,7 +43,15 @@ import { fmtNum, formatPct, formatPrice, formatUsd, pctClass } from '../lib/mark
 // `flagCount` (reported hits only, NULL when nothing was inspected), `changed`
 // (the two newest snapshots of this asset recorded different flag hashes),
 // `sinceCapturePct` (first captured price to newest, NULL under two captures),
-// `daysOnProvider` and `hasMarketPage`.
+// `sinceCapturePct`, `daysOnProvider`, `cmcRank` and the provider's own
+// `platformName` / `platformSlug` / `platformTokenAddress`.
+//
+// TWO DIFFERENT CHAIN FACTS, KEPT APART. `chain` is a VERIFIED DEX identity the
+// inspection lane can act on and exists for a minority of listings.
+// `platformName` is the chain the provider simply named, and it exists for
+// nearly all of them (100 of 100 on the 2026-09-17 page). The board reports the
+// second when there is no first, in the muted tone, because "we know it is on
+// Arc and cannot inspect Arc" is a different statement from "we know nothing".
 //
 // THE ONE RULE THIS FIGURE EXISTS TO KEEP. `flagCount: null` is "nobody looked",
 // not "nothing found". A listing with no contract on a verified chain, or one
@@ -63,13 +71,15 @@ const DEFAULT_SORT = 'dateAdded'
 const DEFAULT_DIR = 'desc'
 // Columns whose natural first reading is smallest-first. Everything else — a
 // price, a volume, a date, a flag count — opens largest or newest first.
-const ASCENDING_FIRST = new Set(['symbol', 'name', 'chain'])
+// Rank 1 is the best rank, so the rank column opens smallest-first like a
+// league table rather than largest-first like a price.
+const ASCENDING_FIRST = new Set(['symbol', 'name', 'chain', 'cmcRank'])
 // Every column the table renders a header for, in order. A sort key the table
 // cannot draw as an active header is not honoured: an order no header describes
 // is an order the reader cannot see, and a stale shared URL naming a column this
 // board no longer has must fall back rather than reorder the rows silently.
 const SORT_KEYS = [
-  'symbol', 'name', 'dateAdded', 'price', 'change24hPct', 'volume24h', 'marketCap', 'sinceCapturePct', 'chain', 'flagCount',
+  'symbol', 'name', 'cmcRank', 'dateAdded', 'price', 'change24hPct', 'volume24h', 'marketCap', 'sinceCapturePct', 'chain', 'flagCount',
 ]
 // Hoisted so useUrlState's memo/callback identities stay stable across renders.
 const URL_DEFAULTS = {
@@ -108,6 +118,53 @@ export function chainLabel(caip) {
   if (!raw) return '—'
   const [namespace, reference] = raw.includes(':') ? [raw.slice(0, raw.indexOf(':')), raw.slice(raw.indexOf(':') + 1)] : [raw, 'mainnet']
   return getChain(chainIdFor(namespace, reference) || '')?.label || raw
+}
+
+/** What the Chain column says for one listing, and the full text behind it.
+ *
+ *  THREE DIFFERENT ANSWERS, AND THEY ARE NOT THE SAME.
+ *    - a VERIFIED chain: the capture resolved a contract on one of the four CMC
+ *      DEX networks, so `chain` is a CAIP id and the registry names it. This is
+ *      the only case the inspection lane can act on.
+ *    - a chain the provider merely NAMED: Arc, Robinhood Chain, BNB Smart Chain.
+ *      The provider sent it on 100 of 100 rows on 2026-09-17 and the capture now
+ *      keeps it, so the column reports it rather than pretending we know nothing.
+ *    - no platform at all, which is a native coin and not an absence.
+ *
+ *  The parenthetical a provider tacks onto a chain name ("BNB Smart Chain
+ *  (BEP20)") is dropped from the LABEL only; `full` keeps the provider's exact
+ *  string for the title attribute, so nothing is silently rewritten. */
+export function chainCell(t, row) {
+  if (row?.chain) {
+    const label = chainLabel(row.chain)
+    return { label, full: label, verified: true }
+  }
+  const name = String(row?.platformName ?? '').trim()
+  if (name) {
+    return { label: name.replace(/\s*\([^)]*\)\s*$/, '').trim() || name, full: name, verified: false }
+  }
+  const native = t('listings.chain_native', { defaultValue: 'Native' })
+  return { label: native, full: t('listings.chain_native_title', { defaultValue: 'The provider reported no platform for this listing, which is what it reports for a coin with its own chain rather than a token on someone else’s.' }), verified: false }
+}
+
+/** Which measure of size the Market cap column can honestly show.
+ *
+ *  A market cap of zero is the provider saying it has no circulating supply to
+ *  multiply, not that the asset is worthless — and it said so on 63 of the 100
+ *  rows in the 2026-09-17 page. Two other measures of the same thing are sitting
+ *  right beside it in the same payload, so the column falls back through them
+ *  IN ORDER and LABELS whichever one it lands on. It never blends them, and it
+ *  never presents a fully diluted or a self-reported figure as the market cap.
+ *
+ *  'none' is reserved for a row where the provider published none of the three. */
+export function marketCapCell(row) {
+  const reported = num(row?.marketCap)
+  if (reported != null && reported > 0) return { kind: 'reported', value: reported }
+  const fdv = num(row?.fullyDilutedMarketCap)
+  if (fdv != null && fdv > 0) return { kind: 'fdv', value: fdv }
+  const self = num(row?.selfReportedMarketCap)
+  if (self != null && self > 0) return { kind: 'self', value: self }
+  return { kind: 'none', value: null }
 }
 
 /** A wrapper around something that is not a crypto asset: a tokenised equity or
@@ -180,15 +237,22 @@ export function listingStateNote(t, state) {
   return { kind: known[0], note: t(known[1], { defaultValue: known[2] }) }
 }
 
-/** The one word the inspection column carries for a row, and whether the flag
- *  document behind it can be opened. An inspected listing reports its hits; an
- *  uninspected one reports the capture's own reason and opens nothing, because
- *  there is nothing behind it to open. */
+/** The one word the inspection column carries for a row.
+ *
+ *  `inspected` says whether there is a flag document behind it. Everything opens
+ *  its detail either way, because the detail now carries the contract address,
+ *  the provider's rank and the holder reading too, and those exist on rows the
+ *  due-diligence lane never touched.
+ *
+ *  A listing on a chain the provider NAMED but CMC publishes no DEX security for
+ *  says which chain that was. "No contract to inspect" was true of the four
+ *  verified networks and misleading about an asset sitting on Arc with a
+ *  contract address printed right underneath it. */
 export function inspectionOf(t, row) {
   const flags = num(row?.flagCount)
   if (flags != null) {
     return {
-      openable: true,
+      inspected: true,
       label: flags > 0
         ? t('listings.insp_flagged', { flags: fmtNum(flags), defaultValue: '{{flags}} flagged' })
         : t('listings.insp_clean', { defaultValue: 'No flags' }),
@@ -196,9 +260,17 @@ export function inspectionOf(t, row) {
     }
   }
   const state = String(row?.securityState || '').trim()
+  if (state === 'no_contract_on_verified_chain' && String(row?.platformName ?? '').trim()) {
+    const chain = chainCell(t, row).label
+    return {
+      inspected: false,
+      label: t('listings.insp_unverified', { chain, defaultValue: 'Not inspected: {{chain}} is not a verified chain' }),
+      title: t('listings.insp_unverified_title', { chain, defaultValue: 'The provider reports this listing on {{chain}} and publishes security flags only for Ethereum, Base, Arbitrum and Solana, so this contract was never inspected. That is a gap in the provider’s coverage, not a finding about the contract.' }),
+    }
+  }
   const calm = listingStateNote(t, state)
   return {
-    openable: false,
+    inspected: false,
     label: calm ? calm.note : listingStateText(t, state),
     title: listingStateText(t, state),
   }
@@ -300,6 +372,61 @@ function RowRisk({ row, t }) {
 /** The flag document, opened on demand. Reported hits first, then the items the
  *  provider reported and did not mark: both are readings, and hiding the
  *  unmarked ones would turn "27 items checked, none hit" into "nothing known". */
+/** The contract the provider reported, on whatever chain it reported it on.
+ *
+ *  Shown for EVERY row that has one, not only the verified ones, because a
+ *  reader checking an Arc or a Robinhood Chain listing needs the address the
+ *  same way — and because printing "no contract to inspect" beside an address we
+ *  were handed was the thing that read as broken. The verified canonical form is
+ *  preferred when the capture resolved one; otherwise the provider's own string
+ *  is shown verbatim, and the line says which of the two it is. */
+function ContractLine({ row, t }) {
+  const address = String(row?.contractAddress || row?.platformTokenAddress || '').trim()
+  if (!address) return null
+  const chain = chainCell(t, row)
+  const [copied, setCopied] = useState(false)
+  return (
+    <p className="intel-analysis-caption flex flex-wrap items-center gap-2" data-testid="listing-detail-contract">
+      <span>{chain.verified
+        ? t('listings.detail_contract_verified', { chain: chain.label, defaultValue: 'Contract on {{chain}}, a chain the provider publishes security flags for:' })
+        : t('listings.detail_contract_reported', { chain: chain.label, defaultValue: 'Contract the provider reported on {{chain}}:' })}
+      </span>
+      <code className="font-mono text-[var(--fg-2)] break-all">{address}</code>
+      <button
+        type="button"
+        className="intel-text-link"
+        title={t('listings.detail_contract_copy', { defaultValue: 'Copy the contract address' })}
+        onClick={() => {
+          navigator.clipboard?.writeText(address)
+          setCopied(true)
+          setTimeout(() => setCopied(false), 1200)
+        }}
+      >
+        {copied
+          ? t('listings.detail_contract_copied', { defaultValue: 'Copied' })
+          : t('listings.detail_contract_copy', { defaultValue: 'Copy the contract address' })}
+      </button>
+    </p>
+  )
+}
+
+/** The provider's own rank and the supply that explains a zero market cap. Both
+ *  are readings the table has no room for and neither is ever invented: an
+ *  unranked listing says unranked, and an unreported supply says so. */
+function RankLine({ row, t }) {
+  const rank = num(row?.cmcRank)
+  const supply = num(row?.circulatingSupply)
+  const rankText = rank == null
+    ? t('listings.detail_unranked', { defaultValue: 'The provider published no rank for this listing.' })
+    : t('listings.detail_rank', { rank: fmtNum(rank), defaultValue: 'Provider rank {{rank}}.' })
+  const supplyText = supply == null
+    ? t('listings.detail_supply_none', { defaultValue: 'No circulating supply reported.' })
+    : supply === 0
+      ? t('listings.detail_supply_zero', { defaultValue: 'Circulating supply reported as zero, which is why the market cap is not a number the provider computed.' })
+      : t('listings.detail_supply', { supply: fmtNum(supply), defaultValue: 'Circulating supply {{supply}}.' })
+  return <p className="intel-analysis-caption" data-testid="listing-detail-rank">{`${rankText} ${supplyText}`}</p>
+}
+
 function FlagItems({ row, t }) {
   const items = Array.isArray(row?.security?.items) ? row.security.items : []
   if (!items.length) return null
@@ -364,10 +491,20 @@ export default function NewListingsBoard() {
 
   const rows = useMemo(() => {
     const kept = hideDerivatives ? allRows.filter(row => !isDerivativeListing(row)) : allRows
+    // Two columns sort on what the CELL shows rather than on one stored field,
+    // because both fall back: a market cap can be the reported, the fully
+    // diluted or the self-reported figure, and a chain can be a verified id or
+    // the provider's own platform name. Sorting the stored field alone would
+    // order the table in a way its own header does not describe.
+    const accessor = sort === 'marketCap'
+      ? row => marketCapCell(row).value
+      : sort === 'chain'
+        ? row => chainCell(t, row).label
+        : undefined
     // The ticker is the tie-break so two listings added on the same day keep one
     // order whichever column is pointing.
-    return sortRows(kept, { key: sort, dir, tieBreak: row => String(row?.symbol ?? '') })
-  }, [allRows, hideDerivatives, sort, dir])
+    return sortRows(kept, { key: sort, dir, accessor, tieBreak: row => String(row?.symbol ?? '') })
+  }, [allRows, hideDerivatives, sort, dir, t])
 
   const hidden = allRows.length - rows.length
 
@@ -383,12 +520,13 @@ export default function NewListingsBoard() {
   // without ever narrowing these numbers.
   const summary = t('listings.cohort_line', {
     count: fmtNum(num(cohort?.count) ?? 0),
+    knownChain: fmtNum(num(cohort?.withKnownChain) ?? 0),
     withContract: fmtNum(num(cohort?.withContract) ?? 0),
     inspected: fmtNum(num(cohort?.inspected) ?? 0),
     flagged: fmtNum(num(cohort?.flagged) ?? 0),
     volume: num(cohort?.medianVolume24h) == null ? '—' : formatUsd(cohort.medianVolume24h),
     median: num(cohort?.medianHolderCount) == null ? '—' : fmtNum(cohort.medianHolderCount),
-    defaultValue: '{{count}} listings captured in this window, {{withContract}} with a contract on a verified chain, {{inspected}} inspected, {{flagged}} with at least one reported flag. Median 24h volume {{volume}}, median holder count {{median}}.',
+    defaultValue: '{{count}} listings captured in this window, {{knownChain}} on a chain the provider named, {{withContract}} of those on a chain it publishes security flags for, {{inspected}} inspected, {{flagged}} with at least one reported flag. Median 24h volume {{volume}}, median holder count {{median}}.',
   })
 
   const sinceSample = num(since?.sample)
@@ -421,6 +559,9 @@ export default function NewListingsBoard() {
   const columns = [
     { key: 'symbol', label: t('listings.col_symbol', { defaultValue: 'Symbol' }), align: 'left' },
     { key: 'name', label: t('listings.col_name', { defaultValue: 'Name' }), align: 'left' },
+    // The provider ranked all 100 rows of the 2026-09-17 page, so rank earns a
+    // column. An unranked listing still says so rather than sorting as a zero.
+    { key: 'cmcRank', label: t('listings.col_rank', { defaultValue: 'Rank' }), align: 'right' },
     { key: 'dateAdded', label: t('listings.col_listed', { defaultValue: 'Listed' }), align: 'left' },
     { key: 'price', label: t('listings.col_price', { defaultValue: 'Price' }), align: 'right' },
     { key: 'change24hPct', label: t('listings.col_change', { defaultValue: '24h' }), align: 'right' },
@@ -541,12 +682,17 @@ export default function NewListingsBoard() {
               </thead>
               <tbody>
                 {rows.map((row, index) => {
-                  const href = row?.hasMarketPage ? listingHref(row) : null
+                  // EVERY listing opens. The Markets asset page resolves any
+                  // CoinMarketCap id, so a row is plain text only when the
+                  // capture recorded no provider id to open at all.
+                  const href = listingHref(row)
                   const label = row?.symbol || String(row?.providerId ?? '—')
                   const key = row?.providerId ?? `${label}-${index}`
                   const inspection = inspectionOf(t, row)
                   const expanded = open === key
-                  const marketCap = num(row?.marketCap)
+                  const chain = chainCell(t, row)
+                  const cap = marketCapCell(row)
+                  const rank = num(row?.cmcRank)
                   const sincePct = num(row?.sinceCapturePct)
                   const onProvider = num(row?.daysOnProvider)
                   const change = num(row?.change24hPct)
@@ -557,6 +703,12 @@ export default function NewListingsBoard() {
                           {href ? <Link className="intel-text-link" to={href}>{label}</Link> : label}
                         </th>
                         <td className={BOARD_CELL_CLASS}>{row?.name || '—'}</td>
+                        {/* Rank 0 does not exist. An unranked listing says so. */}
+                        <td className={`intel-number ${BOARD_CELL_CLASS}`}>
+                          {rank == null
+                            ? <span className="text-[var(--fg-4)]">{t('listings.rank_none', { defaultValue: 'Unranked' })}</span>
+                            : fmtNum(rank)}
+                        </td>
                         <td className={BOARD_CELL_CLASS}>
                           {listingDate(row?.dateAdded)}
                           {onProvider == null ? null : (
@@ -570,13 +722,23 @@ export default function NewListingsBoard() {
                         <td className={`intel-number ${BOARD_CELL_CLASS}`}>{formatUsd(row?.volume24h)}</td>
                         {/* A market cap of zero is the provider saying it has no
                             circulating supply to multiply, not a zero-value
-                            asset: "$0" would be a claim the capture never made. */}
+                            asset: "$0" would be a claim the capture never made.
+                            Two other measures of the same size sit in the same
+                            payload, so the cell falls through to them and NAMES
+                            whichever one it landed on. */}
                         <td className={`intel-number ${BOARD_CELL_CLASS}`}>
-                          {marketCap == null || marketCap <= 0
-                            ? <span className="text-[var(--fg-4)]" title={t('listings.mc_none_title', { defaultValue: 'The provider published no market capitalisation for this listing, which it does when the circulating supply is unknown.' })}>
-                                {t('listings.mc_none', { defaultValue: 'Not reported' })}
-                              </span>
-                            : formatUsd(marketCap)}
+                          {cap.kind === 'reported' ? formatUsd(cap.value)
+                            : cap.kind === 'fdv'
+                              ? <span title={t('listings.mc_fdv_title', { defaultValue: 'Fully diluted market cap; circulating supply not reported by the provider.' })}>
+                                  {t('listings.mc_fdv', { value: formatUsd(cap.value), defaultValue: '{{value}} FDV' })}
+                                </span>
+                              : cap.kind === 'self'
+                                ? <span title={t('listings.mc_self_title', { defaultValue: 'A market cap the project reported about itself. The provider neither computed it nor verified it, and it publishes no fully diluted figure for this listing.' })}>
+                                    {t('listings.mc_self', { value: formatUsd(cap.value), defaultValue: '{{value}} self-reported' })}
+                                  </span>
+                                : <span className="text-[var(--fg-4)]" title={t('listings.mc_none_title', { defaultValue: 'The provider published no market capitalisation for this listing, no fully diluted figure and no self-reported one.' })}>
+                                    {t('listings.mc_none', { defaultValue: 'Not reported' })}
+                                  </span>}
                         </td>
                         <td className={`intel-number ${BOARD_CELL_CLASS} ${sincePct == null ? '' : pctClass(sincePct)}`}>
                           {sincePct == null
@@ -585,42 +747,45 @@ export default function NewListingsBoard() {
                               </span>
                             : formatPct(sincePct)}
                         </td>
+                        {/* The provider names a chain for nearly every listing.
+                            A chain it named but publishes no security flags for
+                            is drawn in the muted tone, because the DIFFERENCE
+                            between "verified" and "merely reported" is the whole
+                            claim of the inspection column beside it. */}
                         <td className={BOARD_CELL_CLASS}>
-                          {row?.chain
-                            ? chainLabel(row.chain)
-                            : <span className="text-[var(--fg-4)]" title={t('listings.state_no_contract', { defaultValue: 'This listing reported no contract on a chain the provider publishes security flags for, so nothing was inspected.' })}>
-                                {t('listings.chain_none', { defaultValue: 'None reported' })}
-                              </span>}
+                          <span className={chain.verified ? undefined : 'text-[var(--fg-4)]'} title={chain.full}>{chain.label}</span>
                         </td>
-                        {/* One word. The flag document opens under the row, so
-                            the sentence explaining it is printed once. */}
+                        {/* One word. Everything behind it opens under the row,
+                            so the sentence explaining a flag is printed once. */}
                         <td className={BOARD_CELL_CLASS}>
-                          {inspection.openable ? (
-                            <button
-                              type="button"
-                              className="intel-text-link"
-                              aria-expanded={expanded}
-                              aria-controls={`listing-flags-${key}`}
-                              title={inspection.title}
-                              onClick={() => setOpen(expanded ? null : key)}
-                            >
-                              {inspection.label}
-                            </button>
-                          ) : (
-                            <span className="text-[var(--fg-4)]" title={inspection.title}>{inspection.label}</span>
-                          )}
+                          <button
+                            type="button"
+                            className={inspection.inspected ? 'intel-text-link' : 'intel-text-link text-[var(--fg-4)]'}
+                            aria-expanded={expanded}
+                            aria-controls={`listing-flags-${key}`}
+                            title={inspection.title}
+                            onClick={() => setOpen(expanded ? null : key)}
+                          >
+                            {inspection.label}
+                          </button>
                         </td>
                       </tr>
                       {expanded ? (
                         <tr id={`listing-flags-${key}`} data-testid={`listing-flags-${key}`}>
                           <td className={BOARD_CELL_CLASS} colSpan={columns.length}>
                             <div className="space-y-2 pb-2">
-                              <RowRisk row={row} t={t} />
+                              {/* The gauge and the item list belong to an
+                                  INSPECTED contract and to nothing else: drawing
+                                  either for a listing nobody looked at is the
+                                  clean zero this board exists not to show. */}
+                              {inspection.inspected ? <RowRisk row={row} t={t} /> : null}
+                              <ContractLine row={row} t={t} />
+                              <RankLine row={row} t={t} />
                               <p className="intel-analysis-caption" data-testid="listing-detail-holders">{holderLine(t, row)}</p>
                               {changeLines(t, row).map(line => (
                                 <p key={line} className="intel-analysis-caption" data-testid="listing-detail-change">{line}</p>
                               ))}
-                              <FlagItems row={row} t={t} />
+                              {inspection.inspected ? <FlagItems row={row} t={t} /> : null}
                             </div>
                           </td>
                         </tr>

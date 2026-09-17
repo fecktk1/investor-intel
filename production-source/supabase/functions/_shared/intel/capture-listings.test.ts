@@ -385,8 +385,11 @@ Deno.test('a repeated provider id collapses to one row, and a row with no id is 
 Deno.test('a row projection keeps no field the table does not hold', () => {
   const row = newListingRow({ ...listing(7), tags: ['meme'], num_market_pairs: 3, cmc_rank: 900 }, DAY, NOW.toISOString())!
   eq(Object.keys(row).sort(), [
-    'captured_at', 'chain', 'change_24h_pct', 'contract_address', 'date_added', 'holder_count',
-    'market_cap', 'name', 'price', 'provider', 'provider_id', 'security', 'security_hash', 'security_state', 'slug', 'snapshot_date', 'symbol', 'volume_24h',
+    'captured_at', 'chain', 'change_24h_pct', 'circulating_supply', 'cmc_rank', 'contract_address', 'date_added',
+    'fully_diluted_market_cap', 'holder_count',
+    'market_cap', 'name', 'platform_name', 'platform_slug', 'platform_token_address',
+    'price', 'provider', 'provider_id', 'security', 'security_hash', 'security_state',
+    'self_reported_market_cap', 'slug', 'snapshot_date', 'symbol', 'volume_24h',
   ])
   eq(newListingRow({ symbol: 'X' }, DAY, NOW.toISOString()), null)
   eq(newListingRow({ id: null }, DAY, NOW.toISOString()), null)

@@ -1,6 +1,6 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  readNewListings, flagCount, medianOf, sinceCapture, daysOnProvider, sinceHistogram, readMarketPages,
+  readNewListings, flagCount, medianOf, sinceCapture, daysOnProvider, sinceHistogram,
   hitCodes, flagDelta,
   LISTING_CAPTURE_VIEWS, LISTING_VIEWS,
 } from './capture-listings-read.ts'
@@ -107,7 +107,7 @@ Deno.test('an empty table is an empty list with no asOf and no invented cohort',
   eq(r.status, 'all')
   eq(r.rows, [])
   eq(r.asOf, null)
-  eq(r.cohort, { count: 0, withContract: 0, inspected: 0, flagged: 0, medianHolderCount: null, medianVolume24h: null })
+  eq(r.cohort, { count: 0, withContract: 0, withKnownChain: 0, inspected: 0, flagged: 0, medianHolderCount: null, medianVolume24h: null })
   // The distribution still publishes every bin: an unrun capture has no
   // observations, which is not the same statement as "no range here".
   eq((r.sinceListing as Record<string, unknown>).sample, 0)
@@ -148,7 +148,7 @@ Deno.test('one row per asset, newest snapshot, with the cohort summary', async (
   eq(out[1].changed, false, 'one snapshot is a baseline, never a change')
   eq(out[2].flagCount, null, 'a listing nobody could inspect has no flag count at all')
   eq(out[2].securityState, 'no_contract_on_verified_chain')
-  eq(r.cohort, { count: 3, withContract: 2, inspected: 2, flagged: 1, medianHolderCount: 200, medianVolume24h: 2e5 })
+  eq(r.cohort, { count: 3, withContract: 2, withKnownChain: 0, inspected: 2, flagged: 1, medianHolderCount: 200, medianVolume24h: 2e5 })
   eq(r.changed, 1)
   eq(r.asOf, daysAgo(0))
   eq(r.coverage.from, daysAgo(3))
@@ -162,10 +162,11 @@ Deno.test('the returned row carries exactly the documented shape', async () => {
   // deno-lint-ignore no-explicit-any
   const row = (r.rows as any[])[0]
   eq(Object.keys(row).sort(), [
-    'chain', 'change24hPct', 'changed', 'changeState', 'changedFlags',
+    'chain', 'change24hPct', 'changed', 'changeState', 'changedFlags', 'circulatingSupply', 'cmcRank',
     'contractAddress', 'dateAdded', 'daysOnProvider', 'firstPrice', 'firstPriceAt',
-    'firstSeenAt', 'flagCount', 'hasMarketPage', 'holderCount',
-    'lastSeenAt', 'marketCap', 'name', 'price', 'providerId', 'securityState', 'security', 'sinceCapturePct', 'slug',
+    'firstSeenAt', 'flagCount', 'fullyDilutedMarketCap', 'holderCount',
+    'lastSeenAt', 'marketCap', 'name', 'platformName', 'platformSlug', 'platformTokenAddress',
+    'price', 'providerId', 'securityState', 'security', 'selfReportedMarketCap', 'sinceCapturePct', 'slug',
     'snapshots', 'symbol', 'volume24h',
   ].sort())
   eq(row.chain, 'eip155:8453')
@@ -255,7 +256,7 @@ Deno.test('a failed read is a reason on an empty result, never a silently short 
   eq(r.reason, 'read_denied')
   eq(r.asOf, null)
   eq(r.days, 30)
-  eq(r.cohort, { count: 0, withContract: 0, inspected: 0, flagged: 0, medianHolderCount: null, medianVolume24h: null })
+  eq(r.cohort, { count: 0, withContract: 0, withKnownChain: 0, inspected: 0, flagged: 0, medianHolderCount: null, medianVolume24h: null })
 
   const exploded = await readNewListings({ from: () => { throw new Error('boom') } }, {}, NOW)
   eq(exploded.reason, 'boom', 'a throwing db is reported, never re-thrown')
@@ -371,31 +372,57 @@ Deno.test('the inspected filter narrows the rows but never the cohort it is meas
   eq((all.cohort as Record<string, unknown>).flagged, 1)
 })
 
-Deno.test('a symbol is linked only when the markets catalogue actually holds the identity', async () => {
+Deno.test('every row is linkable and the provider platform is passed through beside the verified identity', async () => {
   const rows = [
-    snapshot({ provider_id: '1' }),
-    snapshot({ provider_id: '2', symbol: 'TWO', date_added: daysAgo(1), snapshot_date: dayOf(1), captured_at: daysAgo(1) }),
+    // A verified DEX identity: chain and contract_address are set AND the
+    // provider's own platform is stored beside them, never instead of them.
+    snapshot({ provider_id: '1', platform_name: 'Base', platform_slug: 'base', platform_token_address: EVM, cmc_rank: 736 }),
+    // Arc: the provider named the chain and CMC publishes no DEX security for
+    // it, so chain/contract_address stay NULL and the platform carries it.
+    snapshot({
+      provider_id: '2', symbol: 'MALA', date_added: daysAgo(1), snapshot_date: dayOf(1), captured_at: daysAgo(1),
+      chain: null, contract_address: null, security: null, security_hash: null, holder_count: null,
+      security_state: 'no_contract_on_verified_chain',
+      platform_name: 'Arc', platform_slug: 'arc-token', platform_token_address: '0x4F7Dc0',
+      market_cap: 0, self_reported_market_cap: 89029.46, fully_diluted_market_cap: 89029.47,
+      circulating_supply: 0, cmc_rank: 7959,
+    }),
+    // A native coin: no platform at all, which is a reading and not a gap.
+    snapshot({
+      provider_id: '3', symbol: 'NATIVE', date_added: daysAgo(2), snapshot_date: dayOf(2), captured_at: daysAgo(2),
+      chain: null, contract_address: null, security: null, security_hash: null, holder_count: null,
+      security_state: 'no_contract_on_verified_chain',
+      platform_name: null, platform_slug: null, platform_token_address: null, cmc_rank: null,
+    }),
   ]
-  const db = fakeDb({
-    intel_new_listing_snapshots: rows,
-    market_assets: [
-      { source_provider: 'coinmarketcap', provider_id: '1' },
-      // The same id under another provider is a different identity.
-      { source_provider: 'coingecko', provider_id: '2' },
-    ],
-  })
+  const db = fakeDb({ intel_new_listing_snapshots: rows })
   const r = await readNewListings(db, {}, NOW)
   // deno-lint-ignore no-explicit-any
   const by = Object.fromEntries((r.rows as any[]).map((row) => [row.providerId, row]))
-  eq(by['1'].hasMarketPage, true)
-  eq(by['2'].hasMarketPage, false, 'a row with no Markets page is plain text, never a dead link')
 
-  eq([...await readMarketPages(db, ['1', '2', '1', ''])], ['1'], 'ids are de-duplicated and blanks are never asked for')
-  eq([...await readMarketPages(db, [])], [], 'an empty page asks the catalogue nothing')
-  // A catalogue that will not answer leaves rows unlinked instead of failing
-  // the board: the link is a convenience, the listing is the reading.
-  const broken = fakeDb({ intel_new_listing_snapshots: rows }, { market_assets: 'read_denied' })
+  eq(by['1'].chain, 'eip155:8453')
+  eq(by['1'].platformName, 'Base', 'a verified row still carries the provider platform')
+  eq(by['2'].chain, null, 'naming a chain never widens what the inspection lane will act on')
+  eq(by['2'].platformName, 'Arc')
+  eq(by['2'].platformSlug, 'arc-token')
+  eq(by['2'].platformTokenAddress, '0x4F7Dc0', 'stored verbatim, NOT canonicalised on a chain we cannot validate')
+  eq(by['2'].selfReportedMarketCap, 89029.46)
+  eq(by['2'].fullyDilutedMarketCap, 89029.47)
+  eq(by['2'].circulatingSupply, 0, 'a reported zero supply is why the market cap is zero')
+  eq(by['2'].cmcRank, 7959)
+  eq(by['3'].platformName, null)
+  eq(by['3'].cmcRank, null, 'unranked is null, never a zero')
+
+  // No row carries a link gate any more, and the read no longer asks the local
+  // catalogue anything: the Markets page resolves any CoinMarketCap id, so a
+  // gate on `market_assets` only ever hid working pages behind plain text.
   // deno-lint-ignore no-explicit-any
-  eq((await readNewListings(broken, {}, NOW) as any).rows.every((row: any) => row.hasMarketPage === false), true)
-  eq((await readNewListings(broken, {}, NOW)).reason, null, 'a failed link lookup is not a failed board')
+  eq((r.rows as any[]).every((row) => !('hasMarketPage' in row)), true)
+  eq(db.calls.some((call) => call[0] === 'from' && call[1] === 'market_assets'), false)
+  eq(db.calls.filter((call) => call[0] === 'from').length, 1, 'one read, one table')
+
+  const cohort = r.cohort as Record<string, unknown>
+  eq(cohort.count, 3)
+  eq(cohort.withKnownChain, 2, 'the provider named a chain for two of the three')
+  eq(cohort.withContract, 1, 'only one of those is a chain the inspection lane can act on')
 })

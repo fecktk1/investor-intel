@@ -213,20 +213,55 @@ export function securityHash(document: unknown): Promise<string> {
 
 // ─── The lane ─────────────────────────────────────────────────────────────────
 
+/** The provider's own `platform` object, stored verbatim and bounded.
+ *
+ * DELIBERATELY NOT `listingDexIdentity`. That function answers one question —
+ * "is there a contract on a chain whose security flags this lane can go and
+ * read?" — and answers null for Arc, for Robinhood Chain, for BNB Smart Chain
+ * and for every other network CoinMarketCap does not publish DEX security for.
+ * The provider named the chain anyway, on 100 of the 100 rows in the 2026-09-17
+ * page, and dropping that left the board saying "none reported" about an asset
+ * whose chain we had been handed.
+ *
+ * So the platform is kept as a READING, beside the verified identity and never
+ * in place of it. Nothing here widens what the inspection lane will touch, and
+ * the address is NOT canonicalised: canonicalising an address on a chain we
+ * cannot validate would be a claim about a shape nobody checked. */
+// deno-lint-ignore no-explicit-any
+export function listingPlatform(platform: any): { name: string | null; slug: string | null; address: string | null } {
+  const row = platform && typeof platform === 'object' && !Array.isArray(platform) ? platform as Record<string, unknown> : null
+  if (!row) return { name: null, slug: null, address: null }
+  return { name: text(row.name, 120), slug: text(row.slug, 120), address: text(row.token_address, 200) }
+}
+
 /** A listing row reduced to the columns the table holds, before due diligence. */
 // deno-lint-ignore no-explicit-any
 export function newListingRow(row: any, snapshotDate: string, capturedAt: string): Record<string, unknown> | null {
   const providerId = row?.id == null ? null : String(row.id)
   if (!providerId || providerId === 'null') return null
   const identity = listingDexIdentity(row?.platform)
+  const platform = listingPlatform(row?.platform)
+  // `cmcRows` replaces a row's `quote` map with the flattened USD quote, so the
+  // fully diluted cap sits beside price here rather than under a currency key.
   const quote = row?.quote && typeof row.quote === 'object' ? row.quote as Record<string, unknown> : {}
   return {
     provider: CAPTURE_PROVIDER, provider_id: providerId, snapshot_date: snapshotDate,
     symbol: text(row?.symbol, 50), name: text(row?.name, 200), slug: text(row?.slug, 200),
     date_added: iso(row?.date_added),
     chain: identity?.chain ?? null, contract_address: identity?.address ?? null,
+    platform_name: platform.name, platform_slug: platform.slug, platform_token_address: platform.address,
     price: num(quote.price), market_cap: num(quote.market_cap),
     volume_24h: num(quote.volume_24h), change_24h_pct: num(quote.percent_change_24h),
+    // THREE different measures of size, stored apart and never blended. The
+    // provider reported a positive `market_cap` on only 37 of 100 rows on
+    // 2026-09-17, a fully diluted cap on all 100 and a self-reported one on 82,
+    // and `circulating_supply` is what explains a zero market cap instead of
+    // leaving it looking like a worthless asset.
+    self_reported_market_cap: num(row?.self_reported_market_cap),
+    fully_diluted_market_cap: num(quote.fully_diluted_market_cap),
+    circulating_supply: num(row?.circulating_supply),
+    // An unranked asset is null, never a zero: a zero would sort ahead of rank 1.
+    cmc_rank: num(row?.cmc_rank),
     holder_count: null, security: null, security_hash: null,
     security_state: identity ? 'due_diligence_budget' : 'no_contract_on_verified_chain',
     captured_at: capturedAt,
