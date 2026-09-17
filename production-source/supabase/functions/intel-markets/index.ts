@@ -42,6 +42,7 @@ import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance,curated
 import {readMetricAgreement} from '../_shared/intel/metric-agreement-read.ts'
 import {metricAgreementReceipt} from '../_shared/intel/metric-agreement.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from '../_shared/intel/market-enrichment.ts'
+import {suggestMarketAssets} from '../_shared/intel/market-asset-suggest.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 async function json(b: any, s = 200) {
@@ -125,6 +126,20 @@ export async function handleMarkets(req:Request,clientFactory:any=createClient,r
         providerId:body.providerId != null ? String(body.providerId) : undefined,
         range: typeof body.range==='string'?body.range:'90d',
       }, actor)))
+    }
+
+    // SUGGEST mode: ranked catalogue matches for typed text — a ticker, a project
+    // name or a pasted contract. It reads the shared `market_assets` catalogue
+    // and nothing else, so it is gated on the same free surface the list read is
+    // and it can never reach a provider on a keystroke.
+    if (body.op === 'suggest') {
+      mode='suggest'
+      await measured('surface',()=>requireIntelSurface(admin, actor, 'market_boards'))
+      return await finish(measured('suggest',async()=>{
+        const result=await suggestMarketAssets(admin, body.q, body.limit)
+        if(result.error)return json({error:result.error},result.error==='invalid_query'?400:503)
+        return json({suggest:true,q:result.q,limit:result.limit,matches:result.matches})
+      }))
     }
 
     if ((typeof body.symbol === 'string' && body.symbol.trim()) || (typeof body.sourceProvider === 'string' && body.providerId != null)) {
