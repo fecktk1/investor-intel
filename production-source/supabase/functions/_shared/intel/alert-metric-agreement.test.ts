@@ -113,7 +113,7 @@ const observation=(over:Record<string,unknown>)=>({
 // deno-lint-ignore no-explicit-any
 const database=(rows:any[])=>{
  // deno-lint-ignore no-explicit-any
- const chain:any={select:()=>chain,eq:()=>chain,gte:()=>chain,lte:()=>chain,gt:()=>chain,order:()=>chain,
+ const chain:any={select:()=>chain,eq:()=>chain,in:()=>chain,gte:()=>chain,lte:()=>chain,gt:()=>chain,order:()=>chain,
   limit:()=>Promise.resolve({data:rows.map(observation_=>({observation:observation_})),error:null})}
  return {from:()=>chain}
 }
@@ -175,4 +175,53 @@ Deno.test('the market capitalisation pair band is one hour, sized to the measure
  // labelled as the 86,400-second window the price and volume changes describe,
  // so it degrades honestly rather than being stretched to fit.
  for(const hours of [22,26])assert.equal(spanning(hours).unavailable,'market_cap_single_observation',`${hours}h is outside the band`)
+})
+
+// A database that applies the filters and the limit the way PostgREST does, so
+// a read that is truncated by its own limit fails here as it did in production.
+// deno-lint-ignore no-explicit-any
+const filteringDatabase=(rows:any[])=>({from:()=>{
+ // deno-lint-ignore no-explicit-any
+ const filters:((o:any)=>boolean)[]=[]
+ // deno-lint-ignore no-explicit-any
+ const chain:any={
+  select:()=>chain,
+  eq:(column:string,value:unknown)=>{if(column==='metric')filters.push(o=>o.metric===value);return chain},
+  in:(column:string,values:unknown[])=>{if(column==='metric')filters.push(o=>values.includes(o.metric));return chain},
+  gte:(column:string,value:string)=>{if(column==='observed_at')filters.push(o=>Date.parse(o.observedAt)>=Date.parse(value));return chain},
+  lte:(column:string,value:string)=>{if(column==='observed_at')filters.push(o=>Date.parse(o.observedAt)<=Date.parse(value));return chain},
+  gt:()=>chain,order:()=>chain,
+  limit:(n:number)=>Promise.resolve({data:rows.filter(o=>filters.every(f=>f(o))).sort((a,b)=>Date.parse(b.observedAt)-Date.parse(a.observedAt)).slice(0,n).map(o=>({observation:o})),error:null}),
+ }
+ return chain
+}})
+
+Deno.test('a heavily quoted asset still finds its day-old market capitalisation baseline',async()=>{
+ // Production retains thousands of rows a day for a liquid asset across many
+ // metrics. A single newest-first read with a row limit never reached back a
+ // day, so the asset could not be corroborated however it moved.
+ const rows=[]
+ for(let minute=0;minute<25*60;minute+=5){
+  const at=new Date(NOW-minute*60_000).toISOString()
+  for(const metric of ['price','volume_24h','tvl','liquidations_1h','liquidations_4h','liquidations_24h'])rows.push(observation({metric,unit:'USD',periodSeconds:null,value:1,observedAt:at,recordedAt:at}))
+  for(const periodSeconds of [3600,86400,604800])rows.push(observation({metric:'price_change',periodSeconds,value:2,observedAt:at,recordedAt:at}))
+  rows.push(observation({metric:'volume_change',value:12,observedAt:at,recordedAt:at}))
+  rows.push(observation({metric:'market_cap',unit:'USD',periodSeconds:null,value:1_000+(25*60-minute),observedAt:at,recordedAt:at}))
+ }
+ const result=await readMetricAgreement(filteringDatabase(rows),SUBJECT,NOW)
+ assert.equal(result.agreement,'corroborated')
+ assert.ok(!result.reasons.includes('market_cap_single_observation'))
+})
+
+Deno.test('with no retained history a day back the heavily quoted asset still degrades to the stated reason',async()=>{
+ const rows=[]
+ for(let minute=0;minute<6*60;minute+=5){
+  const at=new Date(NOW-minute*60_000).toISOString()
+  rows.push(observation({metric:'price_change',value:2,observedAt:at,recordedAt:at}))
+  rows.push(observation({metric:'volume_change',value:12,observedAt:at,recordedAt:at}))
+  rows.push(observation({metric:'market_cap',unit:'USD',periodSeconds:null,value:1_000,observedAt:at,recordedAt:at}))
+ }
+ const result=await readMetricAgreement(filteringDatabase(rows),SUBJECT,NOW)
+ assert.equal(result.agreement,'incomplete')
+ assert.ok(result.reasons.includes('market_cap_single_observation'))
 })
