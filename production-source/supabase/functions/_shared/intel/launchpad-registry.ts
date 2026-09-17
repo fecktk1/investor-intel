@@ -93,14 +93,51 @@ export const LAUNCHPAD_REJECTED: readonly { network: string; dex: string; reason
   { network: 'bsc', dex: 'flap', reason: 'not_published_by_source' },
 ] as const
 
-/** dex id → human name, for the read payload and the page. */
-export const PAD_LABELS: Record<string, string> = Object.fromEntries(LAUNCHPAD_PADS.map((pad) => [pad.dex, pad.label]))
-/** CAIP-2 chain → human name. */
-export const CHAIN_LABELS: Record<string, string> = Object.fromEntries(LAUNCHPAD_NETWORKS.map((n) => [n.chain, n.label]))
-/** dex id → the CAIP-2 chain it lives on. */
-export const PAD_CHAINS: Record<string, string> = Object.fromEntries(
-  LAUNCHPAD_PADS.map((pad) => [pad.dex, LAUNCHPAD_NETWORKS.find((n) => n.network === pad.network)?.chain ?? pad.network]),
-)
+/**
+ * Launchpads a CHAIN-LOG lane covers, which have no CoinGecko dex id at all.
+ *
+ * These are deliberately NOT in `LAUNCHPAD_PADS`. That list is the set of ids the
+ * CoinGecko lane verifies against `GET /networks/{network}/dexes` before it
+ * writes a row, and an id that registry has never heard of would be rejected
+ * every hour and reported as missing forever. SunPump is read straight off the
+ * TRON chain through TronGrid by `capture-sunpump.ts`, so its evidence is a
+ * contract log, not a dex registry.
+ *
+ * They still belong in this file, because the READ half needs the same two
+ * things for every launchpad whatever lane wrote it: a human name for the page
+ * and the chain it lives on.
+ */
+export interface ChainLogPad {
+  /** `launchpad` as stored on the row. */
+  launchpad: string
+  /** CAIP-2 chain as stored on the row. */
+  chain: string
+  label: string
+  chainLabel: string
+}
+
+export const CHAIN_LOG_PADS: readonly ChainLogPad[] = [
+  { launchpad: 'sunpump', chain: 'tron', label: 'SunPump', chainLabel: 'TRON' },
+] as const
+
+/** launchpad id → human name, for the read payload and the page. Covers both the
+ * dex-registry pads and the chain-log pads, so the page never prints a raw id at
+ * a reader whichever lane wrote the row. */
+export const PAD_LABELS: Record<string, string> = {
+  ...Object.fromEntries(LAUNCHPAD_PADS.map((pad) => [pad.dex, pad.label])),
+  ...Object.fromEntries(CHAIN_LOG_PADS.map((pad) => [pad.launchpad, pad.label])),
+}
+/** CAIP-2 chain → human name. 'tron' is named TRON, which is what TRON's own
+ * foundation, TronScan and our own `market_assets` row for TRX all call it. */
+export const CHAIN_LABELS: Record<string, string> = {
+  ...Object.fromEntries(LAUNCHPAD_NETWORKS.map((n) => [n.chain, n.label])),
+  ...Object.fromEntries(CHAIN_LOG_PADS.map((pad) => [pad.chain, pad.chainLabel])),
+}
+/** launchpad id → the CAIP-2 chain it lives on. */
+export const PAD_CHAINS: Record<string, string> = {
+  ...Object.fromEntries(LAUNCHPAD_PADS.map((pad) => [pad.dex, LAUNCHPAD_NETWORKS.find((n) => n.network === pad.network)?.chain ?? pad.network])),
+  ...Object.fromEntries(CHAIN_LOG_PADS.map((pad) => [pad.launchpad, pad.chain])),
+}
 
 /** Stage boundary: a bonding curve at or above this is `aboutGraduates`. */
 export const GRADUATION_NEAR_PCT = 80
