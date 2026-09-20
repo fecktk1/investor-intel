@@ -3179,7 +3179,8 @@
     "research_heading": "Contexte de marché",
     "sections": "Sur cette page d’actif",
     "workspace": "Prix, position et recherche",
-    "restoring_chart": "Restauration du graphique que vous avez laissé…"
+    "restoring_chart": "Restauration du graphique que vous avez laissé…",
+    "contract_address": "Adresse du contrat"
   },
   "coverage": {
     "available_count": "{{available}} sections sur {{total}} disponibles",
@@ -3931,5 +3932,20 @@
     "base_rate_resolved": "Taux de base sur toutes vos thèses résolues",
     "no_resolved": "Aucune thèse résolue",
     "base_rate_line": "Taux de base : {{successes}} des {{n}} thèses résolues, toutes orientations confondues, ont été confirmées ou partiellement confirmées ({{rate}}). Les thèses ouvertes ne sont pas comptées."
+  },
+  "copy_address": {
+    "copy": "Copier l’adresse du contrat",
+    "copied": "Copiée",
+    "manual": "Ce navigateur ne copie pas à notre place. L’adresse complète est sélectionnée, copiez-la au clavier."
+  },
+  "chart_evidence": {
+    "heading": "Historique public de marché du graphique",
+    "reading": "Lecture des événements de marché publics conservés…",
+    "retained": "{{events}} événements de marché publics conservés dans cette fenêtre.",
+    "none_yet": "Aucun historique public de marché pour ce contrat pour le moment.",
+    "separate": "Les swaps publics et l’activité des pools sont distincts de vos positions.",
+    "retry": "Réessayer l’historique de marché",
+    "load_more": "Charger plus d’événements de marché publics",
+    "range_limited": "L’historique public des événements est limité aux 90 derniers jours de cette plage, selon la rétention de la source."
   }
 }

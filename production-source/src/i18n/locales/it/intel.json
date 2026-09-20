@@ -3179,7 +3179,8 @@
     "research_heading": "Contesto di mercato",
     "sections": "In questa pagina dell’asset",
     "workspace": "Prezzo, posizione e ricerca",
-    "restoring_chart": "Ripristino del grafico che avevi lasciato…"
+    "restoring_chart": "Ripristino del grafico che avevi lasciato…",
+    "contract_address": "Indirizzo del contratto"
   },
   "coverage": {
     "available_count": "{{available}} di {{total}} sezioni disponibili",
@@ -3931,5 +3932,20 @@
     "base_rate_resolved": "Tasso di base su tutte le tue tesi risolte",
     "no_resolved": "Nessuna tesi risolta",
     "base_rate_line": "Tasso di base: {{successes}} di {{n}} tesi risolte, su tutte le posizioni, sono state confermate o confermate in parte ({{rate}}). Le tesi aperte non sono conteggiate."
+  },
+  "copy_address": {
+    "copy": "Copia l’indirizzo del contratto",
+    "copied": "Copiato",
+    "manual": "Questo browser non copia al posto nostro. L’indirizzo completo è selezionato, copialo con la tastiera."
+  },
+  "chart_evidence": {
+    "heading": "Cronologia pubblica di mercato del grafico",
+    "reading": "Lettura degli eventi di mercato pubblici conservati…",
+    "retained": "{{events}} eventi di mercato pubblici conservati in questa finestra.",
+    "none_yet": "Non c’è ancora una cronologia pubblica di mercato per questo contratto.",
+    "separate": "Gli swap pubblici e l’attività delle pool sono separati dalle tue posizioni.",
+    "retry": "Riprova la cronologia di mercato",
+    "load_more": "Carica altri eventi di mercato pubblici",
+    "range_limited": "La cronologia pubblica degli eventi è limitata agli ultimi 90 giorni di questo intervallo, in base alla conservazione della fonte."
   }
 }
