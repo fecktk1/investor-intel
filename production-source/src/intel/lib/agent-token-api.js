@@ -6,11 +6,28 @@
 // for and a second unscoped path would make the scopes meaningless.
 
 export const AGENT_READ_SCOPES = ['read:portfolio', 'read:thesis', 'read:alerts', 'read:charts', 'read:watchlists', 'read:evidence']
-export const AGENT_WRITE_SCOPES = ['write:alerts', 'write:charts', 'write:thesis']
+// write:watchlists and write:research are used by the hosted MCP server and are
+// the only two writes that happen without an approval step, because they touch
+// objects the approval pipeline never covered and a member undoes either in one
+// click. Everything that can notify the member, or change a chart or a thesis,
+// still goes through propose and approve.
+export const AGENT_WRITE_SCOPES = ['write:alerts', 'write:charts', 'write:thesis', 'write:watchlists', 'write:research']
 export const AGENT_SCOPES = [...AGENT_READ_SCOPES, ...AGENT_WRITE_SCOPES]
 // A write scope is only offered together with the read scope it needs, because
-// a write is not finished until it has been read back and verified.
-export const READ_SCOPE_FOR_WRITE = { 'write:alerts': 'read:alerts', 'write:charts': 'read:charts', 'write:thesis': 'read:thesis' }
+// a write is not finished until it has been read back and verified. write:research
+// pairs with read:evidence, which is already the scope that reads saved_research.
+export const READ_SCOPE_FOR_WRITE = { 'write:alerts': 'read:alerts', 'write:charts': 'read:charts', 'write:thesis': 'read:thesis', 'write:watchlists': 'read:watchlists', 'write:research': 'read:evidence' }
+
+/** The hosted MCP endpoint a member points their own agent at.
+ *
+ * Built from VITE_SUPABASE_URL because Edge Functions are NOT proxied through the
+ * site: there is no /api rewrite in public/_redirects and no server.proxy in the
+ * Vite config, so the canonical public form is the function URL itself. The token
+ * is never part of it; it travels in the Authorization header. */
+export function hostedMcpUrl(supabaseUrl = import.meta.env?.VITE_SUPABASE_URL) {
+  const base = String(supabaseUrl || '').replace(/\/+$/, '')
+  return base ? `${base}/functions/v1/intel-mcp` : ''
+}
 
 const messages = {
   token_limit: 'You already have ten live tokens. Revoke one you no longer use before creating another.',
