@@ -55,8 +55,15 @@ const CATALOGUE_PLATFORM: Record<string, string> = {
 export async function readSubjectImages(db: any, tokens: { chain: string; address: string }[]): Promise<{
   images: Map<string, { cached: string | null; source: string | null }>; reason: string | null
 }> {
+  // PostgREST splits a logic-tree clause on `.`, so a json key carrying a
+  // reserved character (`arbitrum-one`, `polygon-pos`) is double-quoted while a
+  // plain identifier is left bare, which is the form already proved in
+  // `cached-asset-quote.ts`. The address is matched with `ilike` and no wildcard,
+  // which is an exact, case-insensitive comparison; it is validated as hex first,
+  // so nothing that could contain a `.` or a `,` ever reaches the filter.
+  const field = (key: string) => `platforms->>${/^[a-z0-9_]+$/.test(key) ? key : `"${key}"`}`
   const clauses = [...new Set(tokens
-    .map((t) => (CATALOGUE_PLATFORM[t.chain] && /^0x[0-9a-fA-F]{40}$/.test(t.address) ? `platforms->>${CATALOGUE_PLATFORM[t.chain]}.ilike.${t.address}` : null))
+    .map((t) => (CATALOGUE_PLATFORM[t.chain] && /^0x[0-9a-fA-F]{40}$/.test(t.address) ? `${field(CATALOGUE_PLATFORM[t.chain])}.ilike.${t.address}` : null))
     .filter((v): v is string => !!v))]
   const images = new Map<string, { cached: string | null; source: string | null }>()
   if (!clauses.length) return { images, reason: null }
