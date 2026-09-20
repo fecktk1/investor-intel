@@ -27,7 +27,8 @@ export const SUGGEST_MAX_LIMIT = 20
  *  page, never the catalogue. */
 const PROBE_LIMIT = 25
 
-/** How the typed text matched, strongest first. */
+/** How the typed text matched. Reported verbatim to the reader; the ORDER rows
+ *  are offered in is the tier below, which is not the same thing. */
 export const SUGGEST_MATCH_ORDER = [
   'contract', 'symbol_exact', 'name_exact', 'symbol_prefix', 'name_prefix', 'name_contains',
 ] as const
@@ -35,6 +36,24 @@ export type SuggestMatch = typeof SUGGEST_MATCH_ORDER[number]
 /** The matches that name ONE asset rather than merely starting like it. A single
  *  surviving asset in the strongest of these opens directly. */
 export const SUGGEST_EXACT_MATCHES: SuggestMatch[] = ['contract', 'symbol_exact', 'name_exact']
+
+/**
+ * The tier a match is offered in. Matching the typed text EXACTLY is one tier
+ * whether the text was the ticker or the project name: ranking every ticker
+ * match above every name match put two meme tokens called BITCOIN above Bitcoin
+ * for the query "bitcoin", which is the opposite of what the reader asked for.
+ * Inside the tier, market cap decides — and Bitcoin is $1.5T.
+ *
+ * A pasted contract stays above both: it is an address, not a word, so there is
+ * nothing to weigh it against. Prefix and contains stay below, each in their own
+ * tier, because starting like the text is weaker evidence than being it.
+ */
+export function suggestTier(match: SuggestMatch): number {
+  if (match === 'contract') return 0
+  if (match === 'symbol_exact' || match === 'name_exact') return 1
+  if (match === 'symbol_prefix') return 2
+  return match === 'name_prefix' ? 3 : 4
+}
 
 export interface SuggestRow {
   sourceProvider: string
@@ -245,7 +264,7 @@ export async function suggestMarketAssets(admin: any, rawQuery: unknown, rawLimi
       return suggestion
     })
     .sort((a, b) =>
-      SUGGEST_MATCH_ORDER.indexOf(a.match) - SUGGEST_MATCH_ORDER.indexOf(b.match) ||
+      suggestTier(a.match) - suggestTier(b.match) ||
       (b.marketCap ?? -Infinity) - (a.marketCap ?? -Infinity) ||
       (a.sourceProvider === 'coinmarketcap' ? 0 : 1) - (b.sourceProvider === 'coinmarketcap' ? 0 : 1) ||
       a.providerId.localeCompare(b.providerId))

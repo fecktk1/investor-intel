@@ -99,13 +99,19 @@ Deno.test('a table more than one lane writes is read through a filter, so one la
   const meme = HEALTH_LANES.find((l) => l.lane === 'meme_stages')!
   const launchpads = HEALTH_LANES.find((l) => l.lane === 'launchpad_stages')!
   assertEquals(meme.table, launchpads.table)
+  const sunpump = HEALTH_LANES.find((l) => l.lane === 'sunpump_stages')!
   assertEquals(meme.filter, 'source=eq.coinmarketcap')
   assertEquals(launchpads.filter, 'source=eq.coingecko')
+  assertEquals(sunpump.table, meme.table)
+  assertEquals(sunpump.filter, 'source=eq.trongrid')
   assertEquals(launchpads.policyProvider, 'coingecko')
   assertEquals(launchpads.policyFeature, 'launchpad_stages')
-  // New, and its key tier is not yet proven in production: it must not be able
-  // to turn the public route amber on its own.
+  assertEquals(sunpump.policyProvider, 'trongrid')
+  assertEquals(sunpump.policyFeature, 'sunpump_stages')
+  // New, and their key tiers are not yet proven in production: neither must be
+  // able to turn the public route amber on its own.
   assertEquals(launchpads.required, false)
+  assertEquals(sunpump.required, false)
 })
 
 Deno.test('a lane filter reaches the PostgREST query', async () => {

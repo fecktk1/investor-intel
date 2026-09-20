@@ -79,6 +79,15 @@ export const HEALTH_LANES: LaneSpec[] = [
   // is new, its key tier is not yet proven in production, and a source that has
   // not filled yet must not turn the whole route amber.
   { lane: 'launchpad_stages', table: 'intel_meme_stage_snapshots', column: 'captured_at', policyProvider: 'coingecko', policyFeature: 'launchpad_stages', scheduleSeconds: HOUR, required: false, filter: 'source=eq.coingecko' },
+  // The SunPump lane on TRON, scheduled hourly at :43 by
+  // 20260917210400_intel_sunpump_lane.sql. Third writer of the same table, so it
+  // carries the same kind of source filter. Reported but never required: SunPump
+  // publishes about twenty creations and well under one graduation a day, so an
+  // hour with no new lifecycle event is a normal hour on that pad and must not
+  // turn the whole route amber. Without a TRONGRID_API_KEY it runs a six-call
+  // budget against the anonymous host, which is another reason a gap here is not
+  // evidence of a fault.
+  { lane: 'sunpump_stages', table: 'intel_meme_stage_snapshots', column: 'captured_at', policyProvider: 'trongrid', policyFeature: 'sunpump_stages', scheduleSeconds: HOUR, required: false, filter: 'source=eq.trongrid' },
 ]
 
 /** A capture that ran on time can still be up to one cadence old, plus cron
