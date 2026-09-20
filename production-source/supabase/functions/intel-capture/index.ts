@@ -67,6 +67,12 @@ import { RWA_YIELD_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-yield-read
 // no credits and answers to its own `primary-sources` policy rows.
 import { RWA_ISSUER_CAPTURE_OPS } from '../_shared/intel/capture-rwa-issuer.ts'
 import { RWA_ISSUER_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-issuer-read.ts'
+// "Unusual for THIS asset": each asset's newest complete day scored against its
+// OWN trailing distribution. It calls no provider at all — it reads the stored
+// candle archive above plus the catalogue — so it reports zero credits and
+// answers to its own `local` provider_schedule_policy row, which it loads itself.
+import { UNUSUAL_CAPTURE_OPS } from '../_shared/intel/capture-unusual.ts'
+import { UNUSUAL_CAPTURE_VIEWS } from '../_shared/intel/capture-unusual-read.ts'
 // Source receipts for the capture views: what the newest capture run recorded
 // about its own provider calls. A database read only; no provider call.
 import { readCaptureReceipts } from '../_shared/intel/source-receipt.ts'
@@ -74,8 +80,8 @@ import { readCaptureReceipts } from '../_shared/intel/source-receipt.ts'
 // Both keyless RWA lanes are registered here. Dropping either spread silently
 // removes a whole capture lane while every test still passes, so both must
 // appear in both objects.
-const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...LAUNCHPAD_CAPTURE_OPS, ...SUNPUMP_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS }
-const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS, ...CANDLE_CAPTURE_VIEWS, ...RWA_YIELD_CAPTURE_VIEWS, ...RWA_ISSUER_CAPTURE_VIEWS }
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...LAUNCHPAD_CAPTURE_OPS, ...SUNPUMP_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS, ...UNUSUAL_CAPTURE_OPS }
+const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS, ...CANDLE_CAPTURE_VIEWS, ...RWA_YIELD_CAPTURE_VIEWS, ...RWA_ISSUER_CAPTURE_VIEWS, ...UNUSUAL_CAPTURE_VIEWS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 function json(body: unknown, status = 200) {

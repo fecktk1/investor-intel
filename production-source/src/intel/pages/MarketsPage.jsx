@@ -26,6 +26,9 @@ import IntelDisclaimer from '../components/IntelDisclaimer'
 import RegimeBanner from '../components/RegimeBanner'
 import RankMovers from '../components/RankMovers'
 import RecentlyDiscovered from '../components/RecentlyDiscovered'
+// Movers ranked against each asset's OWN trailing distribution, beside (never
+// instead of) the fixed top movers and top losers lists further down the page.
+import UnusualForThisAsset from '../components/UnusualForThisAsset'
 import FigureProvenance from '../components/FigureProvenance'
 import { IntelMetricCard, IntelPageHeader, IntelPageShell, IntelTabs } from '../components/IntelPrimitives'
 
@@ -367,6 +370,7 @@ export default function MarketsPage() {
             )}
           </section>
           <RecentlyDiscovered />
+          <UnusualForThisAsset />
           {contextOpen && <div className="intel-expanded-context">
           <Suspense fallback={<p role="status" className="py-6 text-sm text-[var(--fg-4)]">{t('markets.charts_loading', { defaultValue: 'Loading market figures…' })}</p>}>
             <RegimeRibbon compact />

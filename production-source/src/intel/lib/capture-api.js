@@ -37,6 +37,10 @@ export const CAPTURE_VIEWS = [
   // holder concentration and transfer restrictions
   // (capture-rwa-issuer-read.ts, RWA_ISSUER_CAPTURE_VIEWS).
   'rwa_issuer_legitimacy',
+  // "Unusual for this asset": each asset's newest complete day scored against
+  // its own trailing distribution (capture-unusual-read.ts,
+  // UNUSUAL_CAPTURE_VIEWS). Precomputed hourly, zero provider credits.
+  'unusual_moves',
 ]
 
 let rememberedClient = null
