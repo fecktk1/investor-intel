@@ -306,6 +306,19 @@ export function coingeckoOnchainBase(): string {
   return tier === 'pro' ? 'https://pro-api.coingecko.com/api/v3/onchain' : 'https://api.coingecko.com/api/v3/onchain'
 }
 
+/**
+ * The `market_data_response_cache` key an onchain answer is stored under.
+ *
+ * The tier is part of the key: the three hosts can legitimately answer
+ * differently, and a cached pro answer must not be served to a deployment that
+ * has since lost its key. Exported so a caller that wants to look ITS OWN
+ * refusal up in that table (to learn the status code the shared transport does
+ * not return) builds the same key instead of re-deriving the prefix.
+ */
+export function coingeckoOnchainCacheKey(tier: CoingeckoOnchainTier, cacheKey: string): string {
+  return `onchain:${tier}:${cacheKey}`
+}
+
 export interface CoingeckoOnchainOpts {
   /** Stable label for the cache key and the receipt, e.g. `/onchain/networks/{network}/new_pools`. */
   endpoint: string
@@ -333,10 +346,7 @@ export async function fetchCoingeckoOnchain<T = unknown>(path: string, opts: Coi
     provider: ID,
     url: `${coingeckoOnchainBase()}/${clean}`,
     endpoint: opts.endpoint,
-    // The tier is part of the cache key: the three hosts can legitimately
-    // answer differently, and a cached pro answer must not be served to a
-    // deployment that has since lost its key.
-    cacheKey: `onchain:${coingeckoOnchainTier()}:${opts.cacheKey}`,
+    cacheKey: coingeckoOnchainCacheKey(coingeckoOnchainTier(), opts.cacheKey),
     headers: authHeaders(),
     ttlMs: opts.ttlMs,
     symbolCount: opts.symbolCount ?? null,
