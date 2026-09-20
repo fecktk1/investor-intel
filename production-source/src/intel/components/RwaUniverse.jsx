@@ -7,7 +7,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { Sunburst, Sparkline } from '../charts'
 import { readCaptureView, captureUnavailable } from '../lib/capture-api'
-import { formatUsd, formatCompact, formatPct } from '../lib/market-format'
+import { formatUsd, formatCompact, formatPct, fmtNum } from '../lib/market-format'
 
 // RWA universe (CMC plan proposal 5). Inner ring: tokenized asset types by total
 // market value. Outer ring: the assets that carry each type.
@@ -216,13 +216,13 @@ export default function RwaUniverse() {
                   return (
                     <tr key={type}>
                       <th scope="row" className={`text-left font-normal text-[var(--fg-2)] ${cell}`}>{label(type)}</th>
-                      <td className={`intel-number ${cell}`}>{formatCompact(assetCount)}</td>
+                      <td className={`intel-number ${cell}`}>{fmtNum(assetCount)}</td>
                       <td className={`intel-number ${cell}`}>
                         {withTokens == null
                           ? <span className="text-[var(--fg-4)]">{t('structure.rwa_tokens_unrecorded', { defaultValue: 'Not recorded in this capture' })}</span>
                           : (
                             <>
-                              {formatCompact(withTokens)}
+                              {fmtNum(withTokens)}
                               {/* The provider caps a page at 250 rows and paginates,
                                   so a wide type is counted within the rows read.
                                   Saying which is the difference between a count and
