@@ -48,11 +48,12 @@
 --   daily jobs start 34 minutes apart so their external reads do not overlap, and both run between the 01:35 category
 --   members job and the 04:50 exchange reserves job.
 --
--- WHICH SUBJECTS. The issuer lanes act only on alias assertions IN FORCE at the run's clock
--- (`currentAssertions` in _shared/intel/rwa-issuer-aliases.ts). When an assertion expires its subject stops being
--- refreshed and the read view withholds its legal facts; captured rows are kept. After rwa-issuer-alias-1 expires
--- (2026-09-23 14:30 UTC) and rwa-issuer-alias-2 (2026-09-23 20:47 UTC), both issuer jobs run and report
--- `no_mapped_subjects` / `no_mapped_tokens` until a later version restates a mapping. That is correct, not a fault.
+-- WHICH SUBJECTS. The issuer lanes act only on the alias assertions in the current alias version
+-- (`currentAssertions` in _shared/intel/rwa-issuer-aliases.ts). Assertions do NOT expire on a clock (corrected
+-- 2026-09-20; an earlier version of this comment said they lapse after seven days, which the code never did after
+-- the 2026-09-16 directive). A subject stops being refreshed only when a later version explicitly withdraws it; the
+-- jobs then report `no_mapped_subjects` / `no_mapped_tokens` for it. The small subject count is the size of the
+-- curated alias map, not a lapse.
 --
 -- REQUIRED SETTING: SEC_EDGAR_USER_AGENT. Both EDGAR readers resolve one agent (_shared/intel/rwa-sources/edgar-agent.ts):
 -- the Edge Function environment variable first, then `config.SEC_EDGAR_USER_AGENT` on the provider_quota_budgets row
