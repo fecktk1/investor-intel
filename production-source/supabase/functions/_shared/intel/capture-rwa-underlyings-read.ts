@@ -67,6 +67,20 @@ export const DOMESTIC_PERIODIC_DAYS = 130
 export const FOREIGN_PERIODIC_DAYS = 500
 export const FOREIGN_ANNUAL_FORMS = ['20-F', '20-F/A', '40-F', '40-F/A']
 
+/** How far back the filings we read must reach before their silence about a
+ * periodic report means anything. Mirrors ANNUAL_LOOKBACK_DAYS in the capture
+ * lane and is restated here so the READ can reach the same verdict from a stored
+ * row alone, without re-reading EDGAR.
+ *
+ * WHY THE STATE EXISTS. EDGAR's `filings.recent` holds about a thousand entries.
+ * BANK OF AMERICA CORP and JPMORGAN CHASE & CO file so many prospectus
+ * supplements that their own 10-K and 10-Q fall out of it, and on 2026-09-20 both
+ * were stored with no annual and no quarterly date at all. Sorted by "days since
+ * the last periodic filing", the two largest banks in the United States would
+ * have led this board as its most delinquent filers. They are not late; we did
+ * not look far enough back. That is OUR limitation and the board says so. */
+export const RECENT_BLOCK_REACH_DAYS = 400
+
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
 export interface ViewResult { view: string; asOf: string | null; coverage: Coverage; reason?: string | null; [key: string]: unknown }
 
@@ -86,7 +100,7 @@ async function readRows(build: () => any): Promise<{ rows: any[]; reason: string
 }
 
 const PROFILE_COLUMNS = 'rwa_id,provider,provider_capability,slug,symbol,name,asset_type,cik,cik_field,industry,founded,employees,primary_exchange,rwa_rank,has_tokens,logo_url,website,description,about_date_added,captured_at,provider_fetched_at,registrant_checked_at,scope'
-const REGISTRANT_COLUMNS = 'rwa_id,cik,state,reason,registrant_name,sic,sic_description,state_of_incorporation,fiscal_year_end,exchanges,tickers,latest_annual_form,latest_annual_date,latest_annual_accession,latest_quarterly_form,latest_quarterly_date,latest_quarterly_accession,latest_current_form,latest_current_date,latest_current_accession,filings_read,asset_name,registrant_name_normalized,asset_name_normalized,name_match,source_url,fetched_at,checked_at,scope'
+const REGISTRANT_COLUMNS = 'rwa_id,cik,state,reason,registrant_name,sic,sic_description,state_of_incorporation,fiscal_year_end,exchanges,tickers,latest_annual_form,latest_annual_date,latest_annual_accession,latest_quarterly_form,latest_quarterly_date,latest_quarterly_accession,latest_current_form,latest_current_date,latest_current_accession,filings_read,recent_filings_count,recent_oldest_date,recent_newest_date,older_pages_read,asset_name,registrant_name_normalized,asset_name_normalized,name_match,source_url,fetched_at,checked_at,scope'
 
 /** The filer's own EDGAR browse page. Rebuilt here rather than trusted from the
  * row so a link the board renders is always an sec.gov URL. */
@@ -111,27 +125,45 @@ export const filingUrl = (cik: unknown, accession: unknown): string | null => {
  * dates the count came from, so the figure can always name its input.
  */
 export function periodicStanding(
-  row: { latest_annual_date?: unknown; latest_quarterly_date?: unknown; latest_annual_form?: unknown } | null,
+  row: {
+    latest_annual_date?: unknown; latest_quarterly_date?: unknown; latest_annual_form?: unknown
+    recent_oldest_date?: unknown; recent_filings_count?: unknown; older_pages_read?: unknown
+  } | null,
   at: number,
-): { days: number | null; from: string | null; basis: 'annual' | 'quarterly' | null; thresholdDays: number; state: 'current' | 'overdue' | 'unknown' } {
+): {
+  days: number | null; from: string | null; basis: 'annual' | 'quarterly' | null; thresholdDays: number
+  state: 'current' | 'overdue' | 'unknown' | 'not_in_read_filings'
+  readBackTo: string | null; readBackDays: number | null
+} {
   const annual = str(row?.latest_annual_date, 10)
   const quarterly = str(row?.latest_quarterly_date, 10)
   const foreign = FOREIGN_ANNUAL_FORMS.includes(String(row?.latest_annual_form || ''))
   // A filer with no quarterly report at all is judged on the annual line, which
   // is also the right line for a foreign private issuer's 20-F.
   const thresholdDays = foreign || !quarterly ? FOREIGN_PERIODIC_DAYS : DOMESTIC_PERIODIC_DAYS
+  // How far back the filings we actually read reach. A row captured before this
+  // was recorded carries nothing here and keeps the old 'unknown'.
+  const readBackTo = str(row?.recent_oldest_date, 10)
+  const readBackAt = readBackTo ? Date.parse(`${readBackTo}T00:00:00.000Z`) : NaN
+  const readBackDays = Number.isFinite(readBackAt) ? Math.max(0, Math.floor((at - readBackAt) / 86_400_000)) : null
   const candidates: { date: string; basis: 'annual' | 'quarterly' }[] = []
   if (annual) candidates.push({ date: annual, basis: 'annual' })
   if (quarterly) candidates.push({ date: quarterly, basis: 'quarterly' })
-  if (!candidates.length) return { days: null, from: null, basis: null, thresholdDays, state: 'unknown' }
+  if (!candidates.length) {
+    // NOT LATE, NOT LOOKED AT. The filings we read do not reach back a year, so
+    // an annual report could not have been among them however punctual the
+    // filer is. There is nothing to subtract, and nothing to allege.
+    const state = readBackDays != null && readBackDays < RECENT_BLOCK_REACH_DAYS ? 'not_in_read_filings' : 'unknown'
+    return { days: null, from: null, basis: null, thresholdDays, state, readBackTo, readBackDays }
+  }
   candidates.sort((a, b) => b.date.localeCompare(a.date))
   const newest = candidates[0]
   const parsed = Date.parse(`${newest.date}T00:00:00.000Z`)
-  if (!Number.isFinite(parsed)) return { days: null, from: null, basis: null, thresholdDays, state: 'unknown' }
+  if (!Number.isFinite(parsed)) return { days: null, from: null, basis: null, thresholdDays, state: 'unknown', readBackTo, readBackDays }
   // A future filing date is not a negative age: it is a date we cannot subtract
   // meaningfully, so the count is clamped at zero and the filer reads as current.
   const days = Math.max(0, Math.floor((at - parsed) / 86_400_000))
-  return { days, from: newest.date, basis: newest.basis, thresholdDays, state: days > thresholdDays ? 'overdue' : 'current' }
+  return { days, from: newest.date, basis: newest.basis, thresholdDays, state: days > thresholdDays ? 'overdue' : 'current', readBackTo, readBackDays }
 }
 
 /** One board row, with our computed standing folded in. */
@@ -171,6 +203,15 @@ export function registrantRow(profile: any, registrant: any, at: number) {
         stateOfIncorporation: str(registrant.state_of_incorporation, 20),
         fiscalYearEnd: str(registrant.fiscal_year_end, 8),
         filingsRead: int(registrant.filings_read) ?? 0,
+        // WHAT WAS ACTUALLY READ, so an absent annual report can be read as our
+        // limit rather than as the filer's lateness. Null on a row captured
+        // before the span was recorded.
+        filingsCovered: {
+          count: int(registrant.recent_filings_count),
+          oldest: str(registrant.recent_oldest_date, 10),
+          newest: str(registrant.recent_newest_date, 10),
+          olderPagesRead: int(registrant.older_pages_read),
+        },
         annual: {
           form: str(registrant.latest_annual_form, 20),
           filingDate: str(registrant.latest_annual_date, 10),
@@ -223,7 +264,7 @@ export async function readRwaUnderlyingRegistrants(db: any, params: Record<strin
 
   const [coverageRead, countRead, profileRead, registrantRead] = await Promise.all([
     readRows(() => db.from(COVERAGE_VIEW).select('asset_type,tokenised_count,profiled_count,with_cik_count,registrant_known_count,registrant_not_found_count,registrant_unavailable_count,newest_profile_at,newest_registrant_at').limit(COUNT_CAP)),
-    readRows(() => db.from(MAP_COUNT_TABLE).select('asset_type,snapshot_date,asset_count,with_tokens_count,captured_at').order('snapshot_date', { ascending: false }).limit(COUNT_CAP)),
+    readRows(() => db.from(MAP_COUNT_TABLE).select('asset_type,snapshot_date,asset_count,with_tokens_count,pages_read,truncated,captured_at').order('snapshot_date', { ascending: false }).limit(COUNT_CAP)),
     readRows(() => db.from(PROFILE_TABLE).select(PROFILE_COLUMNS).not('cik', 'is', null).order('rwa_rank', { ascending: true, nullsFirst: false }).limit(ROW_CAP)),
     readRows(() => db.from(REGISTRANT_TABLE).select(REGISTRANT_COLUMNS).limit(ROW_CAP)),
   ])
@@ -262,11 +303,18 @@ export async function readRwaUnderlyingRegistrants(db: any, params: Record<strin
   // True per-type counts for the newest enumerated day, as the map op wrote
   // them: a COUNT of enumerated ids rather than the length of a list page.
   const newestDate = countRows.map((r) => str(r?.snapshot_date, 10)).filter((v): v is string => !!v).sort().at(-1) ?? null
+  // A count that stopped at the enumeration page ceiling is a FLOOR, and it
+  // travels with `truncated` so the page can say "at least N" rather than
+  // printing a capped number as a total. A row written before the column existed
+  // carries null, and a null is not a claim either way.
   const mapCounts = countRows.filter((r) => str(r?.snapshot_date, 10) === newestDate).map((r) => ({
     assetType: str(r?.asset_type, 40),
     assetCount: int(r?.asset_count) ?? 0,
     withTokensCount: int(r?.with_tokens_count) ?? 0,
+    pagesRead: int(r?.pages_read),
+    truncated: r?.truncated === true,
   }))
+  const countsTruncated = mapCounts.some((r) => r.truncated)
 
   const stamps = [
     ...coverageRows.map((r) => str(r?.newest_profile_at, 40)),
@@ -283,9 +331,16 @@ export async function readRwaUnderlyingRegistrants(db: any, params: Record<strin
     universe,
     mapCounts,
     mapCountsDate: newestDate,
+    // The enumeration stopped at its page ceiling for at least one asset type, so
+    // every count above is a floor. The board prints "at least" rather than a
+    // total when this is true.
+    countsTruncated,
     rows,
     // How our own day count is judged, so the client never invents a threshold.
-    thresholds: { domesticDays: DOMESTIC_PERIODIC_DAYS, foreignDays: FOREIGN_PERIODIC_DAYS, foreignAnnualForms: FOREIGN_ANNUAL_FORMS },
+    thresholds: {
+      domesticDays: DOMESTIC_PERIODIC_DAYS, foreignDays: FOREIGN_PERIODIC_DAYS, foreignAnnualForms: FOREIGN_ANNUAL_FORMS,
+      recentBlockReachDays: RECENT_BLOCK_REACH_DAYS,
+    },
     rowCap: ROW_CAP,
     // When the three ops run, so an empty board can say when it fills.
     schedule: RWA_UNDERLYING_CAPTURE_SCHEDULE,

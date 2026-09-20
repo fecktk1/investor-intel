@@ -1,7 +1,10 @@
 import { strict as assert } from 'node:assert'
-import { cikKey, fetchFormD, fetchSubmissions, formDFilings, formDUrl, normalizeSubmissions, parseFormD } from './edgar.ts'
+import {
+  cikKey, fetchFormD, fetchSubmissionPage, fetchSubmissions, filingBlock, formDFilings, formDUrl,
+  normalizeSubmissions, parseFormD, submissionPageUrl,
+} from './edgar.ts'
 import { __resetRwaSourceStateForTests } from './http.ts'
-import { deps, fakeFetch, EDGAR_AGENT } from './test-support.ts'
+import { deps, deps as sourceDeps, fakeFetch, EDGAR_AGENT } from './test-support.ts'
 
 // Trimmed from the live filing probed 2026-09-16 (CIK 0002004367, the 2024 D).
 // relatedPersonsList is kept in the fixture ON PURPOSE: the test asserts that
@@ -127,4 +130,85 @@ Deno.test('an unreadable or absent filing is a stated reason rather than empty t
   assert.equal(refused.state, 'unavailable')
   assert.equal(refused.reason, 'user_agent_required')
   assert.equal(noAgent.calls.length, 0)
+})
+
+// ─── the span of a filings block, and the older pages ────────────────────────
+
+Deno.test('a filings block reports the span it covered, not only the rows it kept', () => {
+  const block = filingBlock({
+    accessionNumber: ['a1', 'a2', 'a3'],
+    form: ['424B2', '10-K', '424B2'],
+    filingDate: ['2026-09-18', '2026-02-14', '2025-11-02'],
+    primaryDocument: ['a.htm', 'b.htm', 'c.htm'],
+  }, { forms: ['10-K'], limit: 200 })
+  assert.equal(block.filings.length, 1, 'only the wanted form is kept')
+  assert.equal(block.filings[0].form, '10-K')
+  // The SPAN is measured over every entry scanned, because it describes the block
+  // and not the filtered view of it. Without that, "no 10-K here" cannot be told
+  // apart from "this filer has no 10-K".
+  assert.equal(block.count, 3)
+  assert.equal(block.oldest, '2025-11-02')
+  assert.equal(block.newest, '2026-09-18')
+  // An empty block is a real answer with no span, never a throw.
+  assert.deepEqual(filingBlock({}), { filings: [], count: 0, oldest: null, newest: null })
+  // A date the provider did not publish in the documented shape is not a span.
+  assert.equal(filingBlock({ accessionNumber: ['a'], form: ['10-K'], filingDate: ['whenever'] }).oldest, null)
+})
+
+Deno.test('a submissions record carries its recent span and the older pages EDGAR names', () => {
+  const record = normalizeSubmissions({
+    cik: '0000019617', name: 'JPMORGAN CHASE & CO',
+    filings: {
+      recent: { accessionNumber: ['a1'], form: ['424B2'], filingDate: ['2026-09-18'], primaryDocument: ['a.htm'] },
+      files: [
+        { name: 'CIK0000019617-submissions-002.json', filingCount: 1000, filingFrom: '2023-01-03', filingTo: '2025-01-01' },
+        { name: 'CIK0000019617-submissions-001.json', filingCount: 1000, filingFrom: '2025-01-02', filingTo: '2026-07-31' },
+        // NOT a name EDGAR publishes. It never becomes a URL.
+        { name: '../../../etc/passwd', filingCount: 1, filingFrom: null, filingTo: '2099-01-01' },
+      ],
+    },
+  })!
+  assert.deepEqual(record.recent, { count: 1, oldest: '2026-09-18', newest: '2026-09-18' })
+  // Newest period first, so a follow-up starts with the page adjoining `recent`.
+  assert.deepEqual(record.olderFiles.map((f) => f.name), ['CIK0000019617-submissions-001.json', 'CIK0000019617-submissions-002.json'])
+  assert.equal(record.olderFiles[0].from, '2025-01-02')
+  assert.equal(record.olderFiles[0].count, 1000)
+  // A filer with no older pages is an empty list, not a missing field.
+  assert.deepEqual(normalizeSubmissions({ cik: '0001045810', filings: { recent: {} } })!.olderFiles, [])
+})
+
+Deno.test('only a file name EDGAR published in the documented shape becomes a URL', () => {
+  assert.equal(submissionPageUrl('CIK0000019617-submissions-001.json'), 'https://data.sec.gov/submissions/CIK0000019617-submissions-001.json')
+  // A name from a response is DATA, never a path. Nothing the document says can
+  // send a request outside this one directory of data.sec.gov.
+  for (const bad of ['../../../etc/passwd', 'CIK0000019617-submissions-001.json?x=1', 'https://evil.test/a.json', 'CIK19617-submissions-001.json', '', null, 42]) {
+    assert.equal(submissionPageUrl(bad), null, String(bad))
+  }
+})
+
+Deno.test('an older submissions page reads as a bare block and states its own span', async () => {
+  __resetRwaSourceStateForTests()
+  const url = 'https://data.sec.gov/submissions/CIK0000019617-submissions-001.json'
+  const { impl } = fakeFetch({
+    [url]: {
+      body: {
+        accessionNumber: ['0000019617-26-000150', '0000019617-26-000040', '0000019617-25-000900'],
+        form: ['10-Q', '10-K', '424B2'],
+        filingDate: ['2026-05-02', '2026-02-14', '2025-06-01'],
+        primaryDocument: ['q.htm', 'k.htm', 'p.htm'],
+      },
+    },
+  })
+  const page = await fetchSubmissionPage('CIK0000019617-submissions-001.json', sourceDeps(impl, { userAgent: EDGAR_AGENT }), { forms: ['10-K', '10-Q'], limit: 200 })
+  assert.equal(page.state, 'known')
+  assert.deepEqual(page.filings.map((f) => f.form), ['10-Q', '10-K'])
+  assert.equal(page.count, 3)
+  assert.equal(page.oldest, '2025-06-01')
+  assert.equal(page.sourceUrl, url)
+
+  // A name that cannot become a URL is a stated reason and issues no request.
+  const refused = await fetchSubmissionPage('../../../etc/passwd', sourceDeps(impl, { userAgent: EDGAR_AGENT }))
+  assert.equal(refused.state, 'unavailable')
+  assert.equal(refused.reason, 'invalid_submission_page')
+  assert.equal(refused.sourceUrl, null)
 })

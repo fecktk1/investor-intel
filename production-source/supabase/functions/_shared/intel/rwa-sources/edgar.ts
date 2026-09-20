@@ -56,6 +56,21 @@ export interface SubmissionsRecord {
   fiscalYearEnd: string | null
   exchanges: string[]
   tickers: string[]
+  /** WHAT THE `recent` BLOCK ACTUALLY COVERED, which is not the same as the
+   * filer's history. EDGAR's `filings.recent` holds about a thousand entries, so
+   * a bank that lodges thousands of 424B2 prospectus supplements a year pushes
+   * its own 10-K and 10-Q straight out of it. Read in production 2026-09-20:
+   * BANK OF AMERICA CORP and JPMORGAN CHASE & CO both came back with no annual
+   * and no quarterly report at all, while filers that file little did not.
+   *
+   * Without this span, "no 10-K in the data" is indistinguishable from "this
+   * company has not filed a 10-K", and the second is a false and damaging claim.
+   * `oldest` is the earliest filing date the block carried; a block that starts
+   * INSIDE the form's own window cannot be evidence of absence. */
+  recent: { count: number; oldest: string | null; newest: string | null }
+  /** The older pages EDGAR names in the same document (`filings.files`), newest
+   * period first. Each is a further JSON file of the same parallel arrays. */
+  olderFiles: { name: string; from: string | null; to: string | null; count: number | null }[]
 }
 
 /** Which forms `normalizeSubmissions` keeps, and how many. Defaults keep the
@@ -101,6 +116,19 @@ export const submissionsUrl = (cik: unknown): string | null => {
   return key ? `https://data.sec.gov/submissions/CIK${key}.json` : null
 }
 
+/** The exact shape of an older submissions page's file name, as EDGAR publishes
+ * it in `filings.files[].name`. A name from the response is DATA, never a path:
+ * only a name of this shape becomes a URL, so nothing the document says can send
+ * a request anywhere except to this one directory of data.sec.gov. */
+export const EDGAR_SUBMISSION_PAGE = /^CIK\d{10}-submissions-\d{3}\.json$/
+
+/** One older submissions page, by the file name EDGAR itself named. Null for any
+ * other string. */
+export const submissionPageUrl = (name: unknown): string | null => {
+  const file = String(name ?? '').trim()
+  return EDGAR_SUBMISSION_PAGE.test(file) ? `https://data.sec.gov/submissions/${file}` : null
+}
+
 /** The public filing index for an entity. Every EDGAR signal points here. */
 export const edgarEntityUrl = (cik: unknown): string => {
   const key = cikKey(cik)
@@ -129,27 +157,64 @@ export const FILING_SCAN_LIMIT = 1000
 const textList = (value: unknown, max: number): string[] =>
   (Array.isArray(value) ? value : []).slice(0, 20).map((v) => str(v, max)).filter((v): v is string => !!v)
 
+const day = (v: unknown): string | null => { const s = str(v, 20); return s && /^\d{4}-\d{2}-\d{2}$/.test(s) ? s : null }
+
+/**
+ * The filings of ONE block of EDGAR's parallel arrays.
+ *
+ * Shared by `filings.recent` and by the older `CIK##########-submissions-NNN.json`
+ * pages, which carry the same column arrays with no wrapper around them. It also
+ * reports the SPAN the block covered, so a caller can tell "no 10-K here" from
+ * "this filer has no 10-K": the second needs the block to reach back past the
+ * form's own filing window, and only the span can say whether it does.
+ */
+// deno-lint-ignore no-explicit-any
+export function filingBlock(block: any, options: SubmissionsOptions = {}): { filings: FilingRef[]; count: number; oldest: string | null; newest: string | null } {
+  const accessions = Array.isArray(block?.accessionNumber) ? block.accessionNumber : []
+  // A `forms` filter scans the whole block and keeps only the named forms; with
+  // none it keeps the first entries exactly as before.
+  const wanted = options.forms && options.forms.length ? new Set(options.forms) : null
+  const keep = Math.max(1, Math.trunc(options.limit ?? FILING_LIMIT))
+  const scan = Math.min(accessions.length, wanted ? FILING_SCAN_LIMIT : accessions.length)
+  const filings: FilingRef[] = []
+  let oldest: string | null = null, newest: string | null = null
+  for (let i = 0; i < scan; i++) {
+    // The span is measured over EVERY entry scanned, not over the kept ones: it
+    // describes the block, and the kept rows are a filtered view of it.
+    const date = day(block?.filingDate?.[i])
+    if (date) {
+      if (!oldest || date < oldest) oldest = date
+      if (!newest || date > newest) newest = date
+    }
+    if (filings.length >= keep) continue
+    const accessionNumber = str(accessions[i], 25)
+    const form = str(block?.form?.[i], 20)
+    if (!accessionNumber || !form) continue
+    if (wanted && !wanted.has(form)) continue
+    filings.push({ accessionNumber, form, filingDate: str(block?.filingDate?.[i], 20), primaryDocument: str(block?.primaryDocument?.[i], 200) })
+  }
+  return { filings, count: scan, oldest, newest }
+}
+
 // deno-lint-ignore no-explicit-any
 export function normalizeSubmissions(payload: any, options: SubmissionsOptions = {}): SubmissionsRecord | null {
   const cik = cikKey(payload?.cik)
   if (!cik) return null
   const former = Array.isArray(payload?.formerNames) ? payload.formerNames : []
-  const recent = payload?.filings?.recent ?? {}
-  const accessions = Array.isArray(recent?.accessionNumber) ? recent.accessionNumber : []
-  // A `forms` filter scans the whole recent block and keeps only the named
-  // forms; with none it keeps the first entries exactly as before.
-  const wanted = options.forms && options.forms.length ? new Set(options.forms) : null
-  const keep = Math.max(1, Math.trunc(options.limit ?? (wanted ? FILING_LIMIT : FILING_LIMIT)))
-  const scan = Math.min(accessions.length, wanted ? FILING_SCAN_LIMIT : accessions.length)
-  const filings: FilingRef[] = []
-  for (let i = 0; i < scan && filings.length < keep; i++) {
-    const accessionNumber = str(accessions[i], 25)
-    const form = str(recent?.form?.[i], 20)
-    if (!accessionNumber || !form) continue
-    if (wanted && !wanted.has(form)) continue
-    filings.push({ accessionNumber, form, filingDate: str(recent?.filingDate?.[i], 20), primaryDocument: str(recent?.primaryDocument?.[i], 200) })
-  }
+  const block = filingBlock(payload?.filings?.recent ?? {}, options)
+  const filings = block.filings
+  // Newest period first, so a follow-up read starts with the page that adjoins
+  // `recent` rather than with whichever one EDGAR happened to list first.
+  const olderFiles = (Array.isArray(payload?.filings?.files) ? payload.filings.files : [])
+    .slice(0, 50)
+    // deno-lint-ignore no-explicit-any
+    .map((entry: any) => ({ name: str(entry?.name, 120), from: day(entry?.filingFrom), to: day(entry?.filingTo), count: int(entry?.filingCount) }))
+    .filter((entry: { name: string | null }): entry is { name: string; from: string | null; to: string | null; count: number | null } => !!entry.name && EDGAR_SUBMISSION_PAGE.test(entry.name))
+    .sort((a: { to: string | null }, b: { to: string | null }) => String(b.to ?? '').localeCompare(String(a.to ?? '')))
+    .slice(0, 20)
   return {
+    recent: { count: block.count, oldest: block.oldest, newest: block.newest },
+    olderFiles,
     cik,
     name: str(payload?.name, 500),
     stateOfIncorporation: str(payload?.stateOfIncorporation, 20),
@@ -184,6 +249,41 @@ export async function fetchSubmissions(cik: unknown, deps: SourceDeps = {}, opti
   return record
     ? { state: 'known', record, reason: null, fetchedAt: response.fetchedAt, sourceUrl: url }
     : { state: 'unavailable', record: null, reason: 'unreadable_submissions', fetchedAt: response.fetchedAt, sourceUrl: url }
+}
+
+export interface SubmissionPageResult {
+  state: 'known' | 'not_found' | 'unavailable'
+  filings: FilingRef[]
+  count: number
+  oldest: string | null
+  newest: string | null
+  reason: string | null
+  fetchedAt: string
+  sourceUrl: string | null
+}
+
+/**
+ * ONE older submissions page, for the case `filings.recent` could not answer.
+ *
+ * The older pages are the same public JSON, the same host and the same pacing as
+ * the main document, and they are read ONLY when the recent block is too short
+ * to settle the question (see the registrant lane's own guard). The page carries
+ * the parallel arrays with no wrapper, so `filingBlock` reads it unchanged.
+ */
+export async function fetchSubmissionPage(name: unknown, deps: SourceDeps = {}, options: SubmissionsOptions = {}): Promise<SubmissionPageResult> {
+  const url = submissionPageUrl(name)
+  const fetchedAt = new Date((deps.now ?? Date.now)()).toISOString()
+  const empty = { filings: [] as FilingRef[], count: 0, oldest: null, newest: null }
+  if (!url) return { state: 'unavailable', ...empty, reason: 'invalid_submission_page', fetchedAt, sourceUrl: null }
+  // deno-lint-ignore no-explicit-any
+  const response = await fetchSource<any>('edgar', url, deps)
+  if (!response.ok) {
+    const notFound = response.status === 404
+    return { state: notFound ? 'not_found' : 'unavailable', ...empty, reason: notFound ? null : response.reason, fetchedAt: response.fetchedAt, sourceUrl: url }
+  }
+  // An older page is a bare block; a wrapper is tolerated rather than required.
+  const block = filingBlock(response.data?.filings?.recent ?? response.data ?? {}, options)
+  return { state: 'known', filings: block.filings, count: block.count, oldest: block.oldest, newest: block.newest, reason: null, fetchedAt: response.fetchedAt, sourceUrl: url }
 }
 
 /** The admission terms of ONE Form D. Every field is what the filing SAYS; none
