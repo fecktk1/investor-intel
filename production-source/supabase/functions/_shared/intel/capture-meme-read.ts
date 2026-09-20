@@ -44,6 +44,12 @@
 //                 unrelated populations into one meaningless figure. `chains` is
 //                 the same grouping one level up.
 //
+//   captures      how many distinct capture HOURS the window holds, in total and
+//                 per group. Transitions, graduation rates and times to graduate
+//                 are all derived from movement between captures, so a group
+//                 with one capture has no history yet: the page states that
+//                 rather than presenting an unmeasured 0%.
+//
 //   sources       which capture lane each row came from, its newest capture
 //                 clock and how many rows of the window it contributed. The two
 //                 lanes write the SAME tables, so without this a reader cannot
@@ -183,6 +189,11 @@ export interface GroupStats {
   chain: string | null
   rows: number
   contracts: number
+  /** Distinct capture hours this group appears in, inside the window. A cohort
+   * rate and a time-to-graduate distribution are both derived from MOVEMENT
+   * between captures, so a group seen in one capture has no history yet and the
+   * page says so rather than printing a 0% that only means "we looked once". */
+  captures: number
   latestCapturedAt: string | null
   funnel: { stage: string; count: number }[]
   cohort: { firstSeenInWindow: number; graduatedInWindow: number }
@@ -246,6 +257,7 @@ function groupStats(
       key, label: labelOf(key), chain: chainOf(key),
       rows: mine.length,
       contracts: new Set(mine.map((row) => `${row.chain}|${row.contractAddress}`)).size,
+      captures: new Set(mine.map((row) => row.capturedAt)).size,
       latestCapturedAt: latest,
       funnel: MEME_STAGES.map((stage) => ({ stage, count: newest.filter((row) => row.stage === stage).length })),
       cohort: { firstSeenInWindow: denominator, graduatedInWindow: numerator },
@@ -285,7 +297,7 @@ export async function readMemeGraduation(db: any, params: { days?: unknown; chai
     view: 'meme_graduation', days, chain, launchpad, source, funnel: [], graduationRate: null,
     cohort: { firstSeenInWindow: 0, graduatedInWindow: 0 },
     timeToGraduate: null, retention: [], recent: [], launchpads: [], chains: [], sources: [],
-    attribution: COINGECKO_ATTRIBUTION, asOf: null, coverage: emptyCoverage(), reason,
+    captures: 0, attribution: COINGECKO_ATTRIBUTION, asOf: null, coverage: emptyCoverage(), reason,
   })
 
   const snapshots = await readRows(() => {
@@ -389,6 +401,11 @@ export async function readMemeGraduation(db: any, params: { days?: unknown; chai
     cohort: { firstSeenInWindow: denominator, graduatedInWindow: numerator },
     timeToGraduate, retention, recent,
     launchpads, chains, sources,
+    // How many distinct capture hours the window holds. Every figure derived
+    // from movement (a transition, a graduation rate, a time to graduate) needs
+    // more than one of them before it exists, so the page can say "not yet"
+    // instead of drawing a zero.
+    captures: new Set(rows.map((row) => row.capturedAt)).size,
     // Required wherever this data is shown; see the header.
     attribution: COINGECKO_ATTRIBUTION,
     asOf,

@@ -91,6 +91,30 @@ Deno.test('every row carries its source and its launchpad facts', async () => {
   eq(recent.stage, 'graduates')
 })
 
+Deno.test('captures counts the distinct capture hours the window holds, in total and per group', async () => {
+  const db = fakeDb({
+    intel_meme_stage_snapshots: [
+      // One contract seen in three consecutive hours, and one Four.meme contract
+      // seen in exactly one of them.
+      snapshot({ contract_address: SOL(1), captured_at: ago(0) }),
+      snapshot({ contract_address: SOL(1), captured_at: ago(1) }),
+      snapshot({ contract_address: SOL(1), captured_at: ago(2) }),
+      snapshot({ contract_address: BSC(1), chain: 'eip155:56', launchpad: 'four-meme', captured_at: ago(2) }),
+    ],
+  })
+  const result = await readMemeGraduation(db, { days: 7 }, NOW)
+  // Three hours, four rows: a capture is an HOUR, never a row.
+  eq(result.captures, 3)
+  const pads = result.launchpads as Record<string, unknown>[]
+  eq(pads.find((p) => p.key === 'pump-fun')!.captures, 3)
+  eq(pads.find((p) => p.key === 'four-meme')!.captures, 1)
+  const chains = result.chains as Record<string, unknown>[]
+  eq(chains.find((c) => c.key === 'eip155:56')!.captures, 1)
+  // An empty window has none, and says so rather than omitting the field.
+  const empty = await readMemeGraduation(fakeDb({}), { days: 7 }, NOW)
+  eq(empty.captures, 0)
+})
+
 Deno.test('a row written before the source column existed reads as a CoinMarketCap row, not as unknown', async () => {
   const bare = { platform_id: 16, chain: 'solana', contract_address: SOL(2), captured_at: ago(0), stage: 'newCreations', first_seen_at: ago(1) }
   const result = await readMemeGraduation(fakeDb({ intel_meme_stage_snapshots: [bare] }), { days: 7 }, NOW)
