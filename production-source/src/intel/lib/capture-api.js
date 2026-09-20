@@ -50,6 +50,10 @@ export const CAPTURE_VIEWS = [
   // (capture-rwa-wrappers-read.ts, RWA_WRAPPER_CAPTURE_VIEWS). Precomputed by a
   // six-hourly lane, so the read itself spends no provider credit.
   'rwa_wrappers',
+  // "Unusual for this asset": each asset's newest complete day scored against
+  // its own trailing distribution (capture-unusual-read.ts,
+  // UNUSUAL_CAPTURE_VIEWS). Precomputed hourly, zero provider credits.
+  'unusual_moves',
 ]
 
 let rememberedClient = null
