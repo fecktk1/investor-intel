@@ -182,6 +182,17 @@ async function newestAt(db: any, table: string, column: string): Promise<number 
   } catch { return null }
 }
 
+/** Whether today's snapshots still hold a token whose read must be retried. A
+ * failed check answers false: the guard then behaves exactly as it did before. */
+// deno-lint-ignore no-explicit-any
+async function hasRetryableToday(db: any, now: Date): Promise<boolean> {
+  try {
+    const { data, error } = await db.from(DEPTH_TABLE).select('token_key')
+      .eq('snapshot_date', now.toISOString().slice(0, 10)).in('depth_state', [...RETRYABLE_DEPTH_STATES]).limit(1)
+    return !error && Array.isArray(data) && data.length > 0
+  } catch { return false }
+}
+
 // deno-lint-ignore no-explicit-any
 async function guardJob(db: any, job: string, feature: string, deps: CaptureDeps, now: Date,
   freshness: { table: string; column: string }): Promise<JobResult | null> {
@@ -189,6 +200,11 @@ async function guardJob(db: any, job: string, feature: string, deps: CaptureDeps
   if (!policy.enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
   const newest = await newestAt(db, freshness.table, freshness.column)
   if (newest != null && now.getTime() - newest < policy.cadenceSeconds * 1000 * CADENCE_GRACE) {
+    // A run that left tokens in a retryable state (the provider refused the read,
+    // or the budget ran out) is not finished. The per-token "already read today"
+    // skip means a second run pays only for those tokens, so the cadence guard
+    // lets it through rather than parking a refused read until tomorrow.
+    if (await hasRetryableToday(db, now)) return null
     return { job, rows: 0, credits: 0, skipped: 'within_cadence', newestAt: new Date(newest).toISOString() }
   }
   return null
@@ -445,7 +461,12 @@ export interface DepthPool {
 export function poolRows(payload: any, platform: string): DepthPool[] {
   const rows = cmcDexPoolPage(payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload)?.rows ?? []
   const out: DepthPool[] = []
-  for (const row of rows.slice(0, POOL_PAGE_SIZE)) {
+  // The provider ignores `size` and does not promise an order, so the deepest
+  // pools are chosen HERE: rank by reported pool liquidity, then keep the page.
+  // Slicing first would keep whichever pools happened to come first.
+  const liq = (row: any) => { const n = Number(row?.liqUsd); return Number.isFinite(n) ? n : -1 }
+  const ranked = [...rows].sort((x, y) => liq(y) - liq(x))
+  for (const row of ranked.slice(0, POOL_PAGE_SIZE)) {
     const address = text(row?.addr, 200)
     if (!address) continue
     const legs = [text(row?.t0?.sym, 40), text(row?.t1?.sym, 40)]

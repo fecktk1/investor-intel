@@ -87,6 +87,9 @@ export function cmcDexNumber(value:unknown):number|null {
 /** A response page may never be longer than the page the request asked for.
  * A missing or unreadable bound is itself a rejection: an unbounded answer to a
  * bounded question is not the answer to that question. */
+/** The most pool rows one /v1/dex/token/pools answer may carry. The provider
+ * ignores `size`; this is a ceiling against a runaway body, not a page size. */
+export const CMC_DEX_POOL_PAGE_CEILING=1000
 const withinLimit=(list:unknown[],bound:unknown)=>{const n=cmcDexInteger(bound);return n!=null&&n>0&&list.length<=n}
 /** /v1/dex/holders/list is NOT paginated. The 2026-09-15 05:00 UTC capture proved
  * the provider ignores `limit` and returns the whole tag cohort: tag_smart_money
@@ -283,7 +286,13 @@ export function validateCmcDexResponse(name:string,body:any,params:Record<string
    const page=cmcDexPoolPage(d)
    if(!page)return false
    if(!page.rows.length)return true
-   return withinLimit(page.rows,params.size)&&page.rows.every((r:any)=>cmcDexAddress(r?.addr,network.platform)&&(same(r.t0?.addr,address)||same(r.t1?.addr,address)))
+   // `size` is NOT a bound on this page. The 2026-09-20 16:31 UTC depth run proved
+   // it: 50 of 55 reads for tokens with many pools were refused here while the 5
+   // tokens holding one or two pools passed, which is what an ignored page size
+   // looks like (the holders list ignores `limit` the same way, see above). The
+   // page is bounded by a sanity ceiling instead, every row is still identified
+   // exactly as before, and callers take the rows they asked for.
+   return page.rows.length<=CMC_DEX_POOL_PAGE_CEILING&&page.rows.every((r:any)=>cmcDexAddress(r?.addr,network.platform)&&(same(r.t0?.addr,address)||same(r.t1?.addr,address)))
   }
   // `ma` is the MAKER ADDRESS of the swap. Probed against the documented
   // /v1/dex/tokens/transactions body recorded in docs/investor-intel/live-on-chain-tape.md

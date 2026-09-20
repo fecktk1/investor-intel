@@ -233,8 +233,13 @@ Deno.test('a token with NO pool is a zero-row answer, not a malformed one; a bro
  eq(validateCmcDexResponse('dexPools',{data:{unexpected:1}},params),false)
  eq(cmcDexPoolPage('no pools'),null)
  eq(validateCmcDexResponse('dexPools',{data:'no pools'},params),false)
- // And an over-long page is still refused against the size that was asked for.
- eq(validateCmcDexResponse('dexPools',{data:Array.from({length:21},()=>row)},params),false)
+ // `size` is not a bound: production (2026-09-20) showed the provider ignores it,
+ // and refusing a longer page threw away every token that has many pools. A longer
+ // page of valid rows is accepted; only a runaway body is refused.
+ eq(validateCmcDexResponse('dexPools',{data:Array.from({length:21},()=>row)},params),true)
+ eq(validateCmcDexResponse('dexPools',{data:Array.from({length:1001},()=>row)},params),false)
+ // One row that is not a pool of this contract still refuses the whole page.
+ eq(validateCmcDexResponse('dexPools',{data:[row,{...row,t0:{addr:'0x0000000000000000000000000000000000000001'},t1:{addr:'0x0000000000000000000000000000000000000002'}}]},params),false)
  // A zero-pool answer normalises to no observation, exactly as a read page does.
  eq((await normalizeCmcInvestigation('dexPools',{data:null},params,stamp,expiry,expiry)).observations,[])
 })
