@@ -17,14 +17,21 @@ export const AGENT_TOKEN_PREFIX='tcfagt_'
 export const AGENT_TOKEN_PATTERN=/^tcfagt_[A-Za-z0-9_-]{40,}$/
 
 export const READ_SCOPES=['read:portfolio','read:thesis','read:alerts','read:charts','read:watchlists','read:evidence'] as const
-export const WRITE_SCOPES=['write:alerts','write:charts','write:thesis'] as const
+// write:watchlists and write:research were added for the hosted MCP server
+// (20260920153000_intel_mcp_server.sql widens the CHECK that backs this list).
+// They are the only two writes that are NOT proposals, because they touch objects
+// the approval pipeline never covered and a member undoes either in one click.
+// They are deliberately absent from WRITE_TOOLS below, which is the propose path.
+export const WRITE_SCOPES=['write:alerts','write:charts','write:thesis','write:watchlists','write:research'] as const
 export const AGENT_SCOPES=[...READ_SCOPES,...WRITE_SCOPES] as const
 export type AgentScope=typeof AGENT_SCOPES[number]
 
 // A write scope is meaningless without the matching read scope, because a write
 // is only finished once it has been verified by re-reading the row it claims to
-// have written.
-export const READ_SCOPE_FOR_WRITE:Record<string,AgentScope>={'write:alerts':'read:alerts','write:charts':'read:charts','write:thesis':'read:thesis'}
+// have written. write:research pairs with read:evidence rather than a
+// read:research that does not exist: read:evidence is already the scope that
+// reads saved_research, so one store keeps one read scope.
+export const READ_SCOPE_FOR_WRITE:Record<string,AgentScope>={'write:alerts':'read:alerts','write:charts':'read:charts','write:thesis':'read:thesis','write:watchlists':'read:watchlists','write:research':'read:evidence'}
 // The three guarded writes, and the scope each one costs.
 export const WRITE_TOOLS={intel_create_alert:'write:alerts',intel_annotate_chart:'write:charts',intel_append_thesis_evidence:'write:thesis'} as const
 export type AgentWriteTool=keyof typeof WRITE_TOOLS

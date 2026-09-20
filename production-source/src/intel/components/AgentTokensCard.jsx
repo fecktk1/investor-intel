@@ -16,6 +16,7 @@ import {
   approveAgentPlan, createAgentToken, listAgentPlans, listAgentTokens,
   rejectAgentPlan, revokeAgentToken, tokenState,
 } from '../lib/agent-token-api'
+import AgentMcpConnect from './AgentMcpConnect'
 
 const scopeKey = (scope) => scope.replace(':', '_')
 
@@ -362,6 +363,10 @@ export default function AgentTokensCard() {
 
       {notice && <div role="status" className="text-[12px] text-[var(--fg-2)]">{notice}</div>}
       {error && <div role="alert" className="text-[12px] text-red-400">{error}</div>}
+
+      {/* Where the token actually goes. It reads nothing, calls nothing and shows
+          no token, so it lives inside this card rather than behind a second gate. */}
+      <AgentMcpConnect />
     </div>
   )
 }
