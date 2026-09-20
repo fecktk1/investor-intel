@@ -9,7 +9,7 @@ import { ArrowLeft, TrendingUp, TrendingDown, Activity } from 'lucide-react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { useMarketDetailCache } from '../context/MarketDetailCache'
-import { DETAIL_CANDLE_RANGE, loadMarketDetail, loadMarketCandleSnapshot, assetAddressTarget, suggestMarketAssets } from '../lib/markets-api'
+import { DETAIL_CANDLE_RANGE, loadMarketDetail, loadMarketCandleSnapshot, assetAddressTarget, resolveAssetAddress, suggestMarketAssets } from '../lib/markets-api'
 // PriceWorkstation.jsx stays untouched (plan rule); the k-line source name is
 // mapped here, before the chart source reaches it.
 import { chartProviderLabel } from '../lib/chart-source-label'
@@ -164,9 +164,33 @@ export default function MarketAssetPage() {
   useEffect(() => {
     if (!org?.id || !routeSymbol) return
     let alive = true
+    // An address that already carries an exact identity is settled, so nothing is
+    // asked about it and nothing extra is spent on a click from the table.
+    const addressed = Boolean(sourceProvider && providerId)
+    // Set when the resolution is being handed to another address: the loading
+    // state has to survive the navigation, or the wrong asset's "not found"
+    // flashes between the two renders.
+    let leaving = false
+    // The ranked answer for a bare address, kept so the read's own fall-back
+    // never asks the same question twice.
+    let suggested = null
     setLoading(true); setError(null); setD(null); setCandidates([])
     ;(async () => {
       try {
+        // A bare address is the reader's words, not an identity: a ticker, a
+        // project name or a pasted contract. Ask the ranked catalogue what it
+        // names BEFORE reading anything, because the symbol read cannot tell
+        // "the asset called Bitcoin" from "a token whose ticker is BITCOIN" and
+        // it answers for the second one. Free market_boards read; nothing spent.
+        if (!addressed) {
+          const address = await resolveAssetAddress(supabase, org.id, routeInput, `${here.current.pathname}${here.current.search}`, { limit: 8 })
+          if (!alive) return
+          suggested = address.matches
+          if (address.open) { leaving = true; navigate(address.open.href, { replace: true, state: here.current.state }); return }
+          if (address.candidates.length) { setCandidates(address.candidates); return }
+          // Nothing in the exact tier, or the catalogue could not be asked: the
+          // address is read as a symbol exactly as it was before.
+        }
         const load = () => loadMarketDetail(supabase, org.id, routeSymbol, identity)
         const r = await (detailCache ? detailCache.read(identity, load, { force: retry > 0 }) : load()); if (!alive) return; setD({ scope: detailScope, data: r }); setLoading(false)
       } catch (e) {
@@ -174,20 +198,17 @@ export default function MarketAssetPage() {
         setError(e.message)
         // An address with an exact identity on it already said which asset it
         // means, so a failure there is a failure, not an identity question.
-        // Without one the reader typed something: a ticker, a project name or a
-        // contract. Ask the shared catalogue what it names before reporting a
-        // dead end. This is the free market_boards read; nothing is spent.
-        if (sourceProvider && providerId) return
-        const matches = await suggestMarketAssets(supabase, org.id, routeInput, { limit: 8 }).catch(() => [])
+        if (addressed) return
+        const matches = suggested ?? await suggestMarketAssets(supabase, org.id, routeInput, { limit: 8 }).catch(() => [])
         if (!alive || !matches.length) return
         // Exactly one asset in the exact tier IS the answer: open it rather than
         // asking the reader to confirm a list of one. When the typed text really
         // does name several, the whole tier is the choice, in the server's order.
         const target = assetAddressTarget(matches, `${here.current.pathname}${here.current.search}`)
-        if (target.open) { navigate(target.open.href, { replace: true, state: here.current.state }); return }
+        if (target.open) { leaving = true; navigate(target.open.href, { replace: true, state: here.current.state }); return }
         setCandidates(target.candidates)
       }
-      finally { if (alive) setLoading(false) }
+      finally { if (alive && !leaving) setLoading(false) }
     })()
     return () => { alive = false }
   }, [org?.id, user?.id, supabase, routeSymbol, routeInput, sourceProvider, providerId, detailScope, retry, detailCache, navigate])

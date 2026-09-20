@@ -53,6 +53,37 @@ export function assetAddressTarget(matches = [], currentHref = '') {
   return { open: null, candidates: exact.length > 1 ? exact : (matches || []) }
 }
 
+/**
+ * What a BARE `/intel/markets/<input>` address names, asked BEFORE anything is
+ * read, because the symbol read cannot answer it.
+ *
+ * `/intel/markets/bitcoin` used to be read as the ticker BITCOIN, which a meme
+ * token carries, so that read succeeded and the ranked answer never ran: the
+ * page opened HarryPotterObamaSonic10Inu. Being ranked first for the text the
+ * reader typed is the answer here, so the catalogue is asked first and the read
+ * follows what it says.
+ *
+ * Returns `{ open, candidates }`:
+ *   open        the one asset the exact tier names. Navigate to its href.
+ *   candidates  the whole exact tier, in the server's order, when several are
+ *               named (Bitcoin leads for "bitcoin", Solana for "SOL").
+ *   both empty  nothing in the exact tier: the caller reads the address as a
+ *               symbol exactly as before. `matches` is null when the catalogue
+ *               could not be asked at all (error, lock, transport), which is the
+ *               same fall-back and tells the caller it still has to ask later.
+ */
+export async function resolveAssetAddress(supabase, orgId, input, currentHref = '', { limit = 8, signal } = {}) {
+  let matches = null
+  try { matches = await suggestMarketAssets(supabase, orgId, input, { limit, signal }) }
+  catch { return { open: null, candidates: [], matches: null } }
+  const exact = exactSuggestMatches(matches)
+  if (!exact.length) return { open: null, candidates: [], matches }
+  const target = assetAddressTarget(matches, currentHref)
+  // A lone exact match that IS the address already on screen is not a choice of
+  // one: it falls through to the read, exactly as an empty tier does.
+  return { open: target.open, candidates: target.open || exact.length < 2 ? [] : target.candidates, matches }
+}
+
 // Global cached observations retain the clock of the selected field, not a combined age.
 export async function loadMarketMacro(supabase) {
   const { data, error } = await supabase.from('market_macro_available')
