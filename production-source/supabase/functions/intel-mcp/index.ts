@@ -45,6 +45,7 @@ import {
 } from '../_shared/intel/mcp-protocol.ts'
 import {
  buildToolContext,callMcpTool,toolDefinitions,SERVER_INSTRUCTIONS,MCP_RESOURCES,MCP_PROMPTS,
+ readMcpResource,getMcpPrompt,
 } from '../_shared/intel/mcp-tools.ts'
 import {enforceMinuteLimit,takeDailyCall,auditCall} from '../_shared/intel/mcp-quota.ts'
 
@@ -162,7 +163,13 @@ export async function handleIntelMcp(req:Request):Promise<Response> {
    instructions:SERVER_INSTRUCTIONS,
    listTools:()=>toolDefinitions(),
    listResources:()=>MCP_RESOURCES,
+   // Both are static documentation about this surface. Neither reads a member's
+   // data, so neither needs a scope or a tier check beyond the one already passed
+   // at the door: a resource that carried member data would be a second door into
+   // the same room with no gate on it.
+   readResource:(uri)=>readMcpResource(uri),
    listPrompts:()=>MCP_PROMPTS,
+   getPrompt:(name,args)=>getMcpPrompt(name,args),
    callTool:async(name,args)=>{
     const call=await callMcpTool(ctx,name,args)
     outcome=call.outcome;reasonCode=call.reasonCode;tierLocked=call.tierLocked

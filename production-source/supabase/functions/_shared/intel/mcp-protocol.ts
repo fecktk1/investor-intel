@@ -34,7 +34,12 @@ export const SERVER_INFO={name:'investor-intel',title:'TheContentForge Investor 
  * adjusts instead of seeing a transport fault. */
 export const RPC={PARSE_ERROR:-32700,INVALID_REQUEST:-32600,METHOD_NOT_FOUND:-32601,INVALID_PARAMS:-32602,INTERNAL_ERROR:-32603} as const
 
-export const SUPPORTED_METHODS=['initialize','notifications/initialized','notifications/cancelled','ping','tools/list','tools/call','resources/list','resources/templates/list','prompts/list'] as const
+// resources/read and prompts/get are in this list because resources/list and
+// prompts/list are. A server that lists two resources and then answers
+// METHOD_NOT_FOUND when one is opened is worse than a server with no resources:
+// Claude Desktop and Cursor both put listed resources and prompts in front of the
+// member, so an unreadable entry is a visible failure they did nothing to cause.
+export const SUPPORTED_METHODS=['initialize','notifications/initialized','notifications/cancelled','ping','tools/list','tools/call','resources/list','resources/read','resources/templates/list','prompts/list','prompts/get'] as const
 
 export interface JsonRpcRequest {
  jsonrpc:'2.0'
@@ -59,8 +64,27 @@ export interface McpDispatch {
  listTools():McpToolDefinition[]
  callTool(name:string,args:Record<string,unknown>):Promise<McpToolResult>
  listResources():Array<Record<string,unknown>>
+ /** The contents of one listed resource. Returns null for a uri that was never
+  * listed, which the wire layer turns into INVALID_PARAMS naming the uri. */
+ readResource(uri:string):McpResourceContents|null
  listPrompts():Array<Record<string,unknown>>
+ /** One listed prompt, rendered with the arguments the client supplied. Returns
+  * null for a name that was never listed. */
+ getPrompt(name:string,args:Record<string,unknown>):McpPromptResult|null
  instructions:string
+}
+
+/** One resource's contents, in the shape resources/read returns them. `text` for
+ * anything human or JSON readable; this server has no binary resource. */
+export interface McpResourceContents {
+ uri:string
+ mimeType:string
+ text:string
+}
+
+export interface McpPromptResult {
+ description:string
+ messages:Array<{role:'user'|'assistant';content:{type:'text';text:string}}>
 }
 
 export interface McpToolResult {
@@ -71,10 +95,16 @@ export interface McpToolResult {
 
 /** A tool result carrying JSON. The text block is the same payload serialized,
  * because a client that ignores structuredContent must still be able to read the
- * answer, and every current client renders the text block. */
+ * answer, and every current client renders the text block.
+ *
+ * COMPACT, NOT PRETTY-PRINTED. The payload already travels twice in one response
+ * (once as structuredContent, once as this text block), and two-space indentation
+ * added roughly two thirds again on top of that: rwa_universe measured 520 KB on
+ * the wire for 180 KB of data. A model reads JSON the same either way, and the
+ * bytes are a member's context window. */
 export function jsonToolResult(payload:unknown,isError=false):McpToolResult {
  return {
-  content:[{type:'text',text:JSON.stringify(payload,null,2)}],
+  content:[{type:'text',text:JSON.stringify(payload)}],
   ...(payload&&typeof payload==='object'&&!Array.isArray(payload)?{structuredContent:payload as Record<string,unknown>}:{}),
   ...(isError?{isError:true}:{}),
  }
@@ -155,10 +185,31 @@ export async function dispatchRpc(request:JsonRpcRequest,dispatch:McpDispatch):P
    return {tools:dispatch.listTools()}
   case 'resources/list':
    return {resources:dispatch.listResources()}
+  case 'resources/read':{
+   const uri=params.uri
+   if(typeof uri!=='string'||!uri)throw new JsonRpcError(RPC.INVALID_PARAMS,'resources/read needs a uri.')
+   const contents=dispatch.readResource(uri)
+   // Named at INVALID_PARAMS rather than INTERNAL_ERROR: the request was well
+   // formed and the server simply has no such resource, which is the client's
+   // to fix by reading resources/list.
+   if(!contents)throw new JsonRpcError(RPC.INVALID_PARAMS,`${uri} is not a resource this server offers. Call resources/list to see what is available.`)
+   return {contents:[contents]}
+  }
   case 'resources/templates/list':
    return {resourceTemplates:[]}
   case 'prompts/list':
    return {prompts:dispatch.listPrompts()}
+  case 'prompts/get':{
+   const name=params.name
+   if(typeof name!=='string'||!name)throw new JsonRpcError(RPC.INVALID_PARAMS,'prompts/get needs a prompt name.')
+   const args=params.arguments
+   if(args!==undefined&&(args===null||typeof args!=='object'||Array.isArray(args))){
+    throw new JsonRpcError(RPC.INVALID_PARAMS,'Prompt arguments must be an object.')
+   }
+   const prompt=dispatch.getPrompt(name,(args??{}) as Record<string,unknown>)
+   if(!prompt)throw new JsonRpcError(RPC.INVALID_PARAMS,`${name} is not a prompt this server offers. Call prompts/list to see what is available.`)
+   return prompt as unknown as Record<string,unknown>
+  }
   case 'tools/call':{
    const name=params.name
    if(typeof name!=='string'||!name)throw new JsonRpcError(RPC.INVALID_PARAMS,'tools/call needs a tool name.')
