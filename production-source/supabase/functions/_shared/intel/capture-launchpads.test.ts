@@ -565,3 +565,29 @@ Deno.test('a failing write is reported, never thrown', async () => {
   eq(result.error, 'nope')
   eq(result.rows, 0)
 })
+
+Deno.test('a CoinMarketCap or TronGrid row in this hour does not make the CoinGecko lane skip', async () => {
+  // The same rule the CoinMarketCap and TronGrid lanes keep: this lane measures
+  // ITS OWN cadence, against rows whose `source` is its own. Three lanes write
+  // this table and they run at :37, :41 and :43, so an unfiltered guard would
+  // let whichever ran first silence the other two.
+  const db = fakeDb({
+    intel_meme_stage_snapshots: [
+      { chain: 'solana', contract_address: S1, captured_at: CAPTURED, source: 'coinmarketcap' },
+      { chain: 'tron', contract_address: 'TTfvyrAz86hbZk5iDpKD78pqLGgi8C7AAw', captured_at: CAPTURED, source: 'trongrid' },
+    ],
+  })
+  const { calls, onchain } = fakeOnchain(soloSolana(() => registry([])))
+  const result = await captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(onchain))
+  eq(result.skipped !== 'within_cadence', true, `skipped on another lane's row: ${result.skipped}`)
+  assert(calls.length > 0, 'the lane has to actually read the registry')
+
+  // Its OWN row in the same hour still stops it.
+  const mine = fakeDb({
+    intel_meme_stage_snapshots: [{ chain: 'solana', contract_address: S1, captured_at: CAPTURED, source: LAUNCHPAD_SOURCE }],
+  })
+  const second = fakeOnchain(soloSolana(() => registry([])))
+  const skipped = await captureLaunchpadStages(mine, ctxFor, NOW, 'basic', deps(second.onchain))
+  eq(skipped.skipped, 'within_cadence')
+  eq(second.calls.length, 0, 'a skipped run asks nothing')
+})
