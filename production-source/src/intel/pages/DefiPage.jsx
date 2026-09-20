@@ -16,6 +16,7 @@ import ArtifactView from '../components/ArtifactView'
 import PoolDetailCharts from '../components/PoolDetailCharts'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import DefiMarketSummary from '../components/DefiMarketSummary'
+import FigureSourceLine from '../components/FigureSourceLine'
 
 // Chains we have a live data source for: Solana → Kamino, the rest → DeFiLlama.
 const CHAIN_TABS = ['solana', 'ethereum', 'base', 'arbitrum', 'bnb', 'polygon', 'avalanche', 'sui', 'sei']
@@ -270,6 +271,8 @@ export default function DefiPage() {
       </div>
 
       <DefiMarketSummary summary={summary} view={view} loading={loadingRows} />
+      {/* Where the board's figures come from: Kamino for Solana, DeFiLlama for every other chain. */}
+      <FigureSourceLine source={chain === 'solana' ? 'kamino' : 'defillama'} capturedAt={rows.find(r => r?.fetchedAt)?.fetchedAt || null} />
 
       {/* Deep-dive custom address bar */}
       <div className="border-b border-[var(--border-default)] rounded-none p-4 space-y-2">
@@ -351,6 +354,7 @@ export default function DefiPage() {
 
           {/* Charts: DeFiLlama rich history, else accumulated snapshots */}
           {(loadingChart || chartData.length > 0) && <PoolDetailCharts history={chartData} loading={loadingChart} />}
+          {chartData.length > 0 && <FigureSourceLine source={(detail?.chain || chain) === 'solana' ? 'kamino' : 'defillama'} capturedAt={detail?.fetchedAt || null} />}
 
           {/* AI analysis (pool-framed) */}
           <ArtifactView result={art.result} loading={art.loading} />

@@ -98,6 +98,7 @@ const PROVIDER_NAMES = {
   dflow: 'DFlow', bls: 'US Bureau of Labor Statistics', 'ny fed': 'Federal Reserve Bank of New York',
   'alternative.me': 'Alternative.me', 'yahoo finance': 'Yahoo Finance', trongrid: 'TronGrid', chainlink: 'Chainlink',
   blockscout: 'Blockscout', sourcify: 'Sourcify', gleif: 'GLEIF', edgar: 'SEC EDGAR', ofac: 'OFAC',
+  defillama: 'DeFiLlama', kamino: 'Kamino',
 }
 const STORE_LABELS = {
   exchange: ['receipt_state.source_exchange', 'Centralized exchanges'],
