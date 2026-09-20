@@ -6,6 +6,7 @@ import CaptureReceipts from '../components/CaptureReceipts'
 import RankMap from '../components/RankMap'
 import RwaUniverse from '../components/RwaUniverse'
 import RwaIssuerLegitimacy from '../components/RwaIssuerLegitimacy'
+import RwaUnderlyingRegistrants from '../components/RwaUnderlyingRegistrants'
 import RwaYieldProvenance from '../components/RwaYieldProvenance'
 import IndexConstituents from '../components/IndexConstituents'
 import LiquidationHeat from '../components/LiquidationHeat'
@@ -68,6 +69,12 @@ export default function MarketStructurePage() {
           so legitimacy is read first and yield provenance second. Both panels
           own their own read, so neither can blank the other. */}
       <RwaIssuerLegitimacy />
+      {/* A DIFFERENT question from the issuer board immediately above, and placed
+          next to it so the difference is legible: who issued the token, then what
+          company is underneath it. The CIK CoinMarketCap publishes on a tokenized
+          stock belongs to the underlying listed company, never to the issuer, so
+          the two boards read separate tables and are never merged. */}
+      <RwaUnderlyingRegistrants />
       <RwaYieldProvenance />
       <IndexConstituents />
       <LiquidationHeat ids={liquidationIds} />

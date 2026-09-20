@@ -41,7 +41,27 @@ export interface SubmissionsRecord {
   /** The rename trail. Empty is a real answer (BUIDL has none). */
   formerNames: FormerName[]
   filings: FilingRef[]
+  /** Standard Industrial Classification code and EDGAR's own description of it,
+   * `fiscalYearEnd` as EDGAR publishes it (MMDD), and the exchanges and tickers
+   * the filer reports. Added for the underlying-registrant lane, which reads a
+   * LISTED COMPANY's submissions rather than a fund's Form D series.
+   *
+   * These five names come from EDGAR's DOCUMENTED submissions schema, not from a
+   * probe: the fund CIK this module was built against files Form D and publishes
+   * none of them. Every one is therefore read defensively and is null or empty
+   * when absent, so a filer that publishes nothing here produces a row saying so
+   * rather than a failed read. */
+  sic: string | null
+  sicDescription: string | null
+  fiscalYearEnd: string | null
+  exchanges: string[]
+  tickers: string[]
 }
+
+/** Which forms `normalizeSubmissions` keeps, and how many. Defaults keep the
+ * first FILING_LIMIT entries of `filings.recent` whatever they are, which is
+ * what the Form D lane has always read. */
+export interface SubmissionsOptions { limit?: number; forms?: readonly string[] }
 
 export interface SubmissionsResult {
   state: 'known' | 'not_found' | 'unavailable'
@@ -87,28 +107,57 @@ export const edgarEntityUrl = (cik: unknown): string => {
   return key ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${key}&type=D&dateb=&owner=include&count=40` : 'https://www.sec.gov/edgar/searchedgar/companysearch'
 }
 
+/** The filer's own EDGAR browse page, with NO form filter. `edgarEntityUrl`
+ * above narrows to Form D, which is right for the fund admission lane and wrong
+ * for a listed registrant whose periodic reports are the point. */
+export const edgarFilerUrl = (cik: unknown): string => {
+  const key = cikKey(cik)
+  return key
+    ? `https://www.sec.gov/cgi-bin/browse-edgar?action=getcompany&CIK=${key}&type=&dateb=&owner=include&count=40`
+    : 'https://www.sec.gov/edgar/searchedgar/companysearch'
+}
+
 /** How many filings one read keeps. A filer with a long history is truncated
  * from the OLDEST end, so the newest admission terms are never the ones lost. */
 export const FILING_LIMIT = 40
+/** The ceiling when a `forms` filter is in force. `filings.recent` holds up to a
+ * thousand entries and an active filer's newest forty are routinely all Form 4s,
+ * so a periodic-report reader that stopped at FILING_LIMIT would report "no
+ * 10-K" for companies that file one every year. */
+export const FILING_SCAN_LIMIT = 1000
+
+const textList = (value: unknown, max: number): string[] =>
+  (Array.isArray(value) ? value : []).slice(0, 20).map((v) => str(v, max)).filter((v): v is string => !!v)
 
 // deno-lint-ignore no-explicit-any
-export function normalizeSubmissions(payload: any): SubmissionsRecord | null {
+export function normalizeSubmissions(payload: any, options: SubmissionsOptions = {}): SubmissionsRecord | null {
   const cik = cikKey(payload?.cik)
   if (!cik) return null
   const former = Array.isArray(payload?.formerNames) ? payload.formerNames : []
   const recent = payload?.filings?.recent ?? {}
   const accessions = Array.isArray(recent?.accessionNumber) ? recent.accessionNumber : []
+  // A `forms` filter scans the whole recent block and keeps only the named
+  // forms; with none it keeps the first entries exactly as before.
+  const wanted = options.forms && options.forms.length ? new Set(options.forms) : null
+  const keep = Math.max(1, Math.trunc(options.limit ?? (wanted ? FILING_LIMIT : FILING_LIMIT)))
+  const scan = Math.min(accessions.length, wanted ? FILING_SCAN_LIMIT : accessions.length)
   const filings: FilingRef[] = []
-  for (let i = 0; i < accessions.length && filings.length < FILING_LIMIT; i++) {
+  for (let i = 0; i < scan && filings.length < keep; i++) {
     const accessionNumber = str(accessions[i], 25)
     const form = str(recent?.form?.[i], 20)
     if (!accessionNumber || !form) continue
+    if (wanted && !wanted.has(form)) continue
     filings.push({ accessionNumber, form, filingDate: str(recent?.filingDate?.[i], 20), primaryDocument: str(recent?.primaryDocument?.[i], 200) })
   }
   return {
     cik,
     name: str(payload?.name, 500),
     stateOfIncorporation: str(payload?.stateOfIncorporation, 20),
+    sic: str(payload?.sic, 10),
+    sicDescription: str(payload?.sicDescription, 200),
+    fiscalYearEnd: str(payload?.fiscalYearEnd, 8),
+    exchanges: textList(payload?.exchanges, 40),
+    tickers: textList(payload?.tickers, 20),
     formerNames: former.slice(0, 20).map((entry: unknown) => ({
       // deno-lint-ignore no-explicit-any
       name: str((entry as any)?.name, 500) ?? '',
@@ -121,7 +170,7 @@ export function normalizeSubmissions(payload: any): SubmissionsRecord | null {
   }
 }
 
-export async function fetchSubmissions(cik: unknown, deps: SourceDeps = {}): Promise<SubmissionsResult> {
+export async function fetchSubmissions(cik: unknown, deps: SourceDeps = {}, options: SubmissionsOptions = {}): Promise<SubmissionsResult> {
   const url = submissionsUrl(cik)
   const fetchedAt = new Date((deps.now ?? Date.now)()).toISOString()
   if (!url) return { state: 'unavailable', record: null, reason: 'invalid_cik', fetchedAt, sourceUrl: 'https://data.sec.gov/submissions/' }
@@ -131,7 +180,7 @@ export async function fetchSubmissions(cik: unknown, deps: SourceDeps = {}): Pro
     const notFound = response.status === 404
     return { state: notFound ? 'not_found' : 'unavailable', record: null, reason: notFound ? null : response.reason, fetchedAt: response.fetchedAt, sourceUrl: url }
   }
-  const record = normalizeSubmissions(response.data)
+  const record = normalizeSubmissions(response.data, options)
   return record
     ? { state: 'known', record, reason: null, fetchedAt: response.fetchedAt, sourceUrl: url }
     : { state: 'unavailable', record: null, reason: 'unreadable_submissions', fetchedAt: response.fetchedAt, sourceUrl: url }

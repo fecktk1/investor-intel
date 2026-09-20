@@ -37,6 +37,11 @@ export const CAPTURE_VIEWS = [
   // holder concentration and transfer restrictions
   // (capture-rwa-issuer-read.ts, RWA_ISSUER_CAPTURE_VIEWS).
   'rwa_issuer_legitimacy',
+  // RWA underlying registrants: the SEC filer number CoinMarketCap asserts for
+  // the LISTED COMPANY beneath a tokenised stock or fund, read back at EDGAR
+  // (capture-rwa-underlyings-read.ts, RWA_UNDERLYING_CAPTURE_VIEWS). A different
+  // question from the issuer board above, and never merged into it.
+  'rwa_underlying_registrants', 'rwa_asset_profile',
 ]
 
 let rememberedClient = null
