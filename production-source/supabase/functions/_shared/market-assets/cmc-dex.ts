@@ -32,6 +32,16 @@ export const CMC_HOLDER_TAGS=['tag_dev','tag_sniper','tag_kol','tag_whale','tag_
 export const isDexDiscovery=(name:string)=>CMC_DEX_DISCOVERY.includes(name as any)
 export const cmcDexNetwork=(platform:string)=>CMC_DEX_NETWORKS.find(n=>n.platform===platform)
 export const cmcDexSameAddress=(a:unknown,b:unknown,platform:string)=>typeof a==='string'&&typeof b==='string'&&(platform==='solana'?a===b:a.toLowerCase()===b.toLowerCase())
+/** A pool's `addr` on /v1/dex/token/pools is a POOL IDENTIFIER, not an account.
+ * Function logs of the 2026-09-20 16:50 UTC depth run (the `cmc_malformed` sample
+ * the transport records) show three real shapes: a 20-byte contract address for
+ * v2/v3 style pools, a 32-byte id for Uniswap v4 pools (`0x` + 64 hex), and on
+ * Solana a bare 44-character hex id rather than base58. Requiring an account
+ * address refused 42 of 42 pages for tokens that really trade. Identity is carried
+ * by the LEGS, which are still matched exactly against the contract asked about;
+ * the pool id only has to be a bounded opaque token, so nothing unbounded or
+ * structured can ride in on it. */
+export const cmcDexPoolId=(id:unknown)=>typeof id==='string'&&/^(0x)?[0-9A-Za-z]{20,100}$/.test(id)
 export const cmcDexAddress=(address:unknown,platform:string)=>typeof address==='string'&&(platform==='solana'?/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address):/^0x[0-9a-fA-F]{40}$/.test(address))
 /** One public on-chain account, in the canonical form every DEX surface in this
  * repository uses: lower-case for EVM, exact base58 for Solana. An address that
@@ -292,7 +302,7 @@ export function validateCmcDexResponse(name:string,body:any,params:Record<string
    // looks like (the holders list ignores `limit` the same way, see above). The
    // page is bounded by a sanity ceiling instead, every row is still identified
    // exactly as before, and callers take the rows they asked for.
-   return page.rows.length<=CMC_DEX_POOL_PAGE_CEILING&&page.rows.every((r:any)=>cmcDexAddress(r?.addr,network.platform)&&(same(r.t0?.addr,address)||same(r.t1?.addr,address)))
+   return page.rows.length<=CMC_DEX_POOL_PAGE_CEILING&&page.rows.every((r:any)=>cmcDexPoolId(r?.addr)&&(same(r.t0?.addr,address)||same(r.t1?.addr,address)))
   }
   // `ma` is the MAKER ADDRESS of the swap. Probed against the documented
   // /v1/dex/tokens/transactions body recorded in docs/investor-intel/live-on-chain-tape.md

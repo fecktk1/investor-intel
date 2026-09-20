@@ -238,6 +238,16 @@ Deno.test('a token with NO pool is a zero-row answer, not a malformed one; a bro
  // page of valid rows is accepted; only a runaway body is refused.
  eq(validateCmcDexResponse('dexPools',{data:Array.from({length:21},()=>row)},params),true)
  eq(validateCmcDexResponse('dexPools',{data:Array.from({length:1001},()=>row)},params),false)
+ // The pool `addr` is a pool id, not an account: the shapes below are the three
+ // seen in production on 2026-09-20 (v2/v3 contract, Uniswap v4 bytes32, Solana hex).
+ eq(validateCmcDexResponse('dexPools',{data:[{...row,addr:'0x0001e0226b92d6b13ea8718f7e40413172f54adc837abd7a8322b0ec047cc277'}]},params),true)
+ {const mint='XsQLZycSZ7QnBBdBXQaTbQdiUcbRqjNJgyBGAMzhHav',sol={platform:'solana',address:mint,size:'20'}
+  eq(validateCmcDexResponse('dexPools',{data:[{addr:'fe4717079183c0ee97a6a844a885332447d9833e3333',t0:{addr:'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',sym:'USDC'},t1:{addr:mint,sym:'MUx'}}]},sol),true)
+  // Solana legs stay case-exact.
+  eq(validateCmcDexResponse('dexPools',{data:[{addr:'fe4717079183c0ee97a6a844a885332447d9833e3333',t0:{addr:'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'},t1:{addr:mint.toLowerCase()}}]},sol),false)}
+ // A pool id that is not a bounded opaque token is refused.
+ eq(validateCmcDexResponse('dexPools',{data:[{...row,addr:'0xabc<script>'}]},params),false)
+ eq(validateCmcDexResponse('dexPools',{data:[{...row,addr:'a'.repeat(101)}]},params),false)
  // One row that is not a pool of this contract still refuses the whole page.
  eq(validateCmcDexResponse('dexPools',{data:[row,{...row,t0:{addr:'0x0000000000000000000000000000000000000001'},t1:{addr:'0x0000000000000000000000000000000000000002'}}]},params),false)
  // A zero-pool answer normalises to no observation, exactly as a read page does.
