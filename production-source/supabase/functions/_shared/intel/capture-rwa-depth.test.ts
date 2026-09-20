@@ -208,7 +208,13 @@ Deno.test('the alias map contributes only contracts on a chain the platform can 
 Deno.test('pool rows are read in the reviewed field names; a pool with no liquidity still exists', () => {
   const pools = poolRows({ data: [poolRow(EVM2, 250_000, 10_000), poolRow('0x' + 'c'.repeat(40), null, null), { exn: 'x' }] }, 'ethereum')
   eq(pools.length, 2, 'a row with no pool address is not a pool')
-  eq(pools[0], { chain: 'ethereum', dex: 'Uniswap V3', pair: 'XAUT / USDC', address: EVM2, liquidityUsd: 250_000, volume24h: 10_000 })
+  eq(pools[0], {
+    chain: 'ethereum', dex: 'Uniswap V3', pair: 'XAUT / USDC', address: EVM2, liquidityUsd: 250_000, volume24h: 10_000,
+    // The legs are stored with their ADDRESSES since 2026-09-20. Without them the
+    // board cannot tell a USDC pool from a pool against a token that merely calls
+    // itself USDC, which is the defect the first production run exposed.
+    t0: { addr: EVM, sym: 'XAUT', liqUsd: null }, t1: { addr: EVM2, sym: 'USDC', liqUsd: null },
+  })
   eq(pools[1].liquidityUsd, null)
   // The page is bounded by the size the request asked for.
   eq(poolRows({ data: Array.from({ length: 40 }, (_, i) => poolRow('0x' + String(i).padStart(40, 'd'), 1, 1)) }, 'ethereum').length, POOL_PAGE_SIZE)

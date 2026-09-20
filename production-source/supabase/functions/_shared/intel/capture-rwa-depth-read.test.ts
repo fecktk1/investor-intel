@@ -249,3 +249,184 @@ Deno.test('a captured token answers with its own newest row, its contracts and t
 Deno.test('both views are registered on the lane surface', () => {
   eq(Object.keys(RWA_DEPTH_CAPTURE_VIEWS).sort(), ['rwa_depth', 'rwa_token_depth'])
 })
+
+// ── What is on the other side of each pool ────────────────────────────────────
+//
+// The fixtures below are the shape of the PRODUCTION rows of 2026-09-20, with
+// the leg addresses the lane now stores. XAUt's headline was $52.8M, and
+// $16.5M of it was one `XAUt / GOLDGR` pool that traded $812 all day.
+
+const XAUT = '0x68749665ff8d2d112fa859aa293f07a622782f38'
+const PAXG_ADDR = '0x45804880de22913dafe09f4980848ece6ecbaf78'
+const USDC_ETH = '0xa0b86991c6218b36c1d19d4a2e9eb0ce3606eb48'
+const GOLDGR = '0x' + '1'.repeat(40)
+
+const legPool = (over: Record<string, unknown> = {}) => ({
+  chain: 'ethereum', dex: 'Uniswap v3 (Ethereum)', pair: 'XAUt / USDC',
+  address: '0x' + '9'.repeat(40), liquidityUsd: 3_652_423, volume24h: 1,
+  t0: { addr: XAUT, sym: 'XAUt', liqUsd: null }, t1: { addr: USDC_ETH, sym: 'USDC', liqUsd: null },
+  ...over,
+})
+
+/** An XAUt row as the lane will write it from the next run on: a class on every
+ * pool and the two totals stored beside the provider's own. */
+const classifiedXaut = (over: Record<string, unknown> = {}) => depthRow({
+  token_key: 'cmc:5176', crypto_id: '5176', symbol: 'XAUt', token_name: 'Tether Gold',
+  pool_count: 3, liquidity_pools: 3,
+  total_liquidity_usd: 26_292_318, total_volume_24h_usd: 645_737,
+  deepest_pool_address: '0x0c592152111098ac7e5c9c0b007bb2e7985d7542', deepest_pool_dex: 'PancakeSwap v3 (Ethereum)',
+  deepest_pool_pair: 'XAUt / GOLDGR', deepest_liquidity_usd: 16_488_627, deepest_volume_24h_usd: 812,
+  pool_classification: 'by_counter_leg_address',
+  recognised_pool_count: 2, recognised_liquidity_pools: 2,
+  recognised_liquidity_usd: 9_803_691, recognised_volume_24h_usd: 644_925,
+  unrecognised_pool_count: 1, unrecognised_liquidity_usd: 16_488_627,
+  deepest_recognised_address: '0x' + '8'.repeat(40), deepest_recognised_dex: 'Uniswap v3 (Ethereum)',
+  deepest_recognised_chain: 'ethereum', deepest_recognised_pair: 'PAXG / XAUt',
+  deepest_recognised_liquidity_usd: 6_151_268, deepest_recognised_volume_24h_usd: 644_924,
+  exit_liquidity_usd: 1_811_000, exit_liquidity_pools: 1,
+  pools: [
+    legPool({ dex: 'PancakeSwap v3 (Ethereum)', pair: 'XAUt / GOLDGR', address: '0x0c592152111098ac7e5c9c0b007bb2e7985d7542', liquidityUsd: 16_488_627, volume24h: 812, t1: { addr: GOLDGR, sym: 'GOLDGR', liqUsd: 0 }, counterClass: 'unrecognised', counterAddress: GOLDGR, counterSymbol: 'GOLDGR' }),
+    legPool({ pair: 'PAXG / XAUt', address: '0x' + '8'.repeat(40), liquidityUsd: 6_151_268, volume24h: 644_924, t0: { addr: PAXG_ADDR, sym: 'PAXG', liqUsd: null }, t1: { addr: XAUT, sym: 'XAUt', liqUsd: null }, counterClass: 'tokenised_asset', counterAddress: PAXG_ADDR, counterSymbol: 'PAXG' }),
+    legPool({ t1: { addr: USDC_ETH, sym: 'USDC', liqUsd: 1_811_000 }, counterClass: 'recognised_quote', counterAddress: USDC_ETH, counterSymbol: 'USDC', exitLiquidityUsd: 1_811_000 }),
+  ],
+  ...over,
+})
+
+const xautDeployment = (over: Record<string, unknown> = {}) => deployment({
+  token_key: 'cmc:5176', contract_address: XAUT, dex_address: XAUT, ...over,
+})
+
+Deno.test('the headline uses only the pools whose other side can be valued, and names what it left out', async () => {
+  const db = fakeDb({ [DEPTH_TABLE]: [classifiedXaut()], [DEPLOYMENT_TABLE]: [xautDeployment()] })
+  const result = await readRwaDepth(db, {}, NOW)
+  const row = (result.rows as Record<string, unknown>[])[0]
+  eq(row.classification, 'classified')
+  eq(row.countedLiquidityUsd, 9_803_691)
+  eq(row.countedPools, 2)
+  eq(row.unrecognisedPoolCount, 1)
+  eq(row.unrecognisedLiquidityUsd, 16_488_627)
+  // The deepest pool the board prints is the PAXG pair, NOT the GOLDGR one.
+  eq((row.deepestPool as Record<string, unknown>).pair, 'PAXG / XAUt')
+  eq(row.providerDeepestLiquidityUsd, 16_488_627)
+  // Concentration is over the COUNTED total, so 6.15M of 9.80M, not of 26.3M.
+  eq(Math.round(row.concentrationPct as number), 63)
+  // The exit sizes are one and five percent of the deepest COUNTED pool.
+  eq((row.exitability as Record<string, number>[])[0].usd, 61_512.68)
+  eq(row.exitLiquidityUsd, 1_811_000)
+  eq(row.exitLiquidityPools, 1)
+  // The excluded pool is returned in its own group, deepest first, and named.
+  eq((row.unrecognisedPools as Record<string, unknown>[]).length, 1)
+  eq((row.unrecognisedPools as Record<string, unknown>[])[0].pair, 'XAUt / GOLDGR')
+  // The cohort headline is the counted liquidity; the provider's own is beside
+  // it and the two are never added together.
+  const cohort = result.cohort as Record<string, number>
+  eq(cohort.countedLiquidityUsd, 9_803_691)
+  eq(cohort.unrecognisedLiquidityUsd, 16_488_627)
+  eq(cohort.totalLiquidityUsd, 26_292_318)
+  eq(cohort.unclassified, 0)
+  // The sentences travel on the payload.
+  assert(String(result.unrecognisedScope).includes('a seller could take out'))
+  assert(String(result.exitLiquidityScope).includes('floor'))
+})
+
+Deno.test('a row with leg addresses but no stored class is classified on read, from the same allowlist', async () => {
+  const onRead = classifiedXaut({
+    pool_classification: null, recognised_pool_count: null, recognised_liquidity_pools: null,
+    recognised_liquidity_usd: null, recognised_volume_24h_usd: null,
+    unrecognised_pool_count: null, unrecognised_liquidity_usd: null,
+    deepest_recognised_address: null, deepest_recognised_dex: null, deepest_recognised_chain: null,
+    deepest_recognised_pair: null, deepest_recognised_liquidity_usd: null, deepest_recognised_volume_24h_usd: null,
+    exit_liquidity_usd: null, exit_liquidity_pools: null,
+    // Strip the stored classes too: only the ADDRESSES are left.
+    pools: (classifiedXaut().pools as Record<string, unknown>[]).map((pool) => {
+      const { counterClass: _c, counterAddress: _a, counterSymbol: _s, exitLiquidityUsd: _e, ...rest } = pool
+      return rest
+    }),
+  })
+  const db = fakeDb({ [DEPTH_TABLE]: [onRead], [DEPLOYMENT_TABLE]: [xautDeployment()] })
+  const row = ((await readRwaDepth(db, {}, NOW)).rows as Record<string, unknown>[])[0]
+  eq(row.classification, 'classified_on_read')
+  // USDC is recognised from the static allowlist. PAXG is NOT, because this
+  // fallback knows only the tokenised assets whose deployments the SAME read
+  // loaded, and PAXG is not on this board. It fails CLOSED: a legitimate pool
+  // moves out of the headline, never a junk one into it. The capture, which
+  // reads the whole deployment table, has no such narrowing.
+  eq(row.countedPools, 1)
+  eq(row.unrecognisedPoolCount, 2)
+  eq((row.deepestPool as Record<string, unknown>).pair, 'XAUt / USDC')
+  eq(row.exitLiquidityUsd, 1_811_000)
+  // A row classified here was stored with the old scope, so the two sentences
+  // that explain the split are prepended rather than left off.
+  assert(String(row.scope).includes('matched by contract address'))
+})
+
+Deno.test('a row captured before the leg addresses is UNCLASSIFIED, never guessed from its pair label', async () => {
+  // The exact six keys production held on 2026-09-20.
+  const legacy = depthRow({
+    pools: [{
+      chain: 'ethereum', dex: 'PancakeSwap v3 (Ethereum)', pair: 'XAUt / GOLDGR',
+      address: '0x0c592152111098ac7e5c9c0b007bb2e7985d7542', liquidityUsd: 16_488_627, volume24h: 812,
+    }],
+  })
+  const db = fakeDb({ [DEPTH_TABLE]: [legacy], [DEPLOYMENT_TABLE]: [deployment()] })
+  const result = await readRwaDepth(db, {}, NOW)
+  const row = (result.rows as Record<string, unknown>[])[0]
+  eq(row.classification, 'unclassified')
+  eq(row.countedLiquidityUsd, null, 'nothing is counted, because nothing was classified')
+  eq(row.unrecognisedPools, [])
+  eq(row.unrecognisedPoolCount, null)
+  // The provider's own figures are still shown, with the sentence saying so.
+  eq(row.totalLiquidityUsd, 1_000_000)
+  eq(row.concentrationPct, 90)
+  assert(String(row.classificationNote).includes('not classified for this capture'))
+  eq((result.cohort as Record<string, number>).unclassified, 1)
+})
+
+Deno.test('a token whose only pools are ones we cannot value is its own state, not a no-pool state', async () => {
+  const onlyJunk = classifiedXaut({
+    token_key: 'cmc:38057', crypto_id: '38057', symbol: 'SLVon',
+    pool_count: 1, liquidity_pools: 1, total_liquidity_usd: 10_368_048,
+    recognised_pool_count: 0, recognised_liquidity_pools: 0, recognised_liquidity_usd: null,
+    recognised_volume_24h_usd: null, unrecognised_pool_count: 1, unrecognised_liquidity_usd: 10_368_048,
+    deepest_recognised_address: null, deepest_recognised_dex: null, deepest_recognised_chain: null,
+    deepest_recognised_pair: null, deepest_recognised_liquidity_usd: null, deepest_recognised_volume_24h_usd: null,
+    exit_liquidity_usd: null, exit_liquidity_pools: 0,
+    pools: [legPool({ pair: 'u / SLVon', liquidityUsd: 10_368_048, volume24h: 0, counterClass: 'unrecognised', counterAddress: GOLDGR, counterSymbol: 'u' })],
+  })
+  const db = fakeDb({ [DEPTH_TABLE]: [onlyJunk], [DEPLOYMENT_TABLE]: [xautDeployment({ token_key: 'cmc:38057' })] })
+  const result = await readRwaDepth(db, {}, NOW)
+  const row = (result.rows as Record<string, unknown>[])[0]
+  eq(row.state, 'pools_read', 'there ARE pools; the state is not a no-pool state')
+  eq(row.onlyUnrecognised, true)
+  eq(row.countedLiquidityUsd, null)
+  eq(row.deepestPool, null)
+  eq((result.cohort as Record<string, number>).onlyUnrecognised, 1)
+})
+
+Deno.test('the board ranks by what can be sold, not by what the provider reports', async () => {
+  const db = fakeDb({
+    [DEPTH_TABLE]: [
+      // Reports MORE in total, but almost all of it is unvaluable.
+      classifiedXaut({
+        token_key: 'cmc:38057', crypto_id: '38057', symbol: 'SLVon',
+        total_liquidity_usd: 11_000_000, recognised_liquidity_usd: 561_554,
+        unrecognised_pool_count: 1, unrecognised_liquidity_usd: 10_438_446,
+      }),
+      classifiedXaut(),
+    ],
+    [DEPLOYMENT_TABLE]: [xautDeployment(), xautDeployment({ token_key: 'cmc:38057' })],
+  })
+  const rows = (await readRwaDepth(db, {}, NOW)).rows as Record<string, unknown>[]
+  eq(rows.map((row) => row.symbol), ['XAUt', 'SLVon'])
+})
+
+Deno.test('the asset-page view carries the split, the excluded group and the exit figure', async () => {
+  const db = fakeDb({ [DEPTH_TABLE]: [classifiedXaut()], [DEPLOYMENT_TABLE]: [xautDeployment()] })
+  const result = await readRwaTokenDepth(db, { cryptoId: '5176' }, NOW)
+  const token = result.token as Record<string, unknown>
+  eq(token.classification, 'classified')
+  eq(token.countedLiquidityUsd, 9_803_691)
+  eq((token.unrecognisedPools as unknown[]).length, 1)
+  eq(token.onlyUnrecognised, false)
+  assert(String(result.exitLiquidityScope).includes('quote leg'))
+})

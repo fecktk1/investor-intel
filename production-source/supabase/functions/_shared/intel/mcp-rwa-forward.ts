@@ -75,11 +75,23 @@ export const FORWARD_TABLE_CONTRACT={
  // One row per token per day (capture-rwa-depth.ts). Provider figures only; the
  // exitability sizes are computed on read in the app and are not stored.
  // Subject is the token key, written cmc:<crypto id> or contract:<chain>:<address>.
+ //
+ // TWO SETS OF LIQUIDITY COLUMNS, and an agent must not mix them up.
+ //   total_liquidity_usd / deepest_pool_*     EVERY pool found, as CoinMarketCap
+ //     reported it. `liqUsd` values BOTH legs of a pool, so these include pools
+ //     whose other side is a token nobody can value. On 2026-09-20 XAUt's
+ //     deepest_pool_pair was `XAUt / GOLDGR` at $16.5M on $812 of daily volume.
+ //   recognised_* / deepest_recognised_*      only pools whose OTHER leg is a
+ //     major quote asset on that chain or another tokenised asset we captured,
+ //     matched by contract address. These are the figures about where the token
+ //     can actually be sold, and the ones any answer should quote.
+ // pool_classification NULL means the capture predates the leg addresses and the
+ // recognised_* columns are all NULL: the provider's totals are all there is.
  liquidity_depth:{
   table:'intel_rwa_depth_snapshots',
   capturedAtColumn:'captured_at',
   subjectColumn:'token_key',
-  columns:['token_key','crypto_id','symbol','token_name','rwa_name','asset_type','issuer_name','token_market_cap','depth_state','chains_deployed','chains_read','chains_not_covered','pool_count','total_liquidity_usd','total_volume_24h_usd','deepest_pool_dex','deepest_pool_chain','deepest_pool_pair','deepest_liquidity_usd','deepest_volume_24h_usd','holder_count','restriction_state','snapshot_date','captured_at'],
+  columns:['token_key','crypto_id','symbol','token_name','rwa_name','asset_type','issuer_name','token_market_cap','depth_state','chains_deployed','chains_read','chains_not_covered','pool_count','total_liquidity_usd','total_volume_24h_usd','deepest_pool_dex','deepest_pool_chain','deepest_pool_pair','deepest_liquidity_usd','deepest_volume_24h_usd','pool_classification','recognised_pool_count','recognised_liquidity_pools','recognised_liquidity_usd','recognised_volume_24h_usd','unrecognised_pool_count','unrecognised_liquidity_usd','deepest_recognised_dex','deepest_recognised_chain','deepest_recognised_pair','deepest_recognised_liquidity_usd','deepest_recognised_volume_24h_usd','exit_liquidity_usd','exit_liquidity_pools','holder_count','restriction_state','snapshot_date','captured_at'],
  },
  // One row per tokenised asset whose provider-asserted filer number was read
  // back at EDGAR (capture-rwa-underlyings.ts). This is the UNDERLYING listed

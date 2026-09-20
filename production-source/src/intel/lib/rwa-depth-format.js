@@ -34,6 +34,23 @@ export function readingText(row, t) {
   const chains = (row?.chainsRead || []).join(', ')
   const notCovered = (row?.chainsNotCovered || []).join(', ')
   if (row?.state === 'pools_read') {
+    // A token whose ONLY pools are ones we cannot value has its own sentence. It
+    // is not "no pool": there ARE pools, and there is nowhere to sell into.
+    if (row?.onlyUnrecognised) {
+      return t('rwa_depth.reading_only_unrecognised', {
+        count: row?.unrecognisedPoolCount ?? 0, chains,
+        defaultValue: 'We read {{chains}} and found {{count}} pools, and the other side of every one of them is a token we cannot value. There is nowhere here to take a known asset out, which is not the same as there being no pool.',
+      })
+    }
+    // A capture taken before the lane recorded the pool legs' addresses. Saying
+    // so is the honest answer; guessing from the pair label would be the same
+    // defect in a new place, because a token can choose its own symbol.
+    if (row?.classification === 'unclassified') {
+      return t('rwa_depth.reading_unclassified', {
+        chains,
+        defaultValue: 'Pools were found on {{chains}}, but this capture predates the record of what is on the other side of each one, so the liquidity beside it is CoinMarketCap\'s figure over all of them. The next daily run separates the pools a seller could actually use.',
+      })
+    }
     const one = (row?.exitability || []).find(size => size?.pct === 1)
     const five = (row?.exitability || []).find(size => size?.pct === 5)
     if (!one || !five) {
@@ -74,12 +91,44 @@ export function readingText(row, t) {
  */
 export function depthPoints(rows = []) {
   return rows
-    .filter(row => (num(row?.totalLiquidityUsd) ?? 0) > 0 && (num(row?.tokenMarketCap) ?? 0) > 0)
+    .filter(row => row?.classification !== 'unclassified')
+    .filter(row => (num(row?.countedLiquidityUsd) ?? 0) > 0 && (num(row?.tokenMarketCap) ?? 0) > 0)
     .map(row => ({
       key: row.tokenKey,
       label: String(row.symbol || row.tokenName || row.tokenKey),
-      x: num(row.tokenMarketCap), y: num(row.totalLiquidityUsd),
+      x: num(row.tokenMarketCap), y: num(row.countedLiquidityUsd),
     }))
+}
+
+/**
+ * The excluded-pool line for one row, or null when nothing was excluded.
+ *
+ * It is a SENTENCE beside the figures, never a footnote: a reader who sees a
+ * smaller liquidity number than CoinMarketCap shows has to be told what is
+ * missing from it and why, in the same place.
+ */
+export function unrecognisedText(row, t) {
+  if (row?.classification === 'unclassified') return null
+  const count = num(row?.unrecognisedPoolCount) ?? 0
+  if (count <= 0) return null
+  return t('rwa_depth.unrecognised_summary', {
+    count, value: usdLabel(row?.unrecognisedLiquidityUsd),
+    defaultValue: '{{count}} more pools hold a reported {{value}} and are not in these figures: the other side of each is a token we cannot value.',
+  })
+}
+
+/**
+ * The exit-size line: the quote legs' OWN reported sizes. Null when the provider
+ * reported none, which is common, and an absent figure is never drawn as zero.
+ */
+export function exitLiquidityText(row, t) {
+  const usd = num(row?.exitLiquidityUsd)
+  const pools = num(row?.exitLiquidityPools) ?? 0
+  if (usd == null || pools <= 0) return null
+  return t('rwa_depth.exit_liquidity', {
+    value: usdLabel(usd), count: pools,
+    defaultValue: '{{value}} of that sits on the quote side of {{count}} pools, which is the side a seller receives. CoinMarketCap reports no size for the quote leg of the others, so this is a floor and not a capacity.',
+  })
 }
 
 /** The asset page for a row, when CoinMarketCap names the token. A pinned

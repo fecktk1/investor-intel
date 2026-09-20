@@ -8,7 +8,7 @@ import TokenAvatar from './TokenAvatar'
 import CopyAddress from './CopyAddress'
 import { readCaptureView, captureUnavailable } from '../lib/capture-api'
 import { formatCompact } from '../lib/market-format'
-import { assetHref, depthPoints, pctLabel, readingText, usdLabel } from '../lib/rwa-depth-format'
+import { assetHref, depthPoints, exitLiquidityText, pctLabel, readingText, unrecognisedText, usdLabel } from '../lib/rwa-depth-format'
 
 // Where tokenised assets can actually be sold.
 //
@@ -19,11 +19,21 @@ import { assetHref, depthPoints, pctLabel, readingText, usdLabel } from '../lib/
 // and is refused on this plan, so every other entry falls back to 24-hour
 // volume, which is turnover and not depth. This board reads the pools instead.
 //
-// Four rules this file may never soften:
+// Five rules this file may never soften:
+//   0. A POOL AGAINST A TOKEN WE CANNOT VALUE IS NOT DEPTH. CoinMarketCap's
+//      `liqUsd` values BOTH legs, so a pool against a worthless or self-priced
+//      token reports a large figure nobody could exit into. On 2026-09-20 that
+//      made XAUt's "deepest pool" a `XAUt / GOLDGR` pool at $16.5M on $812 of
+//      daily volume, and SLVon's a `u / SLVon` pool at $10.4M with no volume at
+//      all against a $25.5M token. Every figure on this board is built only from
+//      pools whose other leg is a recognised quote asset on that chain or another
+//      tokenised asset we captured, matched BY CONTRACT ADDRESS. The rest are
+//      listed in their own group with the sentence saying why.
 //   1. "NO POOL" NEVER APPEARS WITHOUT ITS CHAINS. Every state that means "we
 //      looked and found nothing" prints the chains that were read, and a token
 //      deployed only on chains CoinMarketCap publishes no DEX data for is a
-//      COVERAGE row, never a liquidity finding.
+//      COVERAGE row, never a liquidity finding. A token whose only pools are ones
+//      we cannot value gets its OWN sentence and is never called "no pool".
 //   2. OUR FIGURES ARE LABELLED AS OURS. Concentration and the "size relative to
 //      the deepest pool" reading are computed by us from the provider's stored
 //      liquidity, and the method sentence is on the page, not in a tooltip.
@@ -75,6 +85,9 @@ export default function RwaDepth() {
         <div className="eyebrow">{t('rwa_depth.eyebrow', { defaultValue: 'On-chain depth' })}</div>
         <h3 className="text-lg font-medium mt-1">{t('rwa_depth.title', { defaultValue: 'Where tokenised assets can actually be sold' })}</h3>
         <Scope>{t('rwa_depth.intro', { chains: readChains, defaultValue: 'A tokenised asset can carry a large tokenised value and still have almost nothing behind it on chain. This board resolves each token\'s deployments across chains, then reads the pools of every deployment on {{chains}}, which are the chains CoinMarketCap publishes DEX pool data for on this plan. A token with no pool on those chains says so and names them; it is not evidence that the token cannot be sold elsewhere.' })}</Scope>
+        {/* The single most important thing to say about these numbers, and the
+            reason they are smaller than the provider's. */}
+        <Scope>{t('rwa_depth.intro_counter_leg', { defaultValue: 'A pool is only counted here when the other side of it is something a seller could take out: a major quote asset on that chain, or another tokenised asset we have captured, matched by contract address rather than by the symbol a token gives itself. CoinMarketCap values both legs of a pool, so a pool against a worthless token still reports a large figure. Those pools are listed per token instead, with what they report.' })}</Scope>
       </div>
 
       {read.status === 'loading' && <p role="status">{t('rwa_depth.loading', { defaultValue: 'Reading the captured pools…' })}</p>}
@@ -119,10 +132,20 @@ export default function RwaDepth() {
                   <dd className="mt-0.5">{formatCompact(cohort.permissioned)}</dd>
                 </div>
                 <div>
-                  <dt className="text-[var(--fg-4)]">{t('rwa_depth.cohort_liquidity', { defaultValue: 'Pool liquidity found' })}</dt>
-                  <dd className="mt-0.5">{usdLabel(cohort.totalLiquidityUsd)}</dd>
+                  <dt className="text-[var(--fg-4)]">{t('rwa_depth.cohort_liquidity', { defaultValue: 'Sellable pool liquidity' })}</dt>
+                  <dd className="mt-0.5">{usdLabel(cohort.countedLiquidityUsd)}</dd>
                 </div>
               </dl>
+              {/* What CoinMarketCap's own total holds that this board's does not.
+                  The two are printed apart and never added together. */}
+              {cohort.unrecognisedLiquidityUsd > 0 && (
+                <p className="text-[12px]">
+                  {t('rwa_depth.cohort_unrecognised', {
+                    excluded: usdLabel(cohort.unrecognisedLiquidityUsd), reported: usdLabel(cohort.totalLiquidityUsd),
+                    defaultValue: 'CoinMarketCap reports {{reported}} across the same pools. The difference, {{excluded}}, sits in pools whose other side is a token we cannot value, so it is listed per token and is in none of the figures above.',
+                  })}
+                </p>
+              )}
               {(cohort.notCovered > 0 || cohort.pending > 0) && (
                 <p className="text-[12px]">
                   {t('rwa_depth.cohort_rest', {
@@ -131,16 +154,32 @@ export default function RwaDepth() {
                   })}
                 </p>
               )}
+              {cohort.onlyUnrecognised > 0 && (
+                <p className="text-[12px]">
+                  {t('rwa_depth.cohort_only_unrecognised', {
+                    count: formatCompact(cohort.onlyUnrecognised),
+                    defaultValue: '{{count}} have pools, and the other side of every one of them is a token we cannot value. They are not counted as having no pool, and they are not counted as having liquidity either.',
+                  })}
+                </p>
+              )}
+              {cohort.unclassified > 0 && (
+                <p className="text-[12px]">
+                  {t('rwa_depth.cohort_unclassified', {
+                    count: formatCompact(cohort.unclassified), time: captureTime,
+                    defaultValue: '{{count}} were captured before the lane recorded what is on the other side of each pool, so their liquidity is CoinMarketCap\'s figure over every pool found. The daily run at {{time}} UTC separates them.',
+                  })}
+                </p>
+              )}
 
               {/* Liquidity against the token's own market cap. The point of the
                   figure is the bottom right: a large wrapper with a thin pool. */}
               <Scatter
                 wide
-                title={t('rwa_depth.chart_title', { defaultValue: 'Pool liquidity against token market cap' })}
-                description={t('rwa_depth.chart_sub', { plotted: points.length, excluded: Math.max(0, rows.length - points.length), defaultValue: 'Both axes are logarithmic. {{plotted}} tokens are plotted; {{excluded}} are left out because they have no pool liquidity or no market cap to place them by, and drawing those at zero would read as a measurement of zero.' })}
+                title={t('rwa_depth.chart_title', { defaultValue: 'Sellable pool liquidity against token market cap' })}
+                description={t('rwa_depth.chart_sub', { plotted: points.length, excluded: Math.max(0, rows.length - points.length), defaultValue: 'Both axes are logarithmic. {{plotted}} tokens are plotted; {{excluded}} are left out because they have no market cap to place them by, no pool whose other side we can value, or a capture taken before those sides were recorded. Drawing any of those at zero would read as a measurement of zero.' })}
                 points={points}
                 xLabel={t('rwa_depth.chart_x', { defaultValue: 'Token market cap (USD)' })}
-                yLabel={t('rwa_depth.chart_y', { defaultValue: 'Pool liquidity found (USD)' })}
+                yLabel={t('rwa_depth.chart_y', { defaultValue: 'Sellable pool liquidity (USD)' })}
                 formatX={usdLabel}
                 formatY={usdLabel}
                 state={points.length ? 'ready' : 'empty'}
@@ -154,9 +193,9 @@ export default function RwaDepth() {
                       <th scope="col" className={head}>{t('rwa_depth.col_underlying', { defaultValue: 'Underlying' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_issuer', { defaultValue: 'Issuer' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_chains', { defaultValue: 'Chains and contracts' })}</th>
-                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_pools', { defaultValue: 'Pools' })}</th>
-                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_liquidity', { defaultValue: 'Liquidity' })}</th>
-                      <th scope="col" className={head}>{t('rwa_depth.col_deepest', { defaultValue: 'Deepest pool' })}</th>
+                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_pools', { defaultValue: 'Pools counted' })}</th>
+                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_liquidity', { defaultValue: 'Sellable liquidity' })}</th>
+                      <th scope="col" className={head}>{t('rwa_depth.col_deepest', { defaultValue: 'Deepest counted pool' })}</th>
                       <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_concentration', { defaultValue: 'In the deepest' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_reading', { defaultValue: 'Reading' })}</th>
                     </tr>
@@ -198,12 +237,21 @@ export default function RwaDepth() {
                             )}
                           </td>
                           <td className={`${cell} intel-number`}>
-                            {row.poolCount == null ? '—' : formatCompact(row.poolCount)}
-                            {row.liquidityPools != null && row.poolCount != null && row.liquidityPools < row.poolCount && (
-                              <span className="block text-[var(--fg-4)]">{t('rwa_depth.priced_pools', { priced: formatCompact(row.liquidityPools), total: formatCompact(row.poolCount), defaultValue: '{{priced}} of {{total}} reported a size' })}</span>
+                            {/* The COUNTED pools lead, because they are what every
+                                figure to the right is built from. The pools left
+                                out are named on the same line, never hidden. */}
+                            {row.poolCount == null ? '—'
+                              : formatCompact(row.classification === 'unclassified' ? row.poolCount : row.countedPools)}
+                            {row.classification !== 'unclassified' && row.unrecognisedPoolCount > 0 && (
+                              <span className="block text-[var(--fg-4)]">{t('rwa_depth.unrecognised_pools', { count: formatCompact(row.unrecognisedPoolCount), defaultValue: '{{count}} not counted' })}</span>
+                            )}
+                            {row.countedLiquidityPools != null && row.countedPools != null && row.countedLiquidityPools < row.countedPools && (
+                              <span className="block text-[var(--fg-4)]">{t('rwa_depth.priced_pools', { priced: formatCompact(row.countedLiquidityPools), total: formatCompact(row.countedPools), defaultValue: '{{priced}} of {{total}} reported a size' })}</span>
                             )}
                           </td>
-                          <td className={`${cell} intel-number`}>{usdLabel(row.totalLiquidityUsd)}</td>
+                          <td className={`${cell} intel-number`}>
+                            {usdLabel(row.classification === 'unclassified' ? row.totalLiquidityUsd : row.countedLiquidityUsd)}
+                          </td>
                           <td className={cell}>
                             {row.deepestPool ? (
                               <>
@@ -215,6 +263,26 @@ export default function RwaDepth() {
                           <td className={`${cell} intel-number`}>{pctLabel(row.concentrationPct)}</td>
                           <td className={cell}>
                             {readingText(row, t)}
+                            {unrecognisedText(row, t) && (
+                              <span className="block text-[var(--fg-4)]">
+                                {unrecognisedText(row, t)}
+                                {/* The largest one is NAMED. It is usually the
+                                    pool that would otherwise have been the
+                                    headline, and a reader comparing this board
+                                    with CoinMarketCap has to be able to see it. */}
+                                {row.unrecognisedPools?.[0]?.pair && (
+                                  <> {t('rwa_depth.unrecognised_largest', {
+                                    pair: row.unrecognisedPools[0].pair,
+                                    venue: row.unrecognisedPools[0].dex || row.unrecognisedPools[0].chain,
+                                    value: usdLabel(row.unrecognisedPools[0].liquidityUsd),
+                                    defaultValue: 'The largest is {{pair}} on {{venue}} at {{value}}.',
+                                  })}</>
+                                )}
+                              </span>
+                            )}
+                            {exitLiquidityText(row, t) && (
+                              <span className="block text-[var(--fg-4)]">{exitLiquidityText(row, t)}</span>
+                            )}
                             {row.holderCount != null && (
                               <span className="block text-[var(--fg-4)] intel-number">{t('rwa_depth.holders', { count: formatCompact(row.holderCount), chain: row.holderChain, defaultValue: '{{count}} holder accounts on {{chain}}' })}</span>
                             )}
@@ -232,6 +300,10 @@ export default function RwaDepth() {
               {/* Provenance: the endpoints, the capture clock and the method
                   behind the figures we computed ourselves. */}
               <div className="pt-2">
+                {/* `scope` already carries the counted and excluded sentences on
+                    every classified row: the capture stores them and the read
+                    view prepends them to a row it classified itself. */}
+                <Scope>{payload.exitLiquidityScope}</Scope>
                 <Scope>{payload.exitabilityMethod}</Scope>
                 <Scope>{payload.scope}</Scope>
                 <Scope>
