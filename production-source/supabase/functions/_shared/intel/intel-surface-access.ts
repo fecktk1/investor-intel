@@ -33,6 +33,10 @@ export const INTEL_SURFACES = [
   'chart_workstation',
   'narratives_read',
   'watchlist',
+  // Shared through the provider response cache AND capped by a dedicated daily
+  // platform budget, which is why it is free without being precomputed. See
+  // migration 20260920143000 and ./rwa-free-read.ts.
+  'rwa_research',
   // Spends a provider credit, a model token or recurring evaluation per member.
   'research_on_demand',
   'investigation',
@@ -85,6 +89,41 @@ export async function requireIntelSurface(
   })
   if (error) throw new OrgAuthzError('Access verification unavailable.', 503)
   if (data !== true) throw new IntelSurfaceLockedError(surface)
+}
+
+/**
+ * Does this member hold this surface? The same question requireIntelSurface
+ * asks, answered without throwing.
+ *
+ * FOR CHOOSING A ROUTE, NEVER FOR OPENING ONE. The gate above stays the only
+ * refusal: this exists so a handler that has already been admitted to a free
+ * surface can ask whether the member ALSO holds the paid one, and take the
+ * cheaper, bounded path when they do not.
+ *
+ * It fails CLOSED, unlike the client label: an unreadable decision answers
+ * false, which routes the read onto the budgeted lane rather than the paid one.
+ * The worst case of being wrong here is a member being served from the shared
+ * cache when they were entitled to a live call, never the reverse.
+ */
+export async function intelSurfaceAllowed(
+  // deno-lint-ignore no-explicit-any
+  db: any,
+  actor: OrgActor,
+  surface: IntelSurface,
+): Promise<boolean> {
+  // A cron or service caller has no tier and runs the lanes that fill the free
+  // surfaces, so it keeps the unbounded path, exactly as requireIntelSurface
+  // lets it through.
+  if (actor.isService) return true
+  if (!actor.orgId) return false
+  try {
+    const { data, error } = await db.rpc('intel_surface_allowed', {
+      p_user: actor.userId,
+      p_org: actor.orgId,
+      p_surface: surface,
+    })
+    return !error && data === true
+  } catch { return false }
 }
 
 /**

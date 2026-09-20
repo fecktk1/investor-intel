@@ -336,6 +336,7 @@
     "rwa_table_caption": "Dernière capture par type d’actif tokenisé.",
     "rwa_table_caption_total": "Dernière capture par type d’actif tokenisé. Total indiqué : {{total}}.",
     "rwa_trend_label": "Valeur de {{type}} sur les {{count}} dernières captures",
+    "rwa_open_workspace": "Ouvrir l’espace de travail RWA complet",
     "index_title": "Composants de l’indice",
     "index_sub": "Poids des composants dans le CMC100 face au CMC20 lors de la dernière capture. Les {{named}} plus grands noms sont étiquetés ; tout le reste est regroupé et compté.",
     "index_other": "{{count}} autres",
@@ -1954,6 +1955,8 @@
     "reason_cache_unavailable": "Les données enregistrées pour cette source n’ont pas pu être lues.",
     "reason_provider_paused": "Les lectures auprès de ce fournisseur de données sont en pause.",
     "reason_refresh_required": "Cette source doit être actualisée avant de pouvoir être affichée.",
+    "free_shared_served": "Lu dans l’enregistrement partagé que voient tous les membres. Son heure de récupération figure ci-dessus.",
+    "free_shared_not_read": "Cet enregistrement n’a pas encore été lu aujourd’hui. Il s’ouvre dès maintenant pour les membres Starter et pour tous dès que la lecture partagée est actualisée.",
     "reason_refreshing": "Cette source est en cours d’actualisation.",
     "reason_account_unavailable": "L’état du compte du fournisseur de données est indisponible.",
     "reason_budget_exceeded": "Le budget du fournisseur de données a été atteint.",
@@ -3996,6 +3999,7 @@
     "tier_elite": "Elite",
     "tier_trial": "Essai",
     "surface_research_on_demand": "Recherche à la demande",
+    "surface_rwa_research": "Recherche sur les actifs du monde réel",
     "surface_investigation": "Recherche connectée",
     "surface_portfolio_valuation": "Valorisation du portefeuille",
     "surface_ai_generation": "Génération par IA",
@@ -4018,8 +4022,9 @@
     "free_open_chart": "Le poste de travail graphique",
     "free_open_narratives": "Les synthèses de narratifs",
     "free_open_watchlist": "10 éléments de liste de suivi",
+    "free_open_rwa": "L’espace de travail des actifs du monde réel, avec les émetteurs et les preuves",
     "free_locked_title": "Verrouillé jusqu'à Starter",
-    "free_locked_body": "Recherche à la demande, Connected Research, valorisation de portefeuille, génération par IA, historique des prix, alertes, Surveillance wallets, le Journal des thèses, Comment King et l'accès des agents. Chacune lance une nouvelle requête pour vous à chaque ouverture."
+    "free_locked_body": "La recherche sur la découverte de marché, la structure de marché et le contexte de marché, Connected Research, la valorisation de portefeuille, la génération par IA, l’historique des prix, les alertes, la Surveillance wallets, le Journal des thèses, Comment King et l’accès des agents. Chacune lance une nouvelle requête pour vous à chaque ouverture."
   },
   "breadth_spread": {
     "title": "La largeur du marché en un chiffre",

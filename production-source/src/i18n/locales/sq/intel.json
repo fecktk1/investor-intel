@@ -336,6 +336,7 @@
     "rwa_table_caption": "Kapja e fundit për çdo lloj aktivi të tokenizuar.",
     "rwa_table_caption_total": "Kapja e fundit për çdo lloj aktivi të tokenizuar. Totali i raportuar: {{total}}.",
     "rwa_trend_label": "Vlera e {{type}} përgjatë {{count}} kapjeve të fundit",
+    "rwa_open_workspace": "Hap hapësirën e plotë të punës RWA",
     "index_title": "Përbërësit e indeksit",
     "index_sub": "Pesha e përbërësve në CMC100 kundrejt CMC20 në kapjen e fundit. {{named}} emrat më të mëdhenj janë të etiketuar; gjithçka tjetër grupohet dhe numërohet.",
     "index_other": "{{count}} të tjera",
@@ -1954,6 +1955,8 @@
     "reason_cache_unavailable": "Të dhënat e ruajtura për këtë burim nuk mund të lexoheshin.",
     "reason_provider_paused": "Leximet nga ky ofrues të dhënash janë pezulluar.",
     "reason_refresh_required": "Ky burim duhet rifreskuar para se të shfaqet.",
+    "free_shared_served": "Lexuar nga regjistri i përbashkët që shohin të gjithë anëtarët. Ora e marrjes shfaqet më lart.",
+    "free_shared_not_read": "Ky regjistër nuk është lexuar ende sot. Hapet tani për anëtarët Starter dhe për të gjithë sapo leximi i përbashkët rifreskohet.",
     "reason_refreshing": "Ky burim po rifreskohet.",
     "reason_account_unavailable": "Statusi i llogarisë së ofruesit të të dhënave nuk është i disponueshëm.",
     "reason_budget_exceeded": "Buxheti i ofruesit të të dhënave është arritur.",
@@ -3996,6 +3999,7 @@
     "tier_elite": "Elite",
     "tier_trial": "Provë",
     "surface_research_on_demand": "Hulumtim sipas kërkesës",
+    "surface_rwa_research": "Hulumtim i aktiveve të botës reale",
     "surface_investigation": "Hulumtim i lidhur",
     "surface_portfolio_valuation": "Vlerësim i portofolit",
     "surface_ai_generation": "Gjenerim me IA",
@@ -4018,8 +4022,9 @@
     "free_open_chart": "Stacioni i grafikëve",
     "free_open_narratives": "Përmbledhjet e narrativave",
     "free_open_watchlist": "10 artikuj në listën e ndjekjes",
+    "free_open_rwa": "Hapësira e punës e aktiveve të botës reale, me emetuesët dhe provat",
     "free_locked_title": "E kyçur deri te Starter",
-    "free_locked_body": "Kërkimi sipas kërkesës, Connected Research, vlerësimi i portofolit, gjenerimi me IA, historiku i çmimeve, njoftimet, Vëzhgimi i wallet-eve, Ditari i tezave, Comment King dhe aksesi i agjentëve. Secila nis një kërkesë të re për ty sa herë hapet."
+    "free_locked_body": "Hulumtimi i zbulimit të tregut, i strukturës së tregut dhe i kontekstit të tregut, Connected Research, vlerësimi i portofolit, gjenerimi me IA, historiku i çmimeve, njoftimet, Vëzhgimi i wallet-eve, Ditari i tezave, Comment King dhe aksesi i agjentëve. Secila nis një kërkesë të re për ty sa herë hapet."
   },
   "breadth_spread": {
     "title": "Gjerësia e tregut në një numër",

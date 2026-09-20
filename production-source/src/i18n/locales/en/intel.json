@@ -462,6 +462,7 @@
     "rwa_table_caption": "Latest capture per tokenized asset type.",
     "rwa_table_caption_total": "Latest capture per tokenized asset type. Reported total: {{total}}.",
     "rwa_trend_label": "{{type}} value over the last {{count}} captures",
+    "rwa_open_workspace": "Open the full RWA workspace",
     "index_title": "Index constituents",
     "index_sub": "Constituent weight in CMC100 against CMC20 at the latest capture. The {{named}} largest names are labelled; everything else is grouped and counted.",
     "index_other": "Other {{count}}",
@@ -2779,6 +2780,8 @@
     "reason_cache_unavailable": "Stored data for this source could not be read.",
     "reason_provider_paused": "Reads from this data provider are paused.",
     "reason_refresh_required": "This source needs a refresh before it can be shown.",
+    "free_shared_served": "Read from the shared record every member sees. Its retrieval time is shown above.",
+    "free_shared_not_read": "This record has not been read yet today. It opens for Starter members now and for everyone once the shared read refreshes.",
     "reason_refreshing": "This source is refreshing.",
     "reason_account_unavailable": "The data provider account status is unavailable.",
     "reason_budget_exceeded": "The data provider budget has been reached.",
@@ -3996,6 +3999,7 @@
     "tier_elite": "Elite",
     "tier_trial": "Trial",
     "surface_research_on_demand": "On demand research",
+    "surface_rwa_research": "Real-world asset research",
     "surface_investigation": "Connected Research",
     "surface_portfolio_valuation": "Portfolio valuation",
     "surface_ai_generation": "AI generation",
@@ -4018,8 +4022,9 @@
     "free_open_chart": "The chart workstation",
     "free_open_narratives": "Narrative briefs",
     "free_open_watchlist": "10 watchlist items",
+    "free_open_rwa": "The real-world asset workspace, with issuers and evidence",
     "free_locked_title": "Locked until Starter",
-    "free_locked_body": "On demand research, Connected Research, portfolio valuation, AI generation, price history, alerts, Wallet Watch, the Thesis Journal, Comment King and agent access. Each one runs a fresh request for you every time it is opened."
+    "free_locked_body": "Market discovery, market structure and market context research, Connected Research, portfolio valuation, AI generation, price history, alerts, Wallet Watch, the Thesis Journal, Comment King and agent access. Each one runs a fresh request for you every time it is opened."
   },
   "breadth_spread": {
     "title": "Breadth in one number",

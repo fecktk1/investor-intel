@@ -336,6 +336,7 @@
     "rwa_table_caption": "Laatste vastlegging per getokeniseerd activatype.",
     "rwa_table_caption_total": "Laatste vastlegging per getokeniseerd activatype. Gerapporteerd totaal: {{total}}.",
     "rwa_trend_label": "Waarde van {{type}} over de laatste {{count}} vastleggingen",
+    "rwa_open_workspace": "Open de volledige RWA-werkruimte",
     "index_title": "Indexbestanddelen",
     "index_sub": "Gewicht van de bestanddelen in CMC100 tegenover CMC20 bij de laatste vastlegging. De {{named}} grootste namen krijgen een label; al het overige wordt gegroepeerd en geteld.",
     "index_other": "Overige {{count}}",
@@ -1954,6 +1955,8 @@
     "reason_cache_unavailable": "Opgeslagen data voor deze bron kon niet worden gelezen.",
     "reason_provider_paused": "Het lezen bij deze data-aanbieder is gepauzeerd.",
     "reason_refresh_required": "Deze bron moet worden vernieuwd voordat ze kan worden getoond.",
+    "free_shared_served": "Gelezen uit het gedeelde record dat elk lid ziet. De ophaaltijd staat hierboven.",
+    "free_shared_not_read": "Dit record is vandaag nog niet gelezen. Het gaat nu open voor Starter-leden en voor iedereen zodra de gedeelde read wordt vernieuwd.",
     "reason_refreshing": "Deze bron wordt vernieuwd.",
     "reason_account_unavailable": "De accountstatus bij de data-aanbieder is niet beschikbaar.",
     "reason_budget_exceeded": "Het budget bij de data-aanbieder is bereikt.",
@@ -3996,6 +3999,7 @@
     "tier_elite": "Elite",
     "tier_trial": "Proef",
     "surface_research_on_demand": "Research op aanvraag",
+    "surface_rwa_research": "Research naar real-world assets",
     "surface_investigation": "Verbonden research",
     "surface_portfolio_valuation": "Portefeuillewaardering",
     "surface_ai_generation": "AI-generatie",
@@ -4018,8 +4022,9 @@
     "free_open_chart": "Het grafiekwerkstation",
     "free_open_narratives": "Narratiefbriefings",
     "free_open_watchlist": "10 volglijst-items",
+    "free_open_rwa": "De werkruimte voor real-world assets, met uitgevers en onderbouwing",
     "free_locked_title": "Vergrendeld tot Starter",
-    "free_locked_body": "Onderzoek op aanvraag, Connected Research, portefeuillewaardering, AI-generatie, koershistorie, meldingen, Wallet Watch, het Thesedagboek, Comment King en agenttoegang. Elk daarvan start bij het openen een nieuwe aanvraag voor jou."
+    "free_locked_body": "Onderzoek naar marktontdekking, marktstructuur en marktcontext, Connected Research, portefeuillewaardering, AI-generatie, koershistorie, meldingen, Wallet Watch, het Thesedagboek, Comment King en agenttoegang. Elk daarvan start bij het openen een nieuwe aanvraag voor jou."
   },
   "breadth_spread": {
     "title": "Marktbreedte in één getal",

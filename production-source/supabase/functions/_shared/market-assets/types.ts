@@ -77,6 +77,15 @@ export interface MarketAssetsContext {
   kind?: 'job' | 'request' | 'render'
   waitForFresh?: boolean             // research saves need the completed shared refresh
   selectedDemand?: boolean           // authorized visible cache reader; never permits provider calls
+  // Suppress the connected-demand stamp for THIS read, whatever `kind` says.
+  //
+  // Stamping demanded_at is how a foreground read tells the refresh worker to
+  // buy a provider refresh later, on another clock, against the same shared
+  // budget. A read that must not cause that spend has to be able to say so even
+  // when it is otherwise a 'request': the free real-world-asset lane reads live
+  // inside its own daily cap and must leave no standing instruction behind it.
+  // This flag only ever REMOVES an effect; it can never authorise a call.
+  noDemand?: boolean
   maxCalls?: number                  // explicit per-run budget override
   _calls?: number                    // internal counter
 }

@@ -336,6 +336,7 @@
     "rwa_table_caption": "Captura mais recente por tipo de ativo tokenizado.",
     "rwa_table_caption_total": "Captura mais recente por tipo de ativo tokenizado. Total informado: {{total}}.",
     "rwa_trend_label": "Valor de {{type}} ao longo das últimas {{count}} capturas",
+    "rwa_open_workspace": "Abrir o espaço de trabalho completo de RWA",
     "index_title": "Componentes do índice",
     "index_sub": "Peso dos componentes no CMC100 em relação ao CMC20 na captura mais recente. Os {{named}} maiores nomes são rotulados; todo o resto é agrupado e contado.",
     "index_other": "Outros {{count}}",
@@ -1954,6 +1955,8 @@
     "reason_cache_unavailable": "Não foi possível ler os dados armazenados desta fonte.",
     "reason_provider_paused": "As leituras deste provedor de dados estão pausadas.",
     "reason_refresh_required": "Esta fonte precisa ser atualizada antes de ser exibida.",
+    "free_shared_served": "Lido do registro compartilhado que todos os membros veem. O horário de obtenção aparece acima.",
+    "free_shared_not_read": "Este registro ainda não foi lido hoje. Ele abre agora para membros Starter e para todos quando a leitura compartilhada for atualizada.",
     "reason_refreshing": "Esta fonte está sendo atualizada.",
     "reason_account_unavailable": "O status da conta do provedor de dados está indisponível.",
     "reason_budget_exceeded": "O orçamento do provedor de dados foi atingido.",
@@ -3996,6 +3999,7 @@
     "tier_elite": "Elite",
     "tier_trial": "Teste",
     "surface_research_on_demand": "Pesquisa sob demanda",
+    "surface_rwa_research": "Pesquisa de ativos do mundo real",
     "surface_investigation": "Pesquisa conectada",
     "surface_portfolio_valuation": "Avaliação da carteira",
     "surface_ai_generation": "Geração com IA",
@@ -4018,8 +4022,9 @@
     "free_open_chart": "A estação de gráficos",
     "free_open_narratives": "Resumos de narrativas",
     "free_open_watchlist": "10 itens na lista de acompanhamento",
+    "free_open_rwa": "O espaço de trabalho de ativos do mundo real, com emissores e evidências",
     "free_locked_title": "Bloqueado até o Starter",
-    "free_locked_body": "Pesquisa sob demanda, Connected Research, avaliação de carteira, geração por IA, histórico de preços, alertas, Monitor de Wallets, o Diário de teses, Comment King e acesso de agentes. Cada uma dispara uma nova solicitação para você toda vez que é aberta."
+    "free_locked_body": "Pesquisa de descoberta de mercado, estrutura de mercado e contexto de mercado, Connected Research, avaliação de carteira, geração por IA, histórico de preços, alertas, Monitor de Wallets, o Diário de teses, Comment King e acesso de agentes. Cada uma dispara uma nova solicitação para você toda vez que é aberta."
   },
   "breadth_spread": {
     "title": "Amplitude em um só número",

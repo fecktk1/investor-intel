@@ -336,6 +336,7 @@
     "rwa_table_caption": "Ultima acquisizione per tipo di asset tokenizzato.",
     "rwa_table_caption_total": "Ultima acquisizione per tipo di asset tokenizzato. Totale riportato: {{total}}.",
     "rwa_trend_label": "Valore di {{type}} nelle ultime {{count}} acquisizioni",
+    "rwa_open_workspace": "Apri lo spazio di lavoro RWA completo",
     "index_title": "Componenti dell’indice",
     "index_sub": "Peso dei componenti nel CMC100 rispetto al CMC20 all’ultima acquisizione. I {{named}} nomi più grandi sono etichettati; tutto il resto è raggruppato e conteggiato.",
     "index_other": "Altri {{count}}",
@@ -1954,6 +1955,8 @@
     "reason_cache_unavailable": "Impossibile leggere i dati archiviati per questa fonte.",
     "reason_provider_paused": "Le letture da questo fornitore di dati sono in pausa.",
     "reason_refresh_required": "Questa fonte deve essere aggiornata prima di poter essere mostrata.",
+    "free_shared_served": "Letto dal record condiviso che vedono tutti i membri. L’ora di recupero è indicata sopra.",
+    "free_shared_not_read": "Questo record non è ancora stato letto oggi. Si apre ora per i membri Starter e per tutti quando la lettura condivisa si aggiorna.",
     "reason_refreshing": "Questa fonte è in aggiornamento.",
     "reason_account_unavailable": "Lo stato dell’account del fornitore di dati non è disponibile.",
     "reason_budget_exceeded": "Il budget del fornitore di dati è stato raggiunto.",
@@ -3996,6 +3999,7 @@
     "tier_elite": "Elite",
     "tier_trial": "Prova",
     "surface_research_on_demand": "Ricerca su richiesta",
+    "surface_rwa_research": "Ricerca sugli asset del mondo reale",
     "surface_investigation": "Ricerca connessa",
     "surface_portfolio_valuation": "Valutazione del portafoglio",
     "surface_ai_generation": "Generazione con IA",
@@ -4018,8 +4022,9 @@
     "free_open_chart": "La postazione grafici",
     "free_open_narratives": "Le sintesi delle narrative",
     "free_open_watchlist": "10 elementi in watchlist",
+    "free_open_rwa": "Lo spazio di lavoro degli asset del mondo reale, con emittenti ed evidenze",
     "free_locked_title": "Bloccato fino a Starter",
-    "free_locked_body": "Ricerca su richiesta, Connected Research, valutazione del portafoglio, generazione con IA, storico dei prezzi, avvisi, Wallet Watch, il Diario delle tesi, Comment King e l'accesso agenti. Ognuna avvia una nuova richiesta per te a ogni apertura."
+    "free_locked_body": "La ricerca su scoperta di mercato, struttura di mercato e contesto di mercato, Connected Research, valutazione del portafoglio, generazione con IA, storico dei prezzi, avvisi, Wallet Watch, il Diario delle tesi, Comment King e l’accesso agenti. Ognuna avvia una nuova richiesta per te a ogni apertura."
   },
   "breadth_spread": {
     "title": "L’ampiezza del mercato in un numero",
