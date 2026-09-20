@@ -1898,7 +1898,8 @@
     "chatter": "Conversación",
     "confidence": "Confianza",
     "risk": "Riesgo",
-    "radar_title": "Narrativas a la vista: {{n}}"
+    "radar_title": "Narrativas a la vista: {{n}}",
+    "score_inputs": "señales de mercado, en cadena y sociales registradas"
   },
   "research": {
     "empty": "Sin investigación guardada aún. Guarda un análisis o informe para mantenerlo aquí.",
@@ -2852,7 +2853,10 @@
       "unreviewed": "sin revisar",
       "volume": "Volumen",
       "vs_benchmark": "vs. índice de referencia",
-      "weaken": "debilitan"
+      "weaken": "debilitan",
+      "inputs": "la línea base capturada cuando escribiste esta tesis y una lectura tomada ahora",
+      "baseline_at": "Medido contra la línea base capturada {{date}}.",
+      "baseline_undated": "La línea base contra la que se mide no reportó hora de captura."
     },
     "draft_condition": "Borrador: añade una condición de invalidación antes de la activación.",
     "draft_step": "Redacta tu tesis",
@@ -3633,7 +3637,7 @@
     "gauge_used": "Usados",
     "gauge_reserved": "Reservados",
     "gauge_headroom": "Margen",
-    "gauge_sub": "no reportado",
+    "gauge_sub": "{{used}} usados y {{reserved}} reservados de {{ceiling}} créditos. La aguja marca {{projected}}, el mes proyectado a partir de las cadencias vigentes.",
     "reuse_live": "Llamadas en vivo",
     "reuse_hits": "Aciertos de caché",
     "reuse_misses": "Fallos de caché",
@@ -3737,7 +3741,21 @@
     "calibration_line": "Consumo observado {{observed}} créditos por hora frente a {{affordable}} asumibles · multiplicador de cadencia ×{{scale}} · {{count}} observaciones de la cuenta",
     "calibration_reason": "Motivo: {{reason}}",
     "calibration_window": "Quedan {{remaining}} créditos y {{hours}} horas hasta el reinicio.",
-    "calibration_projection": "Proyección con la cadencia calibrada: {{credits}} créditos"
+    "calibration_projection": "Proyección con la cadencia calibrada: {{credits}} créditos",
+    "lane_cost_label": "Lo que cuesta por carril",
+    "lane_cost_title": "Lo que cuesta, por carril",
+    "lane_cost_sub": "Los {{count}} carriles más costosos de los últimos 30 días, medidos a partir de las llamadas al proveedor registradas. La cadencia es la que se observó en cada carril, que no es necesariamente la configurada. Las llamadas por ejecución cuentan como cero las lecturas que no llamaron, así que un carril bien cacheado queda por debajo de uno.",
+    "lane_cost_missing": "La lectura de coste por carril no volvió, así que esta tabla no tiene nada que mostrar. La parte que falló se nombra arriba.",
+    "lane_cost_empty": "No se registró ninguna llamada al proveedor en ningún carril en los últimos 30 días, así que ningún carril tiene coste que reportar.",
+    "lane_cost_truncated": "Esta lectura alcanzó su límite de filas en {{scanned}} de {{limit}}, así que la ventana es menor de 30 días y estas cifras son un mínimo.",
+    "lane_cost_one_run": "solo una ejecución",
+    "col_lane": "Carril",
+    "col_observed_cadence": "Cadencia observada",
+    "col_calls_per_run": "Llamadas por ejecución",
+    "col_credits_24h": "Créditos, 24 h",
+    "col_credits_30d": "Créditos, 30 d",
+    "col_runs_30d": "Ejecuciones, 30 d",
+    "col_cache_hits": "Aciertos de caché, 30 d"
   },
   "rwa_issuer": {
     "eyebrow": "Fuentes primarias",
@@ -3881,7 +3899,9 @@
     "capture_record": "Una captura registrada de cifras del proveedor en la hora de captura indicada. Leerla no hizo ninguna llamada nueva al proveedor y no es una lectura del mercado actual.",
     "news_curated": "Noticias seleccionadas y resumidas por revisión automatizada dentro de su periodo de revisión. Un resumen no es el artículo original ni una afirmación verificada.",
     "news_stored": "Noticias registradas de fuentes seguidas y globales, agrupadas y ordenadas por reglas. Un orden no es un juicio sobre su exactitud.",
-    "signals_stored": "Señales generadas a partir de fuentes almacenadas y ordenadas para ti al leer esta vista. Una señal es un punto de partida para investigar, no una recomendación."
+    "signals_stored": "Señales generadas a partir de fuentes almacenadas y ordenadas para ti al leer esta vista. Una señal es un punto de partida para investigar, no una recomendación.",
+    "execution_quote": "Una cotización de ruta a su hora de cotización, más contexto del pool en cadena. No es una ejecución que nadie recibió ni un consejo para operar.",
+    "exchange_signal": "Una clasificación sobre los tickers de los exchanges centralizados cubiertos a su hora reportada. No es el precio de ninguna plataforma concreta ni una recomendación."
   },
   "receipt_state": {
     "provider": "Proveedor",
@@ -4092,5 +4112,32 @@
     "profile_expand": "Leer la descripción completa",
     "profile_collapse": "Mostrar menos",
     "profile_scope": "Publicado por {{provider}} y capturado el {{capturedAt}}. Cuando aparece un número de presentador, es el número de presentador ante la SEC de la empresa cotizada subyacente tal como lo indica el proveedor, no el de la firma que emitió el token."
+  },
+  "receipt_cost": {
+    "calls_one": "{{count}} llamada al proveedor",
+    "calls_other": "{{count}} llamadas al proveedor",
+    "credits_one": "{{count}} crédito",
+    "credits_other": "{{count}} créditos",
+    "credits_not_reported": "créditos no reportados",
+    "live": "en vivo",
+    "no_call": "Ninguna llamada al proveedor",
+    "from_cache": "respondido desde la caché compartida",
+    "shared": "Captura compartida, sin coste de proveedor por lector",
+    "captured_at": "capturado {{date}}",
+    "run_calls_one": "la ejecución de captura hizo {{count}} llamada a este endpoint",
+    "run_calls_other": "la ejecución de captura hizo {{count}} llamadas a este endpoint",
+    "failed": "un fallo recordado respondió a esta lectura",
+    "answered_live": "Una llamada al proveedor respondió a esta lectura",
+    "shared_curated": "Registro compartido, sin coste de proveedor por lector"
+  },
+  "figure_source": {
+    "line": "Fuente: {{source}}",
+    "observed": "observado {{date}}",
+    "captured": "capturado {{date}}",
+    "no_time": "no se reportó hora de observación",
+    "unknown": "No se reportó la fuente de esta cifra.",
+    "our_calculation": "Nuestro cálculo a partir de {{inputs}}",
+    "recorded_inputs": "cifras que ya registramos",
+    "computed": "calculado {{date}}"
   }
 }

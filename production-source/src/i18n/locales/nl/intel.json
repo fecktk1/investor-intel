@@ -1898,7 +1898,8 @@
     "chatter": "Gesprekken",
     "confidence": "Zekerheid",
     "risk": "Risico",
-    "radar_title": "{{n}} narratieven in beeld"
+    "radar_title": "{{n}} narratieven in beeld",
+    "score_inputs": "vastgelegde markt-, on-chain- en socialsignalen"
   },
   "research": {
     "empty": "Nog geen opgeslagen research. Sla een analyse of brief op om deze hier te bewaren.",
@@ -2852,7 +2853,10 @@
       "unreviewed": "niet beoordeeld",
       "volume": "Handelsvolume",
       "vs_benchmark": "t.o.v. vergelijkingsmaatstaf",
-      "weaken": "verzwakkend"
+      "weaken": "verzwakkend",
+      "inputs": "de basismeting die is vastgelegd toen je deze these schreef en een meting van nu",
+      "baseline_at": "Gemeten tegen de basismeting die is vastgelegd op {{date}}.",
+      "baseline_undated": "De basismeting waartegen dit wordt gemeten rapporteerde geen vastlegtijd."
     },
     "draft_condition": "Concept: voeg vóór activering een weerleggingsvoorwaarde toe.",
     "draft_step": "Stel je these op",
@@ -3633,7 +3637,7 @@
     "gauge_used": "Gebruikt",
     "gauge_reserved": "Gereserveerd",
     "gauge_headroom": "Ruimte over",
-    "gauge_sub": "niet gerapporteerd",
+    "gauge_sub": "{{used}} gebruikt en {{reserved}} gereserveerd van {{ceiling}} credits. De naald staat op {{projected}}, de maand geprojecteerd vanuit de nu geldende cadanses.",
     "reuse_live": "Live aanroepen",
     "reuse_hits": "Treffers uit de cache",
     "reuse_misses": "Missers in de cache",
@@ -3737,7 +3741,21 @@
     "calibration_line": "Gemeten verbruik {{observed}} credits per uur tegenover {{affordable}} haalbaar · cadansfactor ×{{scale}} · {{count}} accountwaarnemingen",
     "calibration_reason": "Reden: {{reason}}",
     "calibration_window": "Er resteren {{remaining}} credits en {{hours}} uur tot de reset.",
-    "calibration_projection": "Prognose bij de gekalibreerde cadans: {{credits}} credits"
+    "calibration_projection": "Prognose bij de gekalibreerde cadans: {{credits}} credits",
+    "lane_cost_label": "Wat dit per lane kost",
+    "lane_cost_title": "Wat dit kost, per lane",
+    "lane_cost_sub": "De {{count}} duurste lanes van de afgelopen 30 dagen, gemeten aan de vastgelegde aanroepen bij de provider. De cadans is die waarop elke lane is waargenomen, niet noodzakelijk de geconfigureerde. Aanroepen per run rekenen een meting zonder aanroep als nul, dus een goed gecachte lane blijft onder één.",
+    "lane_cost_missing": "De lezing van de kosten per lane kwam niet terug, dus deze tabel heeft niets te tonen. Het mislukte onderdeel staat hierboven genoemd.",
+    "lane_cost_empty": "Er is de afgelopen 30 dagen voor geen enkele lane een aanroep bij de provider vastgelegd, dus geen lane heeft kosten te rapporteren.",
+    "lane_cost_truncated": "Deze lezing bereikte haar rijlimiet bij {{scanned}} van {{limit}} rijen, dus het venster is korter dan 30 dagen en deze cijfers zijn een ondergrens.",
+    "lane_cost_one_run": "slechts één run",
+    "col_lane": "Lane",
+    "col_observed_cadence": "Waargenomen cadans",
+    "col_calls_per_run": "Aanroepen per run",
+    "col_credits_24h": "Credits, 24 u",
+    "col_credits_30d": "Credits, 30 d",
+    "col_runs_30d": "Runs, 30 d",
+    "col_cache_hits": "Cachetreffers, 30 d"
   },
   "rwa_issuer": {
     "eyebrow": "Primaire bronnen",
@@ -3881,7 +3899,9 @@
     "capture_record": "Een vastgelegde opname van cijfers van de aanbieder op het vermelde vastlegtijdstip. Het lezen ervan deed geen nieuwe aanroep bij de aanbieder en het is geen aflezing van de markt nu.",
     "news_curated": "Berichten die binnen hun beoordelingsperiode door geautomatiseerde beoordeling zijn geselecteerd en samengevat. Een samenvatting is niet het bronartikel en geen geverifieerde bewering.",
     "news_stored": "Berichten uit gevolgde en wereldwijde bronnen, volgens regels gebundeld en gerangschikt. Een rangschikking is geen oordeel over juistheid.",
-    "signals_stored": "Signalen die uit opgeslagen bronnen zijn gegenereerd en bij het lezen van deze weergave voor je zijn gerangschikt. Een signaal is een aanzet tot onderzoek, geen aanbeveling."
+    "signals_stored": "Signalen die uit opgeslagen bronnen zijn gegenereerd en bij het lezen van deze weergave voor je zijn gerangschikt. Een signaal is een aanzet tot onderzoek, geen aanbeveling.",
+    "execution_quote": "Eén routeringsquote op het moment van de quote, plus poolcontext on chain. Geen uitvoering die iemand heeft gekregen en geen handelsadvies.",
+    "exchange_signal": "Een classificatie over de tickers van de gedekte centrale beurzen op hun gerapporteerde tijd. Niet de prijs op één beurs en geen aanbeveling."
   },
   "receipt_state": {
     "provider": "Aanbieder",
@@ -4092,5 +4112,32 @@
     "profile_expand": "Volledige beschrijving lezen",
     "profile_collapse": "Minder tonen",
     "profile_scope": "Gepubliceerd door {{provider}} en vastgelegd op {{capturedAt}}. Waar een indienersnummer staat, is het het SEC-indienersnummer van de onderliggende beursgenoteerde onderneming zoals de aanbieder het opgeeft, niet dat van het huis dat de token uitgaf."
+  },
+  "receipt_cost": {
+    "calls_one": "{{count}} aanroep bij de provider",
+    "calls_other": "{{count}} aanroepen bij de provider",
+    "credits_one": "{{count}} credit",
+    "credits_other": "{{count}} credits",
+    "credits_not_reported": "credits niet gerapporteerd",
+    "live": "live",
+    "no_call": "Geen aanroep bij de provider",
+    "from_cache": "geleverd uit de gedeelde cache",
+    "shared": "Gedeelde vastlegging, geen providerkosten per lezer",
+    "captured_at": "vastgelegd {{date}}",
+    "run_calls_one": "de vastlegging deed {{count}} aanroep naar dit endpoint",
+    "run_calls_other": "de vastlegging deed {{count}} aanroepen naar dit endpoint",
+    "failed": "een onthouden mislukking antwoordde op deze meting",
+    "answered_live": "Een aanroep bij de provider antwoordde op deze meting",
+    "shared_curated": "Gedeeld record, geen providerkosten per lezer"
+  },
+  "figure_source": {
+    "line": "Bron: {{source}}",
+    "observed": "waargenomen {{date}}",
+    "captured": "vastgelegd {{date}}",
+    "no_time": "geen waarnemingstijd gerapporteerd",
+    "unknown": "De bron van dit cijfer is niet gerapporteerd.",
+    "our_calculation": "Onze berekening op basis van {{inputs}}",
+    "recorded_inputs": "cijfers die we al hebben vastgelegd",
+    "computed": "berekend {{date}}"
   }
 }

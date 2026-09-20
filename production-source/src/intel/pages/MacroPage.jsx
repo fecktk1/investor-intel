@@ -6,6 +6,7 @@ import { loadMacroNews, loadMacroIndicators, loadMacroCalendar } from '../lib/ma
 import WhyImportant from '../components/WhyImportant'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import { IntelHeroRead, IntelPageHeader, IntelPageShell, IntelSkeleton } from '../components/IntelPrimitives'
+import { providerLabel } from '../lib/source-receipt'
 
 const trendIcon = (tr) => tr === 'up' ? <TrendingUp className="h-3.5 w-3.5 text-emerald-400" /> : tr === 'down' ? <TrendingDown className="h-3.5 w-3.5 text-red-400" /> : <Minus className="h-3.5 w-3.5 text-[var(--fg-4)]" />
 const fmtWhen = (s) => { if (!s) return ''; const d = new Date(s); return d.toLocaleString(undefined, { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }) }
@@ -128,6 +129,18 @@ export default function MacroPage() {
                     <div className="text-lg font-semibold text-[var(--fg-1)] mt-1">{m.value}{m.unit ? <span className="text-[12px] text-[var(--fg-4)] ml-0.5">{m.unit}</span> : null}</div>
                     {m.change != null && String(m.change).trim() && String(m.change).trim() !== '—' && <div className={`text-[11px] mt-0.5 ${/up|ris|gain|pos/i.test(String(m.trend || '')) ? 'text-emerald-400' : /down|fall|drop|neg/i.test(String(m.trend || '')) ? 'text-red-400' : 'text-[var(--fg-4)]'}`}>{m.change}</div>}
                     {(m.as_of || m.period) && <div className="text-[10px] text-[var(--fg-5)] mt-0.5">{m.period || m.as_of}</div>}
+                    {/* Each indicator names the body that published it. The store
+                        already records this (intel_macro_indicators.raw.source plus
+                        source_url), so the card states its issuer rather than leaving
+                        a number with no author. An indicator with no recorded source
+                        says so in words rather than showing nothing. */}
+                    <div className="text-[10px] text-[var(--fg-5)] mt-0.5">
+                      {m.raw?.source
+                        ? (m.source_url
+                          ? <a href={m.source_url} target="_blank" rel="noreferrer" className="underline underline-offset-2">{t('figure_source.line', { source: providerLabel(m.raw.source, t), defaultValue: 'Source: {{source}}' })}</a>
+                          : t('figure_source.line', { source: providerLabel(m.raw.source, t), defaultValue: 'Source: {{source}}' }))
+                        : t('figure_source.unknown', { defaultValue: 'The source of this figure was not reported.' })}
+                    </div>
                     <WhyImportant topic={`${m.label}${m.value != null ? ` is currently ${m.value}${m.unit || ''}` : ''}`} context="A macroeconomic indicator." />
                   </div>
                 ))}

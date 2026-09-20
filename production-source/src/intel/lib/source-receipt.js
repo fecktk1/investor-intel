@@ -52,9 +52,53 @@ export function envelopeFreshness(envelope, now = Date.now()) {
   return FRESHNESS_STATES.includes(envelope.freshness) ? envelope.freshness : null
 }
 
+/** What ONE read cost the reader who is looking at it, derived only from fields
+ * the receipt already carries. Nothing here estimates: `estimateCmcCredits` in
+ * cmc-capabilities.ts is a reservation FLOOR, never the amount billed, so it
+ * must not be substituted for a charge that was not reported.
+ *
+ *   calls    Provider calls this read made FOR THIS READER. A live transport read
+ *            is one. A cache hit, a remembered failure, a stored copy and a shared
+ *            capture are all zero: nothing was called to draw this view.
+ *   credits  The provider's own reported charge. A reported 0 is a real charge of
+ *            zero and stays 0. null means it was not reported, which every cache
+ *            hit does, because the cache row does not retain the originating
+ *            charge (see CmcReceipt in cmc-transport.ts). A caller renders null
+ *            in words, never as a zero.
+ *   runCalls For a shared capture only: how many calls the capture RUN made to
+ *            this endpoint. That is what the capture cost once for everyone, not
+ *            what this reader cost, so it is kept in a separate field.
+ *   served   'live' a call answered this read · 'cache' the shared cache did ·
+ *            'shared' a recorded capture or stored copy did, at no per-reader
+ *            provider cost · 'failed' a remembered failure answered it.
+ *
+ * Returns null for anything that is not a receipt, or a receipt with no origin:
+ * a cost claim is never invented for a read that did not say how it was served. */
+export function receiptCost(receipt) {
+  if (!receipt || typeof receipt !== 'object') return null
+  const credits = finite(receipt.creditCount)
+  switch (String(receipt.origin || '')) {
+    case 'live': return { calls: 1, credits, runCalls: null, served: 'live' }
+    case 'negative-cache': return { calls: 0, credits, runCalls: null, served: 'failed' }
+    case 'capture':
+    case 'stored': return { calls: 0, credits, runCalls: finite(receipt.callCount), served: 'shared' }
+    case 'cache': return { calls: 0, credits, runCalls: null, served: 'cache' }
+    default: return null
+  }
+}
+
 // Provider names are proper nouns and stay as written. Generic stores are
 // described in the reader's language.
-const PROVIDER_NAMES = { coinmarketcap: 'CoinMarketCap', coingecko: 'CoinGecko', birdeye: 'Birdeye', geckoterminal: 'GeckoTerminal', dexscreener: 'DEX Screener' }
+// The lower-case ids on the right of the second line are how the macro store and
+// the execution quote write their own source (intel_macro_indicators.raw.source,
+// dflow-check-execution's `sources`), so a figure can name its issuer without the
+// page hard-coding a provider name of its own.
+const PROVIDER_NAMES = {
+  coinmarketcap: 'CoinMarketCap', coingecko: 'CoinGecko', birdeye: 'Birdeye', geckoterminal: 'GeckoTerminal', dexscreener: 'DEX Screener',
+  dflow: 'DFlow', bls: 'US Bureau of Labor Statistics', 'ny fed': 'Federal Reserve Bank of New York',
+  'alternative.me': 'Alternative.me', 'yahoo finance': 'Yahoo Finance', trongrid: 'TronGrid', chainlink: 'Chainlink',
+  blockscout: 'Blockscout', sourcify: 'Sourcify', gleif: 'GLEIF', edgar: 'SEC EDGAR', ofac: 'OFAC',
+}
 const STORE_LABELS = {
   exchange: ['receipt_state.source_exchange', 'Centralized exchanges'],
   dex_pair_snapshots: ['receipt_state.source_dex_snapshots', 'DEX pool snapshots'],

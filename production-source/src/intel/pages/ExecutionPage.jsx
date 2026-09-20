@@ -4,6 +4,7 @@ import { Zap, FileText, AlertTriangle, CheckCircle, Loader2, ArrowRight } from '
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import IntelDisclaimer from '../components/IntelDisclaimer'
+import FigureSourceLine from '../components/FigureSourceLine'
 import { fmtVol } from '../lib/market-format'
 
 const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v'
@@ -270,6 +271,16 @@ export default function ExecutionPage() {
                 </div>
               </div>
             )}
+
+            {/* What answered the figures above. `sources` and `quoted_at` ride on the
+                dflow-check-execution response; a response that predates those two
+                fields falls back to naming DFlow alone, which is the endpoint's own
+                quote and is always what produced the price impact and the route. */}
+            <FigureSourceLine
+              source={(checkResult.sources?.length ? checkResult.sources : ['dflow']).join('+')}
+              observedAt={checkResult.quoted_at || null}
+              scopeKey="execution_quote"
+            />
 
             {checkResult.notes?.length > 0 && (
               <div className="space-y-1">

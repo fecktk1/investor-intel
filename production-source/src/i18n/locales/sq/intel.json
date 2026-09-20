@@ -1898,7 +1898,8 @@
     "chatter": "Bisedat",
     "confidence": "Besueshmëria",
     "risk": "Rreziku",
-    "radar_title": "Narrativa në pamje: {{n}}"
+    "radar_title": "Narrativa në pamje: {{n}}",
+    "score_inputs": "sinjale tregu, on chain dhe sociale të regjistruara"
   },
   "research": {
     "empty": "Asnjë hulumtim i ruajtur ende. Ruaj një analizë ose brifing për ta mbajtur këtu.",
@@ -2852,7 +2853,10 @@
       "unreviewed": "të parishikuara",
       "volume": "Volumi",
       "vs_benchmark": "kundrejt indeksit të krahasimit",
-      "weaken": "dobësuese"
+      "weaken": "dobësuese",
+      "inputs": "bazës së regjistruar kur e shkruajte këtë tezë dhe një leximi të marrë tani",
+      "baseline_at": "Matur kundrejt bazës së regjistruar më {{date}}.",
+      "baseline_undated": "Baza kundrejt së cilës matet nuk raportoi kohë regjistrimi."
     },
     "draft_condition": "Draft: shto një kusht shfuqizimi para aktivizimit.",
     "draft_step": "Harto tezën tënde",
@@ -3633,7 +3637,7 @@
     "gauge_used": "Të përdorura",
     "gauge_reserved": "Të rezervuara",
     "gauge_headroom": "Hapësirë e mbetur",
-    "gauge_sub": "nuk raportohet",
+    "gauge_sub": "{{used}} të përdorura dhe {{reserved}} të rezervuara nga {{ceiling}} kredite. Gjilpëra shënon {{projected}}, muajin e projektuar nga ritmet në fuqi tani.",
     "reuse_live": "Thirrje live",
     "reuse_hits": "Gjetje në memorie",
     "reuse_misses": "Mosgjetje në memorie",
@@ -3737,7 +3741,21 @@
     "calibration_line": "Konsum i vëzhguar {{observed}} kredite në orë kundrejt {{affordable}} të përballueshme · shumëzues ritmi ×{{scale}} · {{count}} vëzhgime të llogarisë",
     "calibration_reason": "Arsyeja: {{reason}}",
     "calibration_window": "Mbeten {{remaining}} kredite dhe {{hours}} orë deri te rivendosja.",
-    "calibration_projection": "Parashikim me ritmin e kalibruar: {{credits}} kredite"
+    "calibration_projection": "Parashikim me ritmin e kalibruar: {{credits}} kredite",
+    "lane_cost_label": "Sa kushton sipas korsisë",
+    "lane_cost_title": "Sa kushton, sipas korsisë",
+    "lane_cost_sub": "{{count}} korsitë më të kushtueshme të 30 ditëve të fundit, matur nga thirrjet e regjistruara te ofruesi. Ritmi është ai në të cilin u vëzhgua secila korsi, jo detyrimisht ai i konfiguruar. Thirrjet për ekzekutim llogaritin zero një lexim që nuk bëri thirrje, kështu që një korsi e mbajtur mirë në kesh qëndron nën një.",
+    "lane_cost_missing": "Leximi i kostos sipas korsisë nuk u kthye, kështu që kjo tabelë nuk ka çfarë të tregojë. Pjesa që dështoi është emërtuar më lart.",
+    "lane_cost_empty": "Në 30 ditët e fundit nuk u regjistrua asnjë thirrje te ofruesi për asnjë korsi, kështu që asnjë korsi nuk ka kosto për të raportuar.",
+    "lane_cost_truncated": "Ky lexim arriti kufirin e rreshtave në {{scanned}} nga {{limit}}, kështu që dritarja është më e shkurtër se 30 ditë dhe këto shifra janë një minimum.",
+    "lane_cost_one_run": "vetëm një ekzekutim",
+    "col_lane": "Korsi",
+    "col_observed_cadence": "Ritmi i vëzhguar",
+    "col_calls_per_run": "Thirrje për ekzekutim",
+    "col_credits_24h": "Kredite, 24 h",
+    "col_credits_30d": "Kredite, 30 d",
+    "col_runs_30d": "Ekzekutime, 30 d",
+    "col_cache_hits": "Goditje keshi, 30 d"
   },
   "rwa_issuer": {
     "eyebrow": "Burime parësore",
@@ -3881,7 +3899,9 @@
     "capture_record": "Një kapje e regjistruar e shifrave të ofruesit në orën e treguar të kapjes. Leximi i saj nuk bëri asnjë thirrje të re te ofruesi dhe nuk është lexim i tregut tani.",
     "news_curated": "Lajme të përzgjedhura dhe të përmbledhura nga rishikim i automatizuar brenda periudhës së tyre të rishikimit. Një përmbledhje nuk është artikulli burimor dhe as pohim i verifikuar.",
     "news_stored": "Lajme të regjistruara nga burime të ndjekura dhe globale, të grupuara dhe të renditura sipas rregullave. Një renditje nuk është gjykim për saktësinë.",
-    "signals_stored": "Sinjale të krijuara nga burime të ruajtura dhe të renditura për ty gjatë leximit të kësaj pamjeje. Një sinjal është pikënisje për hulumtim, jo rekomandim."
+    "signals_stored": "Sinjale të krijuara nga burime të ruajtura dhe të renditura për ty gjatë leximit të kësaj pamjeje. Një sinjal është pikënisje për hulumtim, jo rekomandim.",
+    "execution_quote": "Një kuotim rrugëtimi në kohën e kuotimit, plus kontekstin e pool-it on chain. Nuk është një ekzekutim që e ka marrë ndokush dhe nuk është këshillë tregtimi.",
+    "exchange_signal": "Një klasifikim mbi tiketat e bursave të centralizuara të mbuluara në kohën e raportuar. Nuk është çmimi në një bursë të vetme dhe nuk është rekomandim."
   },
   "receipt_state": {
     "provider": "Ofruesi",
@@ -4092,5 +4112,32 @@
     "profile_expand": "Lexo përshkrimin e plotë",
     "profile_collapse": "Shfaq më pak",
     "profile_scope": "Publikuar nga {{provider}} dhe kapur më {{capturedAt}}. Kur shfaqet një numër dorëzuesi, është numri i dorëzuesit pranë SEC i kompanisë së listuar nën bazë sipas ofruesit, jo i shtëpisë që nxori token-in."
+  },
+  "receipt_cost": {
+    "calls_one": "{{count}} thirrje te ofruesi",
+    "calls_other": "{{count}} thirrje te ofruesi",
+    "credits_one": "{{count}} kredit",
+    "credits_other": "{{count}} kredite",
+    "credits_not_reported": "kreditet nuk raportohen",
+    "live": "drejtpërdrejt",
+    "no_call": "Asnjë thirrje te ofruesi",
+    "from_cache": "shërbyer nga kesh-i i përbashkët",
+    "shared": "Regjistrim i përbashkët, pa kosto ofruesi për lexues",
+    "captured_at": "regjistruar {{date}}",
+    "run_calls_one": "regjistrimi bëri {{count}} thirrje në këtë endpoint",
+    "run_calls_other": "regjistrimi bëri {{count}} thirrje në këtë endpoint",
+    "failed": "një dështim i ruajtur iu përgjigj këtij leximi",
+    "answered_live": "Një thirrje te ofruesi iu përgjigj këtij leximi",
+    "shared_curated": "Regjistrim i përbashkët, pa kosto ofruesi për lexues"
+  },
+  "figure_source": {
+    "line": "Burimi: {{source}}",
+    "observed": "vëzhguar {{date}}",
+    "captured": "regjistruar {{date}}",
+    "no_time": "nuk u raportua kohë vëzhgimi",
+    "unknown": "Burimi i kësaj shifre nuk u raportua.",
+    "our_calculation": "Llogaritja tonë nga {{inputs}}",
+    "recorded_inputs": "shifra që kemi regjistruar më parë",
+    "computed": "llogaritur {{date}}"
   }
 }

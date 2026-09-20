@@ -1,6 +1,7 @@
 import React from 'react'
 import {useTranslation} from 'react-i18next'
-import {receiptFreshness,providerLabel} from '../lib/source-receipt'
+import {receiptFreshness,providerLabel,receiptCost} from '../lib/source-receipt'
+import ReceiptCostLine from './ReceiptCostLine'
 const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString():null
 const FRESHNESS_DEFAULTS={fresh:'Fresh: a provider call answered this read',cached:'Cached: inside its refresh limit',stale:'Stale: past its refresh limit',unavailable:'Unavailable: nothing usable answered this read'}
 const CALL_DEFAULTS={live:'Live provider call',cache:'Shared cache','negative-cache':'Shared failure record',error:'Failed call'}
@@ -37,7 +38,12 @@ export default function SourceCallReceipt({receipt,scope,scopeKey,observedAt}){
  const cadence=receipt.cadenceSeconds!=null&&(receipt.origin==='capture'||receipt.origin==='stored')
  const call=receipt.captureCall&&CALL_DEFAULTS[receipt.captureCall]?t(`receipt_state.call_${receipt.captureCall.replace('-','_')}`,{defaultValue:CALL_DEFAULTS[receipt.captureCall]}):null
  const scopeText=scopeKey?t(`figure_scope.${scopeKey}`,{defaultValue:scope||''}):scope
- return <details className="intel-source-call-receipt" data-freshness={freshness}><summary>{t('receipt.summary',{defaultValue:'Source call receipt'})}</summary>
+ // The cost rides in the SUMMARY, not in the drawer: a reader must be able to see
+ // what a figure cost without opening anything. The drawer below still carries the
+ // full accounting (credits charged, HTTP status, parameters, clocks).
+ const cost=receiptCost(receipt)
+ return <details className="intel-source-call-receipt" data-freshness={freshness} data-served={cost?.served||undefined}><summary>{t('receipt.summary',{defaultValue:'Source call receipt'})}
+  {cost?<> · <ReceiptCostLine receipt={receipt} /></>:null}</summary>
   <dl className="intel-event-facts">
    {receipt.provider&&<><dt>{t('receipt_state.provider',{defaultValue:'Provider'})}</dt><dd>{providerLabel(receipt.provider,t)}</dd></>}
    <dt>{t('receipt.capability',{defaultValue:'Capability'})}</dt><dd className="break-all">{receipt.endpoint?`${receipt.capability} · ${receipt.endpoint}`:receipt.capability}</dd>

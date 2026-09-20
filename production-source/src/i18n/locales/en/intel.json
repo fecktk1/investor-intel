@@ -1004,7 +1004,10 @@
       "unreviewed": "unreviewed",
       "volume": "Volume",
       "vs_benchmark": "vs benchmark",
-      "weaken": "weaken"
+      "weaken": "weaken",
+      "inputs": "the baseline captured when you wrote this thesis and a reading taken now",
+      "baseline_at": "Measured against the baseline captured {{date}}.",
+      "baseline_undated": "The baseline this is measured against reported no capture time."
     },
     "draft_condition": "Draft: add an invalidation condition before activation.",
     "draft_step": "Draft your thesis",
@@ -2720,7 +2723,8 @@
     "chatter": "Chatter",
     "confidence": "Confidence",
     "risk": "Risk",
-    "radar_title": "{{n}} narratives in view"
+    "radar_title": "{{n}} narratives in view",
+    "score_inputs": "recorded market, on-chain and social signals"
   },
   "research": {
     "empty": "No saved research yet. Save a breakdown or brief to keep it here.",
@@ -3633,7 +3637,7 @@
     "gauge_used": "Used",
     "gauge_reserved": "Reserved",
     "gauge_headroom": "Headroom",
-    "gauge_sub": "not reported",
+    "gauge_sub": "{{used}} used and {{reserved}} reserved of {{ceiling}} credits. The needle marks {{projected}}, the month projected from the cadences now in force.",
     "reuse_live": "Live calls",
     "reuse_hits": "Cache hits",
     "reuse_misses": "Cache misses",
@@ -3737,7 +3741,21 @@
     "calibration_line": "Observed burn {{observed}} credits per hour against {{affordable}} affordable · cadence multiplier ×{{scale}} · {{count}} account observations",
     "calibration_reason": "Reason: {{reason}}",
     "calibration_window": "{{remaining}} credits remain with {{hours}} hours to the reset.",
-    "calibration_projection": "Projected at the calibrated cadence: {{credits}} credits"
+    "calibration_projection": "Projected at the calibrated cadence: {{credits}} credits",
+    "lane_cost_label": "What this costs by lane",
+    "lane_cost_title": "What this costs, by lane",
+    "lane_cost_sub": "The {{count}} costliest lanes over the last 30 days, measured from the recorded provider calls. The cadence is the one each lane was observed running at, which is not necessarily the one it is configured for. Calls per run counts reads that made no call as zero, so a well cached lane sits below one.",
+    "lane_cost_missing": "The per-lane cost read did not return, so this table has nothing to show. The failed part is named above.",
+    "lane_cost_empty": "No provider call was recorded for any lane in the last 30 days, so no lane has a cost to report.",
+    "lane_cost_truncated": "This read reached its row limit at {{scanned}} of {{limit}} rows, so the window is shorter than 30 days and these figures are a floor.",
+    "lane_cost_one_run": "one run only",
+    "col_lane": "Lane",
+    "col_observed_cadence": "Observed cadence",
+    "col_calls_per_run": "Calls per run",
+    "col_credits_24h": "Credits, 24h",
+    "col_credits_30d": "Credits, 30d",
+    "col_runs_30d": "Runs, 30d",
+    "col_cache_hits": "Cache hits, 30d"
   },
   "rwa_issuer": {
     "eyebrow": "Primary sources",
@@ -3881,7 +3899,9 @@
     "capture_record": "A recorded capture of provider figures at the stated capture time. Reading it made no new provider call and it is not a reading of the market now.",
     "news_curated": "Stories selected and summarised by automated review inside their review window. A summary is not the source article and not a verified claim.",
     "news_stored": "Stories recorded from followed and global sources, clustered and ranked by rules. A ranking is not a judgement of accuracy.",
-    "signals_stored": "Signals generated from stored sources and ranked for you when this view was read. A signal is a research prompt, not a recommendation."
+    "signals_stored": "Signals generated from stored sources and ranked for you when this view was read. A signal is a research prompt, not a recommendation.",
+    "execution_quote": "One routing quote at its quoted time, plus on-chain pool context. Not a fill anyone received and not advice to trade.",
+    "exchange_signal": "A classification over covered centralized exchange tickers at their reported time. Not a price on any one venue and not a recommendation."
   },
   "receipt_state": {
     "provider": "Provider",
@@ -4092,5 +4112,32 @@
     "profile_expand": "Read the full description",
     "profile_collapse": "Show less",
     "profile_scope": "Published by {{provider}} and captured on {{capturedAt}}. Where a filer number is shown it is the SEC filer number of the underlying listed company as the provider states it, not of the firm that issued the token."
+  },
+  "receipt_cost": {
+    "calls_one": "{{count}} provider call",
+    "calls_other": "{{count}} provider calls",
+    "credits_one": "{{count}} credit",
+    "credits_other": "{{count}} credits",
+    "credits_not_reported": "credits not reported",
+    "live": "live",
+    "no_call": "No provider call",
+    "from_cache": "served from the shared cache",
+    "shared": "Shared capture, no per-reader provider cost",
+    "captured_at": "captured {{date}}",
+    "run_calls_one": "the capture run made {{count}} call to this endpoint",
+    "run_calls_other": "the capture run made {{count}} calls to this endpoint",
+    "failed": "a remembered failure answered this read",
+    "answered_live": "A provider call answered this read",
+    "shared_curated": "Shared record, no per-reader provider cost"
+  },
+  "figure_source": {
+    "line": "Source: {{source}}",
+    "observed": "observed {{date}}",
+    "captured": "captured {{date}}",
+    "no_time": "no observation time was reported",
+    "unknown": "The source of this figure was not reported.",
+    "our_calculation": "Our calculation from {{inputs}}",
+    "recorded_inputs": "figures we already recorded",
+    "computed": "computed {{date}}"
   }
 }

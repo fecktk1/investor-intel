@@ -218,6 +218,16 @@ export async function readDataBudget(admin: any, now: Date = new Date()): Promis
     }
   } catch { degraded.push({ part: 'snapshot', reason: 'snapshot_unavailable' }) }
 
+  // Per-lane cost, for the "What this costs" table. One read-only RPC
+  // (20260920154000), no provider call and no credit. A failure here degrades that
+  // one table by name and leaves every other figure on the page intact.
+  let laneCost: Record<string, unknown> | null = null
+  try {
+    const { data, error } = await admin.rpc('intel_data_budget_lane_cost', { p_provider: 'coinmarketcap', p_top: 25 })
+    if (error) degraded.push({ part: 'laneCost', reason: 'lane_cost_unavailable' })
+    else laneCost = (data ?? null) as Record<string, unknown> | null
+  } catch { degraded.push({ part: 'laneCost', reason: 'lane_cost_unavailable' }) }
+
   const capture = await readCaptureCounts(admin, degraded)
 
   return {
@@ -255,6 +265,8 @@ export async function readDataBudget(admin: any, now: Date = new Date()): Promis
     jobs,
     cacheReuse,
     demandDaily,
+    // ADDITIVE: null when the RPC could not be read, which `degraded` already names.
+    laneCost,
     capture,
     degraded,
   }
