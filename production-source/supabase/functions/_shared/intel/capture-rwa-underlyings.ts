@@ -359,6 +359,9 @@ export async function profileQueue(admin: any, limit: number): Promise<{ ids: nu
   const read = await readRows(() => admin.from(MAP_TABLE).select('rwa_id,profiled_at')
     .not('has_tokens', 'is', false)
     .order('profiled_at', { ascending: true, nullsFirst: true })
+    // Provider rank before id: the largest tokenised assets are profiled on the
+    // first day rather than whichever ids happen to be lowest.
+    .order('rwa_rank', { ascending: true, nullsFirst: false })
     .order('rwa_id', { ascending: true })
     .limit(limit))
   // Sliced here too, not only in the query. A row ceiling that the database
