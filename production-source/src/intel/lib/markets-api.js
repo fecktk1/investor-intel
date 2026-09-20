@@ -25,23 +25,26 @@ export async function suggestMarketAssets(supabase, orgId, query, { limit = 8, s
   return Array.isArray(data?.matches) ? data.matches : []
 }
 
-/** The strongest exact bucket present, or [] when nothing names one asset. One
- *  surviving row here is an unambiguous answer the caller may open directly. */
+/**
+ * Every match that names the asset outright rather than merely starting like it.
+ *
+ * This used to take the strongest bucket and stop, which meant a ticker match
+ * hid a name match entirely: for "bitcoin" it returned two meme tokens called
+ * BITCOIN and never mentioned Bitcoin. Sharing a ticker with the asset the
+ * reader named is not better evidence than being it, so the whole tier is
+ * returned, in the order the server ranked it (largest market cap first).
+ */
 export function exactSuggestMatches(matches = []) {
-  for (const kind of SUGGEST_EXACT_MATCHES) {
-    const bucket = (matches || []).filter(row => row?.match === kind)
-    if (bucket.length) return bucket
-  }
-  return []
+  return (matches || []).filter(row => SUGGEST_EXACT_MATCHES.includes(row?.match))
 }
 
 /**
  * What a typed `/intel/markets/<input>` address means.
  *
- * One surviving asset in the strongest exact bucket IS the answer: it is opened,
- * never offered as a list of one. Several assets really do share the text, so
- * those stay a choice — ranked, with the CoinMarketCap catalogue entry at its
- * largest market cap first, exactly as the suggestions arrived.
+ * Exactly one asset in the exact tier IS the answer: it is opened, never offered
+ * as a list of one. When the text really does name several assets the whole tier
+ * is the choice, in the order the server ranked it, so "bitcoin" leads with
+ * Bitcoin and still shows the tokens that share its ticker underneath.
  */
 export function assetAddressTarget(matches = [], currentHref = '') {
   const exact = exactSuggestMatches(matches)

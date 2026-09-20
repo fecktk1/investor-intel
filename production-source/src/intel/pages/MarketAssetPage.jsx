@@ -179,8 +179,9 @@ export default function MarketAssetPage() {
         if (sourceProvider && providerId) return
         const matches = await suggestMarketAssets(supabase, org.id, routeInput, { limit: 8 }).catch(() => [])
         if (!alive || !matches.length) return
-        // One surviving asset in the strongest exact bucket IS the answer:
-        // open it rather than asking the reader to confirm a list of one.
+        // Exactly one asset in the exact tier IS the answer: open it rather than
+        // asking the reader to confirm a list of one. When the typed text really
+        // does name several, the whole tier is the choice, in the server's order.
         const target = assetAddressTarget(matches, `${here.current.pathname}${here.current.search}`)
         if (target.open) { navigate(target.open.href, { replace: true, state: here.current.state }); return }
         setCandidates(target.candidates)
