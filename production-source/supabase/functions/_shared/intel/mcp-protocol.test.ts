@@ -9,14 +9,18 @@ import {assert,assertEquals,assertRejects,assertThrows} from 'https://deno.land/
 import {
  dispatchRpc,parseRpcRequest,isNotification,negotiateProtocolVersion,rpcSuccess,rpcFailure,
  jsonToolResult,errorToolResult,JsonRpcError,RPC,SUPPORTED_PROTOCOL_VERSIONS,LATEST_PROTOCOL_VERSION,
- SERVER_INFO,type McpDispatch,
+ SERVER_INFO,SUPPORTED_METHODS,type McpDispatch,
 } from './mcp-protocol.ts'
 
 const dispatch=(overrides:Partial<McpDispatch>={}):McpDispatch=>({
  instructions:'Instructions.',
  listTools:()=>[{name:'search_assets',title:'Find an asset',description:'d',inputSchema:{type:'object',properties:{},additionalProperties:false}}],
  listResources:()=>[{uri:'investor-intel://tools',name:'Tool catalogue'}],
+ readResource:(uri)=>uri==='investor-intel://tools'?{uri,mimeType:'application/json',text:'{"tools":[]}'}:null,
  listPrompts:()=>[{name:'ground_a_claim',title:'Check a claim'}],
+ getPrompt:(name,args)=>name==='ground_a_claim'
+  ?{description:'Check a claim.',messages:[{role:'user' as const,content:{type:'text' as const,text:`claim=${String(args.claim??'')}`}}]}
+  :null,
  callTool:(name,args)=>Promise.resolve(jsonToolResult({called:name,args})),
  ...overrides,
 })
@@ -69,6 +73,48 @@ Deno.test('tools, resources and prompts come back under the keys the spec names'
  assert(Array.isArray(prompts?.prompts))
 })
 
+// The whole point of this one: a listed resource or prompt that cannot be fetched
+// is a visible failure in Claude Desktop and Cursor, which both put listed
+// resources and prompts in front of the member. Every method that lists something
+// must have the method that opens it.
+Deno.test('everything resources/list and prompts/list advertise can actually be fetched',async()=>{
+ const read=await dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:1,method:'resources/read',params:{uri:'investor-intel://tools'}}),dispatch())
+ assert(Array.isArray(read?.contents),'contents is an array, as the spec names it')
+ assertEquals((read!.contents as Array<Record<string,unknown>>)[0].uri,'investor-intel://tools')
+ assertEquals((read!.contents as Array<Record<string,unknown>>)[0].mimeType,'application/json')
+
+ const got=await dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:2,method:'prompts/get',params:{name:'ground_a_claim',arguments:{claim:'BTC is above 80k'}}}),dispatch())
+ assertEquals((got!.messages as Array<Record<string,any>>)[0].content.text,'claim=BTC is above 80k')
+ assertEquals((got!.messages as Array<Record<string,any>>)[0].role,'user')
+
+ // A uri or name that was never listed is INVALID_PARAMS naming it, not
+ // METHOD_NOT_FOUND and not an empty success.
+ await assertRejects(
+  ()=>dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:3,method:'resources/read',params:{uri:'investor-intel://nope'}}),dispatch()),
+  JsonRpcError,'is not a resource this server offers',
+ )
+ await assertRejects(
+  ()=>dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:4,method:'prompts/get',params:{name:'nope'}}),dispatch()),
+  JsonRpcError,'is not a prompt this server offers',
+ )
+ // A missing or wrongly shaped parameter is refused before the dispatch is asked.
+ await assertRejects(()=>dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:5,method:'resources/read',params:{}}),dispatch()),JsonRpcError,'needs a uri')
+ await assertRejects(()=>dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:6,method:'prompts/get',params:{}}),dispatch()),JsonRpcError,'needs a prompt name')
+ await assertRejects(()=>dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:7,method:'prompts/get',params:{name:'ground_a_claim',arguments:[1]}}),dispatch()),JsonRpcError,'Prompt arguments must be an object')
+})
+
+Deno.test('every method the server advertises as supported is one dispatchRpc answers',async()=>{
+ for(const method of SUPPORTED_METHODS){
+  const params=method==='resources/read'?{uri:'investor-intel://tools'}
+   :method==='prompts/get'?{name:'ground_a_claim'}
+   :method==='tools/call'?{name:'search_assets',arguments:{}}
+   :{}
+  // No throw of METHOD_NOT_FOUND. A notification legitimately returns null.
+  const result=await dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:1,method,params}),dispatch())
+  assert(result!==undefined,`${method} must be answered`)
+ }
+})
+
 Deno.test('tools/call reaches the dispatch, and an unknown tool is a protocol fault',async()=>{
  const called=await dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:1,method:'tools/call',params:{name:'search_assets',arguments:{query:'BTC'}}}),dispatch())
  assertEquals((called as {structuredContent?:Record<string,unknown>}).structuredContent?.called,'search_assets')
@@ -87,11 +133,17 @@ Deno.test('tools/call reaches the dispatch, and an unknown tool is a protocol fa
 })
 
 Deno.test('an unimplemented method is METHOD_NOT_FOUND, not a silent empty result',async()=>{
- const error=await assertRejects(
-  ()=>dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:1,method:'resources/read',params:{uri:'x'}}),dispatch()),
-  JsonRpcError,
- )
- assertEquals(error.code,RPC.METHOD_NOT_FOUND)
+ // Methods this server genuinely does not implement, and does not advertise.
+ // resources/read used to be the example here, which was the bug: it was listed
+ // in the capabilities and answered METHOD_NOT_FOUND.
+ for(const method of ['resources/subscribe','logging/setLevel','completion/complete','sampling/createMessage']){
+  assert(!(SUPPORTED_METHODS as readonly string[]).includes(method),`${method} must not be advertised`)
+  const error=await assertRejects(
+   ()=>dispatchRpc(parseRpcRequest({jsonrpc:'2.0',id:1,method}),dispatch()),
+   JsonRpcError,
+  )
+  assertEquals(error.code,RPC.METHOD_NOT_FOUND,`${method} must be METHOD_NOT_FOUND`)
+ }
 })
 
 Deno.test('parseRpcRequest refuses everything that is not one 2.0 request',()=>{
@@ -126,6 +178,9 @@ Deno.test('a tool result carries the payload as text AND as structured content',
  // The text block is the same payload serialized, because a client that ignores
  // structuredContent must still be able to read the answer.
  assertEquals(JSON.parse(result.content[0].text),{a:1})
+ // Compact, not indented. The payload travels twice in one response and the
+ // indentation was pure weight in a member's context window.
+ assertEquals(result.content[0].text,'{"a":1}')
  assertEquals(result.structuredContent,{a:1})
  assertEquals(result.isError,undefined)
  // An array payload has no structuredContent, because that field is defined as an

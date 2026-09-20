@@ -51,9 +51,22 @@ export const MCP_TOOL_ROWS = [
 
 const PLACEHOLDER = 'YOUR_TOKEN'
 
-/** The three snippets, built from the live URL so a member never edits one by
- * hand. Each is exactly what that client wants, with nothing to fill in but the
- * token. */
+/** The snippets, built from the live URL so a member never edits one by hand.
+ * Each is exactly what that client wants, with nothing to fill in but the token.
+ *
+ * WHY CLAUDE DESKTOP HAS ITS OWN ENTRY, AND WHY IT IS NOT THE SAME JSON. Claude
+ * Desktop adds a remote server as a Custom Connector, which takes a URL and then
+ * runs the SERVER's own authentication: there is no field for a header you supply,
+ * and claude_desktop_config.json has no url-plus-headers form for a remote server.
+ * This server authenticates with a bearer token a member minted here, not with
+ * OAuth, so a Custom Connector cannot reach it. The route that does work is the
+ * mcp-remote stdio bridge, which Claude Desktop spawns like any local server and
+ * which forwards the header. The token goes in `env` rather than into the argument
+ * list, because an argument list is visible to anything that can see the process.
+ *
+ * Cursor is genuinely url-plus-headers and keeps the plain JSON. Lumping the two
+ * together under one snippet, which is what this component used to do, sent every
+ * Claude Desktop member to a config shape that does nothing. */
 export function mcpSnippets(url) {
   const safe = url || 'https://YOUR-PROJECT.supabase.co/functions/v1/intel-mcp'
   return {
@@ -61,9 +74,17 @@ export function mcpSnippets(url) {
     json: JSON.stringify({
       mcpServers: {
         'investor-intel': {
-          type: 'http',
           url: safe,
           headers: { Authorization: `Bearer ${PLACEHOLDER}` },
+        },
+      },
+    }, null, 2),
+    desktop: JSON.stringify({
+      mcpServers: {
+        'investor-intel': {
+          command: 'npx',
+          args: ['-y', 'mcp-remote', safe, '--header', 'Authorization:${INTEL_TOKEN}', '--transport', 'http-only'],
+          env: { INTEL_TOKEN: `Bearer ${PLACEHOLDER}` },
         },
       },
     }, null, 2),
@@ -153,9 +174,15 @@ export default function AgentMcpConnect() {
       )}
       {block(
         'json',
-        t('settings.agent_mcp_json', { defaultValue: 'Claude Desktop, Cursor and other config files' }),
+        t('settings.agent_mcp_json', { defaultValue: 'Cursor and other config files' }),
         snippets.json,
-        t('settings.agent_mcp_json_note', { defaultValue: 'Merge this into the client\'s MCP config. Keep the file readable only by you: it holds the token in plain text.' }),
+        t('settings.agent_mcp_json_note', { defaultValue: 'Merge this into the client\'s MCP config, at .cursor/mcp.json for one project or ~/.cursor/mcp.json for all of them. Keep the file readable only by you: it holds the token in plain text.' }),
+      )}
+      {block(
+        'desktop',
+        t('settings.agent_mcp_desktop', { defaultValue: 'Claude Desktop' }),
+        snippets.desktop,
+        t('settings.agent_mcp_desktop_note', { defaultValue: 'Claude Desktop reaches a remote server through a small bridge it starts for you, so this goes in claude_desktop_config.json under Settings, then Developer, then Edit Config. Node has to be installed. Adding the address as a custom connector instead will not work: that path asks the server to run a sign-in, and this one wants the token above.' }),
       )}
       {block(
         'curl',

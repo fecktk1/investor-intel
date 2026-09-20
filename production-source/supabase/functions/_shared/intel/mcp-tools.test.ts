@@ -7,7 +7,7 @@
 // fail in this file rather than on a member's credit bill, which is the point.
 
 import {assert,assertEquals} from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import {MCP_TOOLS,callMcpTool,buildToolContext,findTool,SERVER_INSTRUCTIONS,MCP_RESOURCES,MCP_PROMPTS,type ToolContext} from './mcp-tools.ts'
+import {MCP_TOOLS,callMcpTool,buildToolContext,findTool,SERVER_INSTRUCTIONS,MCP_RESOURCES,MCP_PROMPTS,readMcpResource,getMcpPrompt,type ToolContext} from './mcp-tools.ts'
 import {FORWARD_TABLE_CONTRACT} from './mcp-rwa-forward.ts'
 import {AGENT_SCOPES,type AgentContext,type AgentScope} from './agent-token.ts'
 
@@ -562,4 +562,142 @@ Deno.test('the settings table lists exactly the tools this server offers',async(
   const needsStarter=tool.surface==='investigation'||tool.surface==='alert_evaluation'
   assertEquals(rows.get(tool.name),needsStarter?'starter':'free',`${tool.name} is listed under the wrong plan in the settings table`)
  }
+})
+
+// ── Result size ─────────────────────────────────────────────────────────────
+//
+// Measured against production before this cap existed: rwa_universe at days=30
+// returned 1400 series points and 520 KB on the wire, roughly 130 thousand tokens
+// of a member's context window for one call. Every tool ARGUMENT was already
+// bounded; a series is not an argument, which is how it slipped through. These two
+// pin the bound and, just as importantly, pin that the trim is SAID rather than
+// silent.
+
+/** A regime fixture with more points than any conversation should be handed. */
+function bigRegimeFixture(points:number):Fixture {
+ const rows=Array.from({length:points},(_,index)=>({
+  captured_at:new Date(Date.parse(CAPTURED)-(points-1-index)*3600000).toISOString(),
+  fear_greed_value:40+(index%20),fear_greed_class:'Neutral',altcoin_season_index:30,
+  btc_dominance:57+(index%3)/10,eth_dominance:11,total_market_cap:2.7e12,total_volume_24h:6e10,
+  stablecoin_market_cap:2.8e11,defi_market_cap:8e10,
+  source_observed_at:new Date(Date.parse(CAPTURED)-(points-1-index)*3600000).toISOString(),
+ }))
+ return {...FULL,tables:{...FULL.tables,intel_regime_snapshots:rows}}
+}
+
+Deno.test('market_regime bounds its series, keeps the newest capture, and says it trimmed',async()=>{
+ const result=await call(ctx(bigRegimeFixture(400)),'market_regime',{range:'90d'})
+ const data=result.payload.data as Record<string,unknown>
+ const series=data.series as Array<Record<string,unknown>>
+ assert(series.length<=60,`the series must be bounded, got ${series.length}`)
+ const counts=data.series_points as Record<string,number>
+ assertEquals(counts.returned,series.length)
+ assert(counts.captured>counts.returned,'the true point count is reported, not hidden')
+ // The window the caller asked for is unchanged: the newest observation is still
+ // there, which is what makes a downsample honest rather than a cut.
+ assertEquals(series[series.length-1].capturedAt,CAPTURED,'the newest capture must survive the trim')
+ // latest is taken from the full series, so it is the newest capture whatever the
+ // downsample kept.
+ assertEquals((data.latest as Record<string,unknown>).capturedAt,CAPTURED)
+ assert(String(result.payload.note).includes('evenly spaced'),'a trim must be said in words')
+ // A short series is left completely alone, with no note about trimming.
+ const small=await call(ctx(FULL),'market_regime',{range:'7d'})
+ const smallCounts=(small.payload.data as Record<string,unknown>).series_points as Record<string,number>
+ assertEquals(smallCounts.captured,smallCounts.returned)
+ assert(!String((small.payload as Record<string,unknown>).note??'').includes('evenly spaced'))
+})
+
+Deno.test('rwa_universe bounds its series per asset type, which is where the 520 KB came from',async()=>{
+ const types=['stock','commodity','etf','government_security','currency','real_estate','other']
+ const rows=types.flatMap(assetType=>Array.from({length:200},(_,index)=>({
+  asset_type:assetType,
+  captured_at:new Date(Date.parse(CAPTURED)-(199-index)*3600000).toISOString(),
+  asset_count:250,assets_scanned:250,assets_with_tokens:193,issuer_count:0,
+  total_market_value_usd:1.3e9,volume_24h_usd:3e8,change_24h_pct:null,
+  top_assets:[{name:'SpaceX',symbol:'SPCX',value:2.1e8,rwa_id:9}],
+ })))
+ const result=await call(ctx({...FULL,tables:{...FULL.tables,intel_rwa_universe_snapshots:rows}}),'rwa_universe',{days:90,top_assets:2})
+ const data=result.payload.data as Record<string,unknown>
+ const series=data.series as Array<Record<string,unknown>>
+ assert(series.length>0,'the fixture must produce a series')
+ for(const entry of series){
+  assert((entry.points as unknown[]).length<=60,`${String(entry.assetType)} carries ${(entry.points as unknown[]).length} points`)
+ }
+ const counts=data.series_points as Record<string,number>
+ assert(counts.captured>counts.returned,'the true point count is reported')
+ assert(String(result.payload.note).includes('evenly spaced'))
+ // The whole reason the cap exists: one call has to fit in a conversation.
+ const bytes=JSON.stringify(result.result).length
+ assert(bytes<200_000,`a single tool result must stay readable, got ${bytes} bytes`)
+})
+
+// ── Resources and prompts ───────────────────────────────────────────────────
+//
+// resources/list and prompts/list put these in front of the member in Claude
+// Desktop and Cursor. Before this pass the server listed four things and
+// implemented neither resources/read nor prompts/get, so every one of them failed
+// with METHOD_NOT_FOUND when opened. These exist so that cannot return.
+
+Deno.test('every listed resource can be read, and none of them carries member data',()=>{
+ for(const resource of MCP_RESOURCES){
+  const contents=readMcpResource(resource.uri)
+  assert(contents,`${resource.uri} is listed and must be readable`)
+  assertEquals(contents!.uri,resource.uri)
+  assertEquals(contents!.mimeType,resource.mimeType,'the mime type must match what was advertised')
+  assert(contents!.text.length>0,`${resource.uri} must have contents`)
+ }
+ assertEquals(readMcpResource('investor-intel://nope'),null,'an unlisted uri is null, never an empty success')
+
+ // The tool catalogue resource has to agree with the catalogue itself, or a client
+ // reading it as a resource is told something tools/list contradicts.
+ const catalogue=JSON.parse(readMcpResource('investor-intel://tools')!.text) as {tools:Array<Record<string,unknown>>}
+ assertEquals(catalogue.tools.map(tool=>tool.name),MCP_TOOLS.map(tool=>tool.name))
+ for(const tool of MCP_TOOLS){
+  const row=catalogue.tools.find(entry=>entry.name===tool.name)!
+  assertEquals(row.scope_required,tool.scope??null,`${tool.name} scope disagrees with the catalogue`)
+  assertEquals(row.plan_surface,tool.surface==='agent_access'?null:tool.surface,`${tool.name} surface disagrees with the catalogue`)
+ }
+ // A resource is documentation about this surface, never a member's rows: the
+ // gates live on tools, and a resource holding member data would be a second door
+ // into the same room with nothing guarding it.
+ const grounding=readMcpResource('investor-intel://grounding')!.text
+ for(const field of ['as_of','source','calculated_by','withheld','scope_missing']){
+  assert(grounding.includes(field),`the grounding contract must explain ${field}`)
+ }
+ // The owner's standing directive, in the one document a model is most likely to
+ // attach to a conversation.
+ assert(/expire|no expiry|withdraws it/i.test(grounding),'the grounding contract must say a review does not expire')
+})
+
+Deno.test('every listed prompt renders, with a named blank rather than a dead end',()=>{
+ for(const prompt of MCP_PROMPTS){
+  const rendered=getMcpPrompt(prompt.name,{})
+  assert(rendered,`${prompt.name} is listed and must render`)
+  assert(rendered!.description.length>0)
+  assertEquals(rendered!.messages.length,1)
+  assertEquals(rendered!.messages[0].role,'user')
+  // A missing required argument leaves a blank the person fills in. A prompt is a
+  // starting message they edit, so refusing it would be worse than a placeholder.
+  assert(rendered!.messages[0].content.text.includes('('),`${prompt.name} must name its blank`)
+ }
+ assertEquals(getMcpPrompt('nope',{}),null)
+
+ const grounded=getMcpPrompt('ground_a_claim',{claim:'BTC is above 80k'})!
+ assert(grounded.messages[0].content.text.includes('BTC is above 80k'))
+ // Interpolated text is bounded like any other argument.
+ const long=getMcpPrompt('ground_a_claim',{claim:'x'.repeat(5000)})!
+ assert(long.messages[0].content.text.length<1500,'a prompt argument must be bounded')
+
+ // A prompt that names a tool we do not have walks a model into a refusal on our
+ // behalf, so every tool either prompt names has to exist.
+ const names=new Set(MCP_TOOLS.map(tool=>tool.name))
+ const dd=getMcpPrompt('rwa_due_diligence',{subject:'rwa:coinmarketcap:1'})!.messages[0].content.text
+ for(const tool of ['rwa_universe','rwa_issuer_legitimacy','rwa_yield_provenance','rwa_issuer_terms','rwa_wrapper_premiums','rwa_liquidity_depth','rwa_underlying_registrant']){
+  assert(names.has(tool)&&dd.includes(tool),`the due diligence prompt must use ${tool}`)
+ }
+ for(const tool of ['search_assets','get_asset','market_regime']){
+  assert(names.has(tool)&&grounded.messages[0].content.text.includes(tool),`the grounding prompt must use ${tool}`)
+ }
+ assert(/not advice|never advice/i.test(dd),'the due diligence prompt must say it is not advice')
+ assert(/not an expiry/i.test(dd),'the due diligence prompt must say a review date is not an expiry')
 })

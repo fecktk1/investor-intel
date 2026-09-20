@@ -45,7 +45,7 @@ import {executeAgentPlan} from './agent-write.ts'
 import {projectPlan,projectAlerts,projectWatchlists,projectWatchlistItems} from './agent-projection.ts'
 import {parseToolArguments,SchemaError,LIMIT_PROPERTY,ISO_DAYS,QUERY_PATTERN,SYMBOL_PATTERN,UUID_PATTERN,CHAIN_PATTERN,type JsonSchema} from './mcp-schema.ts'
 import {grounded,withheld,emptyNote,reasonSentence,oldestOf,type SourceRef,type CalculatedBy} from './mcp-grounding.ts'
-import {jsonToolResult,errorToolResult,type McpToolResult,type McpToolDefinition} from './mcp-protocol.ts'
+import {jsonToolResult,errorToolResult,type McpToolResult,type McpToolDefinition,type McpResourceContents,type McpPromptResult} from './mcp-protocol.ts'
 import {readForwardTable,FORWARD_TABLE_CONTRACT} from './mcp-rwa-forward.ts'
 import {readDailyBudget,MINUTE_LIMITS} from './mcp-quota.ts'
 import {readRegime,readRwaUniverse,readBreadth} from './capture-read.ts'
@@ -79,6 +79,45 @@ const STORE={
 
 const CMC=(family:string,store:string):SourceRef=>({provider:'coinmarketcap',endpoint_family:family,store})
 const OURS=(store:string):SourceRef=>({provider:'investor_intel',endpoint_family:null,store})
+
+/** How many points of a series one tool result may carry.
+ *
+ * WHY THIS EXISTS. Every tool ARGUMENT is bounded, but a series is not an
+ * argument: the read modules cap themselves at what a chart on the web page needs
+ * (400 regime points, 200 per RWA asset type across seven types), which is right
+ * for a canvas and far too much for a conversation. Measured against production:
+ * rwa_universe at days=30 returned 1400 points, 520 KB on the wire, roughly 130
+ * thousand tokens of a member's context window for a shape that 60 points states
+ * just as well. The trim is an even-stride downsample that keeps the first and
+ * last observation, so the WINDOW the caller asked for is still the window they
+ * get, and the note says how many points the series really had. */
+const SERIES_POINT_CAP=60
+
+/** Even-stride downsample, first and last observation always kept.
+ *
+ * Deliberately a copy of the shape capture-read.ts uses rather than a call into
+ * it: this cap is about what a model should read, not about what a chart needs,
+ * and the two should be free to differ without one changing the other. */
+function trimSeries<T>(rows:readonly T[],max=SERIES_POINT_CAP):T[] {
+ if(rows.length<=max||max<2)return rows.slice(0,Math.max(0,max))
+ const step=rows.length/max,out:T[]=[]
+ for(let index=0;index<max;index++)out.push(rows[Math.min(rows.length-1,Math.floor(index*step))])
+ out[out.length-1]=rows[rows.length-1]
+ return out
+}
+
+/** Said in words, never left as a silently short series. */
+function trimNote(kept:number,total:number,what:string):string|null {
+ return total>kept
+  ? `The ${what} had ${total} points over the window asked for; ${kept} evenly spaced points are returned, including the first and the last, so the window is unchanged and the answer stays readable.`
+  : null
+}
+
+/** Join notes without leaving a stray separator when one of them is absent. */
+const notes=(...parts:Array<string|null|undefined>):string|null => {
+ const kept=parts.filter((part):part is string=>typeof part==='string'&&part.length>0)
+ return kept.length?kept.join(' '):null
+}
 
 // ── Request-scoped context ──────────────────────────────────────────────────
 
@@ -233,7 +272,10 @@ async function marketRegime(ctx:ToolContext,args:Record<string,unknown>):Promise
   readBreadth(ctx.db,{},ctx.now),
  ])
  const series=(regime.series as Record<string,unknown>[]|undefined)??[]
+ // `latest` is taken from the FULL series before the trim, so it is always the
+ // newest capture rather than whichever point survived the downsample.
  const latest=series.length?series[series.length-1]:null
+ const trimmed=trimSeries(series)
  return grounded({
   tool:'market_regime',
   as_of:regime.asOf,
@@ -241,11 +283,12 @@ async function marketRegime(ctx:ToolContext,args:Record<string,unknown>):Promise
   calculated_by:'provider',
   tier:{tier:ctx.tier,surface:'market_regime',open:true},
   coverage:regime.coverage,
-  note:emptyNote(series.length,regime.asOf,regime.reason,'the market regime'),
+  note:notes(emptyNote(series.length,regime.asOf,regime.reason,'the market regime'),trimNote(trimmed.length,series.length,'regime series')),
  },{
   range:regime.range,
   latest,
-  series,
+  series:trimmed,
+  series_points:{returned:trimmed.length,captured:series.length},
   // Breadth is ours: a cap-weighted return minus the median, over one stored
   // listings snapshot. Labelled so it is never quoted as a provider figure.
   breadth:{
@@ -333,6 +376,17 @@ async function rwaUniverse(ctx:ToolContext,args:Record<string,unknown>):Promise<
    topAssets:Array.isArray(reading.topAssets)?(reading.topAssets as unknown[]).slice(0,topLimit):[],
   }
  }
+ // The series is one entry per asset type, each with its own point list, so the
+ // cap is applied per type: seven types at the read module's 200 points came back
+ // as 520 KB, which no conversation can hold.
+ const rawSeries=(result.series as Array<Record<string,unknown>>|undefined)??[]
+ let capturedPoints=0,returnedPoints=0
+ const series=rawSeries.map(entry=>{
+  const points=Array.isArray(entry.points)?entry.points as unknown[]:[]
+  const kept=trimSeries(points)
+  capturedPoints+=points.length;returnedPoints+=kept.length
+  return {...entry,points:kept}
+ })
  return grounded({
   tool:'rwa_universe',
   as_of:result.asOf,
@@ -341,8 +395,11 @@ async function rwaUniverse(ctx:ToolContext,args:Record<string,unknown>):Promise<
   inputs:['per-type totals summed from one stored RWA listings capture (asset count, issuer count, market value, 24h volume)'],
   tier:{tier:ctx.tier,surface:'capture_views',open:true},
   coverage:result.coverage,
-  note:emptyNote(types.length,result.asOf,result.reason,'the RWA universe'),
- },{days:result.days,per_type:trimmed,series:result.series,asset_types:types})
+  note:notes(emptyNote(types.length,result.asOf,result.reason,'the RWA universe'),trimNote(returnedPoints,capturedPoints,'per-type series')),
+ },{
+  days:result.days,per_type:trimmed,series,asset_types:types,
+  series_points:{returned:returnedPoints,captured:capturedPoints,per_type_cap:SERIES_POINT_CAP},
+ })
 }
 
 async function rwaIssuerLegitimacy(ctx:ToolContext,args:Record<string,unknown>):Promise<Record<string,unknown>> {
@@ -1177,6 +1234,85 @@ export const MCP_RESOURCES=[
  },
 ]
 
+/** The grounding contract, written out. This is the one piece of prose a model
+ * needs in order to quote a figure from this server honestly, so it is a resource
+ * a client can attach to a conversation rather than only a line of instructions. */
+const GROUNDING_CONTRACT=[
+ '# How to quote a figure from Investor Intel',
+ '',
+ 'Every tool result carries three fields. None of them is decoration.',
+ '',
+ '## as_of',
+ '',
+ 'The capture time the answer rests on, not the time you asked. A reading is only',
+ 'as fresh as this. `as_of: null` means nothing has been captured into that store',
+ 'yet: say so. Never substitute the current time for a null as_of, and never',
+ 'present a reading as current without naming this time.',
+ '',
+ '## source',
+ '',
+ '`provider` is who the figure came from, `endpoint_family` is which of their',
+ 'endpoints, and `store` is the table we hold it in, so a person can go and look.',
+ 'Some results carry an array of sources because the reading joins more than one.',
+ 'When `source.attribution` is present it is a licence condition: show it wherever',
+ 'you show those figures. meme_graduations always carries one.',
+ '',
+ '## calculated_by',
+ '',
+ '`provider` means the number is theirs, unchanged. `investor_intel` means WE',
+ 'computed it, and `inputs` says from what. Say whose number it is when you quote',
+ 'it. A breadth spread, a realized yield, a premium in basis points and a 24 hour',
+ 'change reconstructed from our own snapshots are all ours.',
+ '',
+ '## What a refusal means',
+ '',
+ '- `withheld: true`: the plan does not include that reading and the data was never',
+ '  produced. There is nothing to work around. Name the plan that opens it.',
+ '- `scope_missing`: the member must mint a token carrying that scope.',
+ '- `not_available_yet`: we have not built that lane. It is a fact about us, never',
+ '  evidence about the market.',
+ '- `state: served` with no rows is missing coverage, not an absence in the world.',
+ '',
+ '## Reviews do not expire',
+ '',
+ 'An issuer review and an alias assertion carry a review date, never a deadline. A',
+ 'fact stops being current only when a later review withdraws it. Never report a',
+ 'review date as an expiry or as data going out of date.',
+ '',
+ '## Nothing here spends a provider credit',
+ '',
+ 'Every read comes from a precomputed capture or a retained observation. A stale',
+ 'as_of is a stale capture, not a reason to retry: the same call returns the same',
+ 'reading.',
+].join('\n')
+
+/** What a client gets when it opens one of the listed resources.
+ *
+ * Both are static. A resource on this server is documentation about the surface,
+ * never a member's data: member data is behind a tool, where the scope and tier
+ * gates are, and moving any of it into a resource would be a second door into the
+ * same room with no gate on it. */
+export function readMcpResource(uri:string):McpResourceContents|null {
+ if(uri==='investor-intel://tools'){
+  return {
+   uri,mimeType:'application/json',
+   text:JSON.stringify({
+    tools:MCP_TOOLS.map(tool=>({
+     name:tool.name,title:tool.title,description:tool.description,
+     scope_required:tool.scope??null,
+     plan_surface:tool.surface==='agent_access'?null:tool.surface,
+     writes:tool.name==='alert_create'?'proposal, needs a person to approve it'
+      :tool.name==='watchlist_add'||tool.name==='save_research_note'?'direct write'
+      :'read only',
+    })),
+    note:'A tool that needs a scope only works on a token carrying it. A tool with a plan_surface is withheld server side when the plan does not include it: no rows, no counts, no sample.',
+   }),
+  }
+ }
+ if(uri==='investor-intel://grounding')return {uri,mimeType:'text/markdown',text:GROUNDING_CONTRACT}
+ return null
+}
+
 export const MCP_PROMPTS=[
  {
   name:'ground_a_claim',
@@ -1191,3 +1327,53 @@ export const MCP_PROMPTS=[
   arguments:[{name:'subject',description:'The RWA subject key, written as rwa:coinmarketcap:<id>.',required:true}],
  },
 ]
+
+/** A prompt's messages, rendered with whatever the client passed.
+ *
+ * A missing required argument is not a refusal here. The spec has no error shape
+ * for "argument missing" on prompts/get that clients render usefully, and a prompt
+ * is a starting message a person then edits, so the argument is left as a named
+ * blank the person fills in rather than a dead end. */
+export function getMcpPrompt(name:string,args:Record<string,unknown>):McpPromptResult|null {
+ const arg=(key:string,fallback:string):string => {
+  const value=args[key]
+  // Bounded: a prompt argument is interpolated into text a model reads, so the
+  // same ceiling a tool argument gets applies here.
+  return typeof value==='string'&&value.trim()?value.trim().slice(0,400):fallback
+ }
+ if(name==='ground_a_claim'){
+  const claim=arg('claim','(write the claim here, in one sentence)')
+  return {
+   description:'Check a claim against captured data, and say plainly when the data does not settle it.',
+   messages:[{role:'user',content:{type:'text',text:[
+    `Check this claim using Investor Intel only: ${claim}`,
+    '',
+    'How to do it:',
+    '1. search_assets to identify the asset, then get_asset for its figures and our cross-source agreement verdict.',
+    '2. market_regime if the claim is about the market rather than one asset.',
+    '3. Quote as_of, source and calculated_by for every figure you use. Say when a number is ours rather than the provider\'s.',
+    '4. If the captured data does not settle the claim, say that it does not and say what is missing. Do not fill the gap from memory, and do not treat a stale as_of as a reason to retry: nothing here refreshes on a read.',
+   ].join('\n')}}],
+  }
+ }
+ if(name==='rwa_due_diligence'){
+  const subject=arg('subject','(the subject key, written rwa:coinmarketcap:<id>)')
+  return {
+   description:'Walk one tokenized real-world asset through the readings that exist, without filling gaps with guesses.',
+   messages:[{role:'user',content:{type:'text',text:[
+    `Work through the tokenized asset ${subject} using Investor Intel only.`,
+    '',
+    'In this order:',
+    '1. rwa_universe for where its type sits: asset count, issuer count, market value, 24h volume.',
+    '2. rwa_issuer_legitimacy for the legal entity and how it was identified, the SEC Form D admission history and what has drifted in it, holder concentration and transfer restrictions.',
+    '3. rwa_yield_provenance for the advertised rate against the realized rate we computed from on-chain NAV rounds. The gap between them is the point.',
+    '4. rwa_issuer_terms for who may redeem, minimums, exclusions and hours, each with its link.',
+    '5. rwa_wrapper_premiums and rwa_liquidity_depth for what a wrapper trades at against its anchor and whether there is anywhere to sell it.',
+    '6. rwa_underlying_registrant when there is a listed company underneath, using its ten-digit CIK.',
+    '',
+    'Rules: an empty result is missing coverage on our side, never evidence that the thing does not exist. A review date is not an expiry. Date and source every figure, and name the ones we calculated. This is not advice, an eligibility decision or a valuation.',
+   ].join('\n')}}],
+  }
+ }
+ return null
+}
