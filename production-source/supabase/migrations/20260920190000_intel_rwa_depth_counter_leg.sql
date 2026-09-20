@@ -126,7 +126,7 @@ ALTER TABLE public.intel_rwa_depth_snapshots ADD CONSTRAINT intel_rwa_depth_coun
   -- (the tolerance is for floating point: the two sums are added in different orders by the lane, and an exact
   -- comparison could refuse a whole upsert batch over a rounding difference in the ninth decimal place)
   AND (deepest_recognised_liquidity_usd IS NULL OR recognised_liquidity_usd IS NULL
-       OR deepest_recognised_liquidity_usd <= recognised_liquidity_usd)
+       OR deepest_recognised_liquidity_usd <= recognised_liquidity_usd * 1.000001 + 0.01)
   AND (exit_liquidity_pools IS NULL OR recognised_pool_count IS NULL OR exit_liquidity_pools <= recognised_pool_count));
 
 -- Same NaN and +/-Infinity refusal the table already applies to its other money columns: NaN and Infinity both compare
