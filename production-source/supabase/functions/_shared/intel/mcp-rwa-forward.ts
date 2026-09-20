@@ -1,4 +1,4 @@
-// Three RWA readings whose tables are being built by other agents right now.
+// Three RWA readings served from stores built by sibling capture lanes.
 //
 // The tools are published today and answer honestly today. Each one reads through
 // a small adapter that can tell three states apart, which is the entire reason
@@ -16,9 +16,8 @@
 // token has no liquidity, which is a false claim about the market rather than a
 // true claim about our coverage. So the absent-table case is named.
 //
-// WHAT I ASSUMED. Every table and column below is a GUESS at what the sibling
-// lanes will create, recorded here in one place so the merge is a rename in this
-// file and nothing else. The assumed names are listed in
+// The table and column names live here in one place, wired to the real stores on
+// 2026-09-20. They are also listed in
 // docs/investor-intel/hosted-mcp.md under "Forward-compatible RWA tools" and in
 // FORWARD_TABLE_CONTRACT, which the tests read so a rename cannot be made
 // silently. Nothing else in the MCP server references these names.
@@ -62,23 +61,34 @@ export interface ForwardResult {
  * message rather than pretending the table is absent.
  */
 export const FORWARD_TABLE_CONTRACT={
+ // Wired 2026-09-20 to the stores the sibling lanes actually created.
+ // One row per wrapper token per six-hourly capture (capture-rwa-wrappers.ts).
+ // premium_bps is against the asset's anchor; an accruing wrapper carries
+ // accrual_gap_bps instead and never a premium. Subject is the wrapper's
+ // CoinMarketCap crypto id.
  wrapper_premiums:{
-  table:'intel_rwa_wrapper_premiums',
+  table:'intel_rwa_wrapper_tokens',
   capturedAtColumn:'captured_at',
-  subjectColumn:'wrapper_key',
-  columns:['wrapper_key','wrapper_symbol','wrapper_name','anchor_key','anchor_symbol','chain','contract_address','wrapper_price_usd','anchor_price_usd','premium_pct','observed_at','captured_at','source_provider','source_url'],
+  subjectColumn:'crypto_id',
+  columns:['rwa_id','crypto_id','symbol','name','issuer_name','price','normalised_price','market_cap','volume_24h','unit_state','wrapper_state','premium_bps','accrual_gap_bps','in_anchor','state_reason','captured_at','fetched_at'],
  },
+ // One row per token per day (capture-rwa-depth.ts). Provider figures only; the
+ // exitability sizes are computed on read in the app and are not stored.
+ // Subject is the token key, written cmc:<crypto id> or contract:<chain>:<address>.
  liquidity_depth:{
-  table:'intel_rwa_liquidity_pools',
+  table:'intel_rwa_depth_snapshots',
   capturedAtColumn:'captured_at',
   subjectColumn:'token_key',
-  columns:['token_key','token_symbol','chain','contract_address','pool_address','venue','quote_symbol','liquidity_usd','volume_24h_usd','depth_2pct_usd','depth_5pct_usd','exit_size_usd','slippage_bps_at_exit','captured_at','source_provider','source_url'],
+  columns:['token_key','crypto_id','symbol','token_name','rwa_name','asset_type','issuer_name','token_market_cap','depth_state','chains_deployed','chains_read','chains_not_covered','pool_count','total_liquidity_usd','total_volume_24h_usd','deepest_pool_dex','deepest_pool_chain','deepest_pool_pair','deepest_liquidity_usd','deepest_volume_24h_usd','holder_count','restriction_state','snapshot_date','captured_at'],
  },
+ // One row per tokenised asset whose provider-asserted filer number was read
+ // back at EDGAR (capture-rwa-underlyings.ts). This is the UNDERLYING listed
+ // company, never the token issuer. Subject is the ten-digit CIK.
  underlying_registrant:{
   table:'intel_rwa_underlying_registrants',
   capturedAtColumn:'fetched_at',
-  subjectColumn:'subject',
-  columns:['subject','cik','registrant_name','filer_status','sic','sic_description','state_of_incorporation','fiscal_year_end','latest_filing_type','latest_filing_date','latest_accession_number','filings_count','source_url','fetched_at'],
+  subjectColumn:'cik',
+  columns:['rwa_id','cik','state','reason','registrant_name','asset_name','name_match','sic','sic_description','state_of_incorporation','fiscal_year_end','exchanges','tickers','latest_annual_form','latest_annual_date','latest_annual_accession','latest_quarterly_form','latest_quarterly_date','latest_quarterly_accession','latest_current_form','latest_current_date','filings_read','source_url','fetched_at'],
  },
 } as const
 
