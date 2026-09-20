@@ -3937,5 +3937,15 @@
     "copy": "Copiar o endereço do contrato",
     "copied": "Copiado",
     "manual": "Este navegador não copia por nós. O endereço completo está selecionado, copie-o com o teclado."
+  },
+  "chart_evidence": {
+    "heading": "Histórico público de mercado do gráfico",
+    "reading": "Lendo os eventos públicos de mercado retidos…",
+    "retained": "{{events}} eventos públicos de mercado retidos nesta janela.",
+    "none_yet": "Ainda não há histórico público de mercado para este contrato.",
+    "separate": "Os swaps públicos e a atividade das pools são separados das suas posições.",
+    "retry": "Tentar o histórico de mercado novamente",
+    "load_more": "Carregar mais eventos públicos de mercado",
+    "range_limited": "O histórico público de eventos é limitado aos últimos 90 dias deste intervalo, conforme a retenção da fonte."
   }
 }

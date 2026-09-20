@@ -3937,5 +3937,15 @@
     "copy": "Copier l’adresse du contrat",
     "copied": "Copiée",
     "manual": "Ce navigateur ne copie pas à notre place. L’adresse complète est sélectionnée, copiez-la au clavier."
+  },
+  "chart_evidence": {
+    "heading": "Historique public de marché du graphique",
+    "reading": "Lecture des événements de marché publics conservés…",
+    "retained": "{{events}} événements de marché publics conservés dans cette fenêtre.",
+    "none_yet": "Aucun historique public de marché pour ce contrat pour le moment.",
+    "separate": "Les swaps publics et l’activité des pools sont distincts de vos positions.",
+    "retry": "Réessayer l’historique de marché",
+    "load_more": "Charger plus d’événements de marché publics",
+    "range_limited": "L’historique public des événements est limité aux 90 derniers jours de cette plage, selon la rétention de la source."
   }
 }

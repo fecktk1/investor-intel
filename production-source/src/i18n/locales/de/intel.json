@@ -3937,5 +3937,15 @@
     "copy": "Vertragsadresse kopieren",
     "copied": "Kopiert",
     "manual": "Dieser Browser kopiert nicht für uns. Die vollständige Adresse ist markiert, kopiere sie mit der Tastatur."
+  },
+  "chart_evidence": {
+    "heading": "Öffentliche Marktverlauf-Historie im Chart",
+    "reading": "Erfasste öffentliche Marktereignisse werden gelesen…",
+    "retained": "{{events}} erfasste öffentliche Marktereignisse in diesem Zeitraum.",
+    "none_yet": "Für diesen Vertrag gibt es noch keine öffentliche Markthistorie.",
+    "separate": "Öffentliche Swaps und Pool-Aktivität sind getrennt von deinen Positionen.",
+    "retry": "Markthistorie erneut laden",
+    "load_more": "Weitere öffentliche Marktereignisse laden",
+    "range_limited": "Die öffentliche Ereignishistorie ist auf die letzten 90 Tage dieses Zeitraums begrenzt, abhängig von der Aufbewahrung der Quelle."
   }
 }

@@ -3937,5 +3937,15 @@
     "copy": "Copy contract address",
     "copied": "Copied",
     "manual": "This browser will not copy for us. The full address is selected, so copy it with your keyboard."
+  },
+  "chart_evidence": {
+    "heading": "Public market chart history",
+    "reading": "Reading retained public market events…",
+    "retained": "{{events}} retained public market events in this window.",
+    "none_yet": "No public market history yet for this contract.",
+    "separate": "Public swaps and pool activity are separate from your positions.",
+    "retry": "Retry market history",
+    "load_more": "Load more public market events",
+    "range_limited": "Public event history is limited to the final 90 days of this range, subject to source retention."
   }
 }

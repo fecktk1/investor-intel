@@ -3937,5 +3937,15 @@
     "copy": "Copia l’indirizzo del contratto",
     "copied": "Copiato",
     "manual": "Questo browser non copia al posto nostro. L’indirizzo completo è selezionato, copialo con la tastiera."
+  },
+  "chart_evidence": {
+    "heading": "Cronologia pubblica di mercato del grafico",
+    "reading": "Lettura degli eventi di mercato pubblici conservati…",
+    "retained": "{{events}} eventi di mercato pubblici conservati in questa finestra.",
+    "none_yet": "Non c’è ancora una cronologia pubblica di mercato per questo contratto.",
+    "separate": "Gli swap pubblici e l’attività delle pool sono separati dalle tue posizioni.",
+    "retry": "Riprova la cronologia di mercato",
+    "load_more": "Carica altri eventi di mercato pubblici",
+    "range_limited": "La cronologia pubblica degli eventi è limitata agli ultimi 90 giorni di questo intervallo, in base alla conservazione della fonte."
   }
 }

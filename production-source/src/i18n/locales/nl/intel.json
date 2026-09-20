@@ -3937,5 +3937,15 @@
     "copy": "Contractadres kopiëren",
     "copied": "Gekopieerd",
     "manual": "Deze browser kopieert niet voor ons. Het volledige adres is geselecteerd, kopieer het met je toetsenbord."
+  },
+  "chart_evidence": {
+    "heading": "Publieke markthistorie van de grafiek",
+    "reading": "Bewaarde publieke marktgebeurtenissen worden gelezen…",
+    "retained": "{{events}} bewaarde publieke marktgebeurtenissen in dit venster.",
+    "none_yet": "Er is nog geen publieke markthistorie voor dit contract.",
+    "separate": "Publieke swaps en poolactiviteit staan los van jouw posities.",
+    "retry": "Markthistorie opnieuw laden",
+    "load_more": "Meer publieke marktgebeurtenissen laden",
+    "range_limited": "De publieke gebeurtenishistorie is beperkt tot de laatste 90 dagen van dit bereik, afhankelijk van de bewaartermijn van de bron."
   }
 }

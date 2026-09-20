@@ -3937,5 +3937,15 @@
     "copy": "Kopjo adresën e kontratës",
     "copied": "U kopjua",
     "manual": "Ky shfletues nuk kopjon në vend tonin. Adresa e plotë është e përzgjedhur, kopjojeni me tastierë."
+  },
+  "chart_evidence": {
+    "heading": "Historiku publik i tregut në grafik",
+    "reading": "Po lexohen eventet publike të tregut të mbajtura…",
+    "retained": "{{events}} evente publike të tregut të mbajtura në këtë dritare.",
+    "none_yet": "Nuk ka ende historik publik të tregut për këtë kontratë.",
+    "separate": "Swap-et publike dhe aktiviteti i pool-eve janë të ndarë nga pozicionet e tua.",
+    "retry": "Riprovo historikun e tregut",
+    "load_more": "Ngarko më shumë evente publike të tregut",
+    "range_limited": "Historiku publik i eventeve është i kufizuar në 90 ditët e fundit të këtij intervali, në varësi të mbajtjes nga burimi."
   }
 }
