@@ -86,6 +86,11 @@ import { CAPTURE_PROVIDER, utcDate, schedulePolicy } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult } from './capture-jobs.ts'
 import { ISSUER_REVIEW_SEED } from './rwa-issuer-evidence.ts'
 import { currentAssertions } from './rwa-issuer-aliases.ts'
+import {
+  COUNTED_SCOPE, POOL_CLASSIFICATION, QUOTE_CATALOGUE_ASSETS, UNRECOGNISED_SCOPE,
+  classifiedTotals, classifyPool, quoteAllowlist, quoteKey,
+} from './rwa-counter-leg.ts'
+import type { ClassifiablePool, ClassifyContext, QuoteEntry } from './rwa-counter-leg.ts'
 
 export const DEPLOYMENT_TABLE = 'intel_rwa_token_deployments'
 export const DEPTH_TABLE = 'intel_rwa_depth_snapshots'
@@ -140,6 +145,10 @@ export const RETRYABLE_DEPTH_STATES = new Set(['budget_deferred', 'provider_unav
  * figure read without it invites exactly the conclusion the lane cannot support. */
 export const DEPTH_SCOPE =
   'Pool liquidity and 24-hour pool volume are CoinMarketCap DEX figures for the pools found on the chains named here, read at the capture time on this row. They are not an executable quote, not an order book, not a slippage model and not the total liquidity of the token: a pool on a chain CoinMarketCap publishes no DEX data for is not counted, and venue liquidity held on centralised exchanges is not visible here at all.'
+
+/** The whole scope sentence a classified row carries: what the counted figures
+ * were built from, why the rest is separate, and what none of it means. */
+export const CLASSIFIED_DEPTH_SCOPE = `${COUNTED_SCOPE} ${UNRECOGNISED_SCOPE} ${DEPTH_SCOPE}`
 
 /** Why a token with permissioned transfers can be pool-thin and still sellable
  * through its issuer. Stored on the rows that reach that state. */
@@ -437,13 +446,19 @@ export function deploymentRows(tokenKey: string, facts: any, source: DepthDeploy
 
 // ─── Pools ────────────────────────────────────────────────────────────────────
 
-export interface DepthPool {
+export interface DepthPool extends ClassifiablePool {
   chain: string
   dex: string | null
   pair: string | null
   address: string
   liquidityUsd: number | null
   volume24h: number | null
+  /** The two legs the provider named, each with its own ADDRESS. The address is
+   * the whole point: it is what makes "the other side of this pool is USDC" a
+   * checkable statement rather than a symbol a token chose for itself. Stored
+   * since 2026-09-20; rows before that carry only the pair label. */
+  t0: { addr: string | null; sym: string | null; liqUsd: number | null }
+  t1: { addr: string | null; sym: string | null; liqUsd: number | null }
 }
 
 /** The pools of one `/v1/dex/token/pools` response, in the reviewed field names.
@@ -456,7 +471,16 @@ export interface DepthPool {
  * The pair label is built from the two token legs the response names, in the
  * order it names them. It is a LABEL: no side is asserted to be the base or the
  * quote, because the response does not say which is which. A leg with no symbol
- * leaves the label null rather than inventing a side. */
+ * leaves the label null rather than inventing a side.
+ *
+ * SINCE 2026-09-20 each leg is also stored with its ADDRESS and its own reported
+ * `liqUsd`. The transport's own validator already requires one of `t0.addr` /
+ * `t1.addr` to be the contract that was asked about (see `validateCmcDexResponse`
+ * for `dexPools`), so the addresses are known to be present and known to be
+ * shaped for the chain. Not storing them was the defect: the first production run
+ * put a `XAUt / GOLDGR` pool at the top of the board on $16.5M of reported
+ * liquidity that nobody could exit into, and a pair LABEL cannot tell you that,
+ * because a worthless token can call itself anything. */
 // deno-lint-ignore no-explicit-any
 export function poolRows(payload: any, platform: string): DepthPool[] {
   const rows = cmcDexPoolPage(payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload)?.rows ?? []
@@ -470,14 +494,39 @@ export function poolRows(payload: any, platform: string): DepthPool[] {
     const address = text(row?.addr, 200)
     if (!address) continue
     const legs = [text(row?.t0?.sym, 40), text(row?.t1?.sym, 40)]
+    // A LEG's own address and size, stored verbatim apart from a length bound.
+    // The address is NOT canonicalised here: `quoteKey` does that at the one
+    // place the comparison is made, so a stored row still says what the provider
+    // said. `liq` is the observed alias for a leg that reports no `liqUsd`.
+    // deno-lint-ignore no-explicit-any
+    const leg = (side: any) => ({
+      addr: text(side?.addr, 200), sym: text(side?.sym, 40),
+      liqUsd: money(cmcDexNumber(side?.liqUsd ?? side?.liq)),
+    })
     out.push({
       chain: platform, dex: text(row?.exn, 120),
       pair: legs.every((leg) => !!leg) ? legs.join(' / ') : null,
       address,
       liquidityUsd: money(cmcDexNumber(row?.liqUsd)), volume24h: money(cmcDexNumber(row?.v24)),
+      t0: leg(row?.t0), t1: leg(row?.t1),
     })
   }
   return dedupe(out, (row) => `${row.chain}|${row.address}`)
+}
+
+/** The pools one snapshot keeps, within `POOLS_PER_TOKEN`.
+ *
+ * A pool whose counter leg we can value is kept ahead of one we cannot, and then
+ * the deepest first. The cap therefore truncates the unrecognised tail rather
+ * than the pools the board's figures are built from. Nothing is reordered inside
+ * a class beyond liquidity, and a pool with no liquidity figure sorts last but is
+ * still kept while there is room: it exists, and `liquidityPools` says how many
+ * of the kept pools reported a size. */
+export function retainedPools(pools: DepthPool[]): DepthPool[] {
+  const rank = (pool: DepthPool): number => (pool.counterClass === 'recognised_quote' ? 0 : pool.counterClass === 'tokenised_asset' ? 1 : 2)
+  return [...pools]
+    .sort((a, b) => rank(a) - rank(b) || (b.liquidityUsd ?? -1) - (a.liquidityUsd ?? -1))
+    .slice(0, POOLS_PER_TOKEN)
 }
 
 /** The depth reading over every pool found for one token, across its chains.
@@ -487,9 +536,9 @@ export function poolRows(payload: any, platform: string): DepthPool[] {
  * the total, and `liquidityPools` says how many of the pools the total was
  * actually built from — a total over 2 of 9 pools is not the token's liquidity
  * and the read view says so rather than quietly presenting it as one. */
-export function depthReading(pools: DepthPool[]): {
+export function depthReading(pools: ClassifiablePool[]): {
   poolCount: number; liquidityPools: number
-  totalLiquidityUsd: number | null; totalVolume24h: number | null; deepest: DepthPool | null
+  totalLiquidityUsd: number | null; totalVolume24h: number | null; deepest: ClassifiablePool | null
 } {
   const priced = pools.filter((pool) => pool.liquidityUsd != null)
   const volumed = pools.filter((pool) => pool.volume24h != null)
@@ -677,6 +726,42 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
       } catch (e) { reason = reason || ((e as Error)?.message || 'restriction_read_failed').slice(0, 200) }
     }
 
+    // ── 4b. WHAT COUNTS AS THE OTHER SIDE OF A POOL. Two zero-credit database
+    // reads that decide which pools may reach a headline figure.
+    //
+    // `quotes`       the recognised quote assets, by ADDRESS per chain. The
+    //                static half comes from the shared reviewed contract table;
+    //                this read extends it onto every chain the issuers deployed
+    //                to, from `market_assets.facts.deployments` that the nightly
+    //                metadata pass already wrote. A failed read leaves the static
+    //                allowlist, which fails CLOSED: fewer pools count, none is
+    //                wrongly counted.
+    // `rwaAddresses` every RWA wrapper contract WE have captured, so PAXG / XAUt
+    //                is a pool between two tokenised assets rather than a pool
+    //                against something unknown.
+    let quotes: Map<string, QuoteEntry> = quoteAllowlist()
+    try {
+      const { data, error } = await db.from('market_assets').select('provider_id,symbol,facts')
+        .eq('source_provider', CAPTURE_PROVIDER).in('provider_id', QUOTE_CATALOGUE_ASSETS.map((asset) => asset.cryptoId)).limit(20)
+      if (error) reason = reason || String(error.message || error).slice(0, 200)
+      else quotes = quoteAllowlist(Array.isArray(data) ? data : [])
+    } catch (e) { reason = reason || ((e as Error)?.message || 'quote_read_failed').slice(0, 200) }
+
+    const rwaAddresses = new Set<string>()
+    for (const row of [...deployments.values()].flat()) {
+      if (row.dexPlatform && row.dexAddress) rwaAddresses.add(quoteKey(row.dexPlatform, row.dexAddress))
+    }
+    try {
+      // Wrappers captured on EARLIER days too: a counter leg is a tokenised asset
+      // whether or not this run happened to read it.
+      const { data } = await db.from(DEPLOYMENT_TABLE).select('dex_platform,dex_address')
+        .eq('provider', CAPTURE_PROVIDER).eq('readable', true).limit(2000)
+      for (const row of (data || []) as Record<string, unknown>[]) {
+        const key = quoteKey(row.dex_platform, row.dex_address)
+        if (key) rwaAddresses.add(key)
+      }
+    } catch { /* the in-run deployments above are already a correct, smaller set */ }
+
     // ── 5. Today's rows already captured. A token whose depth was read today
     // AND whose deployment set is unchanged is skipped, so a retried or resumed
     // run walks forward through the subject set instead of paying twice.
@@ -720,7 +805,18 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
           noteShape(`refused:${why}`)
           reason = reason || why
         } else {
+          // Classified as it is read, against the subject's OWN deployments so
+          // the counter leg is the one that is not ours. The class is stored on
+          // the pool, which is what makes the read cheap and what lets the board
+          // keep an unvaluable counterparty out of every headline figure.
+          const classifyCtx: ClassifyContext = {
+            quotes, rwaAddresses,
+            subjectAddresses: new Set((deployments.get(subject.tokenKey) || [])
+              .filter((row) => row.dexPlatform && row.dexAddress)
+              .map((row) => quoteKey(row.dexPlatform, row.dexAddress))),
+          }
           const found = poolRows(page.payload, deployment.dexPlatform)
+            .map((pool) => ({ ...pool, ...classifyPool(pool, classifyCtx) }))
           // The shape of a ZERO-POOL answer is the one fact a test cannot supply.
           if (!found.length) {
             emptyPoolReads += 1
@@ -768,8 +864,14 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
     if (wroteDeployments.error) reason = reason || wroteDeployments.error
 
     const depthWrite = subjects.filter((subject) => !readToday.has(subject.tokenKey)).map((subject) => {
-      const list = (pools.get(subject.tokenKey) || []).slice(0, POOLS_PER_TOKEN)
+      // RETENTION ORDER IS PART OF THE ANSWER. The cap used to keep whichever
+      // pools arrived first, which on a token with more than 30 pools could drop
+      // a real USDC pool to keep a junk one. Pools whose counter leg we can value
+      // are kept first, then the deepest, so the figures the board prints survive
+      // the cap and the unrecognised group is what gets truncated.
+      const list = retainedPools(pools.get(subject.tokenKey) || [])
       const reading = depthReading(list)
+      const split = classifiedTotals(list)
       const own = deployments.get(subject.tokenKey) || []
       const readable = own.filter((row) => !!row.dexPlatform)
       const attempt = attempts.get(subject.tokenKey) || { attempted: 0, failed: 0 }
@@ -806,9 +908,32 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
         holder_count: holder?.count ?? null, holder_chain: holder?.chain ?? null,
         restriction_state: restriction?.state ?? null, restriction_kyc_gated: restriction?.kyc ?? null,
         restriction_source_url: restriction?.sourceUrl ?? null,
+        // ── The counter-leg split. `total_liquidity_usd` above stays the
+        // PROVIDER's figure over every pool found, because that is what it has
+        // always meant and an agent comparing days must not see it change shape.
+        // These columns are what the board and the MCP tool present: a headline
+        // built only from pools whose other side can be valued.
+        pool_classification: attempt.attempted ? POOL_CLASSIFICATION : null,
+        recognised_pool_count: attempt.attempted ? split.countedPools : null,
+        recognised_liquidity_pools: attempt.attempted ? split.countedLiquidityPools : null,
+        recognised_liquidity_usd: split.countedLiquidityUsd,
+        recognised_volume_24h_usd: split.countedVolume24hUsd,
+        unrecognised_pool_count: attempt.attempted ? split.unrecognisedPools : null,
+        unrecognised_liquidity_usd: split.unrecognisedLiquidityUsd,
+        deepest_recognised_address: split.deepestCounted?.address ?? null,
+        deepest_recognised_dex: split.deepestCounted?.dex ?? null,
+        deepest_recognised_chain: split.deepestCounted?.chain ?? null,
+        deepest_recognised_pair: split.deepestCounted?.pair ?? null,
+        deepest_recognised_liquidity_usd: split.deepestCounted?.liquidityUsd ?? null,
+        deepest_recognised_volume_24h_usd: split.deepestCounted?.volume24h ?? null,
+        // The quote legs' OWN reported sizes, where the provider gave any. A
+        // floor, not a capacity: see EXIT_LIQUIDITY_SCOPE.
+        exit_liquidity_usd: split.exitLiquidityUsd,
+        exit_liquidity_pools: attempt.attempted ? split.exitLiquidityPools : null,
         pools: list,
         deployment_digest: deploymentDigest(own),
-        scope: state === 'issuer_redemption_only' ? `${REDEMPTION_SCOPE} ${DEPTH_SCOPE}` : DEPTH_SCOPE,
+        scope: (state === 'issuer_redemption_only' ? `${REDEMPTION_SCOPE} ` : '')
+          + (attempt.attempted ? CLASSIFIED_DEPTH_SCOPE : DEPTH_SCOPE),
       }
     })
     const written = await upsert(db, DEPTH_TABLE, dedupe(depthWrite, (row) => String(row.token_key)), 'provider,token_key,snapshot_date')
@@ -818,6 +943,16 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
       subjects: subjects.length, deployments: deploymentWrite.length, deploymentRows: wroteDeployments.rows,
       poolCalls, withPools: [...pools.values()].filter((list) => list.length > 0).length,
       emptyPoolReads, holderCounts: holders.size, skippedToday: readToday.size,
+      // The split, so a run can be read without opening the table: how many
+      // pools were kept out of the headline, and how many quote legs reported a
+      // size of their own. The second is the one figure a test cannot supply,
+      // because only a real payload says how often the provider fills it.
+      quoteAssets: quotes.size,
+      counterLegs: depthWrite.reduce((totals, row) => ({
+        recognised: totals.recognised + (Number(row.recognised_pool_count) || 0),
+        unrecognised: totals.unrecognised + (Number(row.unrecognised_pool_count) || 0),
+        withExitSize: totals.withExitSize + (Number(row.exit_liquidity_pools) || 0),
+      }), { recognised: 0, unrecognised: 0, withExitSize: 0 }),
       // Shapes and counts only, so the next run can be read without the body.
       ...(poolShapes.size ? { poolShapes: Object.fromEntries(poolShapes) } : {}),
       // A run that read pools everywhere and found none anywhere is worth stating

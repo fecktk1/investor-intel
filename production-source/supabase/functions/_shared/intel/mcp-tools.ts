@@ -1031,13 +1031,13 @@ export const MCP_TOOLS:ToolSpec[]=[
  {
   name:'rwa_liquidity_depth',
   title:'Pools and exitability',
-  description:'On-chain pool depth per tokenized-asset token: chains deployed, chains we can read, pool count, total and deepest-pool liquidity, 24h volume, holder count and a depth_state that says in words why a token has no pool reading (chain not covered, issuer redemption only, no deployment known). This is not a slippage model. An empty result is missing coverage, NOT a token having no liquidity.',
+  description:'On-chain pool depth per tokenized-asset token: chains deployed, chains we can read, pool count, liquidity, 24h volume, holder count and a depth_state that says in words why a token has no pool reading (chain not covered, issuer redemption only, no deployment known). TWO SETS OF LIQUIDITY COLUMNS, do not mix them. recognised_liquidity_usd, recognised_pool_count, recognised_volume_24h_usd and deepest_recognised_* cover ONLY pools whose other leg is a major quote asset on that chain or another tokenized asset we captured, matched by contract address and never by symbol: quote these when asked where a token can actually be sold. total_liquidity_usd and deepest_pool_* are CoinMarketCap figures over EVERY pool found, and CoinMarketCap values both legs of a pool, so they include pools against tokens nobody can value (on 2026-09-20 XAUt deepest_pool_pair was XAUt / GOLDGR at 16.5M USD on 812 USD of daily volume). unrecognised_pool_count and unrecognised_liquidity_usd are what the difference is made of, and a token whose recognised_pool_count is 0 with a positive unrecognised_pool_count has pools but none anyone could sell into, which is not the same as having no pool. exit_liquidity_usd is the quote legs own reported sizes summed over the exit_liquidity_pools pools that reported one, so it is a floor and not a capacity. pool_classification null means the capture predates the leg addresses and every recognised_ column is null. This is not a slippage model. An empty result is missing coverage, NOT a token having no liquidity.',
   schema:object({
    subject:{type:'string',maxLength:80,pattern:'^[A-Za-z0-9:._-]{1,80}$',description:'One token key, written cmc:<crypto id>. Omit for every token.'},
    limit:LIMIT_PROPERTY(50,25,'Rows to return, at most 50.'),
   }),
   surface:'capture_views',label:'Recorded captures',
-  handler:forwardTool('rwa_liquidity_depth','liquidity_depth','liquidity depth',{provider:'investor_intel',endpoint_family:'liquidity depth lane'},['CoinMarketCap DEX pool liquidity and 24h volume per readable deployment, summed per token by us']),
+  handler:forwardTool('rwa_liquidity_depth','liquidity_depth','liquidity depth',{provider:'investor_intel',endpoint_family:'liquidity depth lane'},['CoinMarketCap DEX pool liquidity and 24h volume per readable deployment, split by what the OTHER leg of each pool is (recognised quote asset, another captured tokenized asset, or a token we cannot value) and summed per group by us']),
  },
  {
   name:'rwa_underlying_registrant',

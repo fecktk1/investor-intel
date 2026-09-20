@@ -6,7 +6,7 @@ import { useSupabase } from '../../lib/useSupabase'
 import CopyAddress from './CopyAddress'
 import { readCaptureView } from '../lib/capture-api'
 import { formatCompact } from '../lib/market-format'
-import { pctLabel, readingText, usdLabel } from '../lib/rwa-depth-format'
+import { exitLiquidityText, pctLabel, readingText, unrecognisedText, usdLabel } from '../lib/rwa-depth-format'
 
 // The "Tokenised asset" block on the asset page.
 //
@@ -62,8 +62,17 @@ export default function RwaTokenDepth({ sourceProvider, providerId }) {
           <dd>{token.issuerName || t('rwa_depth.token_issuer_unreported', { defaultValue: 'Not reported' })}</dd>
         </div>
         <div className={`${rule} py-2`}>
-          <dt className="text-[var(--fg-4)]">{t('rwa_depth.token_liquidity', { defaultValue: 'Pool liquidity found' })}</dt>
-          <dd className="intel-number">{usdLabel(token.totalLiquidityUsd)}</dd>
+          {/* Only pools whose other side can be valued, except on a capture taken
+              before those sides were recorded, where the provider's own total is
+              shown and the reading sentence says so. */}
+          <dt className="text-[var(--fg-4)]">
+            {token.classification === 'unclassified'
+              ? t('rwa_depth.token_liquidity_reported', { defaultValue: 'Pool liquidity reported' })
+              : t('rwa_depth.token_liquidity', { defaultValue: 'Sellable pool liquidity' })}
+          </dt>
+          <dd className="intel-number">
+            {usdLabel(token.classification === 'unclassified' ? token.totalLiquidityUsd : token.countedLiquidityUsd)}
+          </dd>
         </div>
         <div className={`${rule} py-2`}>
           <dt className="text-[var(--fg-4)]">{t('rwa_depth.token_concentration', { defaultValue: 'In the deepest pool' })}</dt>
@@ -94,15 +103,39 @@ export default function RwaTokenDepth({ sourceProvider, providerId }) {
           <> {t('rwa_depth.token_deepest', {
             venue: [token.deepestPool.dex, token.deepestPool.pair].filter(Boolean).join(' · ') || token.deepestPool.chain,
             chain: token.deepestPool.chain, liquidity: usdLabel(token.deepestPool.liquidityUsd),
-            defaultValue: 'Deepest pool: {{venue}} on {{chain}}, {{liquidity}}.',
+            defaultValue: 'Deepest counted pool: {{venue}} on {{chain}}, {{liquidity}}.',
           })}</>
         )}
         {token.holderCount != null && (
           <> {t('rwa_depth.holders', { count: formatCompact(token.holderCount), chain: token.holderChain, defaultValue: '{{count}} holder accounts on {{chain}}' })}.</>
         )}
+        {exitLiquidityText(token, t) && <> {exitLiquidityText(token, t)}</>}
       </p>
 
+      {/* THE POOLS THAT ARE NOT IN THE FIGURES ABOVE, listed in full and headed
+          by the sentence saying why they are apart. Hiding them would leave a
+          reader unable to reconcile this block with CoinMarketCap's own number;
+          counting them would be the defect this group exists to fix. */}
+      {(token.unrecognisedPools || []).length > 0 && (
+        <div className="space-y-1">
+          <div className="eyebrow">{t('rwa_depth.unrecognised_eyebrow', { defaultValue: 'Not counted as depth' })}</div>
+          <p className="text-[12px]">{unrecognisedText(token, t)}</p>
+          <ul className="text-[12px]">
+            {token.unrecognisedPools.map(entry => (
+              <li key={`${entry.chain}:${entry.address}`} className={`${rule} py-2 flex flex-wrap items-baseline gap-2`}>
+                <span>{entry.pair || t('rwa_depth.unrecognised_no_pair', { defaultValue: 'Pair not reported' })}</span>
+                <span className="text-[var(--fg-4)]">{[entry.dex, entry.chain].filter(Boolean).join(' · ')}</span>
+                <span className="intel-number text-[var(--fg-4)]">
+                  {t('rwa_depth.deepest_detail', { liquidity: usdLabel(entry.liquidityUsd), volume: usdLabel(entry.volume24h), defaultValue: '{{liquidity}} liquidity · {{volume}} traded in 24h' })}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
       <p className="text-[11px] leading-relaxed text-[var(--fg-4)] max-w-[80ch]">
+        {exitLiquidityText(token, t) && payload?.exitLiquidityScope ? <>{payload.exitLiquidityScope}{' '}</> : null}
         {payload?.exitabilityMethod ? <>{payload.exitabilityMethod}{' '}</> : null}
         {token.scope}
         {' '}
