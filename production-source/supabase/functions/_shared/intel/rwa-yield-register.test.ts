@@ -111,9 +111,7 @@ Deno.test('a fund whose ticker is ambiguous in our own catalogue is left with no
   // on it would have priced M-zero's net asset value with MemeCore's quote.
   eq(RWA_FEED_BY_KEY.mzero.marketProviderId, null)
   eq(RWA_FEED_BY_KEY.mzero.marketProvider, null)
-  // USTBL matches two catalogue rows. An ambiguous match is not a match.
-  eq(RWA_FEED_BY_KEY.ustbl.marketProviderId, null)
-  // Absent from the catalogue entirely.
+  // Absent from the catalogue entirely, re-checked 2026-09-20.
   eq(RWA_FEED_BY_KEY.wtgxx.marketProviderId, null)
   eq(RWA_FEED_BY_KEY.crdyx.marketProviderId, null)
   eq(RWA_FEED_BY_KEY.btcy.marketProviderId, null)
@@ -123,6 +121,25 @@ Deno.test('a fund whose ticker is ambiguous in our own catalogue is left with no
   eq(RWA_FEED_BY_KEY.vbill.marketName, 'VanEck Treasury Fund')
   eq(RWA_FEED_BY_KEY.jaaa.marketProviderId, 'janus-henderson-anemoy-aaa-clo-fund')
   eq(RWA_FEED_BY_KEY.acred.marketProviderId, 'apollo-diversified-credit-securitize-fund')
+})
+
+Deno.test('a symbol collision resolved by issuer and contract IS mapped, to the right row', () => {
+  // Re-checked against market_assets on 2026-09-20. The two `USTBL` rows are
+  // distinguishable without using the symbol at all:
+  // `spiko-us-t-bills-money-market-fund` is a multi-chain EVM Spiko fund, while
+  // `ustbl-tokenized-u-s-treasury-bill` is a single Ordinals inscription with no
+  // EVM contract, which a Chainlink NAVLink aggregator on Ethereum cannot be
+  // publishing the net asset value of. Leaving a resolvable collision unmapped
+  // would have withheld a correct comparison, which is its own defect.
+  const ustbl = RWA_FEED_BY_KEY.ustbl
+  eq(ustbl.marketProvider, 'coingecko')
+  eq(ustbl.marketProviderId, 'spiko-us-t-bills-money-market-fund')
+  eq(ustbl.marketName, 'Spiko US T-Bills Money Market Fund')
+  // Mapped to the Spiko row, never to the bare-symbol Ordinals row.
+  assert(!ustbl.marketProviderId!.includes('tokenized-u-s-treasury-bill'))
+  // The registered Spiko siblings are why that discriminator is trustworthy.
+  eq(RWA_FEED_BY_KEY.eutbl.marketName, 'Spiko EU T-Bills Money Market Fund')
+  eq(RWA_FEED_BY_KEY.safo.marketName, 'Spiko Amundi Overnight Swap Fund')
 })
 
 Deno.test('the register records that a curated identity goes stale, using the rename it already carries', () => {

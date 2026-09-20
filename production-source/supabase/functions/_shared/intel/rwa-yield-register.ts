@@ -25,6 +25,14 @@
 // against a completely different asset's quote. Every market identity below is
 // a catalogue provider id whose fund NAME is re-verified at read time.
 //
+// A SYMBOL COLLISION IS NOT ALWAYS AN UNRESOLVABLE ONE. Re-checked 2026-09-20:
+// the two `USTBL` rows differ by issuer name AND by deployment, one being a
+// multi-chain EVM Spiko fund and the other a single Ordinals inscription, so that
+// feed is now mapped on the issuer and the contract rather than left inert. `M`,
+// by contrast, still has no M-zero row at all, and WTGXX, CRDYX and BTCY are
+// still absent from the catalogue entirely: those four remain deliberately
+// unmapped, each with the re-check recorded on its own row below.
+//
 // A HAND-CURATED REGISTRY GOES STALE, AND THIS ONE ALREADY HAS.
 // The USTB row is the proof: its catalogue provider id still reads
 // `superstate-short-duration-us-government-securities-fund-ustb` while the name
@@ -132,12 +140,28 @@ export const RWA_YIELD_FEEDS: RwaYieldFeed[] = [
     currency: 'USD', instrumentClass: 'treasury_bill',
     marketProvider: 'coingecko', marketProviderId: 'superstate-short-duration-us-government-securities-fund-ustb',
     marketName: 'Invesco Short Duration US Government Securities Fund', secSeriesId: null, navScope: TREASURY_SCOPE },
-  // AMBIGUOUS in the catalogue: two rows, a Spiko money market fund and a
-  // separate tokenised treasury bill. An ambiguous match is not a match, so the
-  // market side stays inert rather than guessing which row is this feed.
+  // RE-CHECKED 2026-09-20 AND NOW MAPPED. The symbol still collides, but the
+  // collision resolves without touching a ticker:
+  //   coingecko:spiko-us-t-bills-money-market-fund  "Spiko US T-Bills Money
+  //     Market Fund", primary chain base, EVM contract
+  //     0xe4880249745eac5f1ed9d8f7df844792d560e750 on base, ethereum,
+  //     polygon-pos, etherlink and arbitrum-one: the same multi-chain EVM
+  //     deployment pattern as its registered Spiko siblings EUTBL and SAFO.
+  //   coingecko:ustbl-tokenized-u-s-treasury-bill  name "USTBL", primary chain
+  //     ordinals, one inscription id and NO EVM contract at all.
+  // A Chainlink NAVLink aggregator on Ethereum is not reporting the net asset
+  // value of an Ordinals inscription, and this register already holds three
+  // sibling Spiko NAVLink feeds (EUTBL NAV, SAFO NAV, EURSAFO NAV) joined to the
+  // same issuer's catalogue rows. The discriminator is the issuer name plus the
+  // presence of an EVM contract, never the shared symbol.
+  //
+  // The name guard still applies: `marketName` is re-verified at read time, so a
+  // drift refuses with `market_name_mismatch` instead of pricing whatever the row
+  // has become.
   { key: 'ustbl', feedName: 'USTBL NAV', address: '0x477e363c51ab0c4d13b22cd6b57d56d4a3cb7abe',
     currency: 'USD', instrumentClass: 'treasury_bill',
-    marketProvider: null, marketProviderId: null, marketName: null, secSeriesId: null, navScope: TREASURY_SCOPE },
+    marketProvider: 'coingecko', marketProviderId: 'spiko-us-t-bills-money-market-fund',
+    marketName: 'Spiko US T-Bills Money Market Fund', secSeriesId: null, navScope: TREASURY_SCOPE },
   { key: 'jtrsy', feedName: 'JTRSY NAV', address: '0x0c2e4df738e99e8db80012f5bb2a303f3f48ca74',
     currency: 'USD', instrumentClass: 'treasury_bill',
     marketProvider: 'coingecko', marketProviderId: 'janus-henderson-anemoy-treasury-fund',
@@ -151,11 +175,15 @@ export const RWA_YIELD_FEEDS: RwaYieldFeed[] = [
     marketProvider: 'coingecko', marketProviderId: 'safo',
     marketName: 'Spiko Amundi Overnight Swap Fund', secSeriesId: null, navScope: TREASURY_SCOPE },
   // Absent from the catalogue entirely, so there is nothing to join to.
+  // Re-checked 2026-09-20: `market_assets` still returns no row for WTGXX under
+  // any provider, so this stays null rather than being matched on a near name.
   { key: 'wtgxx', feedName: 'WTGXX NAV', address: '0xd13cb763c43b5c058e7ec40176962c5030f4eb49',
     currency: 'USD', instrumentClass: 'money_market',
     marketProvider: null, marketProviderId: null, marketName: null, secSeriesId: null, navScope: TREASURY_SCOPE },
   // THE LIVE TRAP. The ticker `M` resolves to MemeCore and to Mantis in our own
   // catalogue, and neither is this fund. There is no safe match, so no id.
+  // Re-checked 2026-09-20: still exactly those two CoinGecko rows plus a
+  // CoinMarketCap MemeCore row, and no M-zero row of any kind.
   { key: 'mzero', feedName: 'M NAV', address: '0xc28198df9aee1c4990994b35ff51efa4c769e534',
     currency: 'USD', instrumentClass: 'money_market',
     marketProvider: null, marketProviderId: null, marketName: null, secSeriesId: null, navScope: TREASURY_SCOPE },
@@ -184,7 +212,8 @@ export const RWA_YIELD_FEEDS: RwaYieldFeed[] = [
   // given no benchmark: see `benchmarkForFeed`. Probed 2026-09-16, CRDYX fell
   // over multiple steps and ACRED drifted down; neither is publishable as a
   // yield, and both route to review.
-  // Absent from the catalogue, so no market side.
+  // Absent from the catalogue, so no market side. Re-checked 2026-09-20: still
+  // no CRDYX row under any provider.
   { key: 'crdyx', feedName: 'CRDYX NAV', address: '0x0b9bd3eaac381a1a6731ff6598a50638e5cffd25',
     currency: 'USD', instrumentClass: 'private_credit',
     marketProvider: null, marketProviderId: null, marketName: null, secSeriesId: null, navScope: CREDIT_SCOPE },
@@ -196,7 +225,8 @@ export const RWA_YIELD_FEEDS: RwaYieldFeed[] = [
   // Not a rate instrument at all. Registered because it is the clearest live
   // staleness case we have: probed 2026-09-16 its newest round was 156 hours old
   // against a 24 hour heartbeat. It is classed `unclassified` so that it can
-  // never acquire a benchmark by accident.
+  // never acquire a benchmark by accident. Re-checked 2026-09-20: still no BTCY
+  // row in the catalogue, so no market side either.
   { key: 'btcy', feedName: 'BTCY NAV', address: '0x5a33e6cb085e2ddd0df558c0d7d71a27be6b9131',
     currency: 'USD', instrumentClass: 'unclassified',
     marketProvider: null, marketProviderId: null, marketName: null, secSeriesId: null,
