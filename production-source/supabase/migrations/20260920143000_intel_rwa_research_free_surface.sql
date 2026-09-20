@@ -57,6 +57,13 @@ SET LOCAL statement_timeout = '60s';
 -- intel_surface_tiers holds a couple of dozen rows, so the validating scan
 -- behind ADD CONSTRAINT is immediate; lock_timeout above bounds the wait for
 -- the ACCESS EXCLUSIVE lock rather than letting it queue behind a reader.
+-- The column also carries its own value-list CHECK (created inline in 20260916114500, so it is named
+-- intel_surface_tiers_cost_basis_check). It has to admit the new basis too, or the insert below is refused.
+ALTER TABLE public.intel_surface_tiers
+  DROP CONSTRAINT IF EXISTS intel_surface_tiers_cost_basis_check;
+ALTER TABLE public.intel_surface_tiers
+  ADD CONSTRAINT intel_surface_tiers_cost_basis_check CHECK (
+    cost_basis IN ('precomputed_shared', 'shared_budgeted', 'per_member_on_demand'));
 ALTER TABLE public.intel_surface_tiers
   DROP CONSTRAINT IF EXISTS intel_surface_tiers_cost_matches_gate;
 ALTER TABLE public.intel_surface_tiers
