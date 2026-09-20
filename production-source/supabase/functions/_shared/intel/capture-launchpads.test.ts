@@ -5,6 +5,8 @@ import {
   LAUNCHPAD_CAPTURE_OPS, LAUNCHPAD_NETWORKS, LAUNCHPAD_PADS, LAUNCHPAD_REJECTED, LAUNCHPAD_JOB,
   LAUNCHPAD_SOURCE, LAUNCHPAD_POLICY_PROVIDER, LAUNCHPAD_MAX_CALLS, KEYLESS_MAX_CALLS,
   NEW_POOL_PAGES, NEW_POOL_PAGE_CEILING, REGISTRY_PAGES, TOKENS_PER_CALL, GRADUATION_NEAR_PCT,
+  REGISTRY_PAGE_SIZE, REFUSAL_MEMO_TTL_MS, hasNextPage, registryRefusalKey, megafilterRefusalKey,
+  refusalMemoKeys, readRefusalMemos,
 } from './capture-launchpads.ts'
 import type { LaunchpadNetwork } from './capture-launchpads.ts'
 import { PAD_LABELS } from './launchpad-registry.ts'
@@ -108,7 +110,16 @@ const token = (address: string, details: Record<string, unknown> | null, extra: 
     launchpad_details: details, ...extra,
   },
 })
-const registry = (ids: string[]) => ({ data: ids.map((id) => ({ id })) })
+/** A registry page. `links` is optional so a test can pin the source's own
+ * "there is no next page" answer as well as the row count. */
+const registry = (ids: string[], links?: Record<string, unknown>) => ({
+  data: ids.map((id) => ({ id })),
+  ...(links ? { links } : {}),
+})
+/** A FULL registry page: exactly the page size the API serves, so the pager has
+ * a reason to ask for another one. */
+const fullRegistryPage = (extra: string[] = [], links?: Record<string, unknown>) =>
+  registry(Array.from({ length: REGISTRY_PAGE_SIZE - extra.length }, (_, i) => `dex-${i}`).concat(extra), links)
 /** Base58 has no 0, O, I or l, so a generated address has to be built out of the
  * alphabet the CHECK actually accepts or the lane correctly drops it. */
 const B58 = '123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz'
@@ -276,7 +287,7 @@ Deno.test('new_pools paging stops at the lane bound even when every page is full
 })
 
 Deno.test('registry paging stops at its bound, and a short page ends it early', async () => {
-  const fullRegistry = registry(Array.from({ length: 20 }, (_, i) => `dex-${i}`).concat(['pump-fun']))
+  const fullRegistry = fullRegistryPage(['pump-fun'])
   const many = fakeOnchain(soloSolana((path) => path.startsWith('networks/solana/dexes') ? fullRegistry : { data: [] }))
   await captureLaunchpadStages(fakeDb(), ctxFor, NOW, 'basic', deps(many.onchain))
   eq(many.calls.filter((c) => c.path.startsWith('networks/solana/dexes')).length, REGISTRY_PAGES)
@@ -284,6 +295,192 @@ Deno.test('registry paging stops at its bound, and a short page ends it early', 
   const short = fakeOnchain(soloSolana((path) => path.startsWith('networks/solana/dexes') ? registry(['pump-fun']) : { data: [] }))
   await captureLaunchpadStages(fakeDb(), ctxFor, NOW, 'basic', deps(short.onchain))
   eq(short.calls.filter((c) => c.path.startsWith('networks/solana/dexes')).length, 1)
+})
+
+// ─── the page past the end is never asked for ────────────────────────────────
+
+Deno.test('a page short of the page size ends the pager, and the page past the end is never asked for', async () => {
+  // Exactly what solana serves: 33 ids on page 1 and a 400 on page 2. The 33 are
+  // fewer than a full page, so page 2 is not a page, and is not asked for.
+  const solanaShaped = fakeOnchain(soloSolana((path) => {
+    if (path === 'networks/solana/dexes?page=1') return registry(['pump-fun', ...Array.from({ length: 32 }, (_, i) => `dex-${i}`)])
+    if (path.startsWith('networks/solana/dexes')) throw new Error('asked for a page past the end')
+    return { data: [] }
+  }))
+  await captureLaunchpadStages(fakeDb(), ctxFor, NOW, 'basic', deps(solanaShaped.onchain))
+  eq(solanaShaped.calls.filter((c) => c.path.startsWith('networks/solana/dexes')).length, 1)
+
+  // And what bsc serves: a full page 1, then a short page 2. Two pages, no third.
+  const bscShaped = fakeOnchain(soloSolana((path) => {
+    if (path === 'networks/solana/dexes?page=1') return fullRegistryPage(['pump-fun'])
+    if (path === 'networks/solana/dexes?page=2') return registry(Array.from({ length: 39 }, (_, i) => `late-${i}`))
+    if (path.startsWith('networks/solana/dexes')) throw new Error('asked for a page past the end')
+    return { data: [] }
+  }))
+  await captureLaunchpadStages(fakeDb(), ctxFor, NOW, 'basic', deps(bscShaped.onchain))
+  eq(bscShaped.calls.filter((c) => c.path.startsWith('networks/solana/dexes')).length, 2)
+})
+
+Deno.test("a full last page whose links say there is no next page also ends the pager", () => {
+  eq(hasNextPage(registry([], { next: 'https://example.test/dexes?page=2' })), true)
+  eq(hasNextPage(registry([], { next: null })), false)
+  eq(hasNextPage(registry([])), null, 'no links at all is not an answer, and the row count decides')
+  eq(hasNextPage(null), null)
+})
+
+Deno.test('a full page whose links.next is null is the last page, even at exactly the page size', async () => {
+  const fake = fakeOnchain(soloSolana((path) => {
+    if (path === 'networks/solana/dexes?page=1') return fullRegistryPage(['pump-fun'], { next: null })
+    if (path.startsWith('networks/solana/dexes')) throw new Error('asked for a page past the end')
+    return { data: [] }
+  }))
+  await captureLaunchpadStages(fakeDb(), ctxFor, NOW, 'basic', deps(fake.onchain))
+  eq(fake.calls.filter((c) => c.path.startsWith('networks/solana/dexes')).length, 1)
+})
+
+// ─── remembered refusals ─────────────────────────────────────────────────────
+
+/** The row the SHARED TRANSPORT writes when it negative-caches a 4xx. The lane
+ * reads it to learn the status code the transport does not return. */
+const transportNegative = (cacheKey: string, status: number, expiresAt = new Date(NOW.getTime() + 15 * 60_000).toISOString()) => ({
+  provider: 'coingecko', cache_key: cacheKey, endpoint: 'x',
+  response_json: null, status_code: status, negative_cache: true, expires_at: expiresAt,
+})
+
+/** Capture the one `intel_launchpad_capture` run line a call logs. */
+async function runLine(run: () => Promise<unknown>): Promise<Record<string, unknown>> {
+  const original = console.info
+  let entry: Record<string, unknown> = {}
+  console.info = (...args: unknown[]) => {
+    try {
+      const parsed = JSON.parse(String(args[0]))
+      if (parsed?.intel_launchpad_capture) entry = parsed.intel_launchpad_capture
+    } catch { /* not ours */ }
+  }
+  try { await run() } finally { console.info = original }
+  return entry
+}
+
+Deno.test('the memo keys name every page 2+ and one megafilter, and nothing else', () => {
+  const keys = refusalMemoKeys('pro')
+  eq(keys[0], megafilterRefusalKey('pro'))
+  eq(keys.length, 1 + LAUNCHPAD_NETWORKS.length * (REGISTRY_PAGES - 1))
+  assert(keys.includes(registryRefusalKey('pro', 'solana', 2)))
+  assert(!keys.some((k) => k.endsWith('/dexes:p1')), 'a page-1 refusal is an outage, never remembered for a day')
+  // A memo can never be served to a caller as if it were a cached response: the
+  // transport only ever looks up keys that start `onchain:`.
+  for (const key of keys) assert(!key.startsWith('onchain:'), key)
+  eq(megafilterRefusalKey('pro') === megafilterRefusalKey('geckoterminal'), false, 'the tier decides who answers')
+})
+
+Deno.test('a registry 400 past the end is remembered for a day and the page is not asked for again', async () => {
+  const db = fakeDb({
+    // The transport's own negative row, which is how the lane knows the SOURCE
+    // said 400 rather than the socket dying.
+    market_data_response_cache: [transportNegative('onchain:geckoterminal:solana/dexes:p2', 400)],
+  })
+  const route = (path: string) => {
+    if (path === 'networks/solana/dexes?page=1') return fullRegistryPage(['pump-fun'])
+    if (path === 'networks/solana/dexes?page=2') return null   // the 400
+    return { data: [] }
+  }
+  const first = fakeOnchain(soloSolana(route))
+  const firstLine = await runLine(() => captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(first.onchain)))
+  eq(first.calls.filter((c) => c.path === 'networks/solana/dexes?page=2').length, 1)
+  eq(firstLine.refusalsRemembered, 1)
+
+  const memo = (db.tables.market_data_response_cache as Record<string, unknown>[])
+    .find((r) => r.cache_key === registryRefusalKey('geckoterminal', 'solana', 2))!
+  assert(memo, 'the refusal was not remembered')
+  eq(memo.negative_cache, true)
+  eq(memo.status_code, 400)
+  eq(Date.parse(String(memo.expires_at)) - NOW.getTime(), REFUSAL_MEMO_TTL_MS, 'remembered for exactly a day')
+
+  const second = fakeOnchain(soloSolana(route))
+  const secondLine = await runLine(() => captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(second.onchain)))
+  eq(second.calls.filter((c) => c.path === 'networks/solana/dexes?page=2').length, 0, 'a remembered 400 is not asked for again')
+  eq(second.calls.filter((c) => c.path === 'networks/solana/dexes?page=1').length, 1, 'page 1 is still read')
+  eq(secondLine.refusalsHonoured, 1)
+})
+
+Deno.test('a registry page that merely failed is NOT remembered, so one bad minute never silences a network for a day', async () => {
+  // No transport negative row: a timeout, a 429 and a 5xx leave none.
+  const db = fakeDb()
+  const route = (path: string) => {
+    if (path === 'networks/solana/dexes?page=1') return fullRegistryPage(['pump-fun'])
+    if (path === 'networks/solana/dexes?page=2') return null
+    return { data: [] }
+  }
+  const first = fakeOnchain(soloSolana(route))
+  await captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(first.onchain))
+  eq((db.tables.market_data_response_cache || []).length, 0, 'nothing was remembered')
+  const second = fakeOnchain(soloSolana(route))
+  await captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(second.onchain))
+  eq(second.calls.filter((c) => c.path === 'networks/solana/dexes?page=2').length, 1, 'the page is tried again next run')
+})
+
+Deno.test('a megafilter 401 is remembered for a day and the next run makes zero megafilter calls', async () => {
+  const db = fakeDb({
+    market_data_response_cache: [transportNegative('onchain:pro:megafilter:solana:pump-fun', 401)],
+  })
+  const route = (path: string) => {
+    if (path.startsWith('pools/megafilter')) return null   // the 401
+    if (path.includes('/dexes')) return registry(['pump-fun'])
+    return { data: [] }
+  }
+  const first = fakeOnchain(soloSolana(route))
+  const firstLine = await runLine(() => captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(first.onchain, { tier: 'pro' })))
+  eq(first.calls.filter((c) => c.path.startsWith('pools/megafilter')).length, 1)
+  eq(firstLine.megafilter, 'megafilter_unavailable')
+  eq(firstLine.refusalsRemembered, 1)
+  const memo = (db.tables.market_data_response_cache as Record<string, unknown>[])
+    .find((r) => r.cache_key === megafilterRefusalKey('pro'))!
+  assert(memo, 'the 401 was not remembered')
+  eq(Date.parse(String(memo.expires_at)) - NOW.getTime(), REFUSAL_MEMO_TTL_MS)
+
+  const second = fakeOnchain(soloSolana(route))
+  const secondLine = await runLine(() => captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(second.onchain, { tier: 'pro' })))
+  eq(second.calls.filter((c) => c.path.startsWith('pools/megafilter')).length, 0, 'an unentitled plan costs one call a day, not one an hour')
+  eq(secondLine.megafilter, 'refused_cached')
+  eq(secondLine.refusalsHonoured, 1)
+  assert(second.calls.some((c) => c.path.startsWith('networks/solana/new_pools')), 'the run still reads new_pools')
+})
+
+Deno.test('once the memory expires megafilter is probed again, so a plan upgrade lands within a day', async () => {
+  const db = fakeDb({
+    market_data_response_cache: [
+      // A memo from yesterday, now expired.
+      {
+        provider: 'coingecko', cache_key: megafilterRefusalKey('pro'), endpoint: '/onchain/pools/megafilter',
+        response_json: null, status_code: 401, negative_cache: true,
+        expires_at: new Date(NOW.getTime() - 60_000).toISOString(),
+      },
+    ],
+  })
+  const fake = fakeOnchain(soloSolana((path) => {
+    if (path.startsWith('pools/megafilter')) return { data: [pool('pump-fun', S1)] }   // the plan now answers
+    if (path.includes('/dexes')) return registry(['pump-fun'])
+    if (path.includes('/tokens/multi/')) return { data: [token(S1, { graduation_percentage: 12, completed: false })] }
+    return { data: [] }
+  }))
+  const line = await runLine(() => captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(fake.onchain, { tier: 'pro' })))
+  eq(fake.calls.filter((c) => c.path.startsWith('pools/megafilter')).length, 1, 'an expired memory is no memory')
+  eq(line.megafilter, 'used')
+  eq(line.refusalsHonoured, 0)
+  assert(!fake.calls.some((c) => c.path.startsWith('networks/solana/new_pools')), 'megafilter answered, so new_pools is not paged')
+})
+
+Deno.test('a cache table that cannot be read is reported, never fatal', async () => {
+  const memos = await readRefusalMemos(fakeDb({}, {}, { market_data_response_cache: 'denied' }), 'pro', NOW.getTime())
+  eq(memos.fresh.size, 0)
+  eq(memos.reason, 'denied')
+  // And the lane still captures: without memos it simply spends what it used to.
+  const fake = fakeOnchain(solanaRun([token(S1, { graduation_percentage: 12, completed: false })]))
+  const writes: Record<string, unknown[]> = {}
+  const db = fakeDb({}, writes, { market_data_response_cache: 'denied' })
+  const result = await captureLaunchpadStages(db, ctxFor, NOW, 'basic', deps(fake.onchain))
+  eq(result.rows, 1)
+  eq(result.partial, 'denied')
 })
 
 Deno.test('the call ceiling stops the run and the run says so instead of reporting an empty source', async () => {

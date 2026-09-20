@@ -68,7 +68,7 @@ import { hourBucket } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult, SchedulePolicyRow } from './capture-jobs.ts'
 import { dedupe, hoursBetween, priorSnapshots, upsert, MEME_STAGES } from './capture-meme.ts'
 import type { MemeStage } from './capture-meme.ts'
-import { coingeckoOnchainTier, fetchCoingeckoOnchain } from '../market-assets/coingecko-provider.ts'
+import { coingeckoOnchainCacheKey, coingeckoOnchainTier, fetchCoingeckoOnchain } from '../market-assets/coingecko-provider.ts'
 import type { MarketAssetsContext } from '../market-assets/types.ts'
 import { GRADUATION_NEAR_PCT, LAUNCHPAD_NETWORKS, LAUNCHPAD_PADS, LAUNCHPAD_REJECTED, PAD_LABELS } from './launchpad-registry.ts'
 import type { LaunchpadNetwork, LaunchpadPad } from './launchpad-registry.ts'
@@ -95,9 +95,15 @@ export const LAUNCHPAD_MAX_CALLS = 40
  * everything else on this egress, so the ceiling is lower AND paced. */
 export const KEYLESS_MAX_CALLS = 24
 export const KEYLESS_SPACING_MS = 2100
-/** Dex registry pages read per network. Verified 2026-09-17: solana 1 page (33
- * ids, page 2 answers 400), bsc 2, base 2, robinhood 1. */
+/** CEILING on dex registry pages per network. Never the number asked for: the
+ * pager stops at the page the source says is the last one. Verified 2026-09-20
+ * from the cached pages: solana 1 page (33 ids), bsc 2 (100 + 39), base 2
+ * (100 + 12), robinhood 1 (42). */
 export const REGISTRY_PAGES = 3
+/** Rows `networks/{network}/dexes` serves on a FULL page, verified from the
+ * cached pages above. A shorter page is the last page, so asking for the next
+ * one is asking for a page that does not exist, which answers 400. */
+export const REGISTRY_PAGE_SIZE = 100
 /** Cached for a day: a launchpad is not listed and delisted inside an hour, and
  * a fresh registry read every hour would spend a third of the run's budget on a
  * list that does not move. */
@@ -209,6 +215,24 @@ export function classifyStage(details: LaunchpadDetails, onDestination = false):
 
 // ─── Response readers ────────────────────────────────────────────────────────
 
+/**
+ * Does the payload ITSELF say another page exists?
+ *
+ * The onchain API is JSON:API-shaped and every registry page carries
+ * `links.next`, null on the last page (verified on all four networks
+ * 2026-09-20). `true`/`false` is the source's own answer; `null` means the
+ * payload carried no links at all and the caller must fall back to the row
+ * count.
+ */
+// deno-lint-ignore no-explicit-any
+export function hasNextPage(payload: any): boolean | null {
+  const links = payload?.links
+  if (!links || typeof links !== 'object') return null
+  if (!('next' in links)) return null
+  const next = (links as Record<string, unknown>).next
+  return typeof next === 'string' ? next.trim().length > 0 : false
+}
+
 /** Ids named by one page of `networks/{network}/dexes`. An unreadable page
  * yields an empty set, and the caller treats "registry did not answer" as a
  * refusal to write, never as "no pads exist". */
@@ -311,6 +335,119 @@ export interface LaunchpadDeps extends CaptureDeps {
 }
 
 const defaultSleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
+
+// ─── Remembered refusals ─────────────────────────────────────────────────────
+//
+// Two calls an hour were being refused forever because nothing remembered the
+// refusal for longer than the transport's 15-minute negative cache, and this
+// lane runs hourly:
+//
+//   • `networks/{network}/dexes?page=N` past the last page answers 400. Three
+//     of those an hour (solana p2, bsc p3, robinhood p2) until 2026-09-20.
+//   • `pools/megafilter` answers 401 on this key's plan. One an hour.
+//
+// A memo lives in `market_data_response_cache`, the SAME table the transport
+// caches the good registry pages in, so this adds no table. The
+// `intel:launchpad:refused:` prefix cannot collide with a transport cache key
+// (every one of those starts `onchain:`), so a memo is never handed to a caller
+// as if it were a response. It is tier-scoped for the same reason the transport's
+// key is: gaining or losing a key changes who answers.
+//
+// A memo lasts a DAY, so a plan upgrade or a newly listed registry page is
+// picked up within 24 hours without anyone doing anything.
+
+export const REFUSAL_MEMO_TTL_MS = 24 * 3600_000
+export const REFUSAL_MEMO_PREFIX = 'intel:launchpad:refused'
+
+/** "There is no page N of this network's registry." Only pages 2 and up are ever
+ * remembered: a page-1 refusal means the registry is unavailable, and a day of
+ * silence is the wrong answer to a bad hour. */
+export function registryRefusalKey(tier: string, network: string, page: number): string {
+  return `${REFUSAL_MEMO_PREFIX}:${tier}:${network}/dexes:p${page}`
+}
+/** "This key's plan does not include megafilter." One memo per tier, not per
+ * network: the probe is a question about the plan, not about solana. */
+export function megafilterRefusalKey(tier: string): string {
+  return `${REFUSAL_MEMO_PREFIX}:${tier}:megafilter`
+}
+/** Every memo this lane could hold, so one read covers the whole run. */
+export function refusalMemoKeys(tier: string): string[] {
+  const keys = [megafilterRefusalKey(tier)]
+  for (const network of LAUNCHPAD_NETWORKS) {
+    for (let page = 2; page <= REGISTRY_PAGES; page++) keys.push(registryRefusalKey(tier, network.network, page))
+  }
+  return keys
+}
+
+/** A registry page past the end. 400 is what the API answers (verified on solana
+ * p2, bsc p3 and robinhood p2, 2026-09-20); 404 is the same claim worded
+ * differently. Anything else is not an answer ABOUT THE PAGE. */
+const REGISTRY_END_STATUSES = new Set([400, 404])
+/** The key's plan does not include the endpoint. 400 is deliberately NOT here: a
+ * malformed megafilter request is our own bug, and remembering it for a day would
+ * hide the fix for a day. */
+const ENTITLEMENT_STATUSES = new Set([401, 403])
+
+/** The memos that are still fresh. An unreadable cache table is not a reason to
+ * stop capturing: without memos the lane simply spends the calls it used to. */
+// deno-lint-ignore no-explicit-any
+export async function readRefusalMemos(db: any, tier: string, nowMs: number): Promise<{ fresh: Set<string>; reason: string | null }> {
+  const fresh = new Set<string>()
+  const keys = refusalMemoKeys(tier)
+  try {
+    const { data, error } = await db.from('market_data_response_cache')
+      .select('cache_key,expires_at')
+      .eq('provider', LAUNCHPAD_POLICY_PROVIDER)
+      .in('cache_key', keys)
+      .gte('expires_at', new Date(nowMs).toISOString())
+      .limit(keys.length)
+    if (error) return { fresh, reason: String(error.message || error).slice(0, 200) }
+    for (const row of (Array.isArray(data) ? data : data ? [data] : [])) {
+      const key = text(row?.cache_key, 400)
+      if (key) fresh.add(key)
+    }
+    return { fresh, reason: null }
+  } catch (e) { return { fresh, reason: ((e as Error)?.message || 'refusal_memo_read_failed').slice(0, 200) } }
+}
+
+/**
+ * The status the TRANSPORT recorded for its own negative cache entry, or null
+ * when it wrote none.
+ *
+ * `fetchCoingeckoOnchain` returns null for a 400, a 401, a 429, a 500 and a dead
+ * socket alike, but it negative-caches only the non-429 4xx, so this read is
+ * how the lane tells "the source says no" apart from "the call did not get
+ * through", and is why a bad minute never silences a network for a day.
+ */
+// deno-lint-ignore no-explicit-any
+export async function transportRefusalStatus(db: any, tier: string, cacheKey: string, nowMs: number): Promise<number | null> {
+  try {
+    const { data, error } = await db.from('market_data_response_cache')
+      .select('cache_key,status_code,negative_cache,expires_at')
+      .eq('provider', LAUNCHPAD_POLICY_PROVIDER)
+      .eq('cache_key', coingeckoOnchainCacheKey(tier as 'pro' | 'demo' | 'geckoterminal', cacheKey))
+      .gte('expires_at', new Date(nowMs).toISOString())
+      .limit(1)
+    if (error) return null
+    const row = Array.isArray(data) ? data[0] : data
+    if (!row || row.negative_cache !== true) return null
+    const status = Number(row.status_code)
+    return Number.isFinite(status) ? status : null
+  } catch { return null }
+}
+
+/** Write one memo. Best-effort: a memo that fails to land costs a call next run,
+ * never a row. */
+// deno-lint-ignore no-explicit-any
+async function rememberRefusal(db: any, key: string, endpoint: string, status: number, nowMs: number): Promise<void> {
+  try {
+    await db.from('market_data_response_cache').upsert([{
+      provider: LAUNCHPAD_POLICY_PROVIDER, cache_key: key, endpoint,
+      response_json: null, status_code: status, cache_status: 'negative', negative_cache: true,
+      expires_at: new Date(nowMs + REFUSAL_MEMO_TTL_MS).toISOString(), updated_at: new Date(nowMs).toISOString(),
+    }], { onConflict: 'provider,cache_key' })
+  } catch { /* an optimisation must never fail a capture */ }
+}
 
 // ─── Policy ──────────────────────────────────────────────────────────────────
 
@@ -559,14 +696,26 @@ export async function captureLaunchpadStages(db: any, ctxFor: (name: string, max
     priorTruncated = priorTruncated || tracked.truncated
     reason = reason || tracked.reason
 
+    // ── refusals this lane already learned, read once for the whole run ──
+    const memos = await readRefusalMemos(db, tier, now.getTime())
+    reason = reason || memos.reason
+    let refusalsHonoured = 0
+    let refusalsRemembered = 0
+
     // ── megafilter: probed ONCE, never assumed ──
     // The shared transport gives back null for a 400, a 401, a 403 and a dead
     // socket alike, so a refusal and a failure are the same answer here: stop
     // using megafilter for this run and page new_pools instead. Probing once
     // rather than per network means an unentitled key costs one call an hour,
-    // not four.
+    // not four, and a refusal REMEMBERED for a day costs one call a day, not
+    // one an hour, while still picking a plan upgrade up within that day.
     let megafilter: boolean | null = keyless ? false : null
     let megafilterReason: string | null = keyless ? 'keyless_host' : null
+    if (!keyless && memos.fresh.has(megafilterRefusalKey(tier))) {
+      megafilter = false
+      megafilterReason = 'refused_cached'
+      refusalsHonoured += 1
+    }
 
     for (const network of LAUNCHPAD_NETWORKS) {
       const line: LaunchpadNetworkLine = {
@@ -582,15 +731,32 @@ export async function captureLaunchpadStages(db: any, ctxFor: (name: string, max
       const registry = new Set<string>()
       let registryOk = false
       for (let page = 1; page <= REGISTRY_PAGES; page++) {
+        // A page we already learned does not exist is not asked for again.
+        if (page > 1 && memos.fresh.has(registryRefusalKey(tier, network.network, page))) { refusalsHonoured += 1; break }
+        const pageCacheKey = `${network.network}/dexes:p${page}`
         const payload = await ask(`networks/${encodeURIComponent(network.network)}/dexes?page=${page}`, {
-          endpoint: '/onchain/networks/{network}/dexes', cacheKey: `${network.network}/dexes:p${page}`, ttlMs: REGISTRY_TTL_MS,
+          endpoint: '/onchain/networks/{network}/dexes', cacheKey: pageCacheKey, ttlMs: REGISTRY_TTL_MS,
         })
-        if (!payload) break
+        if (!payload) {
+          // A refused page 2+ is normally "there is no page N". Remember it for a
+          // day, but only when the transport recorded that the SOURCE said so:
+          // a timeout or a 5xx leaves no negative row and is retried next run.
+          if (page > 1 && !budgetExhausted) {
+            const status = await transportRefusalStatus(db, tier, pageCacheKey, now.getTime())
+            if (status != null && REGISTRY_END_STATUSES.has(status)) {
+              await rememberRefusal(db, registryRefusalKey(tier, network.network, page), '/onchain/networks/{network}/dexes', status, now.getTime())
+              refusalsRemembered += 1
+            }
+          }
+          break
+        }
         registryOk = true
         const ids = dexIdsFrom(payload)
         for (const id of ids) registry.add(id)
-        // A short page is the end of the registry; solana answers 400 on page 2.
-        if (ids.length < 20) break
+        // Two independent ways to know this was the last page, and either one
+        // ends the pager: the payload's own `links.next`, and a page shorter than
+        // a full one. Asking for the page after the last answers 400.
+        if (hasNextPage(payload) === false || ids.length < REGISTRY_PAGE_SIZE) break
       }
       if (!registryOk) {
         line.state = budgetExhausted ? 'call_budget' : 'registry_unavailable'
@@ -623,9 +789,10 @@ export async function captureLaunchpadStages(db: any, ctxFor: (name: string, max
         // confirmed by `launchpad_details.completed` on the tracked re-poll,
         // and the destination sighting is only ever a second witness.
         const dexes = [...padIds].join(',')
+        const megafilterCacheKey = `megafilter:${network.network}:${dexes}`
         const payload = await ask(
           `pools/megafilter?networks=${encodeURIComponent(network.network)}&dexes=${encodeURIComponent(dexes)}&sort=pool_created_at_desc&page=1`,
-          { endpoint: '/onchain/pools/megafilter', cacheKey: `megafilter:${network.network}:${dexes}` },
+          { endpoint: '/onchain/pools/megafilter', cacheKey: megafilterCacheKey },
         )
         if (payload) {
           megafilter = true
@@ -636,6 +803,14 @@ export async function captureLaunchpadStages(db: any, ctxFor: (name: string, max
         } else if (!budgetExhausted) {
           megafilter = false
           megafilterReason = 'megafilter_unavailable'
+          // A 401 or 403 is an answer about the PLAN, and the plan does not change
+          // between two hourly runs. Remember it for a day so the probe costs one
+          // call a day. A 400, a timeout or a 5xx is not remembered.
+          const status = await transportRefusalStatus(db, tier, megafilterCacheKey, now.getTime())
+          if (status != null && ENTITLEMENT_STATUSES.has(status)) {
+            await rememberRefusal(db, megafilterRefusalKey(tier), '/onchain/pools/megafilter', status, now.getTime())
+            refusalsRemembered += 1
+          }
         }
       }
       if (!poolsOk) {
@@ -783,6 +958,7 @@ export async function captureLaunchpadStages(db: any, ctxFor: (name: string, max
       lane: LAUNCHPAD_JOB, source: LAUNCHPAD_SOURCE, tier, capturedAt,
       calls, budget, state, reason: reason ?? null,
       megafilter: megafilter === true ? 'used' : megafilterReason ?? 'not_probed',
+      refusalsHonoured, refusalsRemembered,
       contracts: snapshots.length, transitions: transitions.length,
       graduationPctOutOfBand, trackedTruncated: tracked.truncated,
       networks: networkLines, pads: padLines,
