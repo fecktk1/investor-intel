@@ -90,6 +90,28 @@ const windowOut = (w: any) => ({
   subjectBin: int(w?.subjectBin),
 })
 
+/**
+ * ONE window is the denominator of the lead figures, and it is not `sample_days`.
+ *
+ * `move_percentile` and `move_exceeded` are the LEAD WINDOW's readings: the
+ * scorer ranks the day against the trailing `lead_window_days` returns, so the
+ * count behind them is that window's `n`, at most 90. `sample_days` is the whole
+ * stored history behind the asset and is usually larger. A surface that printed
+ * "larger than 90 of the last 92 days" beside "100.0th percentile" was reading
+ * the numerator from one window and the denominator from another; the two
+ * figures are true of ONE window and this field names its size so the surface
+ * cannot mix them again.
+ */
+// deno-lint-ignore no-explicit-any
+const leadWindowN = (row: any): number | null => {
+  const days = int(row?.lead_window_days)
+  if (days == null) return null
+  const windows = Array.isArray(row?.windows) ? row.windows : []
+  // deno-lint-ignore no-explicit-any
+  const lead = windows.find((w: any) => int(w?.days) === days)
+  return lead ? int(lead?.n) ?? 0 : null
+}
+
 // deno-lint-ignore no-explicit-any
 const scoreOut = (row: any) => ({
   assetKey: str(row?.asset_key, 200), subjectDay: str(row?.subject_day, 10),
@@ -100,6 +122,8 @@ const scoreOut = (row: any) => ({
   isMarketReference: row?.is_market_reference === true,
   movePct: num(row?.move_pct), volume: num(row?.volume),
   leadWindowDays: int(row?.lead_window_days),
+  // The denominator BOTH lead figures below rest on. See leadWindowN above.
+  leadWindowN: leadWindowN(row),
   percentile: num(row?.move_percentile), exceeded: int(row?.move_exceeded),
   medianAbsPct: num(row?.median_abs_pct), madPct: num(row?.mad_pct), robustZ: num(row?.robust_z),
   volumePercentile: num(row?.volume_percentile), volumeRobustZ: num(row?.volume_robust_z),

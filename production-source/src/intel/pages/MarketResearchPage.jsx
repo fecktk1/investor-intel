@@ -1,4 +1,4 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { useProfile } from '../../lib/profile-context'
@@ -12,7 +12,9 @@ import { fmtPrice, fmtVol, fmtPct } from '../lib/market-format'
 import TokenChart from '../components/TokenChart'
 import RwaRelationships from '../components/RwaRelationships'
 import RwaAssetProfile from '../components/RwaAssetProfile'
+import TokenAvatar from '../components/TokenAvatar'
 import { useRwaAssetProfile } from '../lib/useRwaAssetProfile'
+import { useRwaAssetLogos } from '../lib/useRwaAssetLogos'
 import MarketPairsEvidence from '../components/MarketPairsEvidence'
 import {MarketContextHistory} from '../components/MarketContextHistory'
 import ExchangeDisclosures from '../components/ExchangeDisclosures'
@@ -50,10 +52,35 @@ const fmt = v => v == null ? '—' : typeof v === 'number' ? v.toLocaleString() 
 const rowName = row => row.name || row.issuer_name || row.exchange_name || row.rwa_name || row.title || row.symbol || row.market_pair_symbol || row.market_pair || row.n || 'Record'
 const rowId = row => row.rwa_id || row.issuer_id || row.id || row.crypto_id || row.exchange_id
 const marketRow = row => row.id || row.crypto_id ? `/intel/markets/${encodeURIComponent(row.symbol || row.name)}?provider=coinmarketcap&id=${row.id || row.crypto_id}` : null
-export function ResearchTable({ rows, capability, onOpen, t }) {
+/** CoinMarketCap's own image for a tokenised asset, keyed by rwa id, as the
+ * batch read hands it over. `logos` is `{}` on every capability that is not a
+ * real-world asset list and on every failed read, and TokenAvatar then draws the
+ * monogram it has always drawn. */
+export const assetLogo = (logos, row) => logos?.[String(row?.rwa_id ?? '')]?.logoUrl || null
+
+/** The three money columns of a real-world asset row, and the test for a row the
+ * provider listed without any tokenised market behind it.
+ *
+ * CoinMarketCap's own list carries such rows: Alphabet comes back with a dated
+ * USD quote envelope whose `average_tokenized_price`, `tokenized_market_cap` and
+ * `tokenized_volume_24h` are all null, `rwa_id` null and `has_tokens` null. That
+ * is a real and useful finding, and a wall of three bare dashes says none of it.
+ * The row states it in one sentence across those three cells instead. */
+export const RWA_QUOTE_COLUMNS = ['tokenized_price', 'value', 'volume']
+export const rwaQuoteMissing = row => {
+  const quote = row?.quote || {}
+  return ['average_tokenized_price', 'tokenized_market_cap', 'tokenized_volume_24h']
+    .every(key => (row?.[key] ?? quote?.[key] ?? null) == null)
+}
+
+export function ResearchTable({ rows, capability, onOpen, t, logos = null }) {
   const q = row => row.quote || {}
   const observed = row => { const time = row.last_updated || row.quote?.last_updated; return time ? new Date(time).toLocaleString() : '—' }
   const column = (key, label, read, numeric = true) => ({ key, label: t(`research.column_${key}`, { defaultValue: label }), read, numeric })
+  // Only the asset list carries the three tokenised money columns; the issuer
+  // list does not, so the quiet-row rule is scoped to the capability that has
+  // something to be quiet about.
+  const quiet = capability === 'rwaList' ? rwaQuoteMissing : () => false
   let columns
   if (capability === 'derivativeExchanges') columns = [column('oi', 'Open interest (USD)', r => fmtVol(q(r).open_interest)), column('derivatives_volume', '24h derivatives volume (USD)', r => fmtVol(q(r).derivative_volume_usd ?? q(r).derivative_volume)), column('observed', 'Observed', observed, false)]
   else if (capability === 'liquidationExchanges') columns = ['1h','4h','24h'].map(period => column(`liquidations_${period}`, `${period} liquidations (USD)`, r => fmtVol(q(r)[`total_liquidations_${period}`]))).concat([column('observed','Observed',r => q(r).last_updated ? new Date(q(r).last_updated).toLocaleString() : 'Unreported',false)])
@@ -66,13 +93,21 @@ export function ResearchTable({ rows, capability, onOpen, t }) {
   else columns = [column('price', 'Price (USD)', r => fmtPrice(q(r).price)), column('market_cap', 'Market cap (USD)', r => fmtVol(q(r).market_cap)), column('volume', '24h volume (USD)', r => fmtVol(q(r).volume_24h)), column('change', '24h change', r => fmtPct(q(r).percent_change_24h))]
   return <div className="intel-table-scroll"><table><thead><tr><th scope="col">{t('research.name', { defaultValue: 'Name' })}</th>{columns.map(c => <th key={c.key} scope="col" className={c.numeric ? 'intel-number' : ''}>{c.label}</th>)}<th scope="col">{t('research.open', { defaultValue: 'Investigate' })}</th></tr></thead>
     <tbody>{rows.map((row, index) => <tr key={`${rowId(row) || ''}:${index}`}>
-      <th scope="row"><button type="button" className="text-left text-[var(--fg-1)]" onClick={() => onOpen(row)}><span className="block text-sm">{rowName(row)}</span><span className="block text-xs text-[var(--fg-4)]">{row.symbol || row.category || ''}</span></button></th>
-      {columns.map(c => <td key={c.key} className={c.numeric ? 'intel-number' : ''}>{c.read(row)}</td>)}
+      <th scope="row"><button type="button" className="flex items-center gap-2.5 text-left text-[var(--fg-1)]" onClick={() => onOpen(row)}>{logos && <TokenAvatar src={assetLogo(logos, row)} symbol={row.symbol} name={rowName(row)} size="sm"/>}<span><span className="block text-sm">{rowName(row)}</span><span className="block text-xs text-[var(--fg-4)]">{row.symbol || row.category || ''}</span></span></button></th>
+      {columns.map(c => {
+        // One sentence in place of three dashes, spanning the cells it replaces.
+        if (quiet(row) && RWA_QUOTE_COLUMNS.includes(c.key)) {
+          return c.key === RWA_QUOTE_COLUMNS[0]
+            ? <td key={c.key} colSpan={RWA_QUOTE_COLUMNS.length} className="text-[var(--fg-4)] text-xs">{t('research.rwa_no_tokenized_quote', { defaultValue: 'CoinMarketCap lists this asset but reported no tokenized market for it, so it has no price, no tokenized value and no volume to show.' })}</td>
+            : null
+        }
+        return <td key={c.key} className={c.numeric ? 'intel-number' : ''}>{c.read(row)}</td>
+      })}
       <td><button className="underline underline-offset-4 text-xs" onClick={() => onOpen(row)}>{t('research.evidence', { defaultValue: 'Evidence' })}</button>{['listings','newListings','trending','gainers','mostVisited'].includes(capability) && marketRow(row) && <Link className="block text-xs underline underline-offset-4 mt-2" to={marketRow(row)}>{t('research.asset_workspace', { defaultValue: 'Asset workspace' })}</Link>}</td>
     </tr>)}</tbody></table></div>
 }
 
-function Investigation({ row, capability, onClose, t }) {
+function Investigation({ row, capability, onClose, t, logoUrl = null }) {
   const { supabase, user } = useSupabase(), { org } = useProfile()
   const [note, setNote] = useState(''), [saved, setSaved] = useState(false), [error, setError] = useState(null), [saving, setSaving] = useState(false)
   const savingRef = useRef(false), mounted = useRef(true)
@@ -99,7 +134,10 @@ function Investigation({ row, capability, onClose, t }) {
   useEffect(() => { const previous = document.activeElement; const dialog = pane.current; dialog?.showModal(); return () => { dialog?.close(); previous?.focus?.() } }, [])
   const save = async () => { if(savingRef.current)return; savingRef.current=true;setSaving(true);setError(null); const savedNote=note; try { await saveResearch(supabase, org.id, user.id, { artifactId: null, title: rowName(row), snapshot: { summary: savedNote, source: 'CoinMarketCap', source_ref: { capability, id: rowId(row) }, recorded_at: new Date().toISOString() }, tags: ['investigation', capability], privateOwner: true }); if(mounted.current)setSaved(true) } catch (e) { if(mounted.current)setError(e.message) } finally { savingRef.current=false;if(mounted.current)setSaving(false) } }
   return <dialog className="intel-investigation" aria-label={`${rowName(row)} evidence`} ref={pane} onCancel={event => { event.preventDefault(); onClose() }}>
-    <div className="flex items-start justify-between gap-5"><div><p className="eyebrow">{t('research.evidence', { defaultValue: 'Evidence' })}</p><h2 className="page-title">{rowName(row)}</h2></div><button className="btn btn--quiet" onClick={onClose}>{t('common.close', { defaultValue: 'Close' })}</button></div>
+    {/* The same image the row carried, handed down from the batch the table
+        already read: opening a drawer costs no second request. The stored
+        profile below carries its own copy for an asset opened from elsewhere. */}
+    <div className="flex items-start justify-between gap-5"><div className="flex items-center gap-3">{(logoUrl || rwaProfile?.logoUrl) && <TokenAvatar src={logoUrl || rwaProfile?.logoUrl} symbol={row.symbol} name={rowName(row)} size="lg"/>}<div><p className="eyebrow">{t('research.evidence', { defaultValue: 'Evidence' })}</p><h2 className="page-title">{rowName(row)}</h2></div></div><button className="btn btn--quiet" onClick={onClose}>{t('common.close', { defaultValue: 'Close' })}</button></div>
     {rwa && row.rwa_id && <RwaAssetProfile profile={rwaProfile}/>}
     <details className="intel-source-record"><summary>{t('research.asset_background',{defaultValue:'Asset background and source record'})}</summary>{(rwa || issuer || category || isCrypto) && <ResearchStatus query={info}/>}{(info.result?.data?.rows?.length ? info.result.data.rows : [row]).map((item, index) => <EvidenceRecord key={index} record={item}/>)}</details>
     {(rwa || isCrypto) && <ResearchStatus query={quotes}/>}{quotes.result?.data?.rows?.map((item, index) => rwa ? <div key={item.rwa_id || index}><RwaRelationships record={item} onIssuer={setSelectedIssuer}/><details className="py-3"><summary className="cursor-pointer text-sm">{t('research.all_quote_evidence', { defaultValue: 'All quote evidence' })}</summary><EvidenceRecord record={item}/></details></div> : <EvidenceRecord key={index} record={item}/>)}
@@ -149,6 +187,12 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
   const params = isDexDiscovery(capability)?{platformIds:dexNetwork,interval:'24h',pageSize:25,...(search.get('cursor')?{nextPageIndex:search.get('cursor')}:{})}:{ ...(['globalHistory','cmc100History','cmc20History'].includes(capability)?{count:capability==='globalHistory'?30:10,interval:'daily'}:{}), ...(paged ? { start: page * PAGE + 1, limit: PAGE } : capability === 'community' ? { limit: 5 } : {}), ...(capability === 'derivativePairs' || capability === 'liquidationAssets' ? { crypto_id: asset } : capability === 'marketPairs' ? { id: asset } : {}), ...(capability === 'rwaList' && search.get('type') ? { asset_type: search.get('type') } : {}) }
   const query = useMarketResearch(capability, params,true,!selection&&!sourceDraft)
   const rows = query.result?.data?.rows || []
+  // One logo read per PAGE of real-world asset rows, never one per row. The
+  // images are stored rows the profile lane already wrote, so this costs the
+  // free surface nothing; it idles on every other workspace and capability.
+  const rwaList = capability === 'rwaList'
+  const rwaIds = useMemo(() => (rwaList ? rows.map(row => row.rwa_id) : []), [rwaList, rows])
+  const { logos: rwaLogos } = useRwaAssetLogos(rwaIds, rwaList)
   const setParam = (key, value) => { const next = new URLSearchParams(search); value ? next.set(key, value) : next.delete(key); if (key !== 'page') next.delete('page'); if(key==='view'||key==='network')next.delete('cursor'); setSelection(null); setSearch(next, { replace: true }) }
   return <IntelPageShell>
     <IntelPageHeader eyebrow={t('research.market_research', { defaultValue: 'Market research' })} title={t(`research.${workspace}_title`, { defaultValue: view.title })} subtitle={t(`research.${workspace}_subtitle`, { defaultValue: view.subtitle })}/>
@@ -170,9 +214,9 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
     <FreeSharedNotice result={query.result} loading={query.loading} t={t}/>
     {sourceDraft&&<p className="intel-analysis-caption">Automatic updates paused while your source notes are unsaved.</p>}
     {isDexDiscovery(capability)&&<DexDiscoveryTable query={query} capability={capability} network={dexNetwork} onNetwork={v=>setParam('network',v)} cursor={search.get('cursor')} onNext={v=>setParam('cursor',v)} onFirst={()=>setParam('cursor',null)} onDraftChange={setSourceDraft}/>}
-    {!!rows.length && !isDexDiscovery(capability) && (['globalHistory','cmc100History','cmc20History'].includes(capability)?<MarketContextHistory rows={rows} capability={capability}/>:workspace === 'context' || ['liquidations','liquidationAssets','marketPairs'].includes(capability) ? rows.map((row,index) => <EvidenceRecord key={index} record={row}/>) : <ResearchTable rows={rows} capability={capability} onOpen={row => setSelection(row)} t={t}/>)}
+    {!!rows.length && !isDexDiscovery(capability) && (['globalHistory','cmc100History','cmc20History'].includes(capability)?<MarketContextHistory rows={rows} capability={capability}/>:workspace === 'context' || ['liquidations','liquidationAssets','marketPairs'].includes(capability) ? rows.map((row,index) => <EvidenceRecord key={index} record={row}/>) : <ResearchTable rows={rows} capability={capability} onOpen={row => setSelection(row)} t={t} logos={rwaList ? rwaLogos : null}/>)}
     {paged && <div className="flex items-center justify-between text-xs text-[var(--fg-4)]"><span>{t('research.page', { defaultValue: 'Page' })} {page + 1}{query.result?.data?.total != null ? ` · ${query.result.data.total} ${t('research.records', { defaultValue: 'records' })}` : ''}</span><span className="flex gap-3"><button className="btn btn--quiet" disabled={page === 0 || query.loading} onClick={() => setParam('page', String(page - 1))}>{t('markets.prev', { defaultValue: 'Previous' })}</button><button className="btn btn--quiet" disabled={query.loading || !(query.result?.data?.hasMore || (query.result?.data?.total != null ? (page + 1) * PAGE < query.result.data.total : rows.length === PAGE))} onClick={() => setParam('page', String(page + 1))}>{t('markets.next', { defaultValue: 'Next' })}</button></span></div>}
-    {selection && <Investigation key={`${org?.id}:${user?.id}:${workspace}:${capability}:${rowId(selection)}`} row={selection} capability={capability} onClose={closeInvestigation} t={t}/>}
+    {selection && <Investigation key={`${org?.id}:${user?.id}:${workspace}:${capability}:${rowId(selection)}`} row={selection} capability={capability} onClose={closeInvestigation} t={t} logoUrl={rwaList ? assetLogo(rwaLogos, selection) : null}/>}
     </IntelSurfaceGate>
   </IntelPageShell>
 }

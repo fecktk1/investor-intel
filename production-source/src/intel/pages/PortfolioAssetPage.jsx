@@ -88,7 +88,11 @@ function PortfolioAssetPageBody() {
     const market=portfolioMarketDisplay(data,chartIdentity.ref)
     if (activeScope.current === scope && market) setMarketObservation({scope,...market})
     const end = historyTo, start = end - days * 86400000
-    return {...data,candles:(data.candles || []).filter((c) => { const time = Number(c.t) < 1e12 ? Number(c.t) * 1000 : Number(c.t); return Number.isFinite(time) && time >= start && time <= end })}
+    // The server's own envelope and receipts for THIS snapshot, carried under the
+    // names chartSnapshotProvenance() reads. Without them the chart falls back to
+    // re-deriving an envelope and stamps every receipt 'coinmarketcap', which
+    // would mislabel a Birdeye or GeckoTerminal series as CoinMarketCap's.
+    return {...data,chartEnvelope:data.figureProvenance?.chart ?? null,chartReceipts:Array.isArray(data.receipts)?data.receipts:null,candles:(data.candles || []).filter((c) => { const time = Number(c.t) < 1e12 ? Number(c.t) * 1000 : Number(c.t); return Number.isFinite(time) && time >= start && time <= end })}
   }, [chartIdentity, org?.id, supabase, historyTo, historyYear, scope])
 
   // Identity falls back to a transaction leg if the position was fully sold.
@@ -145,7 +149,11 @@ function PortfolioAssetPageBody() {
       {initialActivity.event&&target.loading&&<p role="status">Locating the selected activity…</p>}
       {target.error&&<p role="alert">The selected activity could not be loaded. <button type="button" onClick={target.retry}>Retry selected activity</button></p>}
       {initialActivity.event&&!target.loading&&!target.error&&!target.marker&&<p role="status">This activity is unavailable for this asset and portfolio. Other recorded history remains available.</p>}
-      <TokenChart focusMarkerId={activityMarkerFor(markers,initialActivity.event)?.id||null} cursorTime={targetTime} key={`${user?.id}:${org?.id}:${portfolioId}:${key}:${historyYear}:${chartRange}`} assetKey={`${user?.id}:${org?.id}:${portfolioId}:${key}:${historyYear}`} loadCandles={loadCandles} markers={markers} showDensityToggles defaultRange={chartRange} persistence={{supabase,userId:user?.id,orgId:org?.id,asset:key}}
+      {/* Who published the candles under this position, on the chart itself. An
+          ARCHIVED year loads no prices at all, so the block is not asked for
+          there: it would have nothing to name and would print "unknown" over a
+          chart the page has already said carries no prices. */}
+      <TokenChart candleProvenance={historyYear === 0} focusMarkerId={activityMarkerFor(markers,initialActivity.event)?.id||null} cursorTime={targetTime} key={`${user?.id}:${org?.id}:${portfolioId}:${key}:${historyYear}:${chartRange}`} assetKey={`${user?.id}:${org?.id}:${portfolioId}:${key}:${historyYear}`} loadCandles={loadCandles} markers={markers} showDensityToggles defaultRange={chartRange} persistence={{supabase,userId:user?.id,orgId:org?.id,asset:key}}
         onRangeChange={setChartRange} timeWindow={{ from: chartFrom, to: historyTo }}
         historyLoading={chartContext.loading || chartContext.loadingMore || thesisHistory.loading || thesisHistory.loadingMore} historyError={chartContext.error || thesisHistory.error ? t('portfolio.activity_unavailable', { defaultValue: 'Your activity could not be loaded.' }) : null}
         historyHasMore={!!(chartContext.nextCursor || thesisHistory.nextCursor)} onLoadMoreHistory={loadMoreHistory}/>

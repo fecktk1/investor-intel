@@ -6,7 +6,7 @@ import {
 } from './capture-rwa-wrappers.ts'
 import { wrapperAssetFromQuote, assetListFigures, wrapperSpread, LIQUIDITY_FLOOR_USD } from './rwa-wrapper-spread.ts'
 import { cmcRows } from '../market-assets/cmc-capabilities.ts'
-import { readRwaWrappers, premiumPoints, rankAssets } from './capture-rwa-wrappers-read.ts'
+import { CATALOGUE_TABLE, readRwaWrappers, premiumPoints, rankAssets } from './capture-rwa-wrappers-read.ts'
 
 // A week in the past keeps every provider timestamp behind the real clock.
 const NOW = new Date(Math.floor((Date.now() - 7 * 86_400_000) / 3_600_000) * 3_600_000)
@@ -475,4 +475,72 @@ Deno.test('ranking and plotting refuse to turn an absent figure into a zero', ()
   }])
   eq(points.length, 1)
   eq(points[0].cryptoId, '1')
+})
+
+// ─── Logos, joined server side ────────────────────────────────────────────────
+//
+// The board shows an image for the UNDERLYING asset and one for every wrapper
+// TOKEN. Both are joined here, in the read, so the surface makes ONE request for
+// the whole board rather than one per row.
+
+Deno.test('the read joins the underlying profile logo and each wrapper token logo, https only', async () => {
+  const db = fakeDb({
+    [ASSET_TABLE]: [
+      { provider: 'coinmarketcap', rwa_id: '1', captured_at: HOUR, symbol: 'GOLD', name: 'Gold', wrapper_count: 3, anchor_kind: 'liquid_wrapper_median', anchor_price: 4369.87, dispersion_bps: 75.7, cheapest_crypto_id: '20245', reconcile_state: 'agree', reconcile_ratio: 0.995 },
+    ],
+    [TOKEN_TABLE]: [
+      { rwa_id: '1', crypto_id: '5176', captured_at: HOUR, symbol: 'XAUT', premium_bps: 0, volume_24h: 70850040, wrapper_state: 'liquid', in_anchor: true },
+      { rwa_id: '1', crypto_id: '20245', captured_at: HOUR, symbol: 'CGO', premium_bps: -75.7, volume_24h: 922206, wrapper_state: 'liquid', in_anchor: true },
+      { rwa_id: '1', crypto_id: '31411', captured_at: HOUR, symbol: 'XAUTT', wrapper_state: 'no_price' },
+    ],
+    'intel_rwa_asset_profiles': [
+      { rwa_id: '1', logo_url: 'https://s2.coinmarketcap.com/static/img/rwa/gold.png' },
+    ],
+    [CATALOGUE_TABLE]: [
+      // The provider is part of the key: a catalogue row from another provider
+      // that happens to share an id must never be read as this token's image.
+      { source_provider: 'coingecko', provider_id: '5176', cached_image_url: 'https://cdn.example/WRONG.png', image_url: null },
+      { source_provider: 'coinmarketcap', provider_id: '5176', cached_image_url: 'https://cdn.example/xaut.png', image_url: 'https://s2.coinmarketcap.com/xaut.png' },
+      // Only the provider's own URL is stored: it becomes the image, and there
+      // is no second candidate to fall back to.
+      { source_provider: 'coinmarketcap', provider_id: '20245', cached_image_url: null, image_url: 'https://s2.coinmarketcap.com/cgo.png' },
+      // An http URL is never put into an <img> on our page.
+      { source_provider: 'coinmarketcap', provider_id: '31411', cached_image_url: 'http://insecure.example/x.png', image_url: null },
+    ],
+  })
+  const view = await readRwaWrappers(db, {}, NOW.getTime())
+  // deno-lint-ignore no-explicit-any
+  const row = (view.rows as any[])[0]
+  eq(row.logoUrl, 'https://s2.coinmarketcap.com/static/img/rwa/gold.png')
+  // deno-lint-ignore no-explicit-any
+  const byId = new Map(row.tokens.map((token: any) => [token.cryptoId, token]))
+  // The mirrored copy leads, the provider's own URL is the fallback candidate.
+  eq(byId.get('5176').logoUrl, 'https://cdn.example/xaut.png')
+  eq(byId.get('5176').fallbackLogoUrl, 'https://s2.coinmarketcap.com/xaut.png')
+  eq(byId.get('20245').logoUrl, 'https://s2.coinmarketcap.com/cgo.png')
+  eq(byId.get('20245').fallbackLogoUrl, 'https://s2.coinmarketcap.com/cgo.png')
+  eq(byId.get('31411').logoUrl, null)
+  // The reconciliation table names the same assets, so it carries the same image.
+  // deno-lint-ignore no-explicit-any
+  eq((view.reconciliation as any[])[0].logoUrl, 'https://s2.coinmarketcap.com/static/img/rwa/gold.png')
+})
+
+Deno.test('a failed logo read leaves the images null and never fails the board', async () => {
+  const db = fakeDb({
+    [ASSET_TABLE]: [
+      { provider: 'coinmarketcap', rwa_id: '1', captured_at: HOUR, symbol: 'GOLD', name: 'Gold', wrapper_count: 1, anchor_kind: 'liquid_wrapper_median', anchor_price: 4369.87, dispersion_bps: 75.7 },
+    ],
+    [TOKEN_TABLE]: [
+      { rwa_id: '1', crypto_id: '5176', captured_at: HOUR, symbol: 'XAUT', premium_bps: 0, volume_24h: 70850040, wrapper_state: 'liquid', in_anchor: true },
+    ],
+  }, {}, { 'intel_rwa_asset_profiles': 'permission denied', [CATALOGUE_TABLE]: 'permission denied' })
+  const view = await readRwaWrappers(db, {}, NOW.getTime())
+  // deno-lint-ignore no-explicit-any
+  const row = (view.rows as any[])[0]
+  eq(row.logoUrl, null)
+  eq(row.tokens[0].logoUrl, null)
+  // An image that did not arrive is a monogram on the surface, not a reason on
+  // the board: the FIGURES all read cleanly.
+  eq(view.reason, null)
+  eq(view.asOf, HOUR)
 })

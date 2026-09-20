@@ -7,6 +7,7 @@ import TokenChart from '../components/TokenChart'
 import SavedComparisonChart from '../components/SavedComparisonChart'
 import {restrictExpiredSharedSnapshot} from '../lib/chart-snapshot-view'
 import ChartReviewPanel from '../components/ChartReviewPanel'
+import FigureSourceLine from '../components/FigureSourceLine'
 import ChartReviewCleanup from '../components/ChartReviewCleanup'
 import '../workspace.css'
 export default function SharedChartPage(){const {user}=useSupabase(),{org}=useProfile(),{hash}=useLocation();return <SharedBody key={`${user?.id}:${org?.id}:${hash}`} token={hash.slice(1)}/>}
@@ -38,6 +39,13 @@ function SharedBody({token}){
    <h1 className="page-title">{snapshot.title}</h1><p className="intel-analysis-caption">Saved chart · captured {new Date(snapshot.capturedAt).toLocaleString()} · {snapshot.layout.timezone} · calculation {snapshot.calculationVersion}</p>
    {snapshot.layout.comparison&&<SavedComparisonChart state={snapshot} onObservationChange={setReviewObservation}/>}
    {(!snapshot.layout.comparison||selectedReview)&&<section aria-label="Selected review asset">{snapshot.layout.comparison&&<div className="intel-holdings-toolbar"><h2>{snapshot.layout.comparison.assets.find(a=>a.asset===reviewAsset)?.label} · review anchor</h2><button className="intel-text-link" onClick={()=>setSelectedReview(null)}>Close anchor</button></div>}{(reviewSource.bars?.length||reviews.length)?<TokenChart candles={reviewSource.bars||[]} assetKey={reviewAsset} initialLayout={{...snapshot.layout,asset:reviewAsset,comparison:undefined}} replayCursor={selectedReview?null:undefined} timeWindow={snapshot.layout.range} readOnly priceCoverage={{chartSource:reviewSource.source}} markers={reviews.filter(row=>(row.anchor.asset||snapshot.layout.asset)===reviewAsset).map(row=>({id:`review:${row.id}:${row.revision}`,t:row.anchor.t,group:'review',type:'review',label:'Chart review note',action:'Chart review note',title:`${row.author} · written ${new Date(row.createdAt).toLocaleString()}`,note:row.text,actorKind:'user',chartAnchorPrice:row.anchor.price,recordedAt:row.createdAt}))} cursorTime={selectedReview?.anchor.t??null} focusMarkerRequest={focusRequest} focusMarkerId={selectedReview?`review:${selectedReview.id}:${selectedReview.revision}`:null}/>:<p>The price series is unavailable for this snapshot.</p>}</section>}
+   {/* The series ON SCREEN, which on a comparison snapshot is the review
+       anchor's own series and not the snapshot's headline asset. The line at the
+       foot of the page attributes the snapshot as a whole; this one attributes
+       the bars actually drawn, with the provider's observation clock and our
+       capture of it. A frozen snapshot carries no receipts, so the chart's own
+       provenance block would have nothing to draw. */}
+   {(!snapshot.layout.comparison||selectedReview)&&<FigureSourceLine source={reviewSource.source?.provider||null} observedAt={reviewSource.source?.observedAt||null} capturedAt={snapshot.capturedAt||null}/>}
    {user&&['owner','org'].includes(snapshot.audience)&&<ChartReviewPanel key={token} supabase={supabase} userId={user.id} token={token} snapshot={snapshot} observation={reviewObservation} onSelect={row=>{setSelectedReview(row);setFocusRequest(r=>r+1)}} onRows={receiveReviews}/>}
    {snapshot.gaps?.map((gap,i)=><p role="status" key={i}>{gap}</p>)}
    {snapshot.layout.drawings.length>0&&<section className="intel-investigation-analysis"><h2>Selected research notes</h2><ul className="intel-study-list">{snapshot.layout.drawings.map(d=><li key={d.id}><div><p>{d.tool.replaceAll('_',' ')} · {d.anchors.map(a=>new Date(a.t).toLocaleString()).join(' → ')}</p><blockquote className="whitespace-pre-wrap break-words">{d.text}</blockquote></div></li>)}</ul></section>}

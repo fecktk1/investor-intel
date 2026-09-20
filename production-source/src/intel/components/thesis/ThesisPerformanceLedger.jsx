@@ -1,12 +1,24 @@
-import React,{useEffect,useId,useRef,useState} from 'react'
+import React,{useEffect,useId,useMemo,useRef,useState} from 'react'
 import {Link} from 'react-router'
+import {useTranslation} from 'react-i18next'
+import FigureSourceLine from '../FigureSourceLine'
 import {readPerformanceLedger,savePerformanceReview,readPerformanceHistory} from '../../lib/performance-api'
 const date=value=>value?new Date(value).toLocaleString(undefined,{dateStyle:'medium',timeStyle:'long'}):'Not recorded'
 const local=value=>{const d=new Date(value);return new Date(d.getTime()-d.getTimezoneOffset()*60000).toISOString().slice(0,19)}
 const human=value=>(value||'unreviewed').replaceAll('_',' ')
+/** The newest clock anywhere in the ledger: the last time you recorded an
+ *  assessment, or failing that the last time a forecast was written down. The
+ *  ledger itself carries no roll-up timestamp, and inventing one would be worse
+ *  than the source line saying no time was reported. */
+export function newestLedgerStamp(rows){
+ const stamps=(Array.isArray(rows)?rows:[]).flatMap(row=>[row?.latest_review?.recorded_at,row?.original_forecast?.recorded_at]).map(value=>Date.parse(String(value??''))).filter(Number.isFinite)
+ return stamps.length?new Date(Math.max(...stamps)).toISOString():null
+}
 export default function ThesisPerformanceLedger(props){return <Ledger key={`${props.orgId}:${props.userId}`} {...props}/>}
 function Ledger({supabase,orgId,userId}){
+ const {t}=useTranslation('intel',{useSuspense:false})
  const [data,setData]=useState(null),[error,setError]=useState(null),[busy,setBusy]=useState(false),[editing,setEditing]=useState(null),[history,setHistory]=useState(null),alive=useRef(true)
+ const recordedAt=useMemo(()=>newestLedgerStamp(data?.rows),[data])
  const load=async(cursor=null)=>{setBusy(true);setError(null);try{const result=await readPerformanceLedger(supabase,orgId,cursor);if(alive.current)setData(old=>cursor?{...result,rows:[...(old?.rows||[]),...result.rows.filter(row=>!old?.rows.some(previous=>previous.id===row.id))]}:result)}catch(e){if(alive.current)setError(e.message)}finally{if(alive.current)setBusy(false)}}
  useEffect(()=>{alive.current=true;if(orgId&&userId)load();return()=>{alive.current=false}},[orgId,userId,supabase])
  const showHistory=async(row,page=0)=>{setBusy(true);setError(null);try{const result=await readPerformanceHistory(supabase,orgId,userId,row.id,page);if(alive.current)setHistory({row,...result})}catch(e){if(alive.current)setError(e.message)}finally{if(alive.current)setBusy(false)}}
@@ -15,6 +27,12 @@ function Ledger({supabase,orgId,userId}){
   <p className="intel-analysis-caption">Original forecasts and later assessments. These are your recorded research judgments; realized portfolio and journal P&L remain separate below.</p>
   {error&&<><p role="alert">{error}</p><button className="btn" onClick={()=>load()}>Retry ledger</button></>}{busy&&<p role="status">Loading performance records…</p>}
   {data&&<><p>{data.summary.total} owned theses · {Object.entries(data.summary.assessments).map(([key,count])=>`${count} ${human(key)}`).join(' · ')}</p><p className="intel-analysis-caption">{data.basis}</p>
+   {/* Nothing here is a provider reading. The counts, the assessments and the
+       windows are all YOUR recorded judgments, read back and totalled by us, so
+       the line says our calculation, names those two inputs and carries the last
+       time one of them was written down. No provider is called for this figure
+       and none may be named on it. */}
+   <FigureSourceLine ourCalculation inputs={t('journal.ledger.inputs',{defaultValue:'the theses you own and the performance assessments you recorded against them'})} capturedAt={recordedAt}/>
    {data.rows.length===0?<p>No theses recorded in this workspace.</p>:<div className="overflow-x-auto"><table className="w-full text-sm" style={{minWidth:720}}><caption className="sr-only">All private thesis assessments, including unresolved outcomes</caption><thead><tr className="text-left border-b border-[var(--border-default)]"><th>Thesis</th><th>Original decision</th><th>Latest assessment</th><th>Review window</th><th>Actions</th></tr></thead><tbody>{data.rows.map(row=><tr key={row.id} className="border-b border-[var(--border-default)] align-top"><td className="py-3 pr-4 max-w-xs"><Link className="intel-text-link" to={`/intel/theses/${row.id}`}>{row.title}</Link><p className="text-xs break-all">{row.subject_canonical_key||'Identity not recorded'} · {row.status}</p></td><td className="py-3 pr-4"><time>{date(row.original_forecast?.occurred_at)}</time>{row.original_forecast?<details><summary>Original words</summary><OriginalForecast record={row.original_forecast}/></details>:<p>Original words unavailable. Current text is not substituted.</p>}</td><td className="py-3 pr-4">{human(row.latest_review?.evaluation.assessment)}{row.latest_review&&<p className="text-xs">Recorded {date(row.latest_review.recorded_at)}</p>}</td><td className="py-3 pr-4">{row.latest_review?<><time>{date(row.latest_review.evaluation.from)}</time><br/><time>{date(row.latest_review.evaluation.to)}</time><p className="text-xs">{row.latest_review.evaluation.retrospective_window?'Window declared after it began':'Window declared before it began'}</p></>:'No window declared'}</td><td className="py-3"><button className="intel-text-link" onClick={()=>setEditing(row)}>Record assessment</button><br/><button className="intel-text-link" disabled={busy} onClick={()=>showHistory(row)}>Assessment history</button></td></tr>)}</tbody></table></div>}
    {data.next_cursor&&<button className="btn" disabled={busy} onClick={()=>load(data.next_cursor)}>Load more theses</button>}
   </>}

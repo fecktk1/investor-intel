@@ -2,12 +2,14 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import BoardTableHeader from './BoardTableHeader'
+import SortableHeader, { StaticHeader } from './SortableHeader'
 import TokenAvatar from './TokenAvatar'
 import FigureProvenance from './FigureProvenance'
 import { Scatter } from '../charts'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/capture-api'
+import { useColumnSort, sortRows } from '../lib/useColumnSort'
 import { formatUsd, formatCompact, formatPrice } from '../lib/market-format'
 
 // Wrapper premium, discount and dispersion for one tokenised real-world asset.
@@ -63,6 +65,75 @@ export function bpsLabel(value, unit = 'bps') {
 export function widthLabel(value, unit = 'bps') {
   const n = num(value)
   return n == null ? null : `${(Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`
+}
+
+/** What each sortable column of the asset board reads.
+ *
+ * The accessor reads what the CELL SHOWS, not whichever stored field is nearest
+ * to it: dispersion is printed unsigned, so it sorts unsigned, and the cheapest
+ * route is a token name whose figure is its premium, so it sorts by that premium
+ * rather than alphabetically by a ticker nobody is ranking. A column whose cell
+ * is a stated reason rather than a figure reads null, and `sortRows` parks a null
+ * LAST in both directions: flipping a column never floats "no anchor" to the top.
+ *
+ * The board arrives ranked by widest dispersion, and 'dispersion' descending is
+ * exactly that ranking, so the default order is the server's order and ties keep
+ * the server's own tie-break (volume, then rank) through the stable sort. */
+export const ASSET_SORTS = {
+  asset: row => row?.name || row?.symbol || row?.rwaId || null,
+  wrappers: row => num(row?.wrapperCount),
+  anchor: row => num(row?.anchorPrice),
+  premium: row => num(row?.widestPremiumBps),
+  discount: row => num(row?.widestDiscountBps),
+  dispersion: row => { const n = num(row?.dispersionBps); return n == null ? null : Math.abs(n) },
+  volume: row => num(row?.tokenizedVolume24h),
+  cheapest: row => (row?.cheapestCryptoId ? num(row?.cheapestPremiumBps) : null),
+}
+/** Wrapper columns of the expanded per-asset table. A wrapper that carries an
+ * accrual gap rather than a premium reads null here on purpose: an accrual is
+ * not a premium and must not be ranked against one. */
+export const TOKEN_SORTS = {
+  token: token => token?.name || token?.symbol || token?.cryptoId || null,
+  issuer: token => token?.issuerName || null,
+  price: token => num(token?.normalisedPrice) ?? num(token?.price),
+  premium: token => num(token?.premiumBps),
+  token_volume: token => num(token?.volume24h),
+}
+/** Columns whose first click should read low-to-high. A name reads A to Z first;
+ * every ranked money column reads largest first, which is what the reader came
+ * for. */
+export const ASCENDING_FIRST = new Set(['asset', 'token', 'issuer'])
+
+export const ASSET_DEFAULT_SORT = 'dispersion'
+/** The wrappers arrive dearest first, which is 'premium' descending. */
+export const TOKEN_DEFAULT_SORT = 'premium'
+
+/** A robust band for the premium axis of the scatter.
+ *
+ * WHY THE AXIS IS NOT THE DATA'S RANGE. One wrapper priced in the wrong unit, or
+ * one genuinely broken wrapper, sits at -1,300 bps. Letting it set the range
+ * pushes every other wrapper onto the anchor line, and the figure then says
+ * "every wrapper trades at its anchor", which is the opposite of what it
+ * measured. The axis is bounded by the 5th and 95th percentile of the plotted
+ * premiums, padded by a tenth of that width, and never narrower than the stated
+ * half width so a capture where every wrapper agrees does not magnify noise.
+ *
+ * NOTHING IS DROPPED. A wrapper outside the band is drawn on the edge of the plot
+ * and counted, and the count is printed under the chart in words. Its exact
+ * premium is in the table below the chart. */
+export function premiumBand(values, minHalfWidth = 100) {
+  const sorted = values.map(num).filter(v => v != null).sort((a, b) => a - b)
+  if (!sorted.length) return { low: -minHalfWidth, high: minHalfWidth, outside: 0 }
+  const quantile = q => {
+    const index = (sorted.length - 1) * q
+    const lo = Math.floor(index), hi = Math.ceil(index)
+    return lo === hi ? sorted[lo] : sorted[lo] + (sorted[hi] - sorted[lo]) * (index - lo)
+  }
+  const p5 = quantile(0.05), p95 = quantile(0.95)
+  const pad = Math.max((p95 - p5) * 0.1, 1)
+  const low = Math.min(p5 - pad, -minHalfWidth)
+  const high = Math.max(p95 + pad, minHalfWidth)
+  return { low, high, outside: sorted.filter(v => v < low || v > high).length }
 }
 
 /** A ratio between the two endpoints, to three decimals so a 0.995 reads as a
@@ -151,7 +222,11 @@ const UNIT_LABELS = {
   not_assessed: 'Unit not assessed',
 }
 
-export default function RwaWrapperSpread() {
+/** `showHeading` is false when a PAGE already carries the eyebrow, the title and
+ * the intro in its own header (RwaWrapperPage does), so the reader is not shown
+ * the same three things twice. It stays true by default: embedded in a section of
+ * another page, the figure has to name itself. */
+export default function RwaWrapperSpread({ showHeading = true }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   // Service-role capture tables: the read travels on the reader's own
@@ -159,7 +234,22 @@ export default function RwaWrapperSpread() {
   const { supabase } = useSupabase()
   const orgId = org?.id || null
   const [read, setRead] = useState({ status: 'loading', payload: null, reason: null })
+  // Expanded rows are keyed by the ASSET, not by a position in the list, so a
+  // reader who opens Gold and then re-sorts the board still has Gold open.
   const [open, setOpen] = useState(() => new Set())
+  // Two orders, both client side over the rows already read: one for the asset
+  // board and one shared by every expanded wrapper table, so the per-wrapper
+  // columns mean the same thing in every open row.
+  const [assetOrder, setAssetOrder] = useState({ sort: ASSET_DEFAULT_SORT, dir: 'desc' })
+  const [tokenOrder, setTokenOrder] = useState({ sort: TOKEN_DEFAULT_SORT, dir: 'desc' })
+  const assetSort = useColumnSort({
+    sort: assetOrder.sort, dir: assetOrder.dir, setSort: setAssetOrder,
+    defaultSort: ASSET_DEFAULT_SORT, initialDir: key => (ASCENDING_FIRST.has(key) ? 'asc' : 'desc'),
+  })
+  const tokenSort = useColumnSort({
+    sort: tokenOrder.sort, dir: tokenOrder.dir, setSort: setTokenOrder,
+    defaultSort: TOKEN_DEFAULT_SORT, initialDir: key => (ASCENDING_FIRST.has(key) ? 'asc' : 'desc'),
+  })
 
   useEffect(() => {
     const controller = new AbortController()
@@ -183,6 +273,28 @@ export default function RwaWrapperSpread() {
   const bandLow = num(settings.reconcileBandLow) ?? 0.85
   const bandHigh = num(settings.reconcileBandHigh) ?? 1.15
 
+  // The dots, and the band the premium axis is drawn in. Both derive from the
+  // same list in one place so the axis, the pinned dots and the count under the
+  // chart can never describe different sets.
+  const chartPoints = useMemo(() => points.map(point => ({
+    key: point.key,
+    label: `${point.assetSymbol || point.assetName || ''} · ${point.symbol || point.name || point.cryptoId}`,
+    x: (num(point.x) ?? 0) / 1e6,
+    y: num(point.y) ?? 0,
+  })), [points])
+  const band = useMemo(() => premiumBand(chartPoints.map(point => point.y)), [chartPoints])
+
+  // The board in the reader's chosen order. The chart and every count above read
+  // `rows`, which is order independent, so re-sorting the table moves nothing
+  // else on the page.
+  const orderedRows = useMemo(
+    () => sortRows(rows, { key: assetSort.sort, dir: assetSort.dir, accessor: row => ASSET_SORTS[assetSort.sort]?.(row) ?? null }),
+    [rows, assetSort.sort, assetSort.dir],
+  )
+  const orderTokens = tokens => sortRows(tokens, {
+    key: tokenSort.sort, dir: tokenSort.dir, accessor: token => TOKEN_SORTS[tokenSort.sort]?.(token) ?? null,
+  })
+
   const toggle = id => setOpen(prev => {
     const next = new Set(prev)
     if (next.has(id)) next.delete(id); else next.add(id)
@@ -201,36 +313,43 @@ export default function RwaWrapperSpread() {
     : null
 
   const columns = [
-    t('rwa_wrappers.col_asset', { defaultValue: 'Underlying asset' }),
-    t('rwa_wrappers.col_wrappers', { defaultValue: 'Wrappers' }),
-    t('rwa_wrappers.col_anchor', { defaultValue: 'Anchor' }),
-    t('rwa_wrappers.col_premium', { defaultValue: 'Widest premium' }),
-    t('rwa_wrappers.col_discount', { defaultValue: 'Widest discount' }),
-    t('rwa_wrappers.col_dispersion', { defaultValue: 'Dispersion' }),
-    t('rwa_wrappers.col_cheapest', { defaultValue: 'Cheapest liquid route' }),
-    t('rwa_wrappers.col_volume', { defaultValue: '24h tokenised volume' }),
+    { key: 'asset', align: 'left', label: t('rwa_wrappers.col_asset', { defaultValue: 'Underlying asset' }) },
+    { key: 'wrappers', align: 'right', label: t('rwa_wrappers.col_wrappers', { defaultValue: 'Wrappers' }) },
+    { key: 'anchor', align: 'right', label: t('rwa_wrappers.col_anchor', { defaultValue: 'Anchor' }) },
+    { key: 'premium', align: 'right', label: t('rwa_wrappers.col_premium', { defaultValue: 'Widest premium' }) },
+    { key: 'discount', align: 'right', label: t('rwa_wrappers.col_discount', { defaultValue: 'Widest discount' }) },
+    { key: 'dispersion', align: 'right', label: t('rwa_wrappers.col_dispersion', { defaultValue: 'Dispersion' }) },
+    // Volume before the route: the numeric columns then run together and the one
+    // wide text column is last, so the table degrades by scrolling the named
+    // route out of view rather than by clipping a figure in the middle of it.
+    { key: 'volume', align: 'right', label: t('rwa_wrappers.col_volume', { defaultValue: '24h tokenised volume' }) },
+    // The route's own figure is its premium, which is what the cell prints under
+    // the token name, so that is what the header sorts on.
+    { key: 'cheapest', align: 'left', label: t('rwa_wrappers.col_cheapest', { defaultValue: 'Cheapest liquid route' }), title: t('rwa_wrappers.col_cheapest_sort', { defaultValue: 'Cheapest liquid route, ordered by its premium in basis points' }) },
   ]
   const tokenColumns = [
-    t('rwa_wrappers.col_token', { defaultValue: 'Wrapper' }),
-    t('rwa_wrappers.col_issuer', { defaultValue: 'Issuer' }),
-    t('rwa_wrappers.col_price', { defaultValue: 'Price' }),
-    t('rwa_wrappers.col_premium_bps', { defaultValue: 'Premium' }),
-    t('rwa_wrappers.col_token_volume', { defaultValue: '24h volume' }),
-    t('rwa_wrappers.col_note', { defaultValue: 'State' }),
+    { key: 'token', align: 'left', label: t('rwa_wrappers.col_token', { defaultValue: 'Wrapper' }) },
+    { key: 'issuer', align: 'left', label: t('rwa_wrappers.col_issuer', { defaultValue: 'Issuer' }) },
+    { key: 'price', align: 'right', label: t('rwa_wrappers.col_price', { defaultValue: 'Price' }) },
+    { key: 'premium', align: 'right', label: t('rwa_wrappers.col_premium_bps', { defaultValue: 'Premium' }) },
+    { key: 'token_volume', align: 'right', label: t('rwa_wrappers.col_token_volume', { defaultValue: '24h volume' }) },
+    { key: null, align: 'left', label: t('rwa_wrappers.col_note', { defaultValue: 'State' }) },
   ]
 
   return (
     <section className="intel-rwa-wrappers space-y-6" aria-label={t('rwa_wrappers.title', { defaultValue: 'Wrapper premium and dispersion' })}>
-      <div>
-        <div className="eyebrow">{t('rwa_wrappers.eyebrow', { defaultValue: 'Our calculation' })}</div>
-        <h3 className="text-lg font-medium mt-1">{t('rwa_wrappers.title', { defaultValue: 'Wrapper premium and dispersion' })}</h3>
-        <p className="text-[11px] leading-relaxed text-[var(--fg-4)] mt-1 max-w-[80ch]">
-          {t('rwa_wrappers.intro', {
-            floor: formatUsd(floor),
-            defaultValue: 'One real-world asset is often wrapped by several tokens from several issuers, at several prices. Each premium or discount below is our own calculation against the anchor named on that row: either the fund\'s own published net asset value, or the volume-weighted median of the wrappers that cleared a {{floor}} floor on reported 24 hour volume. A wrapper under that floor is still shown, marked as too thin to anchor, and left out of the anchor. A premium is not a tradable arbitrage.',
-          })}
-        </p>
-      </div>
+      {showHeading && (
+        <div>
+          <div className="eyebrow">{t('rwa_wrappers.eyebrow', { defaultValue: 'Our calculation' })}</div>
+          <h3 className="text-lg font-medium mt-1">{t('rwa_wrappers.title', { defaultValue: 'Wrapper premium and dispersion' })}</h3>
+          <p className="text-[11px] leading-relaxed text-[var(--fg-4)] mt-1 max-w-[80ch]">
+            {t('rwa_wrappers.intro', {
+              floor: formatUsd(floor),
+              defaultValue: 'One real-world asset is often wrapped by several tokens from several issuers, at several prices. Each premium or discount below is our own calculation against the anchor named on that row: either the fund\'s own published net asset value, or the volume-weighted median of the wrappers that cleared a {{floor}} floor on reported 24 hour volume. A wrapper under that floor is still shown, marked as too thin to anchor, and left out of the anchor. A premium is not a tradable arbitrage.',
+            })}
+          </p>
+        </div>
+      )}
 
       {read.status === 'loading' && <p role="status">{t('rwa_wrappers.loading', { defaultValue: 'Reading the captured wrapper prices…' })}</p>}
 
@@ -283,20 +402,21 @@ export default function RwaWrapperSpread() {
                   from its asset's anchor. Both axes are linear because the
                   premium axis is signed and a log scale cannot carry a discount;
                   volume is therefore shown in millions so the axis stays
-                  readable. The horizontal divider at zero IS the anchor. */}
+                  readable. The horizontal divider at zero IS the anchor.
+                  `wide`, because this figure spans the whole page: the 440 box
+                  would be magnified to fill it and its labels with it. */}
               <Scatter
+                wide
                 title={t('rwa_wrappers.chart_title', { defaultValue: 'Premium against depth, one dot per wrapper' })}
                 description={t('rwa_wrappers.chart_sub', {
                   floor: formatUsd(floor),
-                  defaultValue: 'Each dot is one wrapper of one asset. The horizontal line is its asset\'s anchor; above it the wrapper is dearer than the anchor, below it cheaper. The vertical line is the {{floor}} volume floor: dots left of it are shown but do not anchor anything.',
+                  low: widthLabel(band.low, bps),
+                  high: widthLabel(band.high, bps),
+                  defaultValue: 'Each dot is one wrapper of one asset. The horizontal line is its asset\'s anchor; above it the wrapper is dearer than the anchor, below it cheaper. The vertical line is the {{floor}} volume floor: dots left of it are shown but do not anchor anything. The premium axis is bounded at {{low}} and {{high}}, the padded 5th to 95th percentile of the plotted premiums, so one broken wrapper cannot flatten every other one onto the anchor line.',
                 })}
-                points={points.map(point => ({
-                  key: point.key,
-                  label: `${point.assetSymbol || point.assetName || ''} · ${point.symbol || point.name || point.cryptoId}`,
-                  x: (num(point.x) ?? 0) / 1e6,
-                  y: num(point.y) ?? 0,
-                }))}
+                points={chartPoints}
                 log={false}
+                yDomain={[band.low, band.high]}
                 xLabel={t('rwa_wrappers.chart_x', { defaultValue: 'Reported 24h volume (USD millions)' })}
                 yLabel={t('rwa_wrappers.chart_y', { unit: bps, defaultValue: 'Premium to anchor ({{unit}})' })}
                 quadrants={{
@@ -315,18 +435,41 @@ export default function RwaWrapperSpread() {
                 kind="no_data"
                 reason={t('rwa_wrappers.chart_empty', { defaultValue: 'No wrapper in this capture carries both a premium and a reported volume, so there is nothing to plot.' })}
               />
+              {/* Never a silent truncation: a wrapper the axis cannot hold is
+                  drawn on the edge and said out loud, with its exact premium a
+                  row away in the table below. Written as a labelled count rather
+                  than a sentence with a plural noun, like the summary above. */}
+              {band.outside > 0 && (
+                <p className="text-[12px]">
+                  {t('rwa_wrappers.chart_outside', {
+                    count: band.outside,
+                    defaultValue: 'Wrappers whose premium sits beyond that range, drawn on the edge of the chart: {{count}}. Each one is in the table below, with its own premium.',
+                  })}
+                </p>
+              )}
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-[12px]">
+              <div className="intel-table-scroll">
+                <table className="intel-rwa-wrapper-table w-full text-[12px]">
                   <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">
                     {t('rwa_wrappers.table_caption', {
                       at: utcMinute(payload.asOf) || '—',
                       defaultValue: 'Widest dispersion first, from the capture of {{at}}. Open a row to read its wrappers.',
                     })}
                   </caption>
-                  <thead><BoardTableHeader columns={columns} numeric={[1, 2, 3, 4, 5, 7]} /></thead>
+                  <thead>
+                    <tr>
+                      {/* The two alignments are written out rather than passed
+                          through a variable, so this header row stays readable
+                          to check-intel-table-alignment.mjs, which is a text
+                          scan and cannot follow `align={column.align}`. */}
+                      {columns.map(column => (column.align === 'right'
+                        ? <SortableHeader key={column.key} sortKey={column.key} label={column.label} title={column.title} sort={assetSort.sort} dir={assetSort.dir} onToggle={assetSort.toggle} align="right" />
+                        : <SortableHeader key={column.key} sortKey={column.key} label={column.label} title={column.title} sort={assetSort.sort} dir={assetSort.dir} onToggle={assetSort.toggle} align="left" />
+                      ))}
+                    </tr>
+                  </thead>
                   <tbody>
-                    {rows.map(row => {
+                    {orderedRows.map(row => {
                       const href = assetHref(row)
                       const expanded = open.has(row.rwaId)
                       const cheapest = row.tokens.find(token => token.cryptoId === row.cheapestCryptoId) || null
@@ -335,7 +478,7 @@ export default function RwaWrapperSpread() {
                           <tr>
                             <th scope="row" className={`${cell} text-left font-normal`}>
                               <span className="flex items-center gap-2">
-                                <TokenAvatar symbol={row.symbol} name={row.name} size="sm" />
+                                <TokenAvatar src={row.logoUrl} symbol={row.symbol} name={row.name} size="sm" />
                                 <span>
                                   {href
                                     ? <Link className="intel-text-link" to={href}>{row.name || row.symbol || row.rwaId}</Link>
@@ -373,17 +516,22 @@ export default function RwaWrapperSpread() {
                                 </span>
                               )}
                             </td>
+                            <td className={numCell}>{row.tokenizedVolume24h == null ? '—' : formatUsd(row.tokenizedVolume24h)}</td>
                             <td className={cell}>
                               {cheapest
-                                ? <>
-                                    {wrapperHref(cheapest)
-                                      ? <Link className="intel-text-link" to={wrapperHref(cheapest)}>{cheapest.symbol || cheapest.name}</Link>
-                                      : <span>{cheapest.symbol || cheapest.name}</span>}
-                                    <span className="block text-[11px] text-[var(--fg-4)]">{bpsLabel(row.cheapestPremiumBps, bps)}</span>
-                                  </>
+                                ? <span className="flex items-center gap-2">
+                                    {/* The route is a TOKEN, so it carries the token's own
+                                        catalogue logo, not the underlying asset's. */}
+                                    <TokenAvatar src={cheapest.logoUrl} fallbackSrc={cheapest.fallbackLogoUrl} symbol={cheapest.symbol} name={cheapest.name} size="sm" />
+                                    <span>
+                                      {wrapperHref(cheapest)
+                                        ? <Link className="intel-text-link" to={wrapperHref(cheapest)}>{cheapest.symbol || cheapest.name}</Link>
+                                        : <span>{cheapest.symbol || cheapest.name}</span>}
+                                      <span className="block text-[11px] text-[var(--fg-4)]">{bpsLabel(row.cheapestPremiumBps, bps)}</span>
+                                    </span>
+                                  </span>
                                 : <span className="text-[11px] text-[var(--fg-4)]">{reasonText(t, row.anchorReason) || t('rwa_wrappers.no_route', { defaultValue: 'No liquid wrapper to name as a route.' })}</span>}
                             </td>
-                            <td className={numCell}>{row.tokenizedVolume24h == null ? '—' : formatUsd(row.tokenizedVolume24h)}</td>
                           </tr>
                           {expanded && (
                             <tr>
@@ -400,15 +548,24 @@ export default function RwaWrapperSpread() {
                                 <p className="text-[11px] text-[var(--fg-4)] mt-1">
                                   {t('rwa_wrappers.no_chain', { defaultValue: 'The provider reports no chain on a wrapper row. Open a wrapper to read its network on its asset page.' })}
                                 </p>
-                                <div className="overflow-x-auto mt-2">
+                                <div className="intel-table-scroll mt-2">
                                   <table className="w-full text-[12px]">
-                                    <thead><BoardTableHeader columns={tokenColumns} numeric={[2, 3, 4]} /></thead>
+                                    <thead>
+                                      <tr>
+                                        {tokenColumns.map(column => (!column.key
+                                          ? <StaticHeader key="state" label={column.label} align="left" />
+                                          : column.align === 'right'
+                                            ? <SortableHeader key={column.key} sortKey={column.key} label={column.label} sort={tokenSort.sort} dir={tokenSort.dir} onToggle={tokenSort.toggle} align="right" />
+                                            : <SortableHeader key={column.key} sortKey={column.key} label={column.label} sort={tokenSort.sort} dir={tokenSort.dir} onToggle={tokenSort.toggle} align="left" />
+                                        ))}
+                                      </tr>
+                                    </thead>
                                     <tbody>
-                                      {row.tokens.map(token => (
+                                      {orderTokens(row.tokens).map(token => (
                                         <tr key={token.cryptoId}>
                                           <th scope="row" className={`${cell} text-left font-normal`}>
                                             <span className="flex items-center gap-2">
-                                              <TokenAvatar symbol={token.symbol} name={token.name} size="xs" />
+                                              <TokenAvatar src={token.logoUrl} fallbackSrc={token.fallbackLogoUrl} symbol={token.symbol} name={token.name} size="xs" />
                                               <span>
                                                 {wrapperHref(token)
                                                   ? <Link className="intel-text-link" to={wrapperHref(token)}>{token.name || token.symbol}</Link>
@@ -486,7 +643,7 @@ export default function RwaWrapperSpread() {
                     {t('rwa_wrappers.recon_none', { defaultValue: 'No asset in this capture could be compared across both endpoints: each one was missing a value on one side, which is stated on its row above.' })}
                   </p>
                 ) : (
-                  <div className="overflow-x-auto mt-2">
+                  <div className="intel-table-scroll mt-2">
                     <table className="w-full text-[12px]">
                       <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">
                         {t('rwa_wrappers.recon_caption', {
@@ -511,8 +668,13 @@ export default function RwaWrapperSpread() {
                         {reconciliation.map(row => (
                           <tr key={row.rwaId}>
                             <th scope="row" className={`${cell} text-left font-normal`}>
-                              {row.name || row.symbol || row.rwaId}
-                              <span className="block text-[11px] text-[var(--fg-4)]">{row.symbol}</span>
+                              <span className="flex items-center gap-2">
+                                <TokenAvatar src={row.logoUrl} symbol={row.symbol} name={row.name} size="sm" />
+                                <span>
+                                  {row.name || row.symbol || row.rwaId}
+                                  <span className="block text-[11px] text-[var(--fg-4)]">{row.symbol}</span>
+                                </span>
+                              </span>
                             </th>
                             <td className={numCell}>
                               {row.listTokenizedMarketCap == null ? '—' : formatUsd(row.listTokenizedMarketCap)}

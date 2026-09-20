@@ -1,7 +1,8 @@
 import { strict as assert } from 'node:assert'
 import {
   COVERAGE_VIEW, DOMESTIC_PERIODIC_DAYS, FOREIGN_PERIODIC_DAYS, ROW_CAP,
-  filerUrl, filingUrl, periodicStanding, readRwaAssetProfile, readRwaUnderlyingRegistrants,
+  filerUrl, filingUrl, LOGO_BATCH_MAX, periodicStanding, readRwaAssetLogos, readRwaAssetProfile,
+  readRwaUnderlyingRegistrants,
 } from './capture-rwa-underlyings-read.ts'
 import { MAP_COUNT_TABLE, PROFILE_TABLE, REGISTRANT_TABLE } from './capture-rwa-underlyings.ts'
 
@@ -18,6 +19,9 @@ function fakeDb(seed: Record<string, any[]> = {}, failing: Record<string, string
         select() { return builder as any },
         not() { return builder },
         eq() { return builder },
+        // The filters are ignored on purpose: these tests are about what the
+        // view DOES with the rows, and the seed is already the rows it asked for.
+        in() { return builder },
         order() { return builder },
         limit(count?: number) {
           if (failing[table]) return Promise.resolve({ data: null, error: { message: failing[table] } })
@@ -217,4 +221,55 @@ Deno.test('a missing rwa id is a named reason, and an uncaptured asset is a null
   assert.equal(uncaptured.reason, null)
   assert.equal(uncaptured.profile, null)
   assert.equal(uncaptured.asOf, null)
+})
+
+// ─── rwa_asset_logos ──────────────────────────────────────────────────────────
+//
+// The batch a list of rows reads once per page instead of once per row.
+
+Deno.test('the logo batch answers a map keyed by rwa id and leaves an unprofiled id out of it', async () => {
+  const db = fakeDb({
+    [PROFILE_TABLE]: [
+      { rwa_id: 11, symbol: 'NVDA', name: 'NVIDIA Corp', logo_url: 'https://s2.coinmarketcap.com/static/img/rwa/nvda.png', captured_at: '2026-09-20T03:29:00.000Z' },
+      { rwa_id: 1, symbol: 'GOLD', name: 'Gold', logo_url: null, captured_at: '2026-09-20T03:30:00.000Z' },
+    ],
+  })
+  const view = await readRwaAssetLogos(db, { rwaIds: [11, 1, 999] }, NOW)
+  assert.equal(view.view, 'rwa_asset_logos')
+  const logos = view.logos as Record<string, { logoUrl: string | null; symbol: string | null }>
+  assert.equal(logos['11'].logoUrl, 'https://s2.coinmarketcap.com/static/img/rwa/nvda.png')
+  assert.equal(logos['11'].symbol, 'NVDA')
+  // Profiled, but the provider published no image: a null, not an absence.
+  assert.equal(logos['1'].logoUrl, null)
+  // Never profiled: absent from the map entirely, because "we have no image for
+  // this asset" is not the same claim as "this asset has no image".
+  assert.equal(logos['999'], undefined)
+  // The newest profile clock behind the answer, and the provider that published
+  // the images, so the surface attributes them without naming one itself.
+  assert.equal(view.asOf, '2026-09-20T03:30:00.000Z')
+  assert.equal(view.source, 'coinmarketcap')
+})
+
+Deno.test('the logo batch refuses an empty ask, caps a large one and drops a non-https image', async () => {
+  const empty = await readRwaAssetLogos(fakeDb(), {}, NOW)
+  assert.equal(empty.reason, 'rwa_ids_required')
+  assert.deepEqual(empty.logos, {})
+
+  const many = await readRwaAssetLogos(fakeDb(), { rwaIds: Array.from({ length: 400 }, (_, i) => i + 1) }, NOW)
+  assert.equal(many.asked, LOGO_BATCH_MAX)
+
+  // An http or data URL is never put into an <img> on our page.
+  const db = fakeDb({
+    [PROFILE_TABLE]: [
+      { rwa_id: 7, symbol: 'X', name: 'X', logo_url: 'http://example.com/x.png', captured_at: '2026-09-20T03:29:00.000Z' },
+    ],
+  })
+  const view = await readRwaAssetLogos(db, { rwaIds: [7] }, NOW)
+  assert.equal((view.logos as Record<string, { logoUrl: string | null }>)['7'].logoUrl, null)
+})
+
+Deno.test('a failed logo read is a reason on an empty map, never a thrown error', async () => {
+  const view = await readRwaAssetLogos(fakeDb({}, { [PROFILE_TABLE]: 'permission denied' }), { rwaIds: [11] }, NOW)
+  assert.equal(view.reason, 'permission denied')
+  assert.deepEqual(view.logos, {})
 })

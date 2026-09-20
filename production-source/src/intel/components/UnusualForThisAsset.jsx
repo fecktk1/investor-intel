@@ -88,6 +88,22 @@ export function leadWindow(row, days) {
   return windows.find(w => Number(w?.days) === Number(days)) || windows[windows.length - 1] || null
 }
 
+/** How many days the row's `exceeded` and `percentile` were measured over.
+ *
+ * Both are the LEAD WINDOW's readings, so their denominator is that window's own
+ * day count. `sampleDays` is a different number: the whole stored history behind
+ * the asset, which is usually longer than the 90-day lead window, and using it
+ * as the denominator made the sentence and the percentile contradict each other
+ * on every asset with more than 90 stored days. The read view now states the
+ * count directly; the window's own `n` is the fallback for a row captured before
+ * it did, and a row carrying neither is not measured. */
+export function leadSample(row, window) {
+  const stated = num(row?.leadWindowN)
+  if (stated != null && stated > 0) return stated
+  const fallback = num(window?.n)
+  return fallback != null && fallback > 0 ? fallback : null
+}
+
 export default function UnusualForThisAsset({ limit = 25 }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
@@ -168,10 +184,17 @@ export default function UnusualForThisAsset({ limit = 25 }) {
                     </th>
                     <td className={`intel-number ${BOARD_CELL_CLASS}`}>{pctText(row.movePct) ?? t('unusual.not_measured', { defaultValue: 'Not measured' })}</td>
                     <td className={`intel-number ${BOARD_CELL_CLASS}`}>{magnitudeText(row.medianAbsPct) ?? t('unusual.not_measured', { defaultValue: 'Not measured' })}</td>
+                    {/* ONE window behind both figures. `exceeded` and
+                        `percentile` are the lead window's readings, so the
+                        denominator is that window's own day count and never
+                        `sampleDays`, which is the whole stored history and is
+                        usually longer. Printing the two together was how "larger
+                        than 90 of the last 92 days" came to sit beside "100.0th
+                        percentile", two true numbers over different windows. */}
                     <td className={BOARD_CELL_CLASS}>
-                      {row.exceeded != null && row.sampleDays
+                      {row.exceeded != null && leadSample(row, lead)
                         ? <>
-                            <span>{t('unusual.exceeded', { exceeded: row.exceeded, sample: row.sampleDays, defaultValue: 'Larger than {{exceeded}} of the last {{sample}} days' })}</span>
+                            <span>{t('unusual.exceeded', { exceeded: row.exceeded, sample: leadSample(row, lead), defaultValue: 'Larger than {{exceeded}} of the last {{sample}} days' })}</span>
                             <span className="block text-[11px] text-[var(--fg-4)]">{t('unusual.percentile_suffix', { value: percentileText(row.percentile), defaultValue: '{{value}}th percentile' })}</span>
                           </>
                         : t('unusual.not_measured', { defaultValue: 'Not measured' })}
