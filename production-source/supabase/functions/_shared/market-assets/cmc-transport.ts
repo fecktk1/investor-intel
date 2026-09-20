@@ -1,6 +1,6 @@
 import { logProviderCall } from '../provider-budget.ts'
 import type { MarketAssetsContext } from './types.ts'
-import { CMC_CAPABILITIES, CMC_DEX_SCHEMA_VALIDATED, CMC_FEATURE_CAPS, cmcParams, cmcObservedAt, cmcRequestBody, estimateCmcCredits, planAllows } from './cmc-capabilities.ts'
+import { CMC_CAPABILITIES, CMC_DEX_SCHEMA_VALIDATED, CMC_EMPTY_DATA_CAPABILITIES, CMC_FEATURE_CAPS, cmcParams, cmcObservedAt, cmcRequestBody, estimateCmcCredits, planAllows } from './cmc-capabilities.ts'
 import { normalizeCmcInvestigation } from '../intel/investigation-normalize.ts'
 import {retainMarketSourceVersions} from '../intel/market-source-versions.ts'
 import {readBoundedText,RequestBodyError} from '../intel/bounded-request.ts'
@@ -260,7 +260,11 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
           // actually describes the figure being returned.
           return cached?{...cached,reason}:empty(name,reason,'unavailable',liveReceipt(null,null))
         }
-        if(body?.data==null && !Array.isArray(body)) throw new Error('malformed_response')
+        // No `data` at all is malformed for every capability EXCEPT the few whose
+        // empty answer legitimately carries none (CMC_EMPTY_DATA_CAPABILITIES).
+        // Those still go through their own response validator below; the body is
+        // cached verbatim, so the stored snapshot says what the provider said.
+        if(body?.data==null && !Array.isArray(body) && !CMC_EMPTY_DATA_CAPABILITIES.has(name)) throw new Error('malformed_response')
         // Only the reviewed DEX schemas have an exact-identity validator. A newly
         // registered path without one is not silently declared malformed.
         if(CMC_DEX_SCHEMA_VALIDATED.has(name)&&!validateCmcDexResponse(name,body,params)){

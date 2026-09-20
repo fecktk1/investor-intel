@@ -1,5 +1,5 @@
 import {assertEquals as eq,assertThrows,assert} from 'jsr:@std/assert'
-import {cmcDexIdentity,validateCmcDexResponse,CMC_HOLDER_TAGS,CMC_DEX_HOLDER_RESPONSE_MAX} from './cmc-dex.ts'
+import {cmcDexIdentity,cmcDexPoolPage,cmcShapeSummary,validateCmcDexResponse,CMC_HOLDER_TAGS,CMC_DEX_HOLDER_RESPONSE_MAX} from './cmc-dex.ts'
 import {cmcParams,cmcRows} from './cmc-capabilities.ts'
 import {normalizeCmcInvestigation} from '../intel/investigation-normalize.ts'
 const address='0x'+'a'.repeat(40),sol='EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v',at=Date.parse('2026-09-12T03:00:00Z'),stamp=new Date(at).toISOString(),expiry=new Date(at+900000).toISOString()
@@ -209,4 +209,43 @@ Deno.test('pool creation time cannot become liquidity observation time; exact to
  assert(validateCmcDexResponse('dexPools',{data:[row]},params))
  eq(validateCmcDexResponse('dexPools',{data:[{...row,t0:{addr:'0x'+'d'.repeat(40)}}]},params),false)
  eq((await normalizeCmcInvestigation('dexPools',{data:[row]},params,stamp,expiry,expiry)).observations,[])
+})
+Deno.test('a token with NO pool is a zero-row answer, not a malformed one; a broken body still is',async()=>{
+ // PRODUCTION, 2026-09-20 15:45 UTC: three permissioned tokenised funds on
+ // Ethereum were each answered HTTP 200 with error_code 0 and nothing usable
+ // under `data`, and each was refused `malformed_response` for one credit. That
+ // made "this fund has no public pool" - the finding the RWA depth lane exists to
+ // report - indistinguishable from "the provider broke".
+ const params={platform:'ethereum',address,size:'20'}
+ for(const empty of [null,undefined,[],{},{pools:[]},{list:[]},{pairs:[]}]){
+  assert(validateCmcDexResponse('dexPools',{data:empty},params),`empty shape rejected: ${JSON.stringify(empty)??'undefined'}`)
+  eq(cmcDexPoolPage(empty)?.rows,[])
+ }
+ // A body with no `data` key at all is the same zero-row answer here.
+ assert(validateCmcDexResponse('dexPools',{status:{error_code:0}},params))
+ // NOTHING ELSE IS RELAXED. A non-empty body is validated exactly as before.
+ const row={addr:'0x'+'c'.repeat(40),t0:{addr:address},t1:{addr:'0x'+'b'.repeat(40)},pubAt:at-1000,liqUsd:0}
+ assert(validateCmcDexResponse('dexPools',{data:[row]},params))
+ assert(validateCmcDexResponse('dexPools',{data:{pools:[row]}},params),'a documented container carrying rows is read, and its rows are checked')
+ eq(validateCmcDexResponse('dexPools',{data:{pools:[{...row,t0:{addr:'0x'+'d'.repeat(40)},t1:{addr:'0x'+'e'.repeat(40)}}]}},params),false)
+ // An object that is neither empty nor a documented container is not a page.
+ eq(cmcDexPoolPage({unexpected:1}),null)
+ eq(validateCmcDexResponse('dexPools',{data:{unexpected:1}},params),false)
+ eq(cmcDexPoolPage('no pools'),null)
+ eq(validateCmcDexResponse('dexPools',{data:'no pools'},params),false)
+ // And an over-long page is still refused against the size that was asked for.
+ eq(validateCmcDexResponse('dexPools',{data:Array.from({length:21},()=>row)},params),false)
+ // A zero-pool answer normalises to no observation, exactly as a read page does.
+ eq((await normalizeCmcInvestigation('dexPools',{data:null},params,stamp,expiry,expiry)).observations,[])
+})
+Deno.test('a shape summary names keys and lengths and never a value',()=>{
+ const summary=cmcShapeSummary({pools:[],lastId:'abc',nested:{a:1}})
+ eq(summary.includes('abc'),false)
+ eq(summary.includes('pools:array[0]'),true)
+ eq(cmcShapeSummary(null),'null')
+ eq(cmcShapeSummary(undefined),'absent')
+ eq(cmcShapeSummary([1,2,3]),'array[3]')
+ // Bounded: a wide or deep body cannot become a long log line.
+ const wide=Object.fromEntries(Array.from({length:40},(_,i)=>[`k${i}`,i]))
+ assert(cmcShapeSummary(wide).length<=120)
 })

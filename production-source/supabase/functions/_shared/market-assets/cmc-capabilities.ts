@@ -21,6 +21,18 @@ const dexBatchKeys=['addresses','tokens']
  * dexCandles ever becomes an observation clock (see cmcObservedAt). */
 export const CMC_DEX_SCHEMA_VALIDATED=new Set<string>([...CMC_DEX_DISCOVERY,'dexPlatforms','dexToken','dexHolderCount','dexHolderHistory','dexSecurity','dexLiquidityEvents','dexPools','dexSwaps',
   'dexHolderTags','dexHolders','dexCandles','dexSearch','dexBatch','dexPriceBatch'])
+/** Capabilities for which an ABSENT or null `data` on a 200 with error_code 0 is a
+ * legal answer meaning ZERO ROWS, not a malformed body.
+ *
+ * The transport's generic guard treats a missing `data` as malformed, which is
+ * right for a quote or a listing: nobody asks for a price and gets nothing.
+ * /v1/dex/token/pools is different, because a token with no DEX pool is the
+ * finding the RWA depth lane exists to report. Three permissioned tokenised funds
+ * were refused and charged for on 2026-09-20 before this set existed. Membership
+ * does NOT relax any other check: the capability's own response validator still
+ * decides what an empty body may look like (see cmcDexPoolPage), and a non-empty
+ * body is validated exactly as strictly as before. */
+export const CMC_EMPTY_DATA_CAPABILITIES=new Set<string>(['dexPools'])
 /** Single-contract DEX capabilities: exactly one verified platform + address. */
 const dexContract=(name:string)=>name.startsWith('dex')&&!isDexDiscovery(name)&&!['dexPlatforms','dexSearch','dexBatch','dexPriceBatch'].includes(name)
 const klineIntervals=['1min','5min','15min','30min','1h','4h','1d','1w']
