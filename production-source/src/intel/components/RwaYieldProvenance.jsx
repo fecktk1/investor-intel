@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import BoardTableHeader, { BOARD_CELL_CLASS } from './BoardTableHeader'
+import TokenAvatar from './TokenAvatar'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/capture-api'
@@ -46,6 +47,20 @@ export function ageHours(seconds) {
 export function realizedCell(row) {
   if (row?.publishable && num(row?.realizedPct) != null) return { kind: 'value', value: num(row.realizedPct) }
   return { kind: 'state', state: String(row?.realizedState || 'insufficient_history') }
+}
+
+/** Does this row need the flat-NAV note beside its own figure?
+ *
+ * A total-return fund distributes its income instead of accruing it, so its token
+ * price holds flat and the realized figure is a true 0 against a benchmark that is
+ * not: VBILL and WTGXX both publish exactly 0.00 percent against a 4.14 point gap
+ * (production capture, 2026-09-20). The explanation for that already exists, four
+ * paragraphs below the table, which is too far away to be read by anyone looking
+ * at the cell. This puts one short line in the cell itself and leaves the full
+ * paragraph where it is. */
+export function realizedZeroNote(row) {
+  const cell = realizedCell(row)
+  return cell.kind === 'value' && cell.value === 0
 }
 
 /** The capture times (UTC) the read view serves for the yield lane, with the
@@ -179,7 +194,14 @@ export default function RwaYieldProvenance() {
                   return (
                     <tr key={row.feedKey}>
                       <th scope="row" className={`text-left font-normal text-[var(--fg-2)] ${BOARD_CELL_CLASS}`}>
-                        {row.feedName || row.feedKey}
+                        {/* The logo travels on the same catalogue row as the market
+                            price, so no extra query is made per fund and no image
+                            URL is ever built from a ticker. A fund with no mapped
+                            catalogue row draws a monogram. */}
+                        <span className="flex items-center gap-2">
+                          <TokenAvatar src={row.marketImageUrl} fallbackSrc={row.marketImageSourceUrl} symbol={row.feedKey} name={row.feedName} size="sm" />
+                          <span>{row.feedName || row.feedKey}</span>
+                        </span>
                         {row.validationState === 'refused' && (
                           <span className="block text-[11px] text-[var(--fg-4)]">
                             {t('structure.rwa_yield_refused', {
@@ -197,7 +219,16 @@ export default function RwaYieldProvenance() {
                       <td className={`intel-number ${BOARD_CELL_CLASS}`}>
                         {realized.kind === 'value'
                           // An exact zero renders as zero. It is a measurement.
-                          ? formatPct(realized.value)
+                          ? (
+                            <>
+                              {formatPct(realized.value)}
+                              {realizedZeroNote(row) && (
+                                <span className="block text-[11px] text-[var(--fg-4)]">
+                                  {t('structure.rwa_yield_zero_note', { defaultValue: 'Flat net asset value. Income may have been paid out rather than accrued.' })}
+                                </span>
+                              )}
+                            </>
+                          )
                           : <span className="text-[var(--fg-4)]">{stateLabel(realized.state)}</span>}
                       </td>
                       <td className={`intel-number ${BOARD_CELL_CLASS}`}>

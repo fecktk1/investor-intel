@@ -21,7 +21,7 @@ function fakeDb(tables: Record<string, Record<string, unknown>[]>, failing: Reco
         ? { data: null, error: { message: failing[table] } }
         : { data: tables[table] ?? [], error: null }
       const chain: Record<string, unknown> = {}
-      for (const method of ['select', 'in', 'eq', 'order', 'limit', 'gt']) {
+      for (const method of ['select', 'in', 'eq', 'or', 'order', 'limit', 'gt']) {
         chain[method] = () => chain
       }
       // The read modules `await` the built query, so the chain is a thenable.
@@ -58,6 +58,50 @@ Deno.test('the board lists deliberate non-mappings even when every table is empt
   // Nothing captured is a stated state with its schedule, not a blank board.
   assert.ok((result.subjects as { captured: boolean }[]).every((s) => s.captured === false))
   assert.deepEqual(result.schedule, RWA_ISSUER_CAPTURE_SCHEDULE)
+})
+
+Deno.test('a subject logo is matched on its own contract and never on its symbol', async () => {
+  // The catalogue really does store some addresses checksum-cased (270 of the
+  // 1068 rows carrying an `ethereum` platform, measured 2026-09-20), so the match
+  // is case-insensitive on both sides.
+  const db = fakeDb({
+    market_assets: [
+      {
+        platforms: { ethereum: ADDRESS.toUpperCase().replace('0X', '0x') },
+        cached_image_url: 'https://images.example/ustb-cached.png',
+        image_url: 'https://coin-images.example/ustb.png',
+      },
+    ],
+  })
+  const result = await readRwaIssuerLegitimacy(db, {}, at)
+  const subjects = result.subjects as { subjectLabel: string; imageUrl: string | null; imageSourceUrl: string | null }[]
+  const ustb = subjects.find((s) => s.subjectLabel === 'USTB')!
+  assert.equal(ustb.imageUrl, 'https://images.example/ustb-cached.png')
+  assert.equal(ustb.imageSourceUrl, 'https://coin-images.example/ustb.png')
+  // Every other subject has a DIFFERENT contract, so none of them inherits this
+  // image. A symbol-based match is what this asserts against.
+  for (const subject of subjects) {
+    if (subject.subjectLabel === 'USTB') continue
+    assert.equal(subject.imageUrl, null, `${subject.subjectLabel} borrowed another subject's logo`)
+  }
+  // An image read is never allowed to add a reason to a healthy board.
+  assert.equal(result.reason, null)
+})
+
+Deno.test('a subject with no catalogue row carries no image rather than a guessed one', async () => {
+  const result = await readRwaIssuerLegitimacy(fakeDb({ market_assets: [] }), {}, at)
+  const subjects = result.subjects as { imageUrl: string | null; imageSourceUrl: string | null }[]
+  assert.ok(subjects.length > 0)
+  assert.ok(subjects.every((s) => s.imageUrl === null && s.imageSourceUrl === null))
+  assert.equal(result.reason, null)
+})
+
+Deno.test('a failed image read is a missing logo and a stated reason, never a missing subject', async () => {
+  const result = await readRwaIssuerLegitimacy(fakeDb({}, { market_assets: 'permission denied' }), {}, at)
+  assert.match(String(result.reason), /market_assets:permission denied/)
+  const subjects = result.subjects as { imageUrl: string | null }[]
+  assert.equal(subjects.length, assertionsAsOf(at).length)
+  assert.ok(subjects.every((s) => s.imageUrl === null))
 })
 
 Deno.test('a failed table read states its reason and never empties the rest of the board', async () => {

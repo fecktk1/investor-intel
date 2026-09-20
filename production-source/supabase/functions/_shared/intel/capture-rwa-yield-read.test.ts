@@ -33,6 +33,9 @@ const marketRow = (over: Record<string, unknown> = {}) => ({
   source_provider: 'coingecko', provider_id: 'superstate-short-duration-us-government-securities-fund-ustb',
   name: 'Invesco Short Duration US Government Securities Fund',
   current_price: 11.5, as_of: '2026-09-16T11:30:00.000Z', in_current_catalog: true,
+  // Both image columns, mirrored copy first, exactly as the catalogue holds them.
+  cached_image_url: 'https://images.example/ustb-cached.png',
+  image_url: 'https://coin-images.example/ustb.png',
   ...over,
 })
 
@@ -191,6 +194,25 @@ Deno.test('a name-verified catalogue row prices the market against the published
   // The source mix is stated on the payload, not left for the reader to infer.
   assert(String(result.marketSourceNote).includes('never on a ticker'))
   assert(String(result.marketSourceLimit).includes('no identifier'))
+  // The logo rides the SAME catalogue row as the price, so the surface issues no
+  // image query of its own and can never build a URL from the fund's ticker.
+  eq(row.marketImageUrl, 'https://images.example/ustb-cached.png')
+  eq(row.marketImageSourceUrl, 'https://coin-images.example/ustb.png')
+})
+
+Deno.test('a fund with no mapped catalogue row carries no image, so the surface draws initials', async () => {
+  // WTGXX is absent from the catalogue, which is exactly the case the monogram
+  // fallback exists for. A null image is the correct answer, not a defect.
+  const result = await readRwaYield(fakeDb({
+    intel_rwa_nav_observations: [navRow({ feed_key: 'wtgxx', feed_name: 'WTGXX NAV', nav: 1 })],
+    intel_rwa_yield_snapshots: [yieldRow({ feed_key: 'wtgxx' })],
+    market_assets: [marketRow()],
+  }), {}, Date.parse(HOUR))
+  const row = (result.rows as Record<string, unknown>[])[0]
+  eq(row.feedKey, 'wtgxx')
+  eq(row.marketImageUrl, null)
+  eq(row.marketImageSourceUrl, null)
+  eq(row.deviationReason, 'market_price_not_mapped')
 })
 
 Deno.test('a drifted catalogue name and a fund with no safe identity are both refused', async () => {

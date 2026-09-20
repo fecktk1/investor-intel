@@ -2,6 +2,7 @@ import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import SortableHeader from './SortableHeader'
 import { BOARD_CELL_CLASS } from './BoardTableHeader'
+import TokenAvatar from './TokenAvatar'
 import { Link } from 'react-router'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -10,6 +11,7 @@ import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/c
 import { useUrlState } from '../lib/useUrlState'
 import { useColumnSort, sortRows } from '../lib/useColumnSort'
 import { getChain, chainIdFor } from '../lib/chains'
+import { assetLogoUrl } from '../lib/asset-identity'
 import { fmtNum, formatPct, formatPrice, formatUsd, pctClass } from '../lib/market-format'
 
 // New-listing due diligence (CMC plan proposal 21). One row per asset the daily
@@ -700,7 +702,14 @@ export default function NewListingsBoard() {
                     <React.Fragment key={key}>
                       <tr>
                         <th scope="row" className={`text-left font-normal text-[var(--fg-2)] ${BOARD_CELL_CLASS}`}>
-                          {href ? <Link className="intel-text-link" to={href}>{label}</Link> : label}
+                          {/* Addressed by the capture's own provider id, never by
+                              the row's ticker. A brand new listing is usually
+                              absent from our own catalogue, so a row with no
+                              provider id draws initials rather than a guess. */}
+                          <span className="flex items-center gap-2">
+                            <TokenAvatar src={assetLogoUrl(`market:coinmarketcap:${row?.providerId}`)} symbol={row?.symbol} name={row?.name} size="sm" />
+                            <span>{href ? <Link className="intel-text-link" to={href}>{label}</Link> : label}</span>
+                          </span>
                         </th>
                         <td className={BOARD_CELL_CLASS}>{row?.name || '—'}</td>
                         {/* Rank 0 does not exist. An unranked listing says so. */}

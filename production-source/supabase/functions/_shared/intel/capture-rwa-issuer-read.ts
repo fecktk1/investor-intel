@@ -31,6 +31,48 @@ import { tokenSubject, CONCENTRATION_TABLE, DRIFT_TABLE, ENTITY_TABLE, FILING_TA
 const FILING_CAP = 200
 const DRIFT_CAP = 200
 const CONCENTRATION_CAP = 400
+const IMAGE_CAP = 100
+
+/** The catalogue's platform key for each chain this board can carry a subject on.
+ * A chain missing here simply has no logo lookup, which draws a monogram. */
+const CATALOGUE_PLATFORM: Record<string, string> = {
+  ethereum: 'ethereum', base: 'base', arbitrum: 'arbitrum-one', polygon: 'polygon-pos',
+}
+
+/** Token logos for the subject headings, joined on the SUBJECT'S OWN CONTRACT.
+ *
+ * The join is the contract address inside `market_assets.platforms`, never a
+ * symbol: these subjects are exactly the assets whose tickers collide (USTBL
+ * matches two catalogue rows, `M` three), so a symbol join here would put another
+ * asset's logo on an issuer identity. Case-insensitive because 270 of the 1068
+ * catalogue rows carrying an `ethereum` platform store it checksum-cased
+ * (measured 2026-09-20), so an exact match on a lower-cased address would
+ * silently miss them.
+ *
+ * A subject with no catalogue row gets no image and the surface draws a monogram,
+ * which is the right answer for an underlying that is not a listed token. */
+// deno-lint-ignore no-explicit-any
+export async function readSubjectImages(db: any, tokens: { chain: string; address: string }[]): Promise<{
+  images: Map<string, { cached: string | null; source: string | null }>; reason: string | null
+}> {
+  const clauses = [...new Set(tokens
+    .map((t) => (CATALOGUE_PLATFORM[t.chain] && /^0x[0-9a-fA-F]{40}$/.test(t.address) ? `platforms->>${CATALOGUE_PLATFORM[t.chain]}.ilike.${t.address}` : null))
+    .filter((v): v is string => !!v))]
+  const images = new Map<string, { cached: string | null; source: string | null }>()
+  if (!clauses.length) return { images, reason: null }
+  const read = await readRows(() => db.from('market_assets')
+    .select('platforms,cached_image_url,image_url')
+    .eq('in_current_catalog', true).or(clauses.join(',')).limit(IMAGE_CAP))
+  for (const row of read.rows) {
+    const platforms = row?.platforms && typeof row.platforms === 'object' ? row.platforms as Record<string, unknown> : {}
+    for (const value of Object.values(platforms)) {
+      const address = typeof value === 'string' ? value.toLowerCase() : null
+      if (!address || images.has(address)) continue
+      images.set(address, { cached: str(row?.cached_image_url, 500), source: str(row?.image_url, 500) })
+    }
+  }
+  return { images, reason: read.reason }
+}
 
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
 export interface ViewResult { view: string; asOf: string | null; coverage: Coverage; reason?: string | null; [key: string]: unknown }
@@ -66,6 +108,8 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
   const ciks = [...new Set(legal.map((a) => a.entity.cik).filter((c): c is string => !!c))]
   const entityKeys = [...new Set(legal.map((a) => (a.entity.lei ? `lei:${a.entity.lei}` : a.entity.cik ? `cik:${a.entity.cik}` : null)).filter((k): k is string => !!k))]
   const addresses = [...new Set(assertions.map((a) => tokenSubject(a)?.address).filter((x): x is string => !!x))]
+  const subjectTokens = assertions.map((a) => tokenSubject(a)).filter((t) => !!t)
+    .map((t) => ({ chain: String(t!.chain), address: t!.address }))
 
   const reasons: string[] = []
   const collect = <T>(result: { rows: T[]; reason: string | null }, source: string): T[] => {
@@ -90,6 +134,12 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
   const signalRows = collect(signals, SIGNAL_TABLE)
   const concentrationRows = collect(concentration, CONCENTRATION_TABLE)
   const restrictionRows = collect(restrictions, RESTRICTION_TABLE)
+
+  // Subject logos, read once for the whole board rather than per row, so the
+  // surface never issues an image query of its own. An unavailable image read is
+  // a missing logo and a recorded reason, never a missing subject.
+  const subjectImages = await readSubjectImages(db, subjectTokens)
+  if (subjectImages.reason) reasons.push(`market_assets:${subjectImages.reason}`)
 
   const subjects = assertions.map((assertion) => {
     const entityKey = assertion.entity.lei ? `lei:${assertion.entity.lei}` : `cik:${assertion.entity.cik}`
@@ -128,9 +178,15 @@ export async function readRwaIssuerLegitimacy(db: any, params: Record<string, un
     const entityRow = allowed ? entityRows.find((r) => r.entity_key === entityKey) : undefined
     const drifts = allowed ? mine(driftRows, 'cik', assertion.entity.cik) : []
 
+    const image = token ? subjectImages.images.get(token.address) ?? null : null
+
     return {
       subject: assertion.subject,
       subjectLabel: assertion.subjectLabel,
+      // Identity picture, matched on this subject's own contract. Null is normal
+      // and draws a monogram; it is never a reason to hide the subject.
+      imageUrl: image?.cached ?? null,
+      imageSourceUrl: image?.source ?? null,
       state: allowed ? 'mapped' : 'lapsed',
       // True when the guard withheld every fact about a legal person.
       legalFactsWithheld: !allowed,
