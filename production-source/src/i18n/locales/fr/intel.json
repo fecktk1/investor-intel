@@ -1898,7 +1898,8 @@
     "chatter": "Discussions",
     "confidence": "Confiance",
     "risk": "Risque",
-    "radar_title": "Narratifs affichés : {{n}}"
+    "radar_title": "Narratifs affichés : {{n}}",
+    "score_inputs": "signaux de marché, en chaîne et sociaux enregistrés"
   },
   "research": {
     "empty": "Aucune recherche sauvegardée pour l'instant. Sauvegardez une analyse ou un brief pour le conserver ici.",
@@ -3633,7 +3634,7 @@
     "gauge_used": "Utilisés",
     "gauge_reserved": "Réservés",
     "gauge_headroom": "Marge",
-    "gauge_sub": "non indiqué",
+    "gauge_sub": "{{used}} utilisés et {{reserved}} réservés sur {{ceiling}} crédits. L’aiguille marque {{projected}}, le mois projeté à partir des cadences en vigueur.",
     "reuse_live": "Appels en direct",
     "reuse_hits": "Succès de cache",
     "reuse_misses": "Échecs de cache",
@@ -3737,7 +3738,21 @@
     "calibration_line": "Consommation observée {{observed}} crédits par heure contre {{affordable}} soutenables · multiplicateur de cadence ×{{scale}} · {{count}} observations du compte",
     "calibration_reason": "Motif : {{reason}}",
     "calibration_window": "Il reste {{remaining}} crédits et {{hours}} heures avant la réinitialisation.",
-    "calibration_projection": "Projection à la cadence calibrée : {{credits}} crédits"
+    "calibration_projection": "Projection à la cadence calibrée : {{credits}} crédits",
+    "lane_cost_label": "Ce que cela coûte par voie",
+    "lane_cost_title": "Ce que cela coûte, par voie",
+    "lane_cost_sub": "Les {{count}} voies les plus coûteuses des 30 derniers jours, mesurées sur les appels au fournisseur enregistrés. La cadence est celle à laquelle chaque voie a été observée, pas nécessairement celle configurée. Les appels par exécution comptent zéro pour une lecture qui n’a pas appelé : une voie bien mise en cache passe donc sous un.",
+    "lane_cost_missing": "La lecture du coût par voie n’est pas revenue, cette table n’a donc rien à montrer. La partie en échec est nommée plus haut.",
+    "lane_cost_empty": "Aucun appel au fournisseur n’a été enregistré pour une voie sur les 30 derniers jours, donc aucune voie n’a de coût à indiquer.",
+    "lane_cost_truncated": "Cette lecture a atteint sa limite de lignes à {{scanned}} sur {{limit}}, la fenêtre est donc plus courte que 30 jours et ces chiffres sont un plancher.",
+    "lane_cost_one_run": "une seule exécution",
+    "col_lane": "Voie",
+    "col_observed_cadence": "Cadence observée",
+    "col_calls_per_run": "Appels par exécution",
+    "col_credits_24h": "Crédits, 24 h",
+    "col_credits_30d": "Crédits, 30 j",
+    "col_runs_30d": "Exécutions, 30 j",
+    "col_cache_hits": "Hits de cache, 30 j"
   },
   "rwa_issuer": {
     "eyebrow": "Sources primaires",
@@ -3824,7 +3839,9 @@
     "capture_record": "Une capture enregistrée de chiffres du fournisseur à l’heure de capture indiquée. Sa lecture n’a déclenché aucun nouvel appel au fournisseur et elle ne reflète pas le marché actuel.",
     "news_curated": "Articles sélectionnés et résumés par une revue automatisée pendant leur période de revue. Un résumé n’est ni l’article source ni une affirmation vérifiée.",
     "news_stored": "Articles enregistrés depuis les sources suivies et globales, regroupés et classés selon des règles. Un classement n’est pas un jugement d’exactitude.",
-    "signals_stored": "Signaux générés à partir de sources stockées et classés pour vous à la lecture de cette vue. Un signal est une piste de recherche, pas une recommandation."
+    "signals_stored": "Signaux générés à partir de sources stockées et classés pour vous à la lecture de cette vue. Un signal est une piste de recherche, pas une recommandation.",
+    "execution_quote": "Une cotation de routage à son heure de cotation, plus le contexte du pool en chaîne. Pas une exécution reçue par quiconque et pas un conseil de trading.",
+    "exchange_signal": "Une classification sur les tickers des plateformes centralisées couvertes à leur heure indiquée. Pas le prix d’une plateforme donnée et pas une recommandation."
   },
   "receipt_state": {
     "provider": "Fournisseur",
@@ -3980,5 +3997,31 @@
     "retry": "Réessayer l’historique de marché",
     "load_more": "Charger plus d’événements de marché publics",
     "range_limited": "L’historique public des événements est limité aux 90 derniers jours de cette plage, selon la rétention de la source."
+  },
+  "receipt_cost": {
+    "calls_one": "{{count}} appel au fournisseur",
+    "calls_other": "{{count}} appels au fournisseur",
+    "credits_one": "{{count}} crédit",
+    "credits_other": "{{count}} crédits",
+    "credits_not_reported": "crédits non indiqués",
+    "live": "en direct",
+    "no_call": "Aucun appel au fournisseur",
+    "from_cache": "servi depuis le cache partagé",
+    "shared": "Capture partagée, aucun coût fournisseur par lecteur",
+    "captured_at": "capturé {{date}}",
+    "run_calls_one": "la capture a fait {{count}} appel à ce point d’accès",
+    "run_calls_other": "la capture a fait {{count}} appels à ce point d’accès",
+    "failed": "un échec mémorisé a répondu à cette lecture",
+    "answered_live": "Un appel au fournisseur a répondu à cette lecture"
+  },
+  "figure_source": {
+    "line": "Source : {{source}}",
+    "observed": "observé {{date}}",
+    "captured": "capturé {{date}}",
+    "no_time": "aucune heure d’observation indiquée",
+    "unknown": "La source de ce chiffre n’a pas été indiquée.",
+    "our_calculation": "Notre calcul à partir de {{inputs}}",
+    "recorded_inputs": "chiffres que nous avons déjà enregistrés",
+    "computed": "calculé {{date}}"
   }
 }

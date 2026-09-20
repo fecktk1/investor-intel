@@ -120,6 +120,11 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
   const cacheReuse = Array.isArray(budget.cacheReuse) ? budget.cacheReuse : []
   const demandDaily = Array.isArray(budget.demandDaily) ? budget.demandDaily : []
   const capture = Array.isArray(budget.capture) ? budget.capture : []
+  // "What this costs" by lane. null when the RPC could not be read, which the
+  // degraded list above already names by part, so the section says why in words
+  // rather than drawing an empty table.
+  const laneCost = budget.laneCost && typeof budget.laneCost === 'object' ? budget.laneCost : null
+  const laneRows = Array.isArray(laneCost?.lanes) ? laneCost.lanes : []
 
   // ---- (a) the credit month -------------------------------------------------
   const used = num(month.used), reserved = num(month.reserved)
@@ -390,6 +395,80 @@ export default function DataBudgetFigures({ budget = null, now = null }) {
               </tbody>
             </table>
           </div>
+        )}
+      </section>
+
+      {/* What this costs, by lane. Every number is measured from the call ledger
+          (provider_call_logs), so the cadence here is the one the lane was OBSERVED
+          at, not the one it is configured for. The configured cadence is in the
+          "Scheduled features" table above, and a drift between the two is meant to
+          be visible rather than averaged away. Calls per run can be below 1: a run
+          whose reads all came from cache made no call, which is the point. */}
+      <section aria-label={t('data_budget.lane_cost_label', { defaultValue: 'What this costs by lane' })} className="space-y-2">
+        <h2 className="intel-section-title">{t('data_budget.lane_cost_title', { defaultValue: 'What this costs, by lane' })}</h2>
+        {!laneCost ? (
+          <p className="intel-analysis-caption" role="status">
+            {t('data_budget.lane_cost_missing', { defaultValue: 'The per-lane cost read did not return, so this table has nothing to show. The failed part is named above.' })}
+          </p>
+        ) : laneRows.length === 0 ? (
+          <p className="intel-analysis-caption" role="status">
+            {t('data_budget.lane_cost_empty', { defaultValue: 'No provider call was recorded for any lane in the last 30 days, so no lane has a cost to report.' })}
+          </p>
+        ) : (
+          <>
+            <p className="intel-analysis-caption">
+              {t('data_budget.lane_cost_sub', {
+                count: laneRows.length,
+                defaultValue: 'The {{count}} costliest lanes over the last 30 days, measured from the recorded provider calls. The cadence is the one each lane was observed running at, which is not necessarily the one it is configured for. Calls per run counts reads that made no call as zero, so a well cached lane sits below one.',
+              })}
+            </p>
+            {laneCost.truncated === true ? (
+              <p className="intel-analysis-caption" role="alert">
+                {t('data_budget.lane_cost_truncated', {
+                  scanned: count(laneCost.scanned), limit: count(laneCost.scanLimit),
+                  defaultValue: 'This read reached its row limit at {{scanned}} of {{limit}} rows, so the window is shorter than 30 days and these figures are a floor.',
+                })}
+              </p>
+            ) : null}
+            <div className="intel-table-scroll">
+              <table data-testid="data-budget-lane-cost">
+                <caption className="sr-only">{t('data_budget.lane_cost_title', { defaultValue: 'What this costs, by lane' })}</caption>
+                <thead>
+                  <tr>
+                    <th scope="col">{t('data_budget.col_lane', { defaultValue: 'Lane' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_observed_cadence', { defaultValue: 'Observed cadence' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_calls_per_run', { defaultValue: 'Calls per run' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_credits_24h', { defaultValue: 'Credits, 24h' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_credits_30d', { defaultValue: 'Credits, 30d' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_runs_30d', { defaultValue: 'Runs, 30d' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_cache_hits', { defaultValue: 'Cache hits, 30d' })}</th>
+                    <th scope="col" className="intel-number">{t('data_budget.col_newest', { defaultValue: 'Newest row' })}</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {laneRows.map(row => (
+                    <tr key={String(row?.lane)} data-lane={String(row?.lane)}>
+                      <th scope="row">
+                        {String(row?.lane ?? '—')}
+                        {row?.jobName ? <span className="intel-analysis-caption"> · {String(row.jobName)}</span> : null}
+                      </th>
+                      <td className="intel-number">{row?.observedCadenceSeconds == null
+                        ? t('data_budget.lane_cost_one_run', { defaultValue: 'one run only' })
+                        : cadenceLabel(row.observedCadenceSeconds, t)}</td>
+                      <td className="intel-number">{num(row?.callsPerRun) == null
+                        ? t('data_budget.not_reported', { defaultValue: 'not reported' })
+                        : Number(row.callsPerRun).toLocaleString(undefined, { maximumFractionDigits: 2 })}</td>
+                      <td className="intel-number">{credits(row?.credits24h)}</td>
+                      <td className="intel-number">{credits(row?.credits30d)}</td>
+                      <td className="intel-number">{count(row?.runs30d)}</td>
+                      <td className="intel-number">{count(row?.cacheHits30d)}</td>
+                      <td className="intel-number">{stamp(row?.newestAt)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </>
         )}
       </section>
 

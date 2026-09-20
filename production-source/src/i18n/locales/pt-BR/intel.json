@@ -1898,7 +1898,8 @@
     "chatter": "Chatter",
     "confidence": "Confiança",
     "risk": "Risco",
-    "radar_title": "Narrativas em exibição: {{n}}"
+    "radar_title": "Narrativas em exibição: {{n}}",
+    "score_inputs": "sinais de mercado, on chain e sociais registrados"
   },
   "research": {
     "empty": "Nenhuma pesquisa salva ainda. Salve um breakdown ou briefing para mantê-lo aqui.",
@@ -3633,7 +3634,7 @@
     "gauge_used": "Usados",
     "gauge_reserved": "Reservados",
     "gauge_headroom": "Folga",
-    "gauge_sub": "não informado",
+    "gauge_sub": "{{used}} usados e {{reserved}} reservados de {{ceiling}} créditos. O ponteiro marca {{projected}}, o mês projetado a partir das cadências em vigor.",
     "reuse_live": "Chamadas ao vivo",
     "reuse_hits": "Acertos de cache",
     "reuse_misses": "Erros de cache",
@@ -3737,7 +3738,21 @@
     "calibration_line": "Consumo observado {{observed}} créditos por hora ante {{affordable}} sustentáveis · multiplicador de cadência ×{{scale}} · {{count}} observações da conta",
     "calibration_reason": "Motivo: {{reason}}",
     "calibration_window": "Restam {{remaining}} créditos e {{hours}} horas até a redefinição.",
-    "calibration_projection": "Projeção na cadência calibrada: {{credits}} créditos"
+    "calibration_projection": "Projeção na cadência calibrada: {{credits}} créditos",
+    "lane_cost_label": "Quanto isso custa por trilha",
+    "lane_cost_title": "Quanto isso custa, por trilha",
+    "lane_cost_sub": "As {{count}} trilhas mais caras dos últimos 30 dias, medidas pelas chamadas ao provedor registradas. A cadência é aquela em que cada trilha foi observada, não necessariamente a configurada. Chamadas por execução contam como zero uma leitura que não chamou, então uma trilha bem cacheada fica abaixo de um.",
+    "lane_cost_missing": "A leitura de custo por trilha não retornou, então esta tabela não tem o que mostrar. A parte que falhou está nomeada acima.",
+    "lane_cost_empty": "Nenhuma chamada ao provedor foi registrada para qualquer trilha nos últimos 30 dias, então nenhuma trilha tem custo a informar.",
+    "lane_cost_truncated": "Esta leitura atingiu seu limite de linhas em {{scanned}} de {{limit}}, então a janela é menor que 30 dias e estes números são um piso.",
+    "lane_cost_one_run": "apenas uma execução",
+    "col_lane": "Trilha",
+    "col_observed_cadence": "Cadência observada",
+    "col_calls_per_run": "Chamadas por execução",
+    "col_credits_24h": "Créditos, 24 h",
+    "col_credits_30d": "Créditos, 30 d",
+    "col_runs_30d": "Execuções, 30 d",
+    "col_cache_hits": "Acertos de cache, 30 d"
   },
   "rwa_issuer": {
     "eyebrow": "Fontes primárias",
@@ -3824,7 +3839,9 @@
     "capture_record": "Uma captura registrada de números do provedor no horário de captura indicado. A leitura não fez nenhuma nova chamada ao provedor e não é uma leitura do mercado agora.",
     "news_curated": "Notícias selecionadas e resumidas por revisão automatizada dentro do período de revisão. Um resumo não é o artigo original nem uma afirmação verificada.",
     "news_stored": "Notícias registradas de fontes seguidas e globais, agrupadas e ordenadas por regras. Uma ordenação não é um julgamento de precisão.",
-    "signals_stored": "Sinais gerados a partir de fontes armazenadas e ordenados para você na leitura desta visualização. Um sinal é um ponto de partida para pesquisa, não uma recomendação."
+    "signals_stored": "Sinais gerados a partir de fontes armazenadas e ordenados para você na leitura desta visualização. Um sinal é um ponto de partida para pesquisa, não uma recomendação.",
+    "execution_quote": "Uma cotação de rota no horário em que foi cotada, mais o contexto do pool na rede. Não é uma execução que alguém recebeu nem conselho para operar.",
+    "exchange_signal": "Uma classificação sobre os tickers das corretoras centralizadas cobertas no horário informado. Não é o preço de nenhuma corretora específica nem uma recomendação."
   },
   "receipt_state": {
     "provider": "Provedor",
@@ -3980,5 +3997,31 @@
     "retry": "Tentar o histórico de mercado novamente",
     "load_more": "Carregar mais eventos públicos de mercado",
     "range_limited": "O histórico público de eventos é limitado aos últimos 90 dias deste intervalo, conforme a retenção da fonte."
+  },
+  "receipt_cost": {
+    "calls_one": "{{count}} chamada ao provedor",
+    "calls_other": "{{count}} chamadas ao provedor",
+    "credits_one": "{{count}} crédito",
+    "credits_other": "{{count}} créditos",
+    "credits_not_reported": "créditos não informados",
+    "live": "ao vivo",
+    "no_call": "Nenhuma chamada ao provedor",
+    "from_cache": "atendido pelo cache compartilhado",
+    "shared": "Captura compartilhada, sem custo de provedor por leitor",
+    "captured_at": "capturado {{date}}",
+    "run_calls_one": "a captura fez {{count}} chamada a este endpoint",
+    "run_calls_other": "a captura fez {{count}} chamadas a este endpoint",
+    "failed": "uma falha lembrada respondeu a esta leitura",
+    "answered_live": "Uma chamada ao provedor respondeu a esta leitura"
+  },
+  "figure_source": {
+    "line": "Fonte: {{source}}",
+    "observed": "observado {{date}}",
+    "captured": "capturado {{date}}",
+    "no_time": "nenhuma hora de observação informada",
+    "unknown": "A fonte deste número não foi informada.",
+    "our_calculation": "Nosso cálculo a partir de {{inputs}}",
+    "recorded_inputs": "números que já registramos",
+    "computed": "calculado {{date}}"
   }
 }

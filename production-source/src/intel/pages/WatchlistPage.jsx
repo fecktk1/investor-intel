@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react'
+import React, { useState, useEffect, useCallback, useMemo } from 'react'
 import { Link, useSearchParams } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Plus, Trash2, ExternalLink, Briefcase, Check } from 'lucide-react'
@@ -12,6 +12,7 @@ import { emitTutorialSignal } from '../../help/signals'
 import { ensureDefaultPortfolio, addTransaction } from '../lib/portfolio-api'
 import { loadMarketContextBySymbols } from '../lib/markets-api'
 import MarketSignalBadge from '../components/MarketSignalBadge'
+import FigureSourceLine from '../components/FigureSourceLine'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
@@ -71,6 +72,15 @@ function WatchlistPageBody({ selection }) {
     ;(async () => { try { const m = await loadMarketContextBySymbols(supabase, syms); if (alive) setCtxMap(m) } catch { /* */ } })()
     return () => { alive = false }
   }, [items, supabase])
+
+  // The newest observation behind the direction badges on the rows below. Every
+  // context entry carries `observedAt` (loadMarketContextBySymbols reads the venue's
+  // own as_of), so nothing extra is fetched. Null when no entry reported one, and
+  // the source line then says so rather than guessing a time.
+  const ctxObservedAt = useMemo(() => {
+    const stamps = Object.values(ctxMap).map((c) => Date.parse(String(c?.observedAt ?? ''))).filter(Number.isFinite)
+    return stamps.length ? new Date(Math.max(...stamps)).toISOString() : null
+  }, [ctxMap])
 
   const onAdd = useCallback(async (e) => {
     e.preventDefault()
@@ -226,6 +236,12 @@ function WatchlistPageBody({ selection }) {
               </div>
             )
           })}
+          {/* The direction badge on each row is an exchange market signal, so the
+              list names the source and the newest observation behind it instead of
+              leaving a badge with no author. */}
+          {Object.keys(ctxMap).length > 0 && (
+            <FigureSourceLine source="exchange" observedAt={ctxObservedAt} scopeKey="exchange_signal" />
+          )}
         </div>
       )}
 

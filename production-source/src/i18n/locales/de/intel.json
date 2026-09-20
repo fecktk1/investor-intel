@@ -1898,7 +1898,8 @@
     "chatter": "Diskussion",
     "confidence": "Konfidenz",
     "risk": "Risiko",
-    "radar_title": "{{n}} Narrative im Blick"
+    "radar_title": "{{n}} Narrative im Blick",
+    "score_inputs": "aufgezeichneten Markt-, On-Chain- und Social-Signalen"
   },
   "research": {
     "empty": "Noch kein gespeichertes Research. Speichere eine Analyse oder einen Brief, um ihn hier zu behalten.",
@@ -3633,7 +3634,7 @@
     "gauge_used": "Verbraucht",
     "gauge_reserved": "Reserviert",
     "gauge_headroom": "Spielraum",
-    "gauge_sub": "nicht gemeldet",
+    "gauge_sub": "{{used}} verbraucht und {{reserved}} reserviert von {{ceiling}} Credits. Die Nadel markiert {{projected}}, den aus den aktuell geltenden Taktungen projizierten Monat.",
     "reuse_live": "Live-Aufrufe",
     "reuse_hits": "Cache-Treffer",
     "reuse_misses": "Cache-Fehlschläge",
@@ -3737,7 +3738,21 @@
     "calibration_line": "Gemessener Verbrauch {{observed}} Credits pro Stunde gegenüber {{affordable}} leistbar · Taktfaktor ×{{scale}} · {{count}} Kontobeobachtungen",
     "calibration_reason": "Grund: {{reason}}",
     "calibration_window": "{{remaining}} Credits verbleiben, {{hours}} Stunden bis zur Zurücksetzung.",
-    "calibration_projection": "Projiziert beim kalibrierten Takt: {{credits}} Credits"
+    "calibration_projection": "Projiziert beim kalibrierten Takt: {{credits}} Credits",
+    "lane_cost_label": "Was das pro Lane kostet",
+    "lane_cost_title": "Was das kostet, pro Lane",
+    "lane_cost_sub": "Die {{count}} teuersten Lanes der letzten 30 Tage, gemessen an den aufgezeichneten Anbieteraufrufen. Die Taktung ist die, in der die Lane beobachtet wurde, nicht zwingend die konfigurierte. Aufrufe pro Lauf zählen Lesevorgänge ohne Aufruf als null, eine gut gecachte Lane liegt daher unter eins.",
+    "lane_cost_missing": "Der Lane-Kosten-Read kam nicht zurück, daher hat diese Tabelle nichts zu zeigen. Der fehlgeschlagene Teil ist oben genannt.",
+    "lane_cost_empty": "In den letzten 30 Tagen wurde für keine Lane ein Anbieteraufruf aufgezeichnet, daher hat keine Lane Kosten zu melden.",
+    "lane_cost_truncated": "Dieser Read hat sein Zeilenlimit bei {{scanned}} von {{limit}} Zeilen erreicht, das Fenster ist also kürzer als 30 Tage und diese Zahlen sind eine Untergrenze.",
+    "lane_cost_one_run": "nur ein Lauf",
+    "col_lane": "Lane",
+    "col_observed_cadence": "Beobachtete Taktung",
+    "col_calls_per_run": "Aufrufe pro Lauf",
+    "col_credits_24h": "Credits, 24 h",
+    "col_credits_30d": "Credits, 30 T",
+    "col_runs_30d": "Läufe, 30 T",
+    "col_cache_hits": "Cache-Treffer, 30 T"
   },
   "rwa_issuer": {
     "eyebrow": "Primärquellen",
@@ -3824,7 +3839,9 @@
     "capture_record": "Eine gespeicherte Erfassung von Anbieterwerten zum angegebenen Erfassungszeitpunkt. Beim Lesen wurde kein neuer Anbieteraufruf ausgelöst, und sie ist keine Ablesung des aktuellen Markts.",
     "news_curated": "Meldungen, die innerhalb ihres Prüfzeitraums automatisiert ausgewählt und zusammengefasst wurden. Eine Zusammenfassung ist nicht der Quellartikel und keine geprüfte Aussage.",
     "news_stored": "Meldungen aus gefolgten und globalen Quellen, nach Regeln gebündelt und sortiert. Eine Sortierung ist kein Urteil über die Richtigkeit.",
-    "signals_stored": "Signale, die aus gespeicherten Quellen erzeugt und beim Lesen dieser Ansicht für dich sortiert wurden. Ein Signal ist ein Rechercheanstoß, keine Empfehlung."
+    "signals_stored": "Signale, die aus gespeicherten Quellen erzeugt und beim Lesen dieser Ansicht für dich sortiert wurden. Ein Signal ist ein Rechercheanstoß, keine Empfehlung.",
+    "execution_quote": "Ein Routing-Angebot zu seinem Angebotszeitpunkt, dazu On-Chain-Pool-Kontext. Keine Ausführung, die jemand erhalten hat, und keine Handelsempfehlung.",
+    "exchange_signal": "Eine Einordnung über die Ticker der abgedeckten zentralen Börsen zu deren gemeldetem Zeitpunkt. Kein Preis an einer einzelnen Börse und keine Empfehlung."
   },
   "receipt_state": {
     "provider": "Anbieter",
@@ -3980,5 +3997,31 @@
     "retry": "Markthistorie erneut laden",
     "load_more": "Weitere öffentliche Marktereignisse laden",
     "range_limited": "Die öffentliche Ereignishistorie ist auf die letzten 90 Tage dieses Zeitraums begrenzt, abhängig von der Aufbewahrung der Quelle."
+  },
+  "receipt_cost": {
+    "calls_one": "{{count}} Anbieteraufruf",
+    "calls_other": "{{count}} Anbieteraufrufe",
+    "credits_one": "{{count}} Credit",
+    "credits_other": "{{count}} Credits",
+    "credits_not_reported": "Credits nicht gemeldet",
+    "live": "live",
+    "no_call": "Kein Anbieteraufruf",
+    "from_cache": "aus dem gemeinsamen Cache beantwortet",
+    "shared": "Gemeinsame Erfassung, keine Anbieterkosten pro Leser",
+    "captured_at": "erfasst {{date}}",
+    "run_calls_one": "der Erfassungslauf machte {{count}} Aufruf an diesen Endpunkt",
+    "run_calls_other": "der Erfassungslauf machte {{count}} Aufrufe an diesen Endpunkt",
+    "failed": "ein gespeicherter Fehlschlag hat diesen Aufruf beantwortet",
+    "answered_live": "Ein Anbieteraufruf hat diesen Aufruf beantwortet"
+  },
+  "figure_source": {
+    "line": "Quelle: {{source}}",
+    "observed": "beobachtet {{date}}",
+    "captured": "erfasst {{date}}",
+    "no_time": "kein Beobachtungszeitpunkt gemeldet",
+    "unknown": "Die Quelle dieser Zahl wurde nicht gemeldet.",
+    "our_calculation": "Unsere Berechnung aus {{inputs}}",
+    "recorded_inputs": "bereits aufgezeichneten Zahlen",
+    "computed": "berechnet {{date}}"
   }
 }

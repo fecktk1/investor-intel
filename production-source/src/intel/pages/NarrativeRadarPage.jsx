@@ -13,6 +13,7 @@ import {
 import { NARRATIVE_TABS, matchesTab } from '../lib/narrative-ui'
 import NarrativeCard from '../components/NarrativeCard'
 import NarrativeSummaryRow from '../components/NarrativeSummaryRow'
+import FigureSourceLine from '../components/FigureSourceLine'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
 import RelevantSignals from '../components/RelevantSignals'
@@ -91,6 +92,13 @@ function NarrativeWorkspace() {
   }, [data.narratives, tab, chain, category])
   const totalCount = data.count ?? data.narratives.length
   const followedCount = data.narratives.filter((n) => n.is_followed).length
+  // The newest scoring run behind the cards on screen. `scored_at` already rides
+  // on every row of the narrative feed, so the source line reads no extra data.
+  // Null when no row reported one, and the line then says so rather than guessing.
+  const newestScoredAt = useMemo(() => {
+    const stamps = filtered.map((n) => Date.parse(String(n.scored_at ?? ''))).filter(Number.isFinite)
+    return stamps.length ? new Date(Math.max(...stamps)).toISOString() : null
+  }, [filtered])
 
   return (
     <IntelPageShell>
@@ -170,6 +178,16 @@ function NarrativeWorkspace() {
           {/* First card's follow button carries the tutorial anchor. */}
           {filtered.map((n, i) => <NarrativeCard key={n.slug} n={n} onOpen={onOpen} onFollow={onFollow} busy={followBusy === n.slug} followAnchor={i === 0 ? 'intel-narratives.follow-button' : undefined} />)}
         </div>
+      )}
+
+      {/* Narrative scores are ours, not a provider reading, so the line says so and
+          names the newest scoring run behind the cards above. */}
+      {tab !== 'custom' && !loading && filtered.length > 0 && (
+        <FigureSourceLine
+          ourCalculation
+          inputs={t('narratives.score_inputs', { defaultValue: 'recorded market, on-chain and social signals' })}
+          capturedAt={newestScoredAt}
+        />
       )}
 
       <RelevantSignals title={t('narratives.relevant_signals', { defaultValue: 'Signals relevant to you' })} seeAllHref="/intel" />

@@ -235,3 +235,43 @@ Deno.test('apply: a failed cron step is reported, never reported as success', as
   assertEquals(result.cron, null)
   assert(String(result.cronError).includes('permission denied'))
 })
+
+Deno.test('read: the per-lane cost read is passed through, and a failure degrades only that table', async () => {
+  const LANES = {
+    generatedAt: '2026-10-01T09:00:00Z', provider: 'coinmarketcap', windowDays: 30,
+    lanes: [{ lane: 'intel-capture-rwa', jobName: null, observedCadenceSeconds: 3600, runs30d: 130, callsPerRun: 3.77, calls24h: 96, credits24h: 96, calls30d: 490, credits30d: 490, liveCalls30d: 490, cacheHits30d: 290, newestAt: '2026-10-01T08:07:05Z' }],
+    scanned: 33455, scanLimit: 400000, truncated: false,
+  }
+  const db = healthyDb()
+  ;(db as any).rpcs = undefined
+  // The healthy mock answers every RPC from one map, so drive the lane RPC by name.
+  const body = await readDataBudget({
+    ...db,
+    rpc(name: string, args: unknown) {
+      ;(db as any).rpcCalls.push({ name, args })
+      if (name === 'intel_data_budget_lane_cost') return Promise.resolve({ data: LANES, error: null })
+      return (db as any).__rpc ? (db as any).__rpc(name, args) : Promise.resolve({ data: null, error: null })
+    },
+  }, NOW) as Record<string, any>
+  assertEquals(body.laneCost.lanes[0].lane, 'intel-capture-rwa')
+  assertEquals(body.laneCost.lanes[0].credits24h, 96)
+  assertEquals(body.laneCost.truncated, false)
+  const called = (db as any).rpcCalls.find((c: any) => c.name === 'intel_data_budget_lane_cost')
+  assertEquals(called.args, { p_provider: 'coinmarketcap', p_top: 25 })
+  assert(body.ok === true)
+})
+
+Deno.test('read: a failed per-lane cost read is null and names itself, and never a zero', async () => {
+  const db = healthyDb()
+  const body = await readDataBudget({
+    ...db,
+    rpc(name: string, args: unknown) {
+      ;(db as any).rpcCalls.push({ name, args })
+      if (name === 'intel_data_budget_lane_cost') return Promise.resolve({ data: null, error: { message: 'boom' } })
+      return Promise.resolve({ data: null, error: null })
+    },
+  }, NOW) as Record<string, any>
+  assertEquals(body.laneCost, null, 'a failed read is null, never an empty lane list that reads as no spend')
+  assert(body.degraded.map((d: any) => `${d.part}:${d.reason}`).includes('laneCost:lane_cost_unavailable'))
+  assertEquals(body.ok, true, 'every other figure on the page still renders')
+})

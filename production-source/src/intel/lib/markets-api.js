@@ -305,15 +305,18 @@ export async function loadMarketContextBySymbols(supabase, symbols = []) {
   if (!up.length) return {}
   try {
     const [{ data: sigs }, { data: tkrs }] = await Promise.all([
-      supabase.from('exchange_latest_market_signals').select('normalized_symbol, direction, strength, confidence, title, summary, why_it_matters, provider_count, confirming_providers').in('normalized_symbol', up),
-      supabase.from('exchange_latest_tickers').select('normalized_symbol, provider_symbol, price_change_pct_24h, volume_quote_24h, spread_pct').in('normalized_symbol', up),
+      // `as_of` is ADDITIVE on both selects: it is what the venue reported the row
+      // at, so a caller can print the observation time next to the figure instead
+      // of a number with no clock. No existing field changes.
+      supabase.from('exchange_latest_market_signals').select('normalized_symbol, direction, strength, confidence, title, summary, why_it_matters, provider_count, confirming_providers, as_of').in('normalized_symbol', up),
+      supabase.from('exchange_latest_tickers').select('normalized_symbol, provider, provider_symbol, price_change_pct_24h, volume_quote_24h, spread_pct, as_of').in('normalized_symbol', up),
     ])
     const bestT = {}
     for (const t of (tkrs || [])) { const k = String(t.normalized_symbol).toUpperCase(); if (!bestT[k] || (t.volume_quote_24h || 0) > (bestT[k].volume_quote_24h || 0)) bestT[k] = t }
     const out = {}
     for (const s of (sigs || [])) {
       const k = String(s.normalized_symbol).toUpperCase(); const t = bestT[k]; if (!t) continue
-      out[k] = { direction: s.direction, strength: s.strength, confidence: s.confidence, title: s.title, summary: s.summary, whyItMatters: s.why_it_matters, providerCount: s.provider_count, confirmingProviders: s.confirming_providers, source: 'exchange-market', rawMetrics: { pair: t.provider_symbol, priceChangePercent24h: t.price_change_pct_24h, quoteVolume24h: t.volume_quote_24h, spreadPercent: t.spread_pct } }
+      out[k] = { direction: s.direction, strength: s.strength, confidence: s.confidence, title: s.title, summary: s.summary, whyItMatters: s.why_it_matters, providerCount: s.provider_count, confirmingProviders: s.confirming_providers, source: 'exchange-market', observedAt: s.as_of || null, venue: t.provider || null, venueObservedAt: t.as_of || null, rawMetrics: { pair: t.provider_symbol, priceChangePercent24h: t.price_change_pct_24h, quoteVolume24h: t.volume_quote_24h, spreadPercent: t.spread_pct } }
     }
     return out
   } catch { return {} }
