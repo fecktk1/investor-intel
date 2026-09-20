@@ -37,6 +37,10 @@ export const CAPTURE_VIEWS = [
   // holder concentration and transfer restrictions
   // (capture-rwa-issuer-read.ts, RWA_ISSUER_CAPTURE_VIEWS).
   'rwa_issuer_legitimacy',
+  // Tokenised-asset on-chain depth: the ranked board for /intel/structure and
+  // the single-token block on the asset page
+  // (capture-rwa-depth-read.ts, RWA_DEPTH_CAPTURE_VIEWS).
+  'rwa_depth', 'rwa_token_depth',
 ]
 
 let rememberedClient = null

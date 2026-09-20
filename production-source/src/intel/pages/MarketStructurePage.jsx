@@ -7,6 +7,7 @@ import RankMap from '../components/RankMap'
 import RwaUniverse from '../components/RwaUniverse'
 import RwaIssuerLegitimacy from '../components/RwaIssuerLegitimacy'
 import RwaYieldProvenance from '../components/RwaYieldProvenance'
+import RwaDepth from '../components/RwaDepth'
 import IndexConstituents from '../components/IndexConstituents'
 import LiquidationHeat from '../components/LiquidationHeat'
 import LiquidationClock from '../components/LiquidationClock'
@@ -41,7 +42,7 @@ function topProviderIds(payload, max = TOP_ASSETS) {
 }
 
 // The capture lanes whose newest run the receipt drawer describes.
-const CAPTURE_RECEIPT_LANES = ['rank', 'rwa', 'index', 'liquidations', 'exchange_reserves', 'venue_share']
+const CAPTURE_RECEIPT_LANES = ['rank', 'rwa', 'rwa_depth', 'index', 'liquidations', 'exchange_reserves', 'venue_share']
 
 export default function MarketStructurePage() {
   const { t } = useTranslation('intel', { useSuspense: false })
@@ -69,6 +70,11 @@ export default function MarketStructurePage() {
           own their own read, so neither can blank the other. */}
       <RwaIssuerLegitimacy />
       <RwaYieldProvenance />
+      {/* Then exitability. Whose instrument it is and what it yields are both
+          moot if a holder cannot get out of it, and this is the one figure on
+          the page read from on-chain pools rather than from a register. It owns
+          its own read like every other panel here. */}
+      <RwaDepth />
       <IndexConstituents />
       <LiquidationHeat ids={liquidationIds} />
       <LiquidationClock ids={liquidationIds} />
