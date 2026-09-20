@@ -93,6 +93,26 @@ const OURS=(store:string):SourceRef=>({provider:'investor_intel',endpoint_family
  * get, and the note says how many points the series really had. */
 const SERIES_POINT_CAP=60
 
+/** How many points an answer carrying SEVERAL series may add up to.
+ *
+ * A per-series cap alone does not bound an ANSWER. rwa_universe returns one
+ * series per asset type, so a 60-point cap became 7 x 60 = 420 points: measured
+ * against production after the first fix, 180 KB, down from 520 KB but still the
+ * largest thing this server can hand back, and growing every time a new asset
+ * type starts being captured. A shared budget is what actually bounds it: an
+ * eighth type makes each series shorter rather than making the answer bigger.
+ *
+ * The floor keeps a small number of types readable. With seven types this works
+ * out at 25 points each, which over a 30 day window is about one a day. */
+const SERIES_TOTAL_CAP=180
+const SERIES_MIN_PER_GROUP=12
+
+/** The per-series allowance when an answer carries `groups` of them. */
+function perGroupCap(groups:number):number {
+ if(groups<=1)return SERIES_POINT_CAP
+ return Math.max(SERIES_MIN_PER_GROUP,Math.min(SERIES_POINT_CAP,Math.floor(SERIES_TOTAL_CAP/groups)))
+}
+
 /** Even-stride downsample, first and last observation always kept.
  *
  * Deliberately a copy of the shape capture-read.ts uses rather than a call into
@@ -380,10 +400,13 @@ async function rwaUniverse(ctx:ToolContext,args:Record<string,unknown>):Promise<
  // cap is applied per type: seven types at the read module's 200 points came back
  // as 520 KB, which no conversation can hold.
  const rawSeries=(result.series as Array<Record<string,unknown>>|undefined)??[]
+ // The allowance is shared across the types, not granted to each of them, so the
+ // answer stays the same size when a new asset type starts being captured.
+ const cap=perGroupCap(rawSeries.length)
  let capturedPoints=0,returnedPoints=0
  const series=rawSeries.map(entry=>{
   const points=Array.isArray(entry.points)?entry.points as unknown[]:[]
-  const kept=trimSeries(points)
+  const kept=trimSeries(points,cap)
   capturedPoints+=points.length;returnedPoints+=kept.length
   return {...entry,points:kept}
  })
@@ -398,7 +421,7 @@ async function rwaUniverse(ctx:ToolContext,args:Record<string,unknown>):Promise<
   note:notes(emptyNote(types.length,result.asOf,result.reason,'the RWA universe'),trimNote(returnedPoints,capturedPoints,'per-type series')),
  },{
   days:result.days,per_type:trimmed,series,asset_types:types,
-  series_points:{returned:returnedPoints,captured:capturedPoints,per_type_cap:SERIES_POINT_CAP},
+  series_points:{returned:returnedPoints,captured:capturedPoints,per_type_cap:cap,total_cap:SERIES_TOTAL_CAP},
  })
 }
 
