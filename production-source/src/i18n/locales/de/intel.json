@@ -2853,7 +2853,10 @@
       "unreviewed": "ungeprüft",
       "volume": "Volumen",
       "vs_benchmark": "vs. Vergleichsmaßstab",
-      "weaken": "schwächend"
+      "weaken": "schwächend",
+      "inputs": "der Baseline von dem Moment, in dem du diese These geschrieben hast, und einer jetzt genommenen Ablesung",
+      "baseline_at": "Gemessen gegen die Baseline, erfasst {{date}}.",
+      "baseline_undated": "Die Baseline, gegen die hier gemessen wird, hat keinen Erfassungszeitpunkt gemeldet."
     },
     "draft_condition": "Entwurf: Füge vor der Aktivierung eine Widerlegungsbedingung hinzu.",
     "draft_step": "These entwerfen",

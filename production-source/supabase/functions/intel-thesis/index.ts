@@ -247,6 +247,14 @@ Deno.serve(async (req) => {
         volume_pct: volPct,
         evidence_change,
         review_status: thesis.needs_user_review ? 'due' : 'ok',
+        // ADDITIVE, and nothing above changes. Every percentage here is OUR
+        // arithmetic over two readings: the baseline snapshot captured at
+        // `baseline_at`, and a live pack assembled at `computed_at`. The card has to
+        // be able to say that and name both clocks, or it shows a number with no
+        // author and no age. A baseline with no clock stays null and the card says
+        // so in words rather than implying the figure is current.
+        baseline_at: (baseline as Any)?.captured_at ?? null,
+        computed_at: new Date().toISOString(),
       })
     }
 

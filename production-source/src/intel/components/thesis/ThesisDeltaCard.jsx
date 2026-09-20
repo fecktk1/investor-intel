@@ -1,6 +1,7 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { TrendingUp } from 'lucide-react'
+import FigureSourceLine from '../FigureSourceLine'
 
 // "Since you created this thesis" — price AND evidence change, not just price.
 const pct = (v) => v == null ? '—' : `${v >= 0 ? '+' : ''}${Number(v).toFixed(1)}%`
@@ -28,6 +29,21 @@ export default function ThesisDeltaCard({ delta, loading, error }) {
           <div key={k}><dt className="text-[11px] text-[var(--fg-4)]">{label}</dt><dd className={`text-sm font-semibold ${cls(v)}`}>{pct(v)}</dd></div>
         ))}
       </dl>
+      {/* Every percentage above is OUR arithmetic over two readings, not a provider
+          figure, so the line says so and names both clocks. `baseline_at` and
+          `computed_at` ride on the delta response; a response that predates them
+          falls back to the thesis creation time, which is when the baseline was
+          taken, and to saying no clock was reported. */}
+      <FigureSourceLine
+        ourCalculation
+        inputs={t('journal.delta.inputs', { defaultValue: 'the baseline captured when you wrote this thesis and a reading taken now' })}
+        capturedAt={delta.computed_at || null}
+      />
+      <p className="intel-analysis-caption">
+        {delta.baseline_at || delta.created_at
+          ? t('journal.delta.baseline_at', { date: new Date(delta.baseline_at || delta.created_at).toLocaleString(), defaultValue: 'Measured against the baseline captured {{date}}.' })
+          : t('journal.delta.baseline_undated', { defaultValue: 'The baseline this is measured against reported no capture time.' })}
+      </p>
       <div className="flex flex-wrap gap-2 text-[11px] pt-1 border-t border-[var(--border-default)]">
         <span>{ec.new_supporting_evidence_count ?? '—'} {t('journal.delta.support', { defaultValue: 'support' })}</span>
         <span>{ec.new_weakening_evidence_count ?? '—'} {t('journal.delta.weaken', { defaultValue: 'weaken' })}</span>

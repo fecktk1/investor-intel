@@ -2853,7 +2853,10 @@
       "unreviewed": "non riviste",
       "volume": "Volume",
       "vs_benchmark": "rispetto al benchmark",
-      "weaken": "che indeboliscono"
+      "weaken": "che indeboliscono",
+      "inputs": "la baseline catturata quando hai scritto questa tesi e una lettura presa adesso",
+      "baseline_at": "Misurato rispetto alla baseline catturata {{date}}.",
+      "baseline_undated": "La baseline su cui si misura non ha riportato un orario di cattura."
     },
     "draft_condition": "Bozza: aggiungi una condizione di invalidazione prima dell’attivazione.",
     "draft_step": "Scrivi la bozza della tua tesi",

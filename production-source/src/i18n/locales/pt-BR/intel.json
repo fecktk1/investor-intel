@@ -2853,7 +2853,10 @@
       "unreviewed": "não revisadas",
       "volume": "Volume negociado",
       "vs_benchmark": "vs. referência",
-      "weaken": "enfraquecem"
+      "weaken": "enfraquecem",
+      "inputs": "a linha de base capturada quando você escreveu esta tese e uma leitura feita agora",
+      "baseline_at": "Medido contra a linha de base capturada em {{date}}.",
+      "baseline_undated": "A linha de base contra a qual isto é medido não informou hora de captura."
     },
     "draft_condition": "Rascunho: adicione uma condição de invalidação antes da ativação.",
     "draft_step": "Redija sua tese",

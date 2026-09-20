@@ -2853,7 +2853,10 @@
       "unreviewed": "sin revisar",
       "volume": "Volumen",
       "vs_benchmark": "vs. índice de referencia",
-      "weaken": "debilitan"
+      "weaken": "debilitan",
+      "inputs": "la línea base capturada cuando escribiste esta tesis y una lectura tomada ahora",
+      "baseline_at": "Medido contra la línea base capturada {{date}}.",
+      "baseline_undated": "La línea base contra la que se mide no reportó hora de captura."
     },
     "draft_condition": "Borrador: añade una condición de invalidación antes de la activación.",
     "draft_step": "Redacta tu tesis",

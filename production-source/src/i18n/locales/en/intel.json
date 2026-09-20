@@ -1004,7 +1004,10 @@
       "unreviewed": "unreviewed",
       "volume": "Volume",
       "vs_benchmark": "vs benchmark",
-      "weaken": "weaken"
+      "weaken": "weaken",
+      "inputs": "the baseline captured when you wrote this thesis and a reading taken now",
+      "baseline_at": "Measured against the baseline captured {{date}}.",
+      "baseline_undated": "The baseline this is measured against reported no capture time."
     },
     "draft_condition": "Draft: add an invalidation condition before activation.",
     "draft_step": "Draft your thesis",

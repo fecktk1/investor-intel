@@ -2853,7 +2853,10 @@
       "unreviewed": "të parishikuara",
       "volume": "Volumi",
       "vs_benchmark": "kundrejt indeksit të krahasimit",
-      "weaken": "dobësuese"
+      "weaken": "dobësuese",
+      "inputs": "bazës së regjistruar kur e shkruajte këtë tezë dhe një leximi të marrë tani",
+      "baseline_at": "Matur kundrejt bazës së regjistruar më {{date}}.",
+      "baseline_undated": "Baza kundrejt së cilës matet nuk raportoi kohë regjistrimi."
     },
     "draft_condition": "Draft: shto një kusht shfuqizimi para aktivizimit.",
     "draft_step": "Harto tezën tënde",

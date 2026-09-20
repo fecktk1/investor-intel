@@ -2853,7 +2853,10 @@
       "unreviewed": "non examinées",
       "volume": "Volume",
       "vs_benchmark": "vs indice de référence",
-      "weaken": "défavorables"
+      "weaken": "défavorables",
+      "inputs": "la référence capturée au moment où vous avez écrit cette thèse et un relevé pris maintenant",
+      "baseline_at": "Mesuré par rapport à la référence capturée {{date}}.",
+      "baseline_undated": "La référence servant de mesure n’a indiqué aucune heure de capture."
     },
     "draft_condition": "Brouillon : ajoutez une condition d’invalidation avant l’activation.",
     "draft_step": "Rédigez votre thèse",

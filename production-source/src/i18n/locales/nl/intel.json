@@ -2853,7 +2853,10 @@
       "unreviewed": "niet beoordeeld",
       "volume": "Handelsvolume",
       "vs_benchmark": "t.o.v. vergelijkingsmaatstaf",
-      "weaken": "verzwakkend"
+      "weaken": "verzwakkend",
+      "inputs": "de basismeting die is vastgelegd toen je deze these schreef en een meting van nu",
+      "baseline_at": "Gemeten tegen de basismeting die is vastgelegd op {{date}}.",
+      "baseline_undated": "De basismeting waartegen dit wordt gemeten rapporteerde geen vastlegtijd."
     },
     "draft_condition": "Concept: voeg vóór activering een weerleggingsvoorwaarde toe.",
     "draft_step": "Stel je these op",
