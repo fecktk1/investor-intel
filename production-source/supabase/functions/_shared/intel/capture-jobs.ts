@@ -217,7 +217,17 @@ export async function captureIndexConstituents(db: any, ctx: MarketAssetsContext
 
 // ─── 3. Tokenised real-world asset universe (hourly) ──────────────────────────
 /** Issuer identity lives on the token relationships of an RWA record; a record
- * with no reported issuer contributes no issuer, never a synthetic one. */
+ * with no reported issuer contributes no issuer, never a synthetic one.
+ *
+ * VERIFIED 2026-09-20 AGAINST THE REAL CACHED PAYLOAD: the list endpoint's rows
+ * carry only name, slug, quotes, rwa_id, symbol, rwa_rank, asset_type,
+ * has_tokens, last_updated, tokenized_market_cap, tokenized_volume_24h and
+ * average_tokenized_price. There is no `tokens[]`, no `issuers[]` and no
+ * `issuer_id`, so this function correctly returns nothing for every list row and
+ * `issuer_count` is 0 on every stored row. It is kept, and still summed, because
+ * `rwaQuotes` and `rwaInfo` DO return token-to-issuer relationships and the same
+ * aggregate is reused there. The surface no longer shows the issuer column,
+ * because a column that can only ever read 0 states something false. */
 function rwaIssuerIds(row: any): string[] {
   const ids = new Set<string>()
   for (const token of (Array.isArray(row?.tokens) ? row.tokens : [])) { const id = text(token?.issuer_id, 100); if (id) ids.add(id) }
@@ -226,17 +236,42 @@ function rwaIssuerIds(row: any): string[] {
   return [...ids]
 }
 
-export function rwaAggregate(rows: any[]): { assetCount: number; issuers: Set<string>; value: number | null; volume: number | null; changePct: number | null; topAssets: Record<string, unknown>[] } {
+/** Tokenised 24h volume, as the provider actually names it.
+ *
+ * `/v5/real-world-assets/assets/list` publishes `tokenized_volume_24h` per row
+ * (and repeats it inside each `quotes[]` entry). It does NOT publish
+ * `volume_24h` or `total_volume_24h`, so the earlier reads of those names summed
+ * nothing and every stored `volume_24h_usd` was null. The old names are kept as
+ * trailing fallbacks: they cost nothing and would be used if the provider ever
+ * renames the field back. */
+function rwaVolume24h(row: any, quote: any): number | null {
+  return num(quote?.tokenized_volume_24h ?? row?.tokenized_volume_24h
+    ?? quote?.volume_24h ?? row?.volume_24h ?? quote?.total_volume_24h ?? row?.total_volume_24h)
+}
+
+export function rwaAggregate(rows: any[]): {
+  assetCount: number; assetsWithTokens: number; issuers: Set<string>
+  value: number | null; volume: number | null; changePct: number | null; topAssets: Record<string, unknown>[]
+} {
   const issuers = new Set<string>()
-  let value = 0, volume = 0, weighted = 0, weightBase = 0, valueSeen = false, volumeSeen = false
+  let value = 0, volume = 0, weighted = 0, weightBase = 0, valueSeen = false, volumeSeen = false, withTokens = 0
   const assets: { rwa_id: number | null; symbol: string | null; name: string | null; value: number | null }[] = []
   for (const row of rows) {
     const quote = row?.quote ?? {}
     const assetValue = num(quote.tokenized_market_cap ?? row?.tokenized_market_cap ?? quote.total_market_value ?? row?.total_market_value ?? quote.market_cap ?? row?.market_cap)
-    const assetVolume = num(quote.volume_24h ?? row?.volume_24h ?? quote.total_volume_24h ?? row?.total_volume_24h)
+    const assetVolume = rwaVolume24h(row, quote)
+    // The list endpoint publishes no 24h change field at all, so nothing here
+    // derives one. The change of tokenised value per type is computed in the
+    // READ layer from our own stored snapshots and labelled as our calculation.
+    // These names stay as a fallback for the day the provider does publish one.
     const change = num(quote.percent_change_24h ?? row?.percent_change_24h ?? quote.price_change_24h)
     if (assetValue != null && assetValue >= 0) { value += assetValue; valueSeen = true }
     if (assetVolume != null && assetVolume >= 0) { volume += assetVolume; volumeSeen = true }
+    // `has_tokens` is the provider's own boolean for "this underlying has at
+    // least one token representation". It is the only truthful per-row signal on
+    // this endpoint about token presence, and it replaces the issuer count that
+    // this payload can never fill.
+    if (row?.has_tokens === true) withTokens += 1
     // A value-weighted change needs both a weight and a change; assets missing
     // either are left out of the average rather than counted as unchanged.
     if (assetValue != null && assetValue > 0 && change != null) { weighted += change * assetValue; weightBase += assetValue }
@@ -245,7 +280,7 @@ export function rwaAggregate(rows: any[]): { assetCount: number; issuers: Set<st
   }
   const topAssets = assets.filter((a) => a.value != null).sort((a, b) => (b.value as number) - (a.value as number)).slice(0, 10)
   return {
-    assetCount: rows.length, issuers,
+    assetCount: rows.length, assetsWithTokens: withTokens, issuers,
     value: valueSeen ? value : null, volume: volumeSeen ? volume : null,
     changePct: weightBase > 0 ? weighted / weightBase : null,
     topAssets,
@@ -261,23 +296,41 @@ export async function captureRwaUniverse(db: any, ctx: MarketAssetsContext, now 
     const rows: Record<string, unknown>[] = []
     const allIssuers = new Set<string>()
     let credits = 0, reason: string | null = null
-    let allAssets = 0, allValue = 0, allVolume = 0, allWeighted = 0, allWeightBase = 0, allValueSeen = false, allVolumeSeen = false
+    let allAssets = 0, allScanned = 0, allWithTokens = 0
+    let allValue = 0, allVolume = 0, allWeighted = 0, allWeightBase = 0, allValueSeen = false, allVolumeSeen = false
     const allTop: Record<string, unknown>[] = []
     for (const assetType of RWA_ASSET_TYPES) {
       const result = await deps.request('rwaList', { asset_type: assetType, limit: 250, start: 1 }, ctx).catch(() => null)
       credits += 1
       if (!result?.payload) { reason = reason || result?.reason || 'provider_unavailable'; continue }
-      const page = cmcRows('rwaList', result.payload).rows
+      const { rows: page, total } = cmcRows('rwaList', result.payload)
       const summary = rwaAggregate(page)
+      // THE TRUE COUNT COMES FROM THE SAME RESPONSE, NOT FROM A SECOND ENDPOINT.
+      //
+      // `limit` is clamped to 250 for this capability and the provider paginates
+      // (`has_more`), so the page length is a page length, not a universe size:
+      // before this, `stock` and `etf` both read exactly 250 and `all` read 504.
+      // `data.total_size` on the very same response carries the real per-type
+      // count (probed 2026-09-20: stock 4812, etf 3126, commodity 4, and 0 for
+      // currency, government_security and real_estate). That is why the
+      // zero-credit `rwaMap` is NOT called here: it would add HTTP calls for a
+      // number this payload already states. `assets_scanned` records how many
+      // rows the value, volume and token counts were actually summed over, so no
+      // figure can pass itself off as covering the whole type.
+      const scanned = summary.assetCount
+      const assetCount = total != null && total >= scanned ? total : scanned
+      allAssets += assetCount
+      allScanned += scanned
+      allWithTokens += summary.assetsWithTokens
       for (const id of summary.issuers) allIssuers.add(id)
-      allAssets += summary.assetCount
       if (summary.value != null) { allValue += summary.value; allValueSeen = true }
       if (summary.volume != null) { allVolume += summary.volume; allVolumeSeen = true }
       if (summary.value != null && summary.value > 0 && summary.changePct != null) { allWeighted += summary.changePct * summary.value; allWeightBase += summary.value }
       allTop.push(...summary.topAssets)
       rows.push({
         provider: CAPTURE_PROVIDER, asset_type: assetType, captured_at: capturedAt,
-        asset_count: summary.assetCount, issuer_count: summary.issuers.size,
+        asset_count: assetCount, assets_scanned: scanned, assets_with_tokens: summary.assetsWithTokens,
+        issuer_count: summary.issuers.size,
         total_market_value_usd: summary.value, volume_24h_usd: summary.volume,
         change_24h_pct: summary.changePct, top_assets: summary.topAssets,
       })
@@ -286,7 +339,8 @@ export async function captureRwaUniverse(db: any, ctx: MarketAssetsContext, now 
     // The 'all' row is derived from the pages already fetched — never a seventh call.
     rows.push({
       provider: CAPTURE_PROVIDER, asset_type: 'all', captured_at: capturedAt,
-      asset_count: allAssets, issuer_count: allIssuers.size,
+      asset_count: allAssets, assets_scanned: allScanned, assets_with_tokens: allWithTokens,
+      issuer_count: allIssuers.size,
       total_market_value_usd: allValueSeen ? allValue : null,
       volume_24h_usd: allVolumeSeen ? allVolume : null,
       change_24h_pct: allWeightBase > 0 ? allWeighted / allWeightBase : null,

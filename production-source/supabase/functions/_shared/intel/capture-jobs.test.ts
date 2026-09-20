@@ -171,6 +171,113 @@ Deno.test('RWA aggregate leaves an asset without a reported change out of the we
   eq(summary.value, 200); eq(summary.changePct, 10); eq(summary.issuers.size, 0)
 })
 
+/** A row shaped exactly like the live `/v5/real-world-assets/assets/list` payload,
+ * read out of `market_data_response_cache` on 2026-09-20. THESE ARE THE ONLY
+ * FIELDS THE ENDPOINT SENDS: no `tokens[]`, no `issuers[]`, no `issuer_id`, no
+ * `volume_24h` and no `percent_change_24h`. The fixtures above deliberately keep
+ * the friendlier invented shape so the fallback field names stay covered; this one
+ * is the shape production actually has to survive. */
+const liveRwaRow = (fields: {
+  rwa_id: number; symbol: string; name: string; asset_type: string; rwa_rank: number
+  has_tokens: boolean; tokenized_market_cap: number | null; tokenized_volume_24h: number | null
+}) => ({
+  name: fields.name, slug: fields.name.toLowerCase().replaceAll(' ', '-'),
+  rwa_id: fields.rwa_id, symbol: fields.symbol, rwa_rank: fields.rwa_rank,
+  asset_type: fields.asset_type, has_tokens: fields.has_tokens,
+  last_updated: minus(600_000),
+  tokenized_market_cap: fields.tokenized_market_cap,
+  tokenized_volume_24h: fields.tokenized_volume_24h,
+  average_tokenized_price: fields.tokenized_market_cap == null ? null : 1.06,
+  quotes: [{
+    symbol: 'USD', crypto_id: 2781, last_updated: minus(600_000),
+    tokenized_market_cap: fields.tokenized_market_cap,
+    tokenized_volume_24h: fields.tokenized_volume_24h,
+    average_tokenized_price: fields.tokenized_market_cap == null ? null : 1.06,
+  }],
+})
+
+Deno.test('RWA capture reads the real field names: tokenized volume, has_tokens and total_size', async () => {
+  const pages: Record<string, { rows: any[]; total: number; hasMore: boolean }> = {
+    // Two rows out of a type of 4812, which is the live production ratio.
+    stock: {
+      rows: [
+        liveRwaRow({ rwa_id: 10, symbol: 'NVDAon', name: 'NVIDIA', asset_type: 'stock', rwa_rank: 2, has_tokens: true, tokenized_market_cap: 100, tokenized_volume_24h: 5 }),
+        liveRwaRow({ rwa_id: 11, symbol: 'TSLAon', name: 'Tesla', asset_type: 'stock', rwa_rank: 3, has_tokens: false, tokenized_market_cap: 50, tokenized_volume_24h: 2 }),
+      ],
+      total: 4812, hasMore: true,
+    },
+    commodity: {
+      rows: [liveRwaRow({ rwa_id: 1, symbol: 'PAXG', name: 'PAX Gold', asset_type: 'commodity', rwa_rank: 1, has_tokens: true, tokenized_market_cap: 25, tokenized_volume_24h: 1 })],
+      total: 4, hasMore: false,
+    },
+    // The three types CoinMarketCap really reports as holding nothing.
+    currency: { rows: [], total: 0, hasMore: false },
+    government_security: { rows: [], total: 0, hasMore: false },
+    real_estate: { rows: [], total: 0, hasMore: false },
+  }
+  const writes: Record<string, any[]> = {}
+  const request = async (_name: string, params: any) => {
+    const page = pages[params.asset_type] || { rows: [], total: 0, hasMore: false }
+    return { payload: { data: { rwa_assets: page.rows, total_size: page.total, has_more: page.hasMore } } }
+  }
+  const result = await captureRwaUniverse(fakeDb({}, writes), {}, NOW, { request, policy: [] })
+  eq(result.credits, 6)
+  const byType = Object.fromEntries(writes.intel_rwa_universe_snapshots.map((r: any) => [r.asset_type, r]))
+
+  // THE VOLUME FIX. `tokenized_volume_24h` is the name the provider uses; it used
+  // to be read as `volume_24h` and so summed to null on every row in production.
+  eq(byType.stock.volume_24h_usd, 7)
+  eq(byType.commodity.volume_24h_usd, 1)
+  eq(byType.all.volume_24h_usd, 8)
+
+  // THE COUNT FIX. The provider's own total for the type rather than the page
+  // length, with the scan width beside it so the money figures cannot pass
+  // themselves off as covering all 4812 rows.
+  eq(byType.stock.asset_count, 4812)
+  eq(byType.stock.assets_scanned, 2)
+  eq(byType.stock.assets_with_tokens, 1)
+  eq(byType.commodity.asset_count, 4)
+  eq(byType.commodity.assets_scanned, 1)
+  eq(byType.commodity.assets_with_tokens, 1)
+  eq(byType.all.asset_count, 4816)
+  eq(byType.all.assets_scanned, 3)
+  eq(byType.all.assets_with_tokens, 2)
+
+  // An empty type is a stored row reporting zero, never a missing row: the
+  // surface needs it to say the provider lists none of these.
+  eq(byType.currency.asset_count, 0)
+  eq(byType.government_security.asset_count, 0)
+  eq(byType.real_estate.asset_count, 0)
+  eq(byType.currency.total_market_value_usd, null)
+
+  // The payload publishes no issuer field and no 24h change, so neither is
+  // invented here. The change is derived in the read layer from our own captures.
+  eq(byType.stock.issuer_count, 0)
+  eq(byType.all.issuer_count, 0)
+  eq(byType.stock.change_24h_pct, null)
+  eq(byType.all.change_24h_pct, null)
+
+  // top_assets is unchanged and still carries only assets with a value.
+  eq(byType.stock.top_assets.length, 2)
+  eq(byType.stock.top_assets[0].symbol, 'NVDAon')
+})
+
+Deno.test('the live payload shape yields no weighted change and a truthful token count', () => {
+  const summary = rwaAggregate([
+    liveRwaRow({ rwa_id: 1, symbol: 'A', name: 'A', asset_type: 'stock', rwa_rank: 1, has_tokens: true, tokenized_market_cap: 10, tokenized_volume_24h: 1 }),
+    liveRwaRow({ rwa_id: 2, symbol: 'B', name: 'B', asset_type: 'stock', rwa_rank: 2, has_tokens: false, tokenized_market_cap: null, tokenized_volume_24h: null }),
+  ])
+  eq(summary.assetCount, 2)
+  eq(summary.assetsWithTokens, 1)
+  eq(summary.value, 10)
+  eq(summary.volume, 1)
+  // No change field exists anywhere in the live shape, so no average is produced.
+  eq(summary.changePct, null)
+  eq(summary.issuers.size, 0)
+  // An asset with no reported value is not a top asset at any rank.
+  eq(summary.topAssets.length, 1)
+})
+
 Deno.test('daily rank capture reads the catalogue and spends no credits', async () => {
   const writes: Record<string, any[]> = {}
   const db = fakeDb({

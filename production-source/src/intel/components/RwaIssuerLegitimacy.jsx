@@ -1,5 +1,6 @@
 import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import TokenAvatar from './TokenAvatar'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable } from '../lib/capture-api'
@@ -186,7 +187,14 @@ export default function RwaIssuerLegitimacy() {
           {/* One block per mapped subject. */}
           {subjects.map(subject => (
             <div key={subject.subject} className="pt-4 border-t border-[var(--border-default)]">
-              <div className="eyebrow">{subject.subjectLabel}</div>
+              {/* The picture is matched on this subject's own contract address,
+                  carried down by the read. Never on the symbol: these are exactly
+                  the tickers that collide, so a symbol match would put another
+                  asset's logo on an issuer identity. */}
+              <div className="eyebrow flex items-center gap-2">
+                <TokenAvatar src={subject.imageUrl} fallbackSrc={subject.imageSourceUrl} symbol={subject.subjectLabel} size="sm" />
+                <span>{subject.subjectLabel}</span>
+              </div>
               {subject.legalFactsWithheld ? (
                 // THE GUARD: an explicitly withdrawn assertion shows no fact
                 // about a legal person until a new review restates it. Time
@@ -342,6 +350,13 @@ export default function RwaIssuerLegitimacy() {
               </ul>
             )}
           </div>
+
+          {/* The figures come from the primary registers named in the intro. The
+              only other source on this board is the token picture, so it gets its
+              own quiet line rather than being folded into the register scope. */}
+          <p className="text-[11px] text-[var(--fg-4)]">
+            {t('rwa_issuer.image_attribution', { defaultValue: 'Token images from our CoinGecko-sourced catalogue, matched on the contract address. A subject with no catalogue row is drawn as initials.' })}
+          </p>
         </>
       )}
     </section>

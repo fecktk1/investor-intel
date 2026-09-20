@@ -175,18 +175,67 @@ export async function readRankMap(db: any, params: { top?: number; weeks?: numbe
 }
 
 // ─── rwa_universe ─────────────────────────────────────────────────────────────
+/** How far either side of exactly 24 hours a comparison point may sit. The lane
+ * captures hourly, so one hour would already be enough; three hours lets a
+ * catch-up gap still produce a figure instead of a dash, and the two instants
+ * actually used travel with the number so the reader can judge it. */
+const RWA_CHANGE_TOLERANCE_MS = 3 * 3_600_000
+
+/** The 24 hour change of tokenised value per type, computed from OUR OWN stored
+ * snapshots and never from a provider field.
+ *
+ * `/v5/real-world-assets/assets/list` publishes no 24h change at all: verified
+ * 2026-09-20 against the cached payload, a row carries tokenized_market_cap,
+ * tokenized_volume_24h and average_tokenized_price and nothing else numeric. The
+ * capture therefore stored null in `change_24h_pct` on every row and the surface
+ * drew a dash. This is our arithmetic on two of our own captures, and it says so:
+ * `source` is `our_snapshots`, with the two instants it used. A type with no
+ * comparable capture about 24 hours back gets a reason, never a zero.
+ *
+ * `points` must be chronological. */
+export function rwaChange24h(points: { capturedAt?: string | null; totalMarketValueUsd?: number | null }[]): {
+  changePct: number | null; source: 'our_snapshots'; reason: string | null
+  fromAt: string | null; toAt: string | null
+} {
+  const usable = points.filter((p) => p?.capturedAt && p?.totalMarketValueUsd != null)
+  const current = usable.at(-1)
+  const none = (reason: string) => ({ changePct: null, source: 'our_snapshots' as const, reason, fromAt: null, toAt: null })
+  if (!current) return none('no_value_captured')
+  const target = Date.parse(String(current.capturedAt)) - 86_400_000
+  if (!Number.isFinite(target)) return none('no_value_captured')
+  let best: typeof current | undefined, bestGap = Infinity
+  for (const candidate of usable) {
+    if (candidate === current) continue
+    const gap = Math.abs(Date.parse(String(candidate.capturedAt)) - target)
+    if (Number.isFinite(gap) && gap <= RWA_CHANGE_TOLERANCE_MS && gap < bestGap) { best = candidate; bestGap = gap }
+  }
+  if (!best) return none('no_comparable_capture_24h_earlier')
+  const from = best.totalMarketValueUsd as number, to = current.totalMarketValueUsd as number
+  // A zero base has no percentage change. Saying so beats dividing by nothing.
+  if (from === 0) return none('previous_value_zero')
+  return {
+    changePct: (to - from) / Math.abs(from) * 100, source: 'our_snapshots', reason: null,
+    fromAt: str(best.capturedAt, 40), toAt: str(current.capturedAt, 40),
+  }
+}
+
 export async function readRwaUniverse(db: any, params: { days?: number } = {}, now: Date | number = Date.now()): Promise<ViewResult> {
   const days = Math.max(1, Math.min(90, Math.trunc(Number(params.days) || 30)))
+  const columns = 'asset_type,captured_at,asset_count,assets_scanned,assets_with_tokens,issuer_count,total_market_value_usd,volume_24h_usd,change_24h_pct'
   const [series, latest] = await Promise.all([
     readRows(() => db.from('intel_rwa_universe_snapshots')
-      .select('asset_type,captured_at,asset_count,issuer_count,total_market_value_usd,volume_24h_usd,change_24h_pct')
+      .select(columns)
       .gte('captured_at', since(now, days)).order('captured_at', { ascending: false }).limit(RWA_CAP)),
     readRows(() => db.from('intel_rwa_universe_snapshots')
-      .select('asset_type,captured_at,asset_count,issuer_count,total_market_value_usd,volume_24h_usd,change_24h_pct,top_assets')
+      .select(`${columns},top_assets`)
       .order('captured_at', { ascending: false }).limit(7)),
   ])
   const point = (row: any) => ({
     capturedAt: str(row?.captured_at, 40), assetCount: num(row?.asset_count), issuerCount: num(row?.issuer_count),
+    // How wide the scan behind the money figures was, and how many of those rows
+    // the provider marked as carrying a token. Null on rows captured before the
+    // columns existed, which the surface reports as unknown rather than as zero.
+    assetsScanned: num(row?.assets_scanned), assetsWithTokens: num(row?.assets_with_tokens),
     totalMarketValueUsd: num(row?.total_market_value_usd), volume24hUsd: num(row?.volume_24h_usd), change24hPct: num(row?.change_24h_pct),
   })
   const byType = new Map<string, any[]>()
@@ -197,7 +246,21 @@ export async function readRwaUniverse(db: any, params: { days?: number } = {}, n
   const latestByType: Record<string, unknown> = {}
   for (const row of latest.rows) {
     const type = str(row?.asset_type, 40); if (!type || latestByType[type]) continue
-    latestByType[type] = { ...point(row), topAssets: Array.isArray(row?.top_assets) ? row.top_assets.slice(0, 10) : [] }
+    const base = point(row)
+    // Our own 24 hour calculation, over the series just read for this type. A
+    // provider figure is still preferred if one ever arrives, and the payload
+    // always names which of the two the number came from.
+    const derived = rwaChange24h(chronological(byType.get(type) || [base]))
+    const fromProvider = base.change24hPct != null
+    latestByType[type] = {
+      ...base,
+      change24hPct: fromProvider ? base.change24hPct : derived.changePct,
+      change24hSource: fromProvider ? 'provider' : derived.source,
+      change24hReason: fromProvider ? null : derived.reason,
+      change24hFromAt: fromProvider ? null : derived.fromAt,
+      change24hToAt: fromProvider ? null : derived.toAt,
+      topAssets: Array.isArray(row?.top_assets) ? row.top_assets.slice(0, 10) : [],
+    }
   }
   const all = [...byType.values()].flat()
   return {

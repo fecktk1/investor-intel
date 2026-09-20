@@ -122,6 +122,12 @@ export function feedRow(nav: Record<string, any> | undefined, snapshot: Record<s
     marketNameSeen: null as string | null,
     marketPriceUsd: null as number | null,
     marketObservedAt: null as string | null,
+    // The fund's logo, carried from the SAME catalogue row the price came from,
+    // so the surface never issues a per-row image query and an image URL is never
+    // built from a ticker. A feed with no mapped catalogue row carries nulls and
+    // the surface draws a monogram, which is the correct answer for it.
+    marketImageUrl: null as string | null,
+    marketImageSourceUrl: null as string | null,
     deviationPct: null as number | null,
     deviationReason: 'market_price_not_mapped' as string | null,
     // Provenance travels with every row.
@@ -211,14 +217,19 @@ export async function readRwaYield(db: any, params: { days?: number } = {}, now:
     .filter((v): v is string => !!v))]
   const marketRead = marketIds.length
     ? await readRows(() => db.from('market_assets')
-        .select('source_provider,provider_id,name,current_price,as_of')
+        // The image columns ride along on the read that already had to happen for
+        // the price. The mirrored copy first, the provider's own URL second; the
+        // surface picks in that order and falls back to a monogram.
+        .select('source_provider,provider_id,name,current_price,as_of,cached_image_url,image_url')
         .eq('source_provider', 'coingecko').eq('in_current_catalog', true)
         .in('provider_id', marketIds).limit(FEED_CAP))
     : { rows: [], reason: null }
   const quoteById = new Map<string, NavQuote>()
+  const imageById = new Map<string, { cached: string | null; source: string | null }>()
   for (const entry of marketRead.rows) {
     const id = str(entry?.provider_id, 200)
     if (!id || quoteById.has(id)) continue
+    imageById.set(id, { cached: str(entry?.cached_image_url, 500), source: str(entry?.image_url, 500) })
     quoteById.set(id, {
       priceUsd: num(entry?.current_price),
       // The catalogue's own as-of, never our read time.
@@ -241,6 +252,9 @@ export async function readRwaYield(db: any, params: { days?: number } = {}, now:
     row.marketNameSeen = quote?.name ?? null
     row.marketPriceUsd = quote?.priceUsd ?? null
     row.marketObservedAt = quote?.observedAt ?? null
+    const image = feed.marketProviderId ? imageById.get(feed.marketProviderId) ?? null : null
+    row.marketImageUrl = image?.cached ?? null
+    row.marketImageSourceUrl = image?.source ?? null
     row.deviationPct = deviation.deviationPct
     row.deviationReason = deviation.reason
   }

@@ -1,7 +1,7 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   readCaptureView, readRegime, readRegimeAt, readRankMap, readRwaUniverse, readIndexConstituents, readLiquidations, readAttention, readBreadth,
-  samplePoints, CAPTURE_VIEWS,
+  samplePoints, rwaChange24h, CAPTURE_VIEWS,
 } from './capture-read.ts'
 
 const NOW = new Date(Math.floor((Date.now() - 7 * 86_400_000) / 3_600_000) * 3_600_000)
@@ -190,6 +190,93 @@ Deno.test('rwa_universe returns the latest row per type with a per-type series',
   eq(series[0].points[0].capturedAt, hoursAgo(47))
   eq(result.asOf, hoursAgo(0))
   eq(result.coverage.count, 144)
+  // A stored provider figure is still preferred, and the payload names it.
+  eq((result.latest as any).stock.change24hSource, 'provider')
+  eq((result.latest as any).stock.change24hPct, 1.5)
+})
+
+Deno.test('the 24h change of tokenised value is derived from our own snapshots and labelled as ours', async () => {
+  // The real production numbers for 2026-09-20 14:00 UTC against 2026-09-19
+  // 14:00 UTC, with the provider column null exactly as it is in the table.
+  const rows: any[] = []
+  const values: Record<string, number[]> = {
+    all: [6_047_920_375.241231, 6_038_272_304.216032],
+    stock: [1_335_235_928.3587286, 1_331_821_155.2348022],
+    // A type the provider lists nothing for: no value, so no change either.
+    currency: [],
+  }
+  for (const [assetType, [previous, current]] of Object.entries(values)) {
+    for (let hour = 0; hour < 25; hour++) {
+      rows.push({
+        asset_type: assetType, captured_at: hoursAgo(hour),
+        asset_count: assetType === 'currency' ? 0 : 4812,
+        assets_scanned: assetType === 'currency' ? 0 : 250,
+        assets_with_tokens: assetType === 'currency' ? 0 : 193,
+        issuer_count: 0,
+        total_market_value_usd: assetType === 'currency' ? null : hour === 0 ? current : hour >= 24 ? previous : current,
+        volume_24h_usd: assetType === 'currency' ? null : 12_345,
+        change_24h_pct: null,
+        top_assets: [],
+      })
+    }
+  }
+  const result = await readRwaUniverse(fakeDb({ intel_rwa_universe_snapshots: rows }), { days: 30 }, NOW)
+  const latest = result.latest as any
+
+  eq(latest.all.change24hSource, 'our_snapshots')
+  eq(latest.all.change24hFromAt, hoursAgo(24))
+  eq(latest.all.change24hToAt, hoursAgo(0))
+  eq(Number(latest.all.change24hPct.toFixed(4)), -0.1595)
+  eq(Number(latest.stock.change24hPct.toFixed(4)), -0.2557)
+
+  // The coverage columns travel through so the surface can say how wide the
+  // token count was counted.
+  eq(latest.stock.assetCount, 4812)
+  eq(latest.stock.assetsScanned, 250)
+  eq(latest.stock.assetsWithTokens, 193)
+
+  // A type with nothing captured gets a reason, never a fabricated zero.
+  eq(latest.currency.change24hPct, null)
+  eq(latest.currency.change24hReason, 'no_value_captured')
+  eq(latest.currency.assetCount, 0)
+})
+
+Deno.test('a 24h change with no comparable earlier capture says so instead of showing zero', () => {
+  const at = (hours: number) => new Date(NOW.getTime() - hours * 3_600_000).toISOString()
+
+  // Nothing near 24 hours back: the nearest point is 6 hours old.
+  eq(rwaChange24h([
+    { capturedAt: at(6), totalMarketValueUsd: 100 },
+    { capturedAt: at(0), totalMarketValueUsd: 110 },
+  ]).reason, 'no_comparable_capture_24h_earlier')
+
+  // Inside the three hour tolerance a catch-up gap still produces a figure, and
+  // the instant actually used is reported rather than assumed to be 24h.
+  const tolerant = rwaChange24h([
+    { capturedAt: at(26), totalMarketValueUsd: 100 },
+    { capturedAt: at(0), totalMarketValueUsd: 110 },
+  ])
+  eq(tolerant.changePct, 10)
+  eq(tolerant.fromAt, at(26))
+
+  // A zero base has no percentage change, and saying so beats dividing by nothing.
+  eq(rwaChange24h([
+    { capturedAt: at(24), totalMarketValueUsd: 0 },
+    { capturedAt: at(0), totalMarketValueUsd: 5 },
+  ]).reason, 'previous_value_zero')
+
+  // A single capture is not a change.
+  eq(rwaChange24h([{ capturedAt: at(0), totalMarketValueUsd: 5 }]).reason, 'no_comparable_capture_24h_earlier')
+  eq(rwaChange24h([]).reason, 'no_value_captured')
+
+  // The nearest of several candidates wins, so a dense series does not pick the
+  // edge of the tolerance window.
+  eq(rwaChange24h([
+    { capturedAt: at(26), totalMarketValueUsd: 50 },
+    { capturedAt: at(24), totalMarketValueUsd: 100 },
+    { capturedAt: at(22), totalMarketValueUsd: 200 },
+    { capturedAt: at(0), totalMarketValueUsd: 110 },
+  ]).changePct, 10)
 })
 
 Deno.test('index_constituents returns both latest rows with their constituents and a value series', async () => {

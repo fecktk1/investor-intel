@@ -3,6 +3,16 @@ import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { fmtPrice, fmtVol } from '../lib/market-format'
 import RwaSelectedPosition from './RwaSelectedPosition'
+import TokenAvatar from './TokenAvatar'
+import { assetLogoUrl } from '../lib/asset-identity'
+
+/** The token logo for a reported RWA token representation.
+ *
+ * These rows already carry `crypto_id`, the provider's own numeric identifier
+ * (they are filtered to a positive safe integer above), so the image is addressed
+ * by that id and never by the row's ticker. A row without one gets no URL and
+ * TokenAvatar draws initials. */
+const tokenLogo = token => assetLogoUrl(`market:coinmarketcap:${Number(token?.crypto_id)}`)
 
 const amount = value => value != null && Number.isFinite(Number(value)) && Number(value) >= 0 ? Number(value) : null
 export function rwaRelationships(record) {
@@ -41,7 +51,7 @@ export default function RwaRelationships({ record, onIssuer, showPosition=true }
         <p className="text-xs text-[var(--fg-4)]">{t('research.reported_token_value', { defaultValue: 'Reported token value' })}: {fmtVol(data.missingValue < data.tokens.length ? data.reportedValue : null)} USD. {data.missingValue > 0 ? t('research.missing_token_value_count', { count: data.missingValue, defaultValue: 'Missing token values: {{count}}.' }) : ''}</p>
       </div>
       <div className="intel-table-scroll"><table><thead><tr><th>{t('research.token', { defaultValue: 'Token' })}</th><th>{t('research.issuer', { defaultValue: 'Issuer' })}</th><th className="intel-number">{t('research.price_usd', { defaultValue: 'Price (USD)' })}</th><th className="intel-number">{t('research.value_usd', { defaultValue: 'Value (USD)' })}</th></tr></thead>
-        <tbody>{data.tokens.slice(page*12,page*12+12).map(token => <tr key={token.crypto_id}><th scope="row"><Link className="underline underline-offset-4 text-sm" to={`/intel/markets/${encodeURIComponent(token.symbol || token.name || String(token.crypto_id))}?provider=coinmarketcap&id=${token.crypto_id}`}>{token.name || token.symbol}</Link><span className="block text-xs text-[var(--fg-4)]">{token.symbol}</span></th><td>{token.issuer_name || '—'}</td><td className="intel-number">{fmtPrice(amount(token.price))}</td><td className="intel-number">{fmtVol(amount(token.market_cap))}</td></tr>)}</tbody></table></div>
+        <tbody>{data.tokens.slice(page*12,page*12+12).map(token => <tr key={token.crypto_id}><th scope="row"><span className="flex items-center gap-2"><TokenAvatar src={tokenLogo(token)} symbol={token.symbol} name={token.name} size="sm"/><span><Link className="underline underline-offset-4 text-sm" to={`/intel/markets/${encodeURIComponent(token.symbol || token.name || String(token.crypto_id))}?provider=coinmarketcap&id=${token.crypto_id}`}>{token.name || token.symbol}</Link><span className="block text-xs text-[var(--fg-4)]">{token.symbol}</span></span></span></th><td>{token.issuer_name || '—'}</td><td className="intel-number">{fmtPrice(amount(token.price))}</td><td className="intel-number">{fmtVol(amount(token.market_cap))}</td></tr>)}</tbody></table></div>
     </div>
     {data.tokens.length > 12 && <div className="flex justify-between"><button className="btn" disabled={page===0} onClick={() => setPage(page-1)}>{t('common.previous', { defaultValue: 'Previous' })}</button><span className="text-xs">{page+1} / {Math.ceil(data.tokens.length/12)}</span><button className="btn" disabled={(page+1)*12>=data.tokens.length} onClick={() => setPage(page+1)}>{t('common.next', { defaultValue: 'Next' })}</button></div>}
     <p className="text-xs text-[var(--fg-4)]">{t('research.rwa_terms_context', { defaultValue: 'This compares reported token market values. Ownership rights, redemption terms and underlying net asset value require issuer evidence.' })}</p>

@@ -60,8 +60,13 @@ Deno.test('a fund with no safe catalogue identity is never priced from a ticker'
   eq(mzero.deviationPct, null)
   eq(mzero.deviationReason, 'market_price_not_mapped')
   eq(mzero.marketProviderId, null)
-  // USTBL is ambiguous in the catalogue and is treated the same way.
-  eq(marketDeviation(RWA_FEED_BY_KEY.ustbl, 1.09, quoteFor('ustb', 1.1), NOW).reason, 'market_price_not_mapped')
+  // WTGXX is absent from the catalogue and is treated the same way: an unmapped
+  // feed is never priced from whatever quote happens to be in hand.
+  eq(marketDeviation(RWA_FEED_BY_KEY.wtgxx, 1.09, quoteFor('ustb', 1.1), NOW).reason, 'market_price_not_mapped')
+  // USTBL IS mapped now: re-checked 2026-09-20, its symbol collision resolves on
+  // issuer and contract. So the guard protecting it is the NAME gate rather than
+  // an absent id, and a quote belonging to another fund is still refused.
+  eq(marketDeviation(RWA_FEED_BY_KEY.ustbl, 1.09, quoteFor('ustb', 1.1), NOW).reason, 'market_name_mismatch')
 })
 
 Deno.test('a catalogue row whose fund name has drifted is refused rather than priced', () => {
