@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useRef } from 'react'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable } from './capture-api'
@@ -25,6 +25,10 @@ export function useRwaAssetProfile(rwaId) {
   // The capture tables are service-role only, so the read travels on the reader's
   // own authenticated client, never the anonymous one.
   const { supabase } = useSupabase()
+  // Held in a ref so a host that hands back a new client object on every render
+  // cannot restart the read on every render.
+  const client = useRef(supabase)
+  client.current = supabase
   const orgId = org?.id || null
   const id = Number.isFinite(Number(rwaId)) && Number(rwaId) >= 1 ? Math.trunc(Number(rwaId)) : null
   const [state, setState] = useState({ status: id == null ? 'idle' : 'loading', profile: null, payload: null, reason: null })
@@ -34,7 +38,7 @@ export function useRwaAssetProfile(rwaId) {
     const controller = new AbortController()
     let alive = true
     setState({ status: 'loading', profile: null, payload: null, reason: null })
-    readCaptureView('rwa_asset_profile', { rwaId: id }, { orgId, signal: controller.signal, supabase })
+    readCaptureView('rwa_asset_profile', { rwaId: id }, { orgId, signal: controller.signal, supabase: client.current })
       .then(payload => {
         if (!alive) return
         // A successful read that carries its own reason (one of the two tables was
@@ -43,7 +47,7 @@ export function useRwaAssetProfile(rwaId) {
       })
       .catch(error => { if (alive) setState({ status: 'unavailable', profile: null, payload: null, reason: captureUnavailable(error).reason }) })
     return () => { alive = false; controller.abort() }
-  }, [id, orgId, supabase])
+  }, [id, orgId])
 
   return state
 }

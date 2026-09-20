@@ -11,6 +11,8 @@ import { saveResearch } from '../lib/intel-data'
 import { fmtPrice, fmtVol, fmtPct } from '../lib/market-format'
 import TokenChart from '../components/TokenChart'
 import RwaRelationships from '../components/RwaRelationships'
+import RwaAssetProfile from '../components/RwaAssetProfile'
+import { useRwaAssetProfile } from '../lib/useRwaAssetProfile'
 import MarketPairsEvidence from '../components/MarketPairsEvidence'
 import {MarketContextHistory} from '../components/MarketContextHistory'
 import ExchangeDisclosures from '../components/ExchangeDisclosures'
@@ -83,6 +85,8 @@ function Investigation({ row, capability, onClose, t }) {
   const venueInfo = useMarketResearch('exchangeInfo', { id: exchangeId }, !!exchangeId&&venueInfoOpen)
   const [venuePage,setVenuePage] = useState(0)
   const venuePairs = useMarketResearch('exchangeDerivativePairs', { exchange_id: exchangeId, start: venuePage * PAGE + 1, limit: PAGE }, !!exchangeId&&venueMarketsOpen)
+  // The stored descriptive profile (captured daily, shared, no provider call). A null id leaves the hook idle.
+  const { profile: rwaProfile } = useRwaAssetProfile(rwa ? row.rwa_id : null)
   const rwaPairs = useMarketResearch('rwaPairs', { rwa_id: row.rwa_id, limit: PAGE }, rwa && !!row.rwa_id)
   const info = useMarketResearch(rwa ? 'rwaInfo' : issuer ? 'issuer' : category ? 'category' : 'metadata', rwa ? { rwa_id: row.rwa_id } : issuer ? { issuer_id: row.issuer_id || row.id } : { id: category ? row.id : cryptoId }, !!(rwa ? row.rwa_id : issuer ? row.issuer_id || row.id : category ? row.id : cryptoId))
   const quotes = useMarketResearch(rwa ? 'rwaQuotes' : 'quotes', rwa ? { rwa_id: row.rwa_id } : { id: cryptoId }, !!(rwa ? row.rwa_id : cryptoId && !category && !issuer))
@@ -96,6 +100,7 @@ function Investigation({ row, capability, onClose, t }) {
   const save = async () => { if(savingRef.current)return; savingRef.current=true;setSaving(true);setError(null); const savedNote=note; try { await saveResearch(supabase, org.id, user.id, { artifactId: null, title: rowName(row), snapshot: { summary: savedNote, source: 'CoinMarketCap', source_ref: { capability, id: rowId(row) }, recorded_at: new Date().toISOString() }, tags: ['investigation', capability], privateOwner: true }); if(mounted.current)setSaved(true) } catch (e) { if(mounted.current)setError(e.message) } finally { savingRef.current=false;if(mounted.current)setSaving(false) } }
   return <dialog className="intel-investigation" aria-label={`${rowName(row)} evidence`} ref={pane} onCancel={event => { event.preventDefault(); onClose() }}>
     <div className="flex items-start justify-between gap-5"><div><p className="eyebrow">{t('research.evidence', { defaultValue: 'Evidence' })}</p><h2 className="page-title">{rowName(row)}</h2></div><button className="btn btn--quiet" onClick={onClose}>{t('common.close', { defaultValue: 'Close' })}</button></div>
+    {rwa && row.rwa_id && <RwaAssetProfile profile={rwaProfile}/>}
     <details className="intel-source-record"><summary>{t('research.asset_background',{defaultValue:'Asset background and source record'})}</summary>{(rwa || issuer || category || isCrypto) && <ResearchStatus query={info}/>}{(info.result?.data?.rows?.length ? info.result.data.rows : [row]).map((item, index) => <EvidenceRecord key={index} record={item}/>)}</details>
     {(rwa || isCrypto) && <ResearchStatus query={quotes}/>}{quotes.result?.data?.rows?.map((item, index) => rwa ? <div key={item.rwa_id || index}><RwaRelationships record={item} onIssuer={setSelectedIssuer}/><details className="py-3"><summary className="cursor-pointer text-sm">{t('research.all_quote_evidence', { defaultValue: 'All quote evidence' })}</summary><EvidenceRecord record={item}/></details></div> : <EvidenceRecord key={index} record={item}/>)}
     {selectedIssuer && <section><h3>{t('research.issuer_evidence', { defaultValue: 'Issuer evidence' })}</h3><ResearchStatus query={issuerEvidence}/>{issuerEvidence.result?.data?.rows?.map((item, index) => <EvidenceRecord key={index} record={item}/>)}</section>}
