@@ -54,7 +54,8 @@ export const INTEL_NAV = [
     { to: '/intel/market-context', icon: Activity, labelKey: 'nav.market_context', defaultLabel: 'Market Context' },
     { to: '/intel/defi', icon: BarChart3, labelKey: 'nav.defi', defaultLabel: 'DeFi Intelligence' },
     { to: '/intel/execution', icon: LineChart, labelKey: 'nav.execution', defaultLabel: 'Execution Intelligence' },
-    { to: '/intel/rwa', icon: Landmark, labelKey: 'nav.rwa', defaultLabel: 'Real-world assets' },
+    { to: '/intel/rwa', end: true, icon: Landmark, labelKey: 'nav.rwa', defaultLabel: 'Real-world assets' },
+    { to: '/intel/rwa/wrappers', icon: Layers, labelKey: 'nav.rwa_wrappers', defaultLabel: 'Wrapper premiums' },
     { to: '/intel/market-structure', icon: BarChart3, labelKey: 'nav.market_structure', defaultLabel: 'Market structure' },
   ]},
   { sectionKey: 'section.narratives_workspace', sectionDefault: 'Narratives', items: [

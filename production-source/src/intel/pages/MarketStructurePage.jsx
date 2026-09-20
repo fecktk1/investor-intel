@@ -1,4 +1,5 @@
 import React, { useState } from 'react'
+import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import { Network } from 'lucide-react'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
@@ -63,6 +64,16 @@ export default function MarketStructurePage() {
       <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />
       <RankMap onLoad={seed} />
       <RwaUniverse />
+      {/* The same underlying assets, one level down: where several wrapper
+          tokens of one asset disagree on its price. It is a route of its own
+          rather than an eleventh figure here, because it carries a ranked
+          table, an expandable sub-table, a chart and a reconciliation table,
+          and this page is already the longest in the workspace. */}
+      <p className="text-[12px]">
+        <Link className="intel-text-link" to="/intel/rwa/wrappers">
+          {t('structure.rwa_wrappers_link', { defaultValue: 'Compare the wrappers of one real-world asset: premium, discount and dispersion' })}
+        </Link>
+      </p>
       {/* Identity before economics. A yield figure is only interpretable once
           the reader knows whose instrument it is and whether they may hold it,
           so legitimacy is read first and yield provenance second. Both panels
