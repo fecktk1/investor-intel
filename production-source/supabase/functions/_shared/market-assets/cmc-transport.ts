@@ -168,9 +168,15 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
   // focus batch refreshes faster than the registry default (see cmc-quote-groups).
   const ttl=name==='quotes'?quoteRefreshSeconds(params):spec.ttl
   const connected=connectedDemandEnabled(settings,env)
-  if((ctx?.kind==='request'||(connected&&ctx?.selectedDemand===true)) && ctx.orgId && ctx.userId) {
+  if(ctx?.noDemand!==true && (ctx?.kind==='request'||(connected&&ctx?.selectedDemand===true)) && ctx.orgId && ctx.userId) {
     // Authenticated foreground demand is the worker's only refresh input. A
     // background refresh never extends demand or creates an always-on polling loop.
+    //
+    // ctx.noDemand opts a read OUT of this branch entirely, so no cache row is
+    // created, no demanded_at is written and no demand_org_id/demand_user_id is
+    // recorded for it. That is the whole point for the free real-world-asset
+    // lane: it may spend from its own capped daily budget on the read in front
+    // of it, and it may not leave an instruction that spends again later.
     try {
       await db.from('market_data_response_cache').upsert({provider:'coinmarketcap',cache_key:cacheKey,endpoint:spec.path,expires_at:new Date(0).toISOString()}, {onConflict:'provider,cache_key',ignoreDuplicates:true})
       await db.from('market_data_response_cache').update({capability:name,request_params:params,access_profile:plan,demanded_at:cmcDemandPolicy(name,params,plan,connected)?new Date().toISOString():null,demand_org_id:ctx.orgId,demand_user_id:ctx.userId}).eq('provider','coinmarketcap').eq('cache_key',cacheKey)

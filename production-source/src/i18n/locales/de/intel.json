@@ -336,6 +336,7 @@
     "rwa_table_caption": "Neueste Erfassung je tokenisiertem Asset-Typ.",
     "rwa_table_caption_total": "Neueste Erfassung je tokenisiertem Asset-Typ. Gemeldete Summe: {{total}}.",
     "rwa_trend_label": "Wert von {{type}} über die letzten {{count}} Erfassungen",
+    "rwa_open_workspace": "Den vollständigen RWA-Arbeitsbereich öffnen",
     "index_title": "Indexbestandteile",
     "index_sub": "Gewicht der Bestandteile im CMC100 gegenüber dem CMC20 zur neuesten Erfassung. Die {{named}} größten Namen sind beschriftet; alles andere wird gruppiert und gezählt.",
     "index_other": "{{count}} weitere",
@@ -1953,6 +1954,8 @@
     "reason_cache_unavailable": "Gespeicherte Daten für diese Quelle konnten nicht gelesen werden.",
     "reason_provider_paused": "Abrufe von diesem Datenanbieter sind pausiert.",
     "reason_refresh_required": "Diese Quelle muss aktualisiert werden, bevor sie angezeigt werden kann.",
+    "free_shared_served": "Aus dem gemeinsamen Datensatz gelesen, den alle Mitglieder sehen. Die Abrufzeit steht darüber.",
+    "free_shared_not_read": "Dieser Datensatz wurde heute noch nicht gelesen. Für Starter-Mitglieder ist er jetzt offen und für alle, sobald der gemeinsame Abruf aktualisiert wird.",
     "reason_refreshing": "Diese Quelle wird aktualisiert.",
     "reason_account_unavailable": "Der Kontostatus des Datenanbieters ist nicht verfügbar.",
     "reason_budget_exceeded": "Das Budget des Datenanbieters ist ausgeschöpft.",
@@ -3919,6 +3922,7 @@
     "tier_elite": "Elite",
     "tier_trial": "Testphase",
     "surface_research_on_demand": "Research auf Abruf",
+    "surface_rwa_research": "Real-World-Asset-Research",
     "surface_investigation": "Verbundenes Research",
     "surface_portfolio_valuation": "Portfolio-Bewertung",
     "surface_ai_generation": "KI-Erzeugung",
@@ -3941,8 +3945,9 @@
     "free_open_chart": "Die Chart-Arbeitsfläche",
     "free_open_narratives": "Narrativ-Briefings",
     "free_open_watchlist": "10 Beobachtungslisten-Einträge",
+    "free_open_rwa": "Der Real-World-Asset-Arbeitsbereich mit Emittenten und Belegen",
     "free_locked_title": "Bis Starter gesperrt",
-    "free_locked_body": "Recherche auf Abruf, Connected Research, Portfoliobewertung, KI-Erzeugung, Kursverlauf, Alarme, Wallet Watch, das Thesentagebuch, Comment King und Agent-Zugang. Jedes davon startet bei jedem Öffnen eine neue Anfrage für dich."
+    "free_locked_body": "Research zu Marktentdeckung, Marktstruktur und Marktkontext, Connected Research, Portfoliobewertung, KI-Erzeugung, Kursverlauf, Alarme, Wallet Watch, das Thesentagebuch, Comment King und Agent-Zugang. Jedes davon startet bei jedem Öffnen eine neue Anfrage für dich."
   },
   "breadth_spread": {
     "title": "Marktbreite in einer Zahl",

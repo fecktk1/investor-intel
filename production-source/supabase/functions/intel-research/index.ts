@@ -1,7 +1,8 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { requireIntelAccess, researchParams, researchSnapshot } from '../_shared/intel/research-service.ts'
 import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
-import { requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
+import { intelSurfaceAllowed, requireIntelSurface, surfaceLockedResponse } from '../_shared/intel/intel-surface-access.ts'
+import { claimFreeRwaRead, freeRwaRead, researchSurfaceFor, RWA_FREE_CAPABILITIES, useFreeRwaLane } from '../_shared/intel/rwa-free-read.ts'
 import {readAssetVenueContext} from '../_shared/intel/asset-venue-service.ts'
 import {readContractResearch} from '../_shared/intel/contract-research.ts'
 import {readConnectedAssetIdentity} from '../_shared/intel/connected-asset-identity.ts'
@@ -84,7 +85,16 @@ export async function handleResearch(req:Request) {
     // provider backed capability spends; it just spends asynchronously. An
     // earlier note at this call site claimed the opposite. It was wrong, and
     // anyone acting on it would open a paid refresh path to free members.
-    if(researchSurfaceRequired(capability,body.readMode))await requireIntelSurface(db,actor,'research_on_demand')
+    //
+    // WHICH surface is asked for is now a function of the capability, because
+    // the six real-world asset reads sit on their own free surface. That is a
+    // narrower statement than it looks: researchSurfaceRequired still says a
+    // surface IS required for every one of them, and requireIntelSurface still
+    // runs before any branch below can begin work. Nothing became ungated; one
+    // group of reads moved onto a gate whose minimum tier is 'free', and the
+    // cost that used to justify the paid gate is replaced by the bound in
+    // _shared/intel/rwa-free-read.ts rather than dropped.
+    if(researchSurfaceRequired(capability,body.readMode))await requireIntelSurface(db,actor,researchSurfaceFor(capability))
     if(capability==='narrativeInputs'){
       if(!actor.userId||!actor.orgId)return json({error:'member_required'},403)
       const userDb=createClient(Deno.env.get('SUPABASE_URL')!,Deno.env.get('SUPABASE_ANON_KEY')!,{global:{headers:{Authorization:req.headers.get('authorization')||''}}})
@@ -118,6 +128,29 @@ export async function handleResearch(req:Request) {
     }
     let params:Record<string,string>
     try{params=capability==='catalog'?{}:researchParams(capability,body.params)}catch(e){return json({error:(e as Error).message},400)}
+    // The real-world asset workspace is open to every member (surface
+    // rwa_research, min_tier 'free'). A member who does NOT also hold
+    // research_on_demand reads it through the bounded lane: the shared response
+    // cache first, never a demand stamp, and a live provider call only after the
+    // daily platform-wide free budget grants it. A background retained poll is
+    // handed allowLive false, so a browser refreshing on a timer can never be
+    // the thing that spends the day.
+    //
+    // Starter and above hold research_on_demand, so intelSurfaceAllowed answers
+    // true and they fall straight through to the line below with the demand
+    // path, the monthly feature budget and the live-watch policy they have
+    // today. Service and cron callers answer true as well and are untouched.
+    //
+    // The membership question is asked ONLY for an RWA capability. Asking it
+    // unconditionally would add a second entitlement round trip to every
+    // discovery, structure and context read, which is latency spent to learn
+    // something those reads cannot act on.
+    if(RWA_FREE_CAPABILITIES.has(capability)&&useFreeRwaLane(capability,await intelSurfaceAllowed(db,actor,'research_on_demand'))){
+      return json(await freeRwaRead(
+        plan=>researchSnapshot(db,capability,params,actor.userId,actor.orgId,undefined,false,plan),
+        ()=>claimFreeRwaRead(db,capability,params),
+        !cacheOnly))
+    }
     return json(await researchSnapshot(db,capability,params,actor.userId,actor.orgId,undefined,cacheOnly))
   }catch(e){return surfaceLockedResponse(e,cors)||orgAuthzErrorResponse(e,cors)||json({error:'research_unavailable'},503)}
 }

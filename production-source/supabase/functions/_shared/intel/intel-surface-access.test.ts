@@ -1,6 +1,6 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1'
 import {
-  INTEL_SURFACES, IntelSurfaceLockedError, requireIntelSurface, surfaceLockedResponse,
+  INTEL_SURFACES, intelSurfaceAllowed, IntelSurfaceLockedError, requireIntelSurface, surfaceLockedResponse,
 } from './intel-surface-access.ts'
 import { OrgAuthzError, type OrgActor } from '../org-authz.ts'
 
@@ -11,6 +11,11 @@ const RANK: Record<string, number> = { free: 0, starter: 1, pro: 2, elite: 3, tr
 const MIN_TIER: Record<string, string> = {
   market_boards: 'free', market_regime: 'free', capture_views: 'free',
   chart_workstation: 'free', narratives_read: 'free', watchlist: 'free',
+  // Free on a third cost basis, 'shared_budgeted' (migration 20260920143000):
+  // the real-world asset reads are answered from one shared response cache, and
+  // a live miss for a member without research_on_demand is additionally capped
+  // by a daily platform-wide budget. Free without being precomputed.
+  rwa_research: 'free',
   research_on_demand: 'starter', investigation: 'starter', portfolio_valuation: 'starter',
   ai_generation: 'starter', market_history: 'starter', alert_evaluation: 'starter',
   agent_access: 'starter', wallet_watch: 'starter', thesis_journal: 'starter',
@@ -149,4 +154,45 @@ Deno.test('anything that is not a surface lock falls through to the caller exist
   assertEquals(surfaceLockedResponse(new Error('boom'), CORS), null)
   assertEquals(surfaceLockedResponse(new OrgAuthzError('Forbidden.', 403), CORS), null)
   assertEquals(surfaceLockedResponse(null, CORS), null)
+})
+
+// intelSurfaceAllowed exists so a handler already admitted to a FREE surface can
+// ask whether the member ALSO holds the paid one, and take the cheaper, bounded
+// path when they do not. It is a route chooser, never a gate, and it fails the
+// opposite way from the client label: closed, onto the bounded path, because the
+// worst case of being wrong that way is a shared read where a live one was due.
+
+Deno.test('the non-throwing check answers the same question the gate answers', async () => {
+  for (const tier of ['free', 'starter', 'pro', 'elite', 'trial']) {
+    for (const surface of INTEL_SURFACES) {
+      const gate = (await refusal(fakeDb(tier), member(), surface)) === null
+      // deno-lint-ignore no-explicit-any
+      const check = await intelSurfaceAllowed(fakeDb(tier), member(), surface as any)
+      assertEquals(check, gate, `${tier} and ${surface} must not disagree between the two forms`)
+    }
+  }
+})
+
+Deno.test('a free member does not hold research_on_demand but does hold rwa_research', async () => {
+  const db = fakeDb('free')
+  assertEquals(await intelSurfaceAllowed(db, member(), 'rwa_research'), true)
+  assertEquals(await intelSurfaceAllowed(db, member(), 'research_on_demand'), false)
+})
+
+Deno.test('the route chooser fails closed, onto the bounded path', async () => {
+  // An unreadable decision, a thrown client and a member with no workspace all
+  // answer false, which routes an RWA read through the shared cache and the
+  // daily budget rather than through the unbounded demand path.
+  assertEquals(await intelSurfaceAllowed(fakeDb('elite', { fail: true }), member(), 'research_on_demand'), false)
+  assertEquals(await intelSurfaceAllowed({ rpc: () => { throw new Error('boom') } }, member(), 'research_on_demand'), false)
+  assertEquals(await intelSurfaceAllowed(fakeDb('elite'), member({ orgId: '' }), 'research_on_demand'), false)
+  // And it never widens the product gate.
+  assertEquals(await intelSurfaceAllowed(fakeDb('elite', { productAccess: false }), member(), 'research_on_demand'), false)
+})
+
+Deno.test('a service caller keeps the unbounded path, so the capture lanes are untouched', async () => {
+  const db = fakeDb('free')
+  const service = member({ userId: null, isService: true, isSuperAdmin: true })
+  assertEquals(await intelSurfaceAllowed(db, service, 'research_on_demand'), true)
+  assertEquals(db.calls.length, 0, 'a service caller has no tier to look up')
 })

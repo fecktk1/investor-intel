@@ -686,10 +686,16 @@ export default function IntelUpgradePage() {
               <li>{ti('intel_upgrade.free_open_chart', { defaultValue: 'The chart workstation' })}</li>
               <li>{ti('intel_upgrade.free_open_narratives', { defaultValue: 'Narrative briefs' })}</li>
               <li>{ti('intel_upgrade.free_open_watchlist', { defaultValue: '10 watchlist items' })}</li>
+              {/* The real-world asset workspace is answered from one shared
+                  record and its live misses are capped by a daily budget, so it
+                  is open without being given away. */}
+              <li>{ti('intel_upgrade.free_open_rwa', { defaultValue: 'The real-world asset workspace, with issuers and evidence' })}</li>
             </ul>
             <p className="text-[11px] font-semibold text-gray-300 mt-2">{ti('intel_upgrade.free_locked_title', { defaultValue: 'Locked until Starter' })}</p>
             <p className="text-[11px] text-gray-400">
-              {ti('intel_upgrade.free_locked_body', { defaultValue: 'On demand research, Connected Research, portfolio valuation, AI generation, price history and alerts. Each one runs a fresh request for you every time it is opened.' })}
+              {/* Named by workspace now that on demand research is split: the
+                  three market screens stay paid, the RWA one does not. */}
+              {ti('intel_upgrade.free_locked_body', { defaultValue: 'Market discovery, market structure and market context research, Connected Research, portfolio valuation, AI generation, price history, alerts, Wallet Watch, the Thesis Journal, Comment King and agent access. Each one runs a fresh request for you every time it is opened.' })}
             </p>
           </div>
           {INTEL_TIERS.map((p) => {

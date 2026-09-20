@@ -23,6 +23,26 @@ const VIEWS = {
   discovery: { title: 'Market discovery', subtitle: 'Screen current listings, investigate attention and connect the evidence to your research.', options: [['listings','Listings'],['newListings','New listings'],['trending','Trending'],['gainers','Gainers and losers'],['mostVisited','Most visited'],['dexTrending','DEX trending'],['dexNew','DEX new contracts'],['dexMeme','DEX meme discovery'],['dexGainers','DEX gainers and losers'],['categories','Sectors and narratives'],['airdrops','Airdrops'],['content','Source content'],['community','Community attention']] },
   context: { title: 'Market context', subtitle: 'Compare broad market conditions, sentiment, dominance and index composition.', options: [['global','Global market'],['fearGreed','Fear and greed'],['fearGreedHistory','Sentiment history'],['altcoinSeason','Altcoin season'],['altcoinSeasonHistory','Altcoin season history'],['cmc100','CMC 100'],['cmc20','CMC 20'],['globalHistory','Historical market regime'],['cmc100History','CMC 100 history'],['cmc20History','CMC 20 history']] },
 }
+/** Which entitlement surface each workspace of this page sits behind.
+ *
+ * The real-world asset workspace reads six fixed, heavily shared CoinMarketCap
+ * capabilities about a few hundred tokenised instruments, and the server bounds
+ * a free member's live misses with a dedicated daily budget
+ * (supabase/functions/_shared/intel/rwa-free-read.ts), so it has a free surface
+ * of its own. The other three workspaces each screen the whole market on
+ * demand, one fresh request per member per view, and stay where they are.
+ *
+ * This map is a LABEL, not the boundary: intel-research re-decides the same
+ * question server side and refuses before any withheld reading is produced. An
+ * unlisted workspace falls back to the paid surface on purpose, so adding a
+ * workspace can never accidentally open one. */
+export const RESEARCH_WORKSPACE_SURFACE = {
+  rwa: 'rwa_research',
+  structure: 'research_on_demand',
+  discovery: 'research_on_demand',
+  context: 'research_on_demand',
+}
+export const researchWorkspaceSurface = workspace => RESEARCH_WORKSPACE_SURFACE[workspace] || 'research_on_demand'
 const PAGE = 25
 const fmt = v => v == null ? '—' : typeof v === 'number' ? v.toLocaleString() : String(v)
 const rowName = row => row.name || row.issuer_name || row.exchange_name || row.rwa_name || row.title || row.symbol || row.market_pair_symbol || row.market_pair || row.n || 'Record'
@@ -87,10 +107,28 @@ function Investigation({ row, capability, onClose, t }) {
   </dialog>
 }
 
+/** What the bounded free real-world-asset lane did about this read, in a
+ * sentence. Rendered only when the server said it used that lane, so a Starter
+ * or trial member never sees it.
+ *
+ * Two honest states and no third. Either a shared read answered, and the
+ * retrieval time above it says how old it is, or nothing has been read yet and
+ * the page says so plainly instead of showing an error or an upsell over data
+ * that does not exist. Nothing here is derived from a figure. */
+export function FreeSharedNotice({ result, loading, t }) {
+  const lane = result?.freeShared
+  if (loading || !lane) return null
+  const served = !!result?.data?.rows?.length
+  return <p role="status" className="intel-analysis-caption">{served
+    ? t('research.free_shared_served', { defaultValue: 'Read from the shared record every member sees. Its retrieval time is shown above.' })
+    : t('research.free_shared_not_read', { defaultValue: 'This record has not been read yet today. It opens for Starter members now and for everyone once the shared read refreshes.' })}</p>
+}
+
 export default function MarketResearchPage({ workspace = 'discovery' }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile(), { user } = useSupabase()
   const view = VIEWS[workspace]
+  const surface = researchWorkspaceSurface(workspace)
   const [search, setSearch] = useSearchParams()
   const capability = view.options.some(([key]) => key === search.get('view')) ? search.get('view') : view.options[0][0]
   const page = Math.max(0, Math.min(99, Number(search.get('page')) || 0))
@@ -115,13 +153,16 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
       {needsAsset && <label className="text-xs">{t('research.asset', { defaultValue: 'Asset' })}<select className="select ml-3" value={asset} onChange={e => setParam('asset', e.target.value)}>{(assetCatalog.result?.data?.rows?.length ? assetCatalog.result.data.rows : [{ id: 1, name: 'Bitcoin', symbol: 'BTC' }, { id: 1027, name: 'Ethereum', symbol: 'ETH' }, { id: 5426, name: 'Solana', symbol: 'SOL' }]).map(row => <option key={row.id} value={String(row.id)}>{row.name} · {row.symbol}</option>)}{asset && !(assetCatalog.result?.data?.rows || [{id:1},{id:1027},{id:5426}]).some(row => String(row.id) === asset) && <option value={asset}>{t('research.selected_asset', { defaultValue: 'Selected asset' })} · {asset}</option>}</select></label>}
       {workspace === 'structure' && <><Link className="text-xs underline underline-offset-4" to="/intel/execution">{t('nav.execution', { defaultValue: 'Execution research' })}</Link><Link className="text-xs underline underline-offset-4" to="/intel/markets">{t('research.spread_watch', { defaultValue: 'Spreads and liquidity' })}</Link></>}
     </div>
-    {/* Every read below calls the provider for the asking member, so this is
-        the part that belongs to a paid plan. The workspace heading and its own
-        selectors stay: the member sees the page they came to, with the costly
-        panel locked in its place rather than an error or a blank. */}
-    <IntelSurfaceGate surface="research_on_demand" title={t('access.surface_research_on_demand', { defaultValue: 'On demand research' })}>
+    {/* In three of the four workspaces every read below calls the provider for
+        the asking member, so that part belongs to a paid plan. The workspace
+        heading and its own selectors stay: the member sees the page they came
+        to, with the costly panel locked in its place rather than an error or a
+        blank. The real-world asset workspace is the exception and carries its
+        own free surface (see RESEARCH_WORKSPACE_SURFACE above). */}
+    <IntelSurfaceGate surface={surface} title={t(`access.surface_${surface}`, { defaultValue: surface === 'rwa_research' ? 'Real-world asset research' : 'On demand research' })}>
     <ResearchStatus query={query} showObserved={!["globalHistory","cmc100History","cmc20History"].includes(capability)}/>
     <SharedResearchRefresh query={query}/>
+    <FreeSharedNotice result={query.result} loading={query.loading} t={t}/>
     {sourceDraft&&<p className="intel-analysis-caption">Automatic updates paused while your source notes are unsaved.</p>}
     {isDexDiscovery(capability)&&<DexDiscoveryTable query={query} capability={capability} network={dexNetwork} onNetwork={v=>setParam('network',v)} cursor={search.get('cursor')} onNext={v=>setParam('cursor',v)} onFirst={()=>setParam('cursor',null)} onDraftChange={setSourceDraft}/>}
     {!!rows.length && !isDexDiscovery(capability) && (['globalHistory','cmc100History','cmc20History'].includes(capability)?<MarketContextHistory rows={rows} capability={capability}/>:workspace === 'context' || ['liquidations','liquidationAssets','marketPairs'].includes(capability) ? rows.map((row,index) => <EvidenceRecord key={index} record={row}/>) : <ResearchTable rows={rows} capability={capability} onOpen={row => setSelection(row)} t={t}/>)}

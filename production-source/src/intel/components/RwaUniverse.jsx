@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import BoardTableHeader from './BoardTableHeader'
 import { useProfile } from '../../lib/profile-context'
@@ -171,6 +172,16 @@ export default function RwaUniverse() {
           </div>
         ) : null}
       </div>
+      {/* This figure is the hourly capture: one dated row per asset type. The
+          per-asset workspace behind it, with the type filter, the issuer list
+          and the evidence drawer, used to need a Starter plan and no longer
+          does, so the section says where to find it. A plain link, because
+          public-facing Intel sections carry no pills or chips. */}
+      <p className="text-[12px]">
+        <Link className="intel-text-link" to="/intel/rwa">
+          {t('structure.rwa_open_workspace', { defaultValue: 'Open the full RWA workspace' })}
+        </Link>
+      </p>
     </section>
   )
 }
