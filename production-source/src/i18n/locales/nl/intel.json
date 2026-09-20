@@ -4012,7 +4012,8 @@
     "run_calls_one": "de vastlegging deed {{count}} aanroep naar dit endpoint",
     "run_calls_other": "de vastlegging deed {{count}} aanroepen naar dit endpoint",
     "failed": "een onthouden mislukking antwoordde op deze meting",
-    "answered_live": "Een aanroep bij de provider antwoordde op deze meting"
+    "answered_live": "Een aanroep bij de provider antwoordde op deze meting",
+    "shared_curated": "Gedeeld record, geen providerkosten per lezer"
   },
   "figure_source": {
     "line": "Bron: {{source}}",

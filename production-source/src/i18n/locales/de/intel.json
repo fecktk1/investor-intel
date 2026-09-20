@@ -4012,7 +4012,8 @@
     "run_calls_one": "der Erfassungslauf machte {{count}} Aufruf an diesen Endpunkt",
     "run_calls_other": "der Erfassungslauf machte {{count}} Aufrufe an diesen Endpunkt",
     "failed": "ein gespeicherter Fehlschlag hat diesen Aufruf beantwortet",
-    "answered_live": "Ein Anbieteraufruf hat diesen Aufruf beantwortet"
+    "answered_live": "Ein Anbieteraufruf hat diesen Aufruf beantwortet",
+    "shared_curated": "Gemeinsamer Datensatz, keine Anbieterkosten pro Leser"
   },
   "figure_source": {
     "line": "Quelle: {{source}}",

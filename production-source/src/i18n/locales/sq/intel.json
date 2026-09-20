@@ -4012,7 +4012,8 @@
     "run_calls_one": "regjistrimi bëri {{count}} thirrje në këtë endpoint",
     "run_calls_other": "regjistrimi bëri {{count}} thirrje në këtë endpoint",
     "failed": "një dështim i ruajtur iu përgjigj këtij leximi",
-    "answered_live": "Një thirrje te ofruesi iu përgjigj këtij leximi"
+    "answered_live": "Një thirrje te ofruesi iu përgjigj këtij leximi",
+    "shared_curated": "Regjistrim i përbashkët, pa kosto ofruesi për lexues"
   },
   "figure_source": {
     "line": "Burimi: {{source}}",

@@ -4012,7 +4012,8 @@
     "run_calls_one": "the capture run made {{count}} call to this endpoint",
     "run_calls_other": "the capture run made {{count}} calls to this endpoint",
     "failed": "a remembered failure answered this read",
-    "answered_live": "A provider call answered this read"
+    "answered_live": "A provider call answered this read",
+    "shared_curated": "Shared record, no per-reader provider cost"
   },
   "figure_source": {
     "line": "Source: {{source}}",

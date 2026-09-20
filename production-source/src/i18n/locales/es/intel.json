@@ -4012,7 +4012,8 @@
     "run_calls_one": "la ejecución de captura hizo {{count}} llamada a este endpoint",
     "run_calls_other": "la ejecución de captura hizo {{count}} llamadas a este endpoint",
     "failed": "un fallo recordado respondió a esta lectura",
-    "answered_live": "Una llamada al proveedor respondió a esta lectura"
+    "answered_live": "Una llamada al proveedor respondió a esta lectura",
+    "shared_curated": "Registro compartido, sin coste de proveedor por lector"
   },
   "figure_source": {
     "line": "Fuente: {{source}}",

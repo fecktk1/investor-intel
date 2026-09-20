@@ -36,9 +36,13 @@ export default function FigureProvenance({ envelope, receipts = [] }) {
   // The capture time is already reported as fetchedAt, so the line names it.
   const captured = envelope.fetchedAt && Number.isFinite(Date.parse(envelope.fetchedAt)) ? new Date(envelope.fetchedAt).toLocaleString() : null
   const shared = kind !== 'live'
+  // A curated record is a reviewed record, not a capture, so it gets its own noun.
+  // Both cost a reader nothing, which is the claim the line is actually making.
+  const sharedText = kind === 'curated' || kind === 'curated_stale'
+    ? t('receipt_cost.shared_curated', { defaultValue: 'Shared record, no per-reader provider cost' })
+    : t('receipt_cost.shared', { defaultValue: 'Shared capture, no per-reader provider cost' })
   const costText = shared
-    ? [t('receipt_cost.shared', { defaultValue: 'Shared capture, no per-reader provider cost' }),
-      captured ? t('receipt_cost.captured_at', { date: captured, defaultValue: 'captured {{date}}' }) : null].filter(Boolean).join(' · ')
+    ? [sharedText, captured ? t('receipt_cost.captured_at', { date: captured, defaultValue: 'captured {{date}}' }) : null].filter(Boolean).join(' · ')
     : t('receipt_cost.answered_live', { defaultValue: 'A provider call answered this read' })
   return (
     <details className="intel-source-call-receipt" data-envelope={kind} data-freshness={freshness || 'unmeasured'} data-served={shared ? 'shared' : 'live'}>

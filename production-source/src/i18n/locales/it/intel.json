@@ -4012,7 +4012,8 @@
     "run_calls_one": "la cattura ha fatto {{count}} chiamata a questo endpoint",
     "run_calls_other": "la cattura ha fatto {{count}} chiamate a questo endpoint",
     "failed": "un errore memorizzato ha risposto a questa lettura",
-    "answered_live": "Una chiamata al provider ha risposto a questa lettura"
+    "answered_live": "Una chiamata al provider ha risposto a questa lettura",
+    "shared_curated": "Record condiviso, nessun costo provider per lettore"
   },
   "figure_source": {
     "line": "Fonte: {{source}}",

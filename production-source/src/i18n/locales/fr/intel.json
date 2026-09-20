@@ -4012,7 +4012,8 @@
     "run_calls_one": "la capture a fait {{count}} appel à ce point d’accès",
     "run_calls_other": "la capture a fait {{count}} appels à ce point d’accès",
     "failed": "un échec mémorisé a répondu à cette lecture",
-    "answered_live": "Un appel au fournisseur a répondu à cette lecture"
+    "answered_live": "Un appel au fournisseur a répondu à cette lecture",
+    "shared_curated": "Enregistrement partagé, aucun coût fournisseur par lecteur"
   },
   "figure_source": {
     "line": "Source : {{source}}",
