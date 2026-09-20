@@ -10,10 +10,17 @@ import { TONES, axisText, gridStroke, useReducedMotion } from './theme'
 // the caller chooses (not at the data's median), so the four corners keep the
 // same meaning as the data moves underneath them.
 
-const W = 440, H = 300
-const PAD = { top: 18, right: 18, bottom: 48, left: 66 }
-const X0 = PAD.left, X1 = W - PAD.right, Y0 = PAD.top, Y1 = H - PAD.bottom
-const PLOT_W = X1 - X0, PLOT_H = Y1 - Y0
+// TWO FOOTPRINTS, because an svg drawn at width:100% magnifies its own type by
+// whatever the container is wider than its viewBox. A scatter in the three-across
+// Degen grid is about 440 css pixels wide, so the 440 box draws its 11px labels at
+// 11px. The same box spanning a whole section is scaled by about 2.3, and the tick
+// and quadrant text then renders far larger than the page's body copy. `wide` uses
+// the 760 box Histogram and StackedShare already use for full-width figures, which
+// lands the same 11px type at the same size as everything around it.
+const BOX = {
+  column: { W: 440, H: 300, PAD: { top: 18, right: 18, bottom: 48, left: 66 } },
+  wide: { W: 760, H: 340, PAD: { top: 20, right: 20, bottom: 52, left: 80 } },
+}
 const RADIUS = 3.6
 
 const finite = (v) => {
@@ -23,7 +30,26 @@ const finite = (v) => {
 
 // A scale is a normaliser (value -> 0..1) plus the ticks to label. Log ticks are
 // powers of ten only: a "3.2 x 10^6" gridline reads as noise.
-function buildScale(values, { log }) {
+//
+// `domain` fixes the linear axis to bounds the CALLER chose. It exists for the
+// one case the data-driven range cannot handle: a single far outlier setting the
+// range for everything else, so every other mark collapses onto one line. A value
+// outside the stated domain is NOT dropped — `project` clamps to 0..1, so it is
+// drawn on the edge of the plot, and the caller says in words how many marks sit
+// there. Silently discarding a mark would be a lie about the sample.
+function buildScale(values, { log, domain }) {
+  if (!log && Array.isArray(domain) && domain.length === 2) {
+    const lo = finite(domain[0]), hi = finite(domain[1])
+    if (lo != null && hi != null && hi > lo) {
+      const ticks = [0, 0.25, 0.5, 0.75, 1].map((at) => ({ value: lo + at * (hi - lo), at }))
+      const project = (v) => {
+        const n = finite(v)
+        if (n == null) return 0
+        return Math.min(1, Math.max(0, (n - lo) / (hi - lo)))
+      }
+      return { project, ticks, floor: lo }
+    }
+  }
   const usable = values.map(finite).filter((v) => v != null && (!log ? true : v > 0))
   if (log) {
     const lo = usable.length ? Math.min(...usable) : 1
@@ -55,12 +81,16 @@ function buildScale(values, { log }) {
 
 export default function Scatter({
   title, description, points = [], xLabel, yLabel, quadrants = null, log = true,
-  formatX, formatY, state = 'ready', reason, onSelect,
+  formatX, formatY, state = 'ready', reason, onSelect, wide = false, yDomain = null,
 }) {
   const t = useChartText()
   const reduced = useReducedMotion()
   const fmtX = formatX || defaultValueFormat
   const fmtY = formatY || defaultValueFormat
+
+  const { W, H, PAD } = wide ? BOX.wide : BOX.column
+  const X0 = PAD.left, X1 = W - PAD.right, Y0 = PAD.top, Y1 = H - PAD.bottom
+  const PLOT_W = X1 - X0, PLOT_H = Y1 - Y0
 
   const usable = (Array.isArray(points) ? points : []).filter((p) => finite(p?.x) != null && finite(p?.y) != null)
   const qx = quadrants ? finite(quadrants.x) : null
@@ -68,7 +98,7 @@ export default function Scatter({
   const labels = Array.isArray(quadrants?.labels) ? quadrants.labels : []
 
   const xScale = buildScale([...usable.map((p) => p.x), ...(qx == null ? [] : [qx])], { log })
-  const yScale = buildScale([...usable.map((p) => p.y), ...(qy == null ? [] : [qy])], { log })
+  const yScale = buildScale([...usable.map((p) => p.y), ...(qy == null ? [] : [qy])], { log, domain: yDomain })
   const px = (v) => X0 + xScale.project(v) * PLOT_W
   const py = (v) => Y1 - yScale.project(v) * PLOT_H
 

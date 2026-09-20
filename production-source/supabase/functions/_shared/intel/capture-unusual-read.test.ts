@@ -223,3 +223,40 @@ Deno.test('a day whose rows are all refused is an empty table with counted reaso
   eq(result.excluded, { peg_excluded: 1, below_liquidity_floor: 1 })
   eq(result.subjectDay, '2026-09-19')
 })
+
+Deno.test('the lead figures name the window they were measured over, which is not sample_days', async () => {
+  // The production shape that produced the contradiction on /intel/markets: 92
+  // stored days of history, a 90-day lead window, and 90 of that window's days
+  // exceeded. "Larger than 90 of the last 92 days" and "100.0th percentile" are
+  // both true of DIFFERENT windows, so the view states the lead window's own
+  // count and the surface uses it for both.
+  const db = fakeDb({
+    intel_unusual_move_scores: [
+      scoreRow({ sample_days: 92, move_exceeded: 90, move_percentile: 100 }),
+    ],
+    market_assets: [],
+    intel_market_observations: [],
+  })
+  const result = await readUnusualMoves(db, {}, NOW)
+  // deno-lint-ignore no-explicit-any
+  const row = (result.rows as any[])[0]
+  eq(row.sampleDays, 92)
+  eq(row.leadWindowDays, 90)
+  eq(row.leadWindowN, 90, 'the denominator behind exceeded and percentile')
+  eq(row.exceeded, 90)
+  // 90 of 90 is the 100th percentile, which is now what the sentence says too.
+  eq(row.percentile, 100)
+})
+
+Deno.test('a row whose stored windows do not include the lead window states no count rather than a wrong one', async () => {
+  const db = fakeDb({
+    intel_unusual_move_scores: [
+      scoreRow({ windows: [{ days: 30, n: 30, percentile: 90, exceeded: 27 }] }),
+    ],
+    market_assets: [],
+    intel_market_observations: [],
+  })
+  const result = await readUnusualMoves(db, {}, NOW)
+  // deno-lint-ignore no-explicit-any
+  eq((result.rows as any[])[0].leadWindowN, null)
+})

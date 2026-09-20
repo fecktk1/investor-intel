@@ -21,6 +21,7 @@
 import {
   RWA_WRAPPER_CAPTURE_SCHEDULE, ASSET_TABLE, TOKEN_TABLE,
 } from './capture-rwa-wrappers.ts'
+import { PROFILE_TABLE } from './capture-rwa-underlyings.ts'
 import {
   ANCHOR_MEANING, WRAPPER_SPREAD_SCOPE, LIQUIDITY_FLOOR_USD,
   RECONCILE_BAND_LOW, RECONCILE_BAND_HIGH, TROY_OUNCE_GRAMS,
@@ -79,10 +80,60 @@ const TOKEN_COLUMNS = [
   'unit_state', 'unit_factor', 'wrapper_state', 'premium_bps', 'accrual_gap_bps', 'in_anchor', 'state_reason',
 ].join(',')
 
-/** One wrapper, as the surface reads it. */
+/** The catalogue table the wrapper TOKEN logos come from, and the profile table
+ * the UNDERLYING asset logos come from. Both are joined server side, in this
+ * read, so the surface makes one request and never one request per row. */
+export const CATALOGUE_TABLE = 'market_assets'
+/** Catalogue rows one logo read may return. One asset can carry a few dozen
+ * wrappers, so this sits above TOKEN_CAP's realistic distinct-id count. */
+const LOGO_CAP = 1200
+
+/** An image the surface may render. Only https: a provider row that ever carries
+ * an http or a data URL is dropped rather than put in an <img>. */
+const image = (v: unknown): string | null => {
+  const s = str(v, 500)
+  return s && /^https:\/\//i.test(s) ? s : null
+}
+
+interface Logo { cached: string | null; original: string | null }
+
+/** CoinMarketCap's own coin image for a numeric crypto id, or null. The same URL
+ * shape `assetLogoUrl` builds in the app (src/intel/lib/asset-identity.js). */
+export function cmcCoinLogo(id: unknown): string | null {
+  const v = String(id ?? '').trim()
+  return /^[1-9][0-9]{0,11}$/.test(v) ? `https://s2.coinmarketcap.com/static/img/coins/64x64/${v}.png` : null
+}
+
+/** The picture an underlying asset shows when CoinMarketCap publishes none for it
+ * (it publishes none for the largest names: Nvidia, Apple, Microsoft). A tokenised
+ * STOCK or ETF borrows the image of its largest wrapper by market cap, which is
+ * the issuer's rendering of the same company mark. A commodity never does: the
+ * logo of one gold token is a brand, not a picture of gold, so it keeps the
+ * monogram. */
 // deno-lint-ignore no-explicit-any
-export function wrapperRow(row: Record<string, any>) {
+export function underlyingFallbackLogo(assetType: unknown, tokens: { logoUrl: string | null; marketCap: number | null }[]): string | null {
+  const type = String(assetType ?? '')
+  if (type !== 'stock' && type !== 'etf') return null
+  const ranked = tokens.filter((t) => t.logoUrl).sort((x, y) => (y.marketCap ?? -1) - (x.marketCap ?? -1))
+  return ranked[0]?.logoUrl ?? null
+}
+
+/** One wrapper, as the surface reads it.
+ *
+ * `logo` is the catalogue's image for this token, already looked up by the
+ * caller. The mirrored copy leads and the provider's own URL is the fallback,
+ * which is the candidate order TokenAvatar walks before it falls back to a
+ * monogram. A wrapper with no catalogue row keeps the monogram and nothing
+ * about it changes. */
+// deno-lint-ignore no-explicit-any
+export function wrapperRow(row: Record<string, any>, logo: Logo | null = null) {
+  // A wrapper the catalogue has never met still has a CoinMarketCap id, and the
+  // provider's coin image is addressed by that id alone. It is built from the id,
+  // never from a ticker, and TokenAvatar drops to the monogram if it 404s.
+  const byId = cmcCoinLogo(row?.crypto_id)
   return {
+    logoUrl: logo?.cached ?? logo?.original ?? byId,
+    fallbackLogoUrl: logo?.original ?? byId,
     cryptoId: str(row?.crypto_id, 20),
     symbol: str(row?.symbol, 50), name: str(row?.name, 200),
     issuerId: str(row?.issuer_id, 100), issuerName: str(row?.issuer_name, 200),
@@ -98,12 +149,18 @@ export function wrapperRow(row: Record<string, any>) {
   }
 }
 
-/** One underlying asset, as the surface reads it. */
+/** One underlying asset, as the surface reads it.
+ *
+ * `logoUrl` is CoinMarketCap's own image for the UNDERLYING asset (Nvidia, gold,
+ * an ETF), taken from the stored profile rather than fetched: the profile lane
+ * already wrote it and this read spends nothing to use it. Null until that lane
+ * has reached the asset, and a null is a monogram, never a broken image. */
 // deno-lint-ignore no-explicit-any
-export function wrapperAssetRow(row: Record<string, any>, tokens: ReturnType<typeof wrapperRow>[]) {
+export function wrapperAssetRow(row: Record<string, any>, tokens: ReturnType<typeof wrapperRow>[], logoUrl: string | null = null) {
   const anchorKind = (str(row?.anchor_kind, 40) || 'none') as AnchorKind
   return {
     rwaId: str(row?.rwa_id, 20),
+    logoUrl,
     symbol: str(row?.symbol, 50), name: str(row?.name, 200),
     assetType: str(row?.asset_type, 40), rwaRank: num(row?.rwa_rank),
     anchorKind,
@@ -230,11 +287,39 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
         .eq('captured_at', asOf).in('rwa_id', ids).limit(TOKEN_CAP))
     : { rows: [], reason: null }
 
+  // Logos, joined HERE rather than by the surface. Two bounded reads of rows we
+  // already hold, for the ids this read is about to return and no others, so the
+  // client makes one request for the whole board instead of one per row. A
+  // failed logo read is not a failed board: it leaves every image null, which is
+  // the monogram the surface drew before, and it is not reported as a reason.
+  const cryptoIds = [...new Set(tokenRead.rows.map((row) => str(row?.crypto_id, 20)).filter((v): v is string => !!v))]
+  const [assetLogoRead, tokenLogoRead] = await Promise.all([
+    ids.length
+      ? readRows(() => db.from(PROFILE_TABLE).select('rwa_id,logo_url').in('rwa_id', ids).limit(ROW_LIMIT))
+      : Promise.resolve({ rows: [], reason: null }),
+    cryptoIds.length
+      ? readRows(() => db.from(CATALOGUE_TABLE).select('provider_id,cached_image_url,image_url')
+          .eq('source_provider', 'coinmarketcap').in('provider_id', cryptoIds).limit(LOGO_CAP))
+      : Promise.resolve({ rows: [], reason: null }),
+  ])
+  const assetLogos = new Map<string, string>()
+  for (const row of assetLogoRead.rows) {
+    const id = str(row?.rwa_id, 20)
+    const url = image(row?.logo_url)
+    if (id && url) assetLogos.set(id, url)
+  }
+  const tokenLogos = new Map<string, Logo>()
+  for (const row of tokenLogoRead.rows) {
+    const id = str(row?.provider_id, 20)
+    if (id) tokenLogos.set(id, { cached: image(row?.cached_image_url), original: image(row?.image_url) })
+  }
+
   const tokensByAsset = new Map<string, ReturnType<typeof wrapperRow>[]>()
   for (const row of tokenRead.rows) {
     const id = str(row?.rwa_id, 20)
     if (!id) continue
-    tokensByAsset.set(id, [...(tokensByAsset.get(id) || []), wrapperRow(row)])
+    const cryptoId = str(row?.crypto_id, 20)
+    tokensByAsset.set(id, [...(tokensByAsset.get(id) || []), wrapperRow(row, (cryptoId && tokenLogos.get(cryptoId)) || null)])
   }
   // Dearest first inside an asset, with the wrappers that carry no premium last
   // and keeping their state rather than sorting to an implied zero.
@@ -246,13 +331,17 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
     }))
   }
 
-  const all = rankAssets(current.map((row) => wrapperAssetRow(row, tokensByAsset.get(str(row?.rwa_id, 20) ?? '') || [])))
+  const all = rankAssets(current.map((row) => {
+    const id = str(row?.rwa_id, 20) ?? ''
+    const tokens = tokensByAsset.get(id) || []
+    return wrapperAssetRow(row, tokens, assetLogos.get(id) ?? underlyingFallbackLogo(row?.asset_type, tokens))
+  }))
   const rows = all.slice(0, limit)
 
   const reconciliation = rows
     .filter((row) => row.reconcileState !== 'not_comparable')
     .map((row) => ({
-      rwaId: row.rwaId, symbol: row.symbol, name: row.name, assetType: row.assetType,
+      rwaId: row.rwaId, symbol: row.symbol, name: row.name, assetType: row.assetType, logoUrl: row.logoUrl,
       state: row.reconcileState, ratio: row.reconcileRatio, reason: row.reconcileReason,
       listTokenizedMarketCap: row.listTokenizedMarketCap, listCapturedAt: row.listCapturedAt, listObservedAt: row.listObservedAt,
       tokenMarketCapSum: row.tokenMarketCapSum, tokenMarketCapReported: row.tokenMarketCapReported,

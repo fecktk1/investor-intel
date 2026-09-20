@@ -1004,3 +1004,16 @@
  .intel-compare-heading>button { justify-self:start; }
  .intel-macro-page .intel-hero-read .intel-source-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* Wrapper premium board (/intel/rwa/wrappers). Eight columns, three of them long
+   labels. The workspace pins every table header to one line, which on this board
+   pushes the last columns past the right edge on a narrow desktop and clips the
+   figures under them. Here the HEADER is allowed to wrap onto a second line
+   instead, and the cells run a little tighter, so the essential columns fit a
+   1200px viewport; under the stated width the standard scroll container hands
+   the rest to the reader rather than cutting it off. */
+.intel-rwa-wrapper-table { min-width:58rem; }
+.intel-root .intel-rwa-wrapper-table thead th { white-space:normal; }
+.intel-root .intel-rwa-wrapper-table :is(th,td) { padding-inline:.45rem; }
+.intel-root .intel-rwa-wrapper-table :is(th,td):first-child { padding-left:0; }
+.intel-root .intel-rwa-wrapper-table :is(th,td):last-child { padding-right:0; }

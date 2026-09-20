@@ -30,6 +30,7 @@ import RecentlyDiscovered from '../components/RecentlyDiscovered'
 // instead of) the fixed top movers and top losers lists further down the page.
 import UnusualForThisAsset from '../components/UnusualForThisAsset'
 import FigureProvenance from '../components/FigureProvenance'
+import FigureSourceLine from '../components/FigureSourceLine'
 import { IntelMetricCard, IntelPageHeader, IntelPageShell, IntelTabs } from '../components/IntelPrimitives'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
@@ -42,6 +43,13 @@ const DEGEN_SORTS = ['trending', 'volume', 'gainers', 'losers', 'liquidity', 'ne
 const DEGEN_BUCKETS = ['hot', 'new', 'pumpfun', 'migrated', 'trending', 'takeovers', 'established', 'high_volume', 'high_liquidity', 'high_risk', 'watchlist']
 const DEGEN_CHAINS = ['solana', 'ethereum', 'base', 'bnb']
 const PAGE_SIZE = 50
+/** The newest clock across a list of rows that each carry their own. Returns
+ *  null when no row reported one, which the source line states in words rather
+ *  than filling with the time the page was opened. */
+export const newestStamp = (rows, key) => {
+  const stamps = (Array.isArray(rows) ? rows : []).map(row => Date.parse(String(row?.[key] ?? ''))).filter(Number.isFinite)
+  return stamps.length ? new Date(Math.max(...stamps)).toISOString() : null
+}
 const ScreenVerification=import.meta.env.DEV?lazy(()=>import('../dev/ScreenVerification')):null
 // Route-level split: the chart kit is only paid for by readers who open the
 // market context rail or the Degen screen.
@@ -417,6 +425,14 @@ export default function MarketsPage() {
             <div className="grid gap-4 lg:grid-cols-2">
               <MarketMoverCards title={t('markets.topMovers', { defaultValue: 'Top movers' })} items={marketsData.topGainers} icon={TrendingUp} hrefFor={(_, row) => marketPanelHref(row)} returnState={returnState} />
               <MarketMoverCards title={t('markets.topLosers', { defaultValue: 'Top losers' })} items={marketsData.topLosers} icon={TrendingDown} hrefFor={(_, row) => marketPanelHref(row)} returnState={returnState} />
+              {/* The percentage on every card is the provider's 24 hour change,
+                  read back from the stored catalogue snapshot; the ORDER is ours
+                  and the cards say so themselves. The provider named here is the
+                  one the screen's own provenance reports for that figure, so a
+                  screen served from a different source cannot be mislabelled. */}
+              <div className="lg:col-span-2">
+                <FigureSourceLine source={marketsData.figureProvenance?.price_change?.source || null} capturedAt={snap.lastUpdated || null} />
+              </div>
             </div>
           )}
 
@@ -480,7 +496,13 @@ export default function MarketsPage() {
           {/* 3. Chains — only chains with tracked native performance. The full
               CHAINS registry includes chains without an intel_chain_perf row,
               which would render as empty shells (no price, no 24h change). */}
-          {marketsData?.chainHeatmap?.length > 0 && <ChainHeatmap chains={marketsData.chainHeatmap} />}
+          {/* The heatmap is a rollup of centralized exchange readings, each chain
+              row carrying its own `as_of`; the line quotes the newest of them
+              rather than the time this page was opened. */}
+          {marketsData?.chainHeatmap?.length > 0 && <>
+            <ChainHeatmap chains={marketsData.chainHeatmap} />
+            <FigureSourceLine source="exchange" observedAt={newestStamp(marketsData.chainHeatmap, 'as_of')} scopeKey="exchange_signal" />
+          </>}
           {chainRows.length > 0 && (
             <section className="space-y-2">
               <div className="eyebrow">{t('markets.chains', { defaultValue: 'Chains' })}</div>
@@ -509,6 +531,10 @@ export default function MarketsPage() {
               <div className="grid gap-2 sm:grid-cols-2">
                 {spreads.slice(0, 8).map((s) => <CrossExchangeSpreadCard key={s.normalized_symbol} spread={s} />)}
               </div>
+              {/* Both sides of every spread are venue-reported prices; the net
+                  estimate on each card is ours and is labelled on the card. The
+                  clock is the newest of the pairs shown. */}
+              <FigureSourceLine source="exchange" observedAt={newestStamp(spreads.slice(0, 8), 'as_of')} scopeKey="exchange_signal" />
             </section>
           )}
 
@@ -634,7 +660,12 @@ export default function MarketsPage() {
                     </span>
                   </div>
                 )}
-                <div className="text-[10px] text-[var(--fg-5)]">{t('degen.attribution', { defaultValue: 'Memecoin data via DEX Screener & GeckoTerminal.' })}</div>
+                {/* The two sources behind every row, named through the shared
+                    provider labels rather than in a hardcoded English sentence,
+                    with the snapshot clock the screener was built at. The risk
+                    and quality scores on the table are ours and the table says
+                    so in its own column headers. */}
+                <FigureSourceLine source="dexscreener+geckoterminal" capturedAt={dsnap.lastUpdated || null} />
               </>
             )}
           </section>

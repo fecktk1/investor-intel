@@ -41,7 +41,10 @@ export const CAPTURE_VIEWS = [
   // the LISTED COMPANY beneath a tokenised stock or fund, read back at EDGAR
   // (capture-rwa-underlyings-read.ts, RWA_UNDERLYING_CAPTURE_VIEWS). A different
   // question from the issuer board above, and never merged into it.
-  'rwa_underlying_registrants', 'rwa_asset_profile',
+  // `rwa_asset_logos` is the batch read behind them: up to 100 rwa ids in, the
+  // stored CoinMarketCap image for each one out, so a page of rows shows its
+  // logos in ONE request rather than one per row.
+  'rwa_underlying_registrants', 'rwa_asset_profile', 'rwa_asset_logos',
   // Tokenised-asset on-chain depth: the ranked board for /intel/structure and
   // the single-token block on the asset page
   // (capture-rwa-depth-read.ts, RWA_DEPTH_CAPTURE_VIEWS).

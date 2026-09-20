@@ -394,10 +394,108 @@ export async function readRwaAssetProfile(db: any, params: Record<string, unknow
   }
 }
 
+/** Ids one logo batch may ask for. A page of a research table is 25 rows and the
+ * drawer is one, so 100 is four pages of headroom and still one small read. */
+export const LOGO_BATCH_MAX = 100
+
+/**
+ * LOGOS FOR A PAGE OF UNDERLYING ASSETS, in one request.
+ *
+ * The narrowest possible read: the stored `about.logo` CoinMarketCap published
+ * for each asset, plus the symbol and name so a caller that only holds an id can
+ * still label the image. It spends nothing — the profile lane already wrote
+ * these rows — and it exists so a list can show a page of logos with ONE call
+ * rather than one call per row, which is what a per-row hook would have cost on
+ * a free surface.
+ *
+ * Only https URLs are answered. A provider row that ever carried an http or a
+ * data URL is left out rather than put into an <img> on our page, and the caller
+ * renders its monogram, which is what it drew before any of this existed.
+ *
+ * An unprofiled or unlogoed id is simply ABSENT from the map. That is the honest
+ * shape: "we have no image for this asset" is not the same claim as "this asset
+ * has no image", and the caller's fallback is the same either way.
+ */
+// deno-lint-ignore no-explicit-any
+export async function readRwaAssetLogos(db: any, params: Record<string, unknown> = {}, now: Date | number = Date.now()): Promise<ViewResult> {
+  const at = now instanceof Date ? now.getTime() : now
+  const asked = Array.isArray(params.rwaIds ?? params.rwa_ids) ? (params.rwaIds ?? params.rwa_ids) as unknown[] : []
+  const ids = [...new Set(asked.map((v) => int(v)).filter((v): v is number => v != null && v > 0))].slice(0, LOGO_BATCH_MAX)
+  const base = { view: 'rwa_asset_logos', logos: {} as Record<string, unknown>, asked: ids.length }
+  if (!ids.length) {
+    return { ...base, asOf: null, coverage: emptyCoverage(), reason: 'rwa_ids_required' }
+  }
+  const read = await readRows(() => db.from(PROFILE_TABLE).select('rwa_id,symbol,name,logo_url,captured_at')
+    .in('rwa_id', ids).limit(LOGO_BATCH_MAX))
+  const logos: Record<string, { logoUrl: string | null; symbol: string | null; name: string | null }> = {}
+  const stamps: string[] = []
+  for (const row of read.rows) {
+    const id = int(row?.rwa_id)
+    if (id == null) continue
+    const url = str(row?.logo_url, 500)
+    const stamp = str(row?.captured_at, 40)
+    if (stamp) stamps.push(stamp)
+    logos[String(id)] = {
+      logoUrl: url && /^https:\/\//i.test(url) ? url : null,
+      symbol: str(row?.symbol, 40),
+      name: str(row?.name, 300),
+    }
+  }
+  // CoinMarketCap publishes no logo for the largest underlyings (Nvidia, Apple,
+  // Microsoft). A tokenised STOCK or ETF without one borrows the coin image of its
+  // largest wrapper, addressed by that wrapper's CoinMarketCap id and never by a
+  // ticker. A commodity does not: one gold token's brand is not a picture of gold.
+  // Two bounded reads of our own wrapper capture; a failure here leaves monograms.
+  const missing = ids.filter((id) => !logos[String(id)]?.logoUrl).map(String)
+  if (missing.length) {
+    const assets = await readRows(() => db.from('intel_rwa_wrapper_assets').select('rwa_id,asset_type,symbol,name,captured_at')
+      .in('rwa_id', missing).order('captured_at', { ascending: false }).limit(LOGO_BATCH_MAX * 2))
+    const types = new Map<string, Record<string, unknown>>()
+    for (const row of assets.rows) { const k = str(row?.rwa_id, 20); if (k && !types.has(k)) types.set(k, row) }
+    const borrowers = [...types.entries()].filter(([, row]) => row?.asset_type === 'stock' || row?.asset_type === 'etf').map(([k]) => k)
+    if (borrowers.length) {
+      const tokens = await readRows(() => db.from('intel_rwa_wrapper_tokens').select('rwa_id,crypto_id,market_cap,captured_at')
+        .in('rwa_id', borrowers).order('captured_at', { ascending: false }).limit(1000))
+      const best = new Map<string, { cap: number; at: string; cryptoId: string }>()
+      for (const row of tokens.rows) {
+        const k = str(row?.rwa_id, 20), cryptoId = str(row?.crypto_id, 20), capturedAt = str(row?.captured_at, 40) ?? ''
+        if (!k || !cryptoId || !/^[1-9][0-9]{0,11}$/.test(cryptoId)) continue
+        const cap = Number(row?.market_cap); const value = Number.isFinite(cap) ? cap : -1
+        const held = best.get(k)
+        // Newest capture wins; inside one capture the largest wrapper wins.
+        if (!held || capturedAt > held.at || (capturedAt === held.at && value > held.cap)) best.set(k, { cap: value, at: capturedAt, cryptoId })
+      }
+      for (const [k, pick] of best) {
+        const meta = types.get(k)
+        logos[k] = {
+          logoUrl: `https://s2.coinmarketcap.com/static/img/coins/64x64/${pick.cryptoId}.png`,
+          symbol: logos[k]?.symbol ?? str(meta?.symbol, 40),
+          name: logos[k]?.name ?? str(meta?.name, 300),
+        }
+      }
+    }
+  }
+  stamps.sort()
+  return {
+    ...base,
+    logos,
+    asOf: stamps.at(-1) ?? null,
+    coverage: stamps.length
+      ? { from: stamps[0], to: stamps.at(-1)!, count: Object.keys(logos).length }
+      : { ...emptyCoverage(), count: Object.keys(logos).length },
+    reason: read.reason,
+    // The provider that published these images, named on the payload so the
+    // surface attributes them without hard-coding a provider of its own.
+    source: 'coinmarketcap',
+    checkedAt: new Date(at).toISOString(),
+  }
+}
+
 export const RWA_UNDERLYING_CAPTURE_VIEWS: Record<string, (
   // deno-lint-ignore no-explicit-any
   db: any, body: Record<string, unknown>, now: number
 ) => Promise<ViewResult>> = {
   rwa_underlying_registrants: (db, body, now) => readRwaUnderlyingRegistrants(db, body, now),
   rwa_asset_profile: (db, body, now) => readRwaAssetProfile(db, body, now),
+  rwa_asset_logos: (db, body, now) => readRwaAssetLogos(db, body, now),
 }

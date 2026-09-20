@@ -7,6 +7,7 @@ import TokenChart from '../components/TokenChart'
 import ChartShareControls from '../components/ChartShareControls'
 import ChartExportControls from '../components/ChartExportControls'
 import SavedComparisonChart from '../components/SavedComparisonChart'
+import FigureSourceLine from '../components/FigureSourceLine'
 import {restrictExpiredSnapshot} from '../lib/chart-snapshot-view'
 export default function ChartSnapshotPage(){const {user}=useSupabase(),{org}=useProfile(),{id}=useParams();return <SnapshotBody key={`${user?.id}:${org?.id}:${id}`} id={id}/>}
 function SnapshotBody({id}) {
@@ -30,6 +31,11 @@ function SnapshotBody({id}) {
   {error&&<p role="alert">{error} <button className="intel-text-link" onClick={()=>setRevision(r=>r+1)}>Retry</button></p>}{!state&&!error&&!deleted&&<p role="status">Loading your snapshot…</p>}{deleted&&<p role="status">Snapshot and its Saved Research item deleted.</p>}
   {state&&<><p className="intel-analysis-caption">Captured {new Date(state.capturedAt).toLocaleString()} · saved {new Date(snapshot.created_at).toLocaleString()} · {state.layout.timezone} · calculation {state.calculationVersion}</p>
    {state.layout.comparison?<SavedComparisonChart key={id} state={state}/>:state.bars?.length?<TokenChart key={id} candles={state.bars} assetKey={state.layout.asset} initialLayout={state.layout} readOnly priceCoverage={{chartSource:state.source}}/>:<p className="intel-analysis-caption">The original price series is unavailable. Its verified source reference remains saved.</p>}
+   {/* A frozen snapshot carries no receipts and no envelope, so the chart's own
+       provenance block has nothing to draw from; the source line states the same
+       two facts it would have: WHO published the series, and the two clocks, the
+       provider's own observation and our capture of it. */}
+   <FigureSourceLine source={state.source?.provider||null} observedAt={state.source?.observedAt||null} capturedAt={state.capturedAt||null}/>
    {snapshot.availability?.retainUntil&&<p className="intel-analysis-caption">Saved prices available through {new Date(snapshot.availability.retainUntil).toLocaleString()}. Your notes and source references remain saved after that date.</p>}
    {state.gaps?.map((gap,i)=><p key={i} role="status">{gap}</p>)}
    {snapshot.viewRestrictions?.map((gap,i)=><p key={i} role="status">{gap}</p>)}

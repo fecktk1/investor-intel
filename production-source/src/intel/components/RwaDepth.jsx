@@ -97,26 +97,30 @@ export default function RwaDepth() {
             </p>
           ) : (
             <>
-              <dl className="grid gap-x-8 gap-y-1 sm:grid-cols-2 lg:grid-cols-5 text-[12px]">
-                <div className={`${rule} py-2`}>
+              {/* One definition ROW on a pair of hairlines, not five bordered
+                  cells: a border under each entry reads as five tiles, which is
+                  the card language this workspace does not use. The figures
+                  themselves are unchanged. */}
+              <dl className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-8 gap-y-3 border-y border-[var(--border-default)] py-3 text-[12px] [font-variant-numeric:tabular-nums]">
+                <div>
                   <dt className="text-[var(--fg-4)]">{t('rwa_depth.cohort_count', { defaultValue: 'Tokens read' })}</dt>
-                  <dd className="intel-number">{formatCompact(cohort.count)}</dd>
+                  <dd className="mt-0.5">{formatCompact(cohort.count)}</dd>
                 </div>
-                <div className={`${rule} py-2`}>
+                <div>
                   <dt className="text-[var(--fg-4)]">{t('rwa_depth.cohort_with_pools', { defaultValue: 'With a pool' })}</dt>
-                  <dd className="intel-number">{formatCompact(cohort.withPools)}</dd>
+                  <dd className="mt-0.5">{formatCompact(cohort.withPools)}</dd>
                 </div>
-                <div className={`${rule} py-2`}>
+                <div>
                   <dt className="text-[var(--fg-4)]">{t('rwa_depth.cohort_without_pools', { defaultValue: 'No pool on the chains read' })}</dt>
-                  <dd className="intel-number">{formatCompact(cohort.withoutPools)}</dd>
+                  <dd className="mt-0.5">{formatCompact(cohort.withoutPools)}</dd>
                 </div>
-                <div className={`${rule} py-2`}>
+                <div>
                   <dt className="text-[var(--fg-4)]">{t('rwa_depth.cohort_permissioned', { defaultValue: 'Issuer redemption only' })}</dt>
-                  <dd className="intel-number">{formatCompact(cohort.permissioned)}</dd>
+                  <dd className="mt-0.5">{formatCompact(cohort.permissioned)}</dd>
                 </div>
-                <div className={`${rule} py-2`}>
+                <div>
                   <dt className="text-[var(--fg-4)]">{t('rwa_depth.cohort_liquidity', { defaultValue: 'Pool liquidity found' })}</dt>
-                  <dd className="intel-number">{usdLabel(cohort.totalLiquidityUsd)}</dd>
+                  <dd className="mt-0.5">{usdLabel(cohort.totalLiquidityUsd)}</dd>
                 </div>
               </dl>
               {(cohort.notCovered > 0 || cohort.pending > 0) && (
@@ -131,6 +135,7 @@ export default function RwaDepth() {
               {/* Liquidity against the token's own market cap. The point of the
                   figure is the bottom right: a large wrapper with a thin pool. */}
               <Scatter
+                wide
                 title={t('rwa_depth.chart_title', { defaultValue: 'Pool liquidity against token market cap' })}
                 description={t('rwa_depth.chart_sub', { plotted: points.length, excluded: Math.max(0, rows.length - points.length), defaultValue: 'Both axes are logarithmic. {{plotted}} tokens are plotted; {{excluded}} are left out because they have no pool liquidity or no market cap to place them by, and drawing those at zero would read as a measurement of zero.' })}
                 points={points}
@@ -149,10 +154,10 @@ export default function RwaDepth() {
                       <th scope="col" className={head}>{t('rwa_depth.col_underlying', { defaultValue: 'Underlying' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_issuer', { defaultValue: 'Issuer' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_chains', { defaultValue: 'Chains and contracts' })}</th>
-                      <th scope="col" className={head}>{t('rwa_depth.col_pools', { defaultValue: 'Pools' })}</th>
-                      <th scope="col" className={head}>{t('rwa_depth.col_liquidity', { defaultValue: 'Liquidity' })}</th>
+                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_pools', { defaultValue: 'Pools' })}</th>
+                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_liquidity', { defaultValue: 'Liquidity' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_deepest', { defaultValue: 'Deepest pool' })}</th>
-                      <th scope="col" className={head}>{t('rwa_depth.col_concentration', { defaultValue: 'In the deepest' })}</th>
+                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_concentration', { defaultValue: 'In the deepest' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_reading', { defaultValue: 'Reading' })}</th>
                     </tr>
                   </thead>

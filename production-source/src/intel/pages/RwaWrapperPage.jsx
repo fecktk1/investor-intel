@@ -42,7 +42,10 @@ export default function RwaWrapperPage() {
         })}
       />
       <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />
-      <RwaWrapperSpread />
+      {/* The header above already carries the eyebrow, the title and the intro,
+          so the figure is asked not to repeat its own. It keeps them wherever it
+          is embedded in a section of another page. */}
+      <RwaWrapperSpread showHeading={false} />
       <p className="text-[12px]">
         <Link className="intel-text-link" to="/intel/structure">
           {t('rwa_wrappers.back_to_structure', { defaultValue: 'Back to the structure figures, including the RWA universe' })}

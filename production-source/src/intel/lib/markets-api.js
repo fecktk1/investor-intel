@@ -87,12 +87,14 @@ export async function resolveAssetAddress(supabase, orgId, input, currentHref = 
 // Global cached observations retain the clock of the selected field, not a combined age.
 export async function loadMarketMacro(supabase) {
   const { data, error } = await supabase.from('market_macro_available')
-    .select('total_market_cap_usd,total_volume_24h_usd,market_cap_change_24h_pct,btc_dominance_pct,eth_dominance_pct,stablecoin_market_cap_usd,defi_market_cap_usd,as_of')
+    .select('provider,total_market_cap_usd,total_volume_24h_usd,market_cap_change_24h_pct,btc_dominance_pct,eth_dominance_pct,stablecoin_market_cap_usd,defi_market_cap_usd,as_of')
     .eq('snapshot_kind', 'global').order('as_of', { ascending: false }).limit(4)
   if (error) throw error
   if (!Array.isArray(data)) throw new Error('Invalid global market response')
   if (!data.length) return null
-  const result = { fieldObservations: {} }
+  // The provider that published these readings, carried out of the row rather
+  // than assumed by the surface: the bar names the source it actually read.
+  const result = { provider: data.find(row => row?.provider)?.provider || null, fieldObservations: {} }
   for (const key of ['total_market_cap_usd','total_volume_24h_usd','market_cap_change_24h_pct','btc_dominance_pct','eth_dominance_pct','stablecoin_market_cap_usd','defi_market_cap_usd']) {
     const row = data.find(value => value[key] != null && value[key] !== '' && Number.isFinite(Number(value[key])))
     result[key] = row ? Number(row[key]) : null

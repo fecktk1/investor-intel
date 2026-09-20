@@ -10,6 +10,7 @@ import {
 } from '../lib/narratives-api'
 import { displayStatus, displayStatusMeta, stageMeta, signalMeta, onchainMeta, confirmationMeta } from '../lib/narrative-ui'
 import NarrativeScorecard from '../components/NarrativeScorecard'
+import FigureSourceLine from '../components/FigureSourceLine'
 import ArtifactView from '../components/ArtifactView'
 import IntelDisclaimer from '../components/IntelDisclaimer'
 import IntelErrorNotice from '../components/IntelErrorNotice'
@@ -199,6 +200,14 @@ function NarrativeDossier({slug, org, user, isSuperAdmin, supabase}) {
       <details id="narrative-signals" className="py-3 space-y-3">
         <summary>{t('narratives.scorecard', { defaultValue: 'Scorecard' })}</summary>
         <NarrativeScorecard n={st} />
+        {/* The scorecard's readings are ours, computed from recorded signals, not
+            a provider's figures, so the line says so and carries the scoring run's
+            own clock. Same inputs string as the radar, which scores the same way. */}
+        <FigureSourceLine
+          ourCalculation
+          inputs={t('narratives.score_inputs', { defaultValue: 'recorded market, on-chain and social signals' })}
+          capturedAt={st.scored_at || null}
+        />
       </details>
 
       {/* confirmation & signals (a narrative is "strong" only when chatter is confirmed) */}
