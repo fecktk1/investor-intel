@@ -619,16 +619,40 @@ Deno.test('rwa_universe bounds its series per asset type, which is where the 520
  const result=await call(ctx({...FULL,tables:{...FULL.tables,intel_rwa_universe_snapshots:rows}}),'rwa_universe',{days:90,top_assets:2})
  const data=result.payload.data as Record<string,unknown>
  const series=data.series as Array<Record<string,unknown>>
- assert(series.length>0,'the fixture must produce a series')
- for(const entry of series){
-  assert((entry.points as unknown[]).length<=60,`${String(entry.assetType)} carries ${(entry.points as unknown[]).length} points`)
- }
+ assertEquals(series.length,types.length,'the fixture must produce one series per type')
  const counts=data.series_points as Record<string,number>
+ // A PER-SERIES cap does not bound an ANSWER. Seven types at 60 points each came
+ // back as 420 points and 180 KB in production, and would have grown again with
+ // an eighth type. The budget is shared, so the total is what is bounded.
+ assert(counts.returned<=counts.total_cap,`${counts.returned} points returned against a ${counts.total_cap} budget`)
+ for(const entry of series){
+  assert((entry.points as unknown[]).length<=counts.per_type_cap,`${String(entry.assetType)} carries ${(entry.points as unknown[]).length} points`)
+ }
  assert(counts.captured>counts.returned,'the true point count is reported')
  assert(String(result.payload.note).includes('evenly spaced'))
+ // Each series still keeps the newest observation, so the window is unchanged.
+ for(const entry of series){
+  const points=entry.points as Array<Record<string,unknown>>
+  assertEquals(points[points.length-1].capturedAt,CAPTURED,`${String(entry.assetType)} lost its newest capture`)
+ }
  // The whole reason the cap exists: one call has to fit in a conversation.
  const bytes=JSON.stringify(result.result).length
- assert(bytes<200_000,`a single tool result must stay readable, got ${bytes} bytes`)
+ assert(bytes<120_000,`a single tool result must stay readable, got ${bytes} bytes`)
+
+ // An eighth asset type must not make the answer bigger.
+ const wider=[...types,'private_credit']
+ const moreRows=wider.flatMap(assetType=>Array.from({length:200},(_,index)=>({
+  asset_type:assetType,
+  captured_at:new Date(Date.parse(CAPTURED)-(199-index)*3600000).toISOString(),
+  asset_count:250,assets_scanned:250,assets_with_tokens:193,issuer_count:0,
+  total_market_value_usd:1.3e9,volume_24h_usd:3e8,change_24h_pct:null,
+  top_assets:[{name:'SpaceX',symbol:'SPCX',value:2.1e8,rwa_id:9}],
+ })))
+ const widened=await call(ctx({...FULL,tables:{...FULL.tables,intel_rwa_universe_snapshots:moreRows}}),'rwa_universe',{days:90,top_assets:2})
+ const widerCounts=(widened.payload.data as Record<string,unknown>).series_points as Record<string,number>
+ assertEquals((widened.payload.data as Record<string,unknown>).asset_types instanceof Array?((widened.payload.data as Record<string,unknown>).asset_types as unknown[]).length:0,wider.length)
+ assert(widerCounts.returned<=widerCounts.total_cap,'an eighth type must not widen the budget')
+ assert(widerCounts.per_type_cap<counts.per_type_cap,'an eighth type shortens each series rather than growing the answer')
 })
 
 // ── Resources and prompts ───────────────────────────────────────────────────
