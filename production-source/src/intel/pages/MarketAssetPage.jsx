@@ -64,6 +64,10 @@ const AssetProvenance = deferredPanel(() => import('../components/AssetProvenanc
 const AssetHistoryFigure = deferredPanel(() => import('../components/AssetHistoryFigure'), { label: 'Price history' })
 const AssetFactsPanel = deferredPanel(() => import('../components/AssetFactsPanel'), { label: 'Asset facts' })
 const AttentionPersistence = deferredPanel(() => import('../components/AttentionPersistence'), { label: 'Attention persistence' })
+// Tokenised real-world assets only: the block renders nothing at all unless the
+// daily depth lane has captured this CoinMarketCap id, so every other asset page
+// is unchanged. Deferred like its neighbours.
+const RwaTokenDepth = deferredPanel(() => import('../components/RwaTokenDepth'), { label: 'Tokenised asset' })
 // The project profile's own read stays in the page (the analyst question and
 // the avatar fallback both use it); only the panel that draws it is deferred.
 const ProfilePanel = deferredPanel(() => import('../components/ProfilePanel'), { label: 'The project profile' })
@@ -425,6 +429,7 @@ export default function MarketAssetPage() {
           reads rows the daily passes already wrote and costs nothing. */}
       <AssetHistoryFigure sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
       <AssetFactsPanel sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
+      <RwaTokenDepth sourceProvider={d.sourceProvider} providerId={d.providerId} />
       <AttentionPersistence sourceProvider={d.sourceProvider} providerId={d.providerId} symbol={sym} />
 
       {/* Market signal + WHY (the point of this page) */}

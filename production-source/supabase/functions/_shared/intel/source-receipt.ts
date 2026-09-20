@@ -127,8 +127,9 @@ export const CAPTURE_RECEIPT_LANES:Record<string,CaptureLane>={
  airdrops:cmcLane(['intel-capture-airdrops'],'airdrops','intel_airdrop_snapshots','last_seen_at'),
  new_listings:cmcLane(['intel-capture-new-listings'],'listings','intel_new_listing_snapshots','captured_at'),
  meme_stages:cmcLane(['intel-capture-meme-stages'],'meme_stages','intel_meme_stage_snapshots','captured_at'),
+ rwa_depth:cmcLane(['intel-capture-rwa-depth'],'rwa_depth','intel_rwa_depth_snapshots','captured_at'),
 }
-const FALLBACK_CADENCE:Record<string,number>={regime:3600,structure:300,rwa:3600,attention:3600,history:86400,airdrops:86400,categories:3600,network_stats:3600,listings:86400,meme_stages:3600,exchange_reserves:86400,venue_share:86400}
+const FALLBACK_CADENCE:Record<string,number>={regime:3600,structure:300,rwa:3600,attention:3600,history:86400,airdrops:86400,categories:3600,network_stats:3600,listings:86400,meme_stages:3600,rwa_depth:86400,exchange_reserves:86400,venue_share:86400}
 /** Calls within this window before a caller's newest call belong to one run. */
 export const CAPTURE_RUN_WINDOW_MS=15*60_000
 const MAX_LANES=8,LOG_LIMIT=400,MAX_LOOKBACK_MS=3*86_400_000

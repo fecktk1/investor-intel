@@ -42,6 +42,10 @@ export const CAPTURE_VIEWS = [
   // (capture-rwa-underlyings-read.ts, RWA_UNDERLYING_CAPTURE_VIEWS). A different
   // question from the issuer board above, and never merged into it.
   'rwa_underlying_registrants', 'rwa_asset_profile',
+  // Tokenised-asset on-chain depth: the ranked board for /intel/structure and
+  // the single-token block on the asset page
+  // (capture-rwa-depth-read.ts, RWA_DEPTH_CAPTURE_VIEWS).
+  'rwa_depth', 'rwa_token_depth',
 ]
 
 let rememberedClient = null
