@@ -16,18 +16,28 @@
 // data for, and summarise the depth we actually saw.
 //
 // ── WHAT ONE DAILY RUN DOES, AND WHAT IT COSTS ───────────────────────────────
-//   1. `rwaList` once per asset type (6 calls, params IDENTICAL to the hourly
-//      `rwa` universe lane's, so the shared transport answers from ITS cache for
-//      0 credits whenever that lane ran inside the hour). Gives every RWA asset,
-//      its tokenised market value, and `tokens[]` with `crypto_id`.
+//   1. Subjects from OUR OWN STORE, at zero credits: the newest capture of
+//      `intel_rwa_wrapper_tokens` (every tokenised wrapper CoinMarketCap named on
+//      `rwaQuotes`, with its symbol, issuer and market cap) joined to
+//      `intel_rwa_wrapper_assets` for the asset it wraps and that asset's whole
+//      tokenised value. The six-hourly wrapper lane writes both.
+//
+//      CORRECTED 2026-09-20, on production evidence. Until then this step called
+//      `rwaList` once per asset type to read `tokens[].crypto_id`. The first
+//      production run proved that wrong twice over: `/v5/real-world-assets/
+//      assets/list` rows carry NO `tokens` key at all, so the run discovered 3
+//      subjects (only the alias map's pinned contracts) instead of hundreds, and
+//      the six calls were logged `live` at 1 credit each rather than as the cache
+//      hits the design assumed. Our own store already holds 311 wrapper tokens,
+//      so the lane reads them and spends nothing.
 //   2. Deployments from `market_assets.facts.deployments` — rows the daily
 //      metadata pass already wrote, 0 credits. Tokens still missing one get ONE
 //      bounded `metadata` call (up to `METADATA_IDS_PER_CALL` ids, 1 credit).
 //   3. `dexPools` per readable deployment, at most `POOL_CALLS_PER_RUN`.
 //   4. `dexHolderCount` for the deepest chain of the deepest tokens, at most
 //      `HOLDER_CALLS_PER_RUN`.
-// Upper bound: 6 + 1 + 60 + 20 = 87 credits a run, once a day. The typical run
-// is ~81 because step 1 is a cache hit. The ceiling is restated in the
+// Upper bound: 1 + 60 + 20 = 81 credits a run, once a day, and the first step is
+// two database reads rather than a provider call. The ceiling is restated in the
 // `provider_schedule_policy` row the migration seeds.
 //
 // ── HONESTY RULES THIS LANE KEEPS ────────────────────────────────────────────
@@ -56,22 +66,34 @@
 // request (`dexPools` is in `CMC_DEX_SCHEMA_VALIDATED`), so a shape change is a
 // refused call rather than a silently wrong row.
 //
+// A token with NO pool answers 200 and carries no rows, and since 2026-09-20 that
+// is a SUCCESSFUL zero-row read (`cmcDexPoolPage`) rather than a refusal, so
+// `no_pool_on_read_chains` can be reached and recorded. Which of the legal empty
+// shapes the provider actually sends cannot be learned from a test, so the shape
+// of every pool answer is summarised onto the job result (`poolShapes`) - top
+// level keys and array lengths only, never a value and never an address.
+//
 // Same contract as `capture-listings.ts`: one function per lane, bounded by an
 // explicit call ceiling, obeying `provider_schedule_policy`, never throwing — a
 // failure becomes `{ error }` on the result. Nothing here calls CoinMarketCap
 // directly; the transport is injected as `deps.request`.
 
 import { cmcRows, planAllows, estimateCmcCredits } from '../market-assets/cmc-capabilities.ts'
-import { CMC_DEX_NETWORKS, cmcDexIdentity, cmcDexInteger, cmcDexNumber } from '../market-assets/cmc-dex.ts'
+import { CMC_DEX_NETWORKS, cmcDexIdentity, cmcDexInteger, cmcDexNumber, cmcDexPoolPage, cmcShapeSummary } from '../market-assets/cmc-dex.ts'
 import { cmcDeployments } from '../market-assets/coinmarketcap-provider.ts'
 import type { MarketAssetsContext } from '../market-assets/types.ts'
-import { CAPTURE_PROVIDER, RWA_ASSET_TYPES, utcDate, schedulePolicy } from './capture-jobs.ts'
+import { CAPTURE_PROVIDER, utcDate, schedulePolicy } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult } from './capture-jobs.ts'
 import { ISSUER_REVIEW_SEED } from './rwa-issuer-evidence.ts'
 import { currentAssertions } from './rwa-issuer-aliases.ts'
 
 export const DEPLOYMENT_TABLE = 'intel_rwa_token_deployments'
 export const DEPTH_TABLE = 'intel_rwa_depth_snapshots'
+/** The wrapper lane's own tables, which this lane reads its subjects from. Named
+ * here rather than imported from capture-rwa-wrappers.ts so the two lanes stay
+ * independently deployable and a merge in either cannot move the other. */
+export const WRAPPER_TOKEN_TABLE = 'intel_rwa_wrapper_tokens'
+export const WRAPPER_ASSET_TABLE = 'intel_rwa_wrapper_assets'
 
 /** The pg_cron job this lane runs under. The migration schedules exactly this
  * name and minute; a test reads the migration and fails if the two disagree. */
@@ -97,6 +119,22 @@ export const POOL_PAGE_SIZE = 20
 /** Pool rows retained on a depth snapshot, across every chain of one token. The
  * deepest pool is what the reading turns on; the rest are context. */
 export const POOLS_PER_TOKEN = 30
+/** Wrapper rows one run reads from our own store. The newest capture held 311
+ * tokens across 254 assets on 2026-09-20, so this is headroom rather than a cut,
+ * and `depthSubjects` does the ranking afterwards. */
+export const WRAPPER_ROWS_PER_RUN = 1000
+/** The per-run credit ceiling, restated in the `provider_schedule_policy` row the
+ * migration seeds and asserted against it by test. Subject discovery is two
+ * database reads, so the only paid calls are the one metadata fill, the pool
+ * reads and the holder counts. */
+export const DEPTH_CREDIT_CEILING = 1 + POOL_CALLS_PER_RUN + HOLDER_CALLS_PER_RUN
+/** Snapshot states that do NOT count as "already read today".
+ *
+ * `budget_deferred` was never read at all, and `provider_unavailable` means every
+ * call for that token failed - three times on 2026-09-20, because a no-pool answer
+ * was being refused. Treating either as read would freeze the token's unknown
+ * state for the rest of the UTC day and make a same-day retry pointless. */
+export const RETRYABLE_DEPTH_STATES = new Set(['budget_deferred', 'provider_unavailable'])
 
 /** What a depth snapshot does NOT mean. Stored on every row, because a liquidity
  * figure read without it invites exactly the conclusion the lane cannot support. */
@@ -204,9 +242,14 @@ export interface DepthSubject {
   rwaName: string | null
   assetType: string | null
   issuerName: string | null
-  /** The RWA asset's tokenised market value from the RWA payload, in USD. It
-   * describes the UNDERLYING asset's whole tokenised float, not this token. */
+  /** The RWA asset's tokenised market value as the wrapper capture stored it, in
+   * USD. It describes the UNDERLYING asset's whole tokenised float, not this
+   * token. */
   underlyingValueUsd: number | null
+  /** THIS token's own market cap, as the wrapper capture stored it. It is what the
+   * subject set is ranked by, and it is a different size from the one above: a
+   * thin wrapper of a large asset is exactly the case this lane looks for. */
+  tokenMarketCap?: number | null
   /** Pinned subjects are read first and are never crowded out by the top slice. */
   pinned: boolean
   /** A contract the alias map asserted, for a subject with no provider id. */
@@ -236,41 +279,56 @@ export function assertedTokenContracts(at: number): { chain: string; address: st
   return dedupe(out, (row) => `${row.chain}:${row.address}`)
 }
 
-/** Every RWA token in one `rwaList` page, with the asset it wraps.
+/** Every RWA token in the newest WRAPPER CAPTURE, with the asset it wraps.
  *
- * The tokenised market value is read exactly the way `rwaAggregate` reads it in
- * capture-jobs.ts, from the same candidate fields in the same order, so the two
- * lanes cannot disagree about what "tokenised value" means. A token with no
- * `crypto_id` is skipped: without a provider id it has no identity to join to. */
+ * Both arguments are rows of our own tables, written by the six-hourly wrapper
+ * lane from `rwaQuotes` and `rwaList`: `intel_rwa_wrapper_tokens` names the token
+ * (crypto id, symbol, name, issuer, market cap) and `intel_rwa_wrapper_assets`
+ * names the asset it wraps and that asset's whole tokenised value. Reading them
+ * costs nothing and gives the token identities `/v5/real-world-assets/assets/list`
+ * does not carry at all.
+ *
+ * The underlying value prefers the QUOTES figure the wrapper lane stored
+ * (`tokenized_market_cap`) and falls back to the LIST figure
+ * (`list_tokenized_market_cap`); those are the same two provider fields
+ * `rwaAggregate` reads, so the lanes cannot disagree about what "tokenised value"
+ * means. A token with no `crypto_id` is skipped: without a provider id it has no
+ * identity to join to. */
 // deno-lint-ignore no-explicit-any
-export function subjectsFromRwaPage(rows: any[], assetType: string): DepthSubject[] {
-  const out: DepthSubject[] = []
-  for (const row of rows) {
-    const quote = row?.quote ?? {}
-    const value = num(quote.tokenized_market_cap ?? row?.tokenized_market_cap ?? quote.total_market_value ?? row?.total_market_value ?? quote.market_cap ?? row?.market_cap)
-    const rwaId = providerId(row?.rwa_id)
-    for (const token of (Array.isArray(row?.tokens) ? row.tokens : []).slice(0, 500)) {
-      const cryptoId = providerId(token?.crypto_id)
-      if (!cryptoId) continue
-      out.push({
-        tokenKey: `cmc:${cryptoId}`, cryptoId,
-        symbol: text(token?.symbol, 50), tokenName: text(token?.name, 200),
-        rwaId, rwaName: text(row?.name, 200), assetType: text(assetType, 40),
-        issuerName: text(token?.issuer_name, 200),
-        underlyingValueUsd: value, pinned: false,
-      })
-    }
+export function subjectsFromWrapperCapture(tokens: any[], assets: any[]): DepthSubject[] {
+  const byAsset = new Map<string, Record<string, unknown>>()
+  for (const asset of assets || []) {
+    const id = providerId(asset?.rwa_id)
+    if (id) byAsset.set(id, asset as Record<string, unknown>)
   }
-  return out
+  const out: DepthSubject[] = []
+  for (const row of tokens || []) {
+    const cryptoId = providerId(row?.crypto_id)
+    if (!cryptoId) continue
+    const rwaId = providerId(row?.rwa_id)
+    const asset = rwaId ? byAsset.get(rwaId) ?? null : null
+    out.push({
+      tokenKey: `cmc:${cryptoId}`, cryptoId,
+      symbol: text(row?.symbol, 50), tokenName: text(row?.name, 200),
+      rwaId, rwaName: text(asset?.name, 200), assetType: text(asset?.asset_type, 40),
+      issuerName: text(row?.issuer_name, 200),
+      underlyingValueUsd: num(asset?.tokenized_market_cap ?? asset?.list_tokenized_market_cap),
+      tokenMarketCap: num(row?.market_cap),
+      pinned: false,
+    })
+  }
+  return dedupe(out, (row) => row.tokenKey)
 }
 
 /** The bounded subject set for one run, pinned subjects first.
  *
  * ORDER IS THE BUDGET. Pinned subjects (the alias map's asserted contracts and
  * the issuer reviews' tokens) come first and can never be pushed out by a large
- * wrapper that appeared today. Everything else is ordered by the tokenised value
- * of the asset it wraps, descending, because a thin pool under a large wrapper
- * is the finding this lane exists to surface. */
+ * wrapper that appeared today. Everything else is ordered by THE TOKEN'S OWN
+ * market cap, descending, falling back to the tokenised value of the asset it
+ * wraps when the token's is unknown: a thin pool under a widely held wrapper is
+ * the finding this lane exists to surface, and the token is the thing that is
+ * held. */
 export function depthSubjects(discovered: DepthSubject[], pinned: DepthSubject[], limit = TOKENS_PER_RUN): DepthSubject[] {
   const reviewed = new Set(reviewedCryptoIds())
   // A discovered token the issuer reviews name is the SAME subject as its pin,
@@ -279,8 +337,9 @@ export function depthSubjects(discovered: DepthSubject[], pinned: DepthSubject[]
   const promoted = discovered.map((row) => (row.cryptoId && reviewed.has(row.cryptoId) ? { ...row, pinned: true } : row))
   const merged = dedupe([...pinned, ...promoted], (row) => row.tokenKey)
     .map((row) => ({ ...row, pinned: row.pinned || !!(row.cryptoId && reviewed.has(row.cryptoId)) }))
+  const size = (row: DepthSubject): number => row.tokenMarketCap ?? row.underlyingValueUsd ?? -1
   return merged
-    .sort((a, b) => (a.pinned === b.pinned ? (b.underlyingValueUsd ?? -1) - (a.underlyingValueUsd ?? -1) : a.pinned ? -1 : 1)
+    .sort((a, b) => (a.pinned === b.pinned ? size(b) - size(a) : a.pinned ? -1 : 1)
       || String(a.tokenKey).localeCompare(String(b.tokenKey)))
     .slice(0, Math.max(0, Math.trunc(limit)))
 }
@@ -373,14 +432,18 @@ export interface DepthPool {
 
 /** The pools of one `/v1/dex/token/pools` response, in the reviewed field names.
  *
+ * The container is read through `cmcDexPoolPage`, the SAME helper the transport's
+ * response validator uses, so an answer the validator accepted can never be
+ * projected differently here: zero pools is an empty list, and a documented
+ * container name cannot make validation and projection disagree.
+ *
  * The pair label is built from the two token legs the response names, in the
  * order it names them. It is a LABEL: no side is asserted to be the base or the
  * quote, because the response does not say which is which. A leg with no symbol
  * leaves the label null rather than inventing a side. */
 // deno-lint-ignore no-explicit-any
 export function poolRows(payload: any, platform: string): DepthPool[] {
-  const data = payload?.data ?? payload
-  const rows = Array.isArray(data) ? data : []
+  const rows = cmcDexPoolPage(payload && typeof payload === 'object' && 'data' in payload ? payload.data : payload)?.rows ?? []
   const out: DepthPool[] = []
   for (const row of rows.slice(0, POOL_PAGE_SIZE)) {
     const address = text(row?.addr, 200)
@@ -465,7 +528,7 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
     if (!planAllows(plan, 'startup')) return { job, rows: 0, credits: 0, skipped: 'plan_below_startup' }
     const skip = await guardJob(db, job, 'rwa_depth', deps, now, { table: DEPTH_TABLE, column: 'captured_at' })
     if (skip) return skip
-    const ceiling = RWA_ASSET_TYPES.length + 1 + POOL_CALLS_PER_RUN + HOLDER_CALLS_PER_RUN
+    const ceiling = DEPTH_CREDIT_CEILING
     const ctx = ctxFor('rwa-depth', ceiling)
     const budget = callBudget(ctx, ceiling)
     if (budget < 1) return { job, rows: 0, credits: 0, skipped: 'call_budget' }
@@ -473,16 +536,28 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
     const snapshotDate = utcDate(now)
     let calls = 0, reason: string | null = null
 
-    // ── 1. The RWA universe. Same params as the hourly `rwa` lane, so the
-    // shared transport answers from its cache for 0 credits inside the hour.
+    // ── 1. Subjects from the newest WRAPPER CAPTURE. Two database reads, zero
+    // credits, zero provider calls. `/v5/real-world-assets/assets/list` carries no
+    // `tokens` key at all (production, 2026-09-20), so the token identities have
+    // to come from `rwaQuotes`, which the wrapper lane already captures.
     const discovered: DepthSubject[] = []
-    for (const assetType of RWA_ASSET_TYPES) {
-      if (calls >= budget) { reason = reason || 'call_budget'; break }
-      calls += 1
-      credits += estimateCmcCredits('rwaList', { limit: '250' })
-      const page = await deps.request('rwaList', { asset_type: assetType, limit: 250, start: 1 }, ctx).catch(() => null)
-      if (!page?.payload) { reason = reason || text(page?.reason, 60) || 'provider_unavailable'; continue }
-      discovered.push(...subjectsFromRwaPage(cmcRows('rwaList', page.payload).rows, assetType))
+    const wrapperAt = await newestAt(db, WRAPPER_TOKEN_TABLE, 'captured_at')
+    if (wrapperAt == null) reason = reason || 'no_wrapper_capture_yet'
+    else {
+      const wrapperCapture = new Date(wrapperAt).toISOString()
+      try {
+        const [tokenRead, assetRead] = await Promise.all([
+          db.from(WRAPPER_TOKEN_TABLE).select('rwa_id,crypto_id,symbol,name,issuer_name,market_cap,volume_24h')
+            .eq('provider', CAPTURE_PROVIDER).eq('captured_at', wrapperCapture).limit(WRAPPER_ROWS_PER_RUN),
+          db.from(WRAPPER_ASSET_TABLE).select('rwa_id,name,asset_type,tokenized_market_cap,list_tokenized_market_cap')
+            .eq('provider', CAPTURE_PROVIDER).eq('captured_at', wrapperCapture).limit(WRAPPER_ROWS_PER_RUN),
+        ])
+        if (tokenRead?.error) reason = reason || String(tokenRead.error.message || tokenRead.error).slice(0, 200)
+        if (assetRead?.error) reason = reason || String(assetRead.error.message || assetRead.error).slice(0, 200)
+        const tokens = Array.isArray(tokenRead?.data) ? tokenRead.data : []
+        if (!tokens.length) reason = reason || 'no_wrapper_capture_yet'
+        discovered.push(...subjectsFromWrapperCapture(tokens, Array.isArray(assetRead?.data) ? assetRead.data : []))
+      } catch (e) { reason = reason || ((e as Error)?.message || 'wrapper_read_failed').slice(0, 200) }
     }
 
     // ── 2. Pinned contracts from the alias map, for subjects CoinMarketCap has
@@ -584,13 +659,18 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
     // ── 5. Today's rows already captured. A token whose depth was read today
     // AND whose deployment set is unchanged is skipped, so a retried or resumed
     // run walks forward through the subject set instead of paying twice.
+    //
+    // A row in a RETRYABLE state is not a read: `budget_deferred` never reached the
+    // provider and `provider_unavailable` reached it and got nothing, so both are
+    // tried again by a later run the same day rather than being frozen as the
+    // day's answer. Only a row that actually establishes something counts.
     const readToday = new Set<string>()
     try {
       const { data } = await db.from(DEPTH_TABLE).select('token_key,depth_state,deployment_digest')
         .eq('provider', CAPTURE_PROVIDER).eq('snapshot_date', snapshotDate).limit(1000)
       for (const row of (data || []) as Record<string, unknown>[]) {
         const key = text(row.token_key, 200)
-        if (!key || row.depth_state === 'budget_deferred') continue
+        if (!key || RETRYABLE_DEPTH_STATES.has(String(row.depth_state))) continue
         if (text(row.deployment_digest, 200) === deploymentDigest(deployments.get(key) || [])) readToday.add(key)
       }
     } catch { /* an unreadable prior run only means this one does the work again */ }
@@ -598,7 +678,11 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
     // ── 6. Pools per readable deployment, then holder counts.
     const pools = new Map<string, DepthPool[]>()
     const attempts = new Map<string, { attempted: number; failed: number }>()
-    let poolCalls = 0
+    // How many pool answers had each SHAPE, so the next run tells us which empty
+    // shape a no-pool token actually produces. Shapes only: no value, no address.
+    const poolShapes = new Map<string, number>()
+    const noteShape = (shape: string) => poolShapes.set(shape, (poolShapes.get(shape) ?? 0) + 1)
+    let poolCalls = 0, emptyPoolReads = 0
     for (const subject of subjects) {
       if (readToday.has(subject.tokenKey)) continue
       for (const deployment of (deployments.get(subject.tokenKey) || [])) {
@@ -611,9 +695,17 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
         const page = await deps.request('dexPools', { platform: deployment.dexPlatform, address: deployment.dexAddress, size: POOL_PAGE_SIZE }, ctx).catch(() => null)
         if (!page?.payload) {
           attempt.failed += 1
-          reason = reason || text(page?.reason, 60) || 'provider_unavailable'
+          const why = text(page?.reason, 60) || 'provider_unavailable'
+          noteShape(`refused:${why}`)
+          reason = reason || why
         } else {
-          pools.set(subject.tokenKey, [...(pools.get(subject.tokenKey) || []), ...poolRows(page.payload, deployment.dexPlatform)])
+          const found = poolRows(page.payload, deployment.dexPlatform)
+          // The shape of a ZERO-POOL answer is the one fact a test cannot supply.
+          if (!found.length) {
+            emptyPoolReads += 1
+            noteShape(`empty:${cmcShapeSummary((page.payload as Record<string, unknown>)?.data, 2, 60)}`)
+          } else noteShape('pools')
+          pools.set(subject.tokenKey, [...(pools.get(subject.tokenKey) || []), ...found])
         }
         attempts.set(subject.tokenKey, attempt)
       }
@@ -674,10 +766,12 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
         token_name: subject.tokenName ?? entry?.name ?? null,
         rwa_id: subject.rwaId, rwa_name: subject.rwaName, asset_type: subject.assetType, issuer_name: subject.issuerName,
         // TWO different sizes, stored apart. `underlying_value_usd` is the whole
-        // tokenised float of the asset this token wraps, from the RWA payload;
-        // `token_market_cap` is THIS token's market cap from our own catalogue.
-        // Dividing one by the other would be a number neither source reported.
-        underlying_value_usd: money(subject.underlyingValueUsd), token_market_cap: money(entry?.marketCap),
+        // tokenised float of the asset this token wraps, as the wrapper capture
+        // stored it; `token_market_cap` is THIS token's market cap, from our own
+        // catalogue row when we hold one and otherwise from the same wrapper
+        // capture. Dividing one by the other would be a number neither reported.
+        underlying_value_usd: money(subject.underlyingValueUsd),
+        token_market_cap: money(entry?.marketCap ?? subject.tokenMarketCap),
         depth_state: state,
         chains_deployed: own.map((row) => row.platformLabel ?? row.platformKey),
         chains_read: [...new Set(readable.map((row) => row.dexPlatform as string))],
@@ -701,8 +795,14 @@ export async function captureRwaDepth(db: any, ctxFor: (name: string, maxCalls: 
     return {
       job, rows: written.rows, credits, snapshotDate, capturedAt, calls,
       subjects: subjects.length, deployments: deploymentWrite.length, deploymentRows: wroteDeployments.rows,
-      poolCalls, withPools: [...pools.keys()].length, holderCounts: holders.size, skippedToday: readToday.size,
-      ...(reason ? { partial: reason } : {}), ...(written.error ? { error: written.error } : {}),
+      poolCalls, withPools: [...pools.values()].filter((list) => list.length > 0).length,
+      emptyPoolReads, holderCounts: holders.size, skippedToday: readToday.size,
+      // Shapes and counts only, so the next run can be read without the body.
+      ...(poolShapes.size ? { poolShapes: Object.fromEntries(poolShapes) } : {}),
+      // A run that read pools everywhere and found none anywhere is worth stating
+      // even when nothing failed: `poolShapes` then says what the provider sent.
+      ...(reason ? { partial: reason } : poolCalls && emptyPoolReads === poolCalls ? { partial: 'no_pools_on_any_read_chain' } : {}),
+      ...(written.error ? { error: written.error } : {}),
     }
   } catch (e) { return failed(job, credits, e) }
 }

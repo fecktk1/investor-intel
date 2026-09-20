@@ -1,9 +1,10 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   captureRwaDepth, depthReading, depthState, deploymentDigest, deploymentRows, depthSubjects,
-  poolRows, readableDeployment, reviewedCryptoIds, subjectsFromRwaPage, assertedTokenContracts,
-  DEPTH_TABLE, DEPLOYMENT_TABLE, POOL_CALLS_PER_RUN, HOLDER_CALLS_PER_RUN, TOKENS_PER_RUN,
-  POOL_PAGE_SIZE, RWA_DEPTH_CAPTURE_OPS, RWA_DEPTH_CAPTURE_SCHEDULE,
+  poolRows, readableDeployment, reviewedCryptoIds, subjectsFromWrapperCapture, assertedTokenContracts,
+  DEPTH_TABLE, DEPLOYMENT_TABLE, DEPTH_CREDIT_CEILING, POOL_CALLS_PER_RUN, HOLDER_CALLS_PER_RUN,
+  TOKENS_PER_RUN, POOL_PAGE_SIZE, RWA_DEPTH_CAPTURE_OPS, RWA_DEPTH_CAPTURE_SCHEDULE,
+  WRAPPER_ASSET_TABLE, WRAPPER_TOKEN_TABLE,
 } from './capture-rwa-depth.ts'
 
 const NOW = new Date(Math.floor((Date.now() - 7 * 86_400_000) / 3_600_000) * 3_600_000)
@@ -74,14 +75,23 @@ function fakeRequest(handler: (name: string, params: Record<string, unknown>) =>
   return { request, calls }
 }
 
-/** One RWA asset with one token, in the `rwaList` shape: `cmcRows` flattens the
- * USD quote onto `quote`, and the tokens carry `crypto_id`. */
-const rwaAsset = (rwaId: number, name: string, value: number, tokens: Record<string, unknown>[]) =>
-  ({ rwa_id: rwaId, name, symbol: name.slice(0, 4).toUpperCase(), quote: { tokenized_market_cap: value }, tokens })
-const token = (cryptoId: number, symbol: string, issuer = 'Issuer') =>
-  ({ crypto_id: cryptoId, symbol, name: `${symbol} token`, issuer_id: 'a'.repeat(24), issuer_name: issuer })
-
-const rwaPage = (rows: Record<string, unknown>[]) => ({ payload: { data: { rwa_assets: rows } } })
+/** The WRAPPER CAPTURE, in the shape the two tables actually hold. Verified
+ * against production on 2026-09-20: `intel_rwa_wrapper_tokens` held 311 rows and
+ * `intel_rwa_wrapper_assets` the 50 assets they wrap, all at one `captured_at`.
+ *
+ * This is where the depth lane's subjects come from, because
+ * `/v5/real-world-assets/assets/list` has no `tokens` key at all. */
+const WRAPPER_AT = new Date(Math.floor((NOW.getTime() - 3_600_000) / 3_600_000) * 3_600_000).toISOString()
+const wrapperAsset = (rwaId: number, name: string, value: number, assetType = 'commodity') =>
+  ({ provider: 'coinmarketcap', captured_at: WRAPPER_AT, rwa_id: String(rwaId), name, asset_type: assetType, tokenized_market_cap: value })
+const wrapperToken = (rwaId: number, cryptoId: number, symbol: string, marketCap: number, issuer = 'Issuer') =>
+  ({
+    provider: 'coinmarketcap', captured_at: WRAPPER_AT, rwa_id: String(rwaId), crypto_id: String(cryptoId),
+    symbol, name: `${symbol} token`, issuer_name: issuer, market_cap: marketCap, volume_24h: 1_000,
+  })
+/** The two wrapper tables as one seed, so every lane test starts from a capture. */
+const wrapperSeed = (assets: Record<string, unknown>[], tokens: Record<string, unknown>[]) =>
+  ({ [WRAPPER_ASSET_TABLE]: assets, [WRAPPER_TOKEN_TABLE]: tokens })
 /** A pool row in the reviewed `/v1/dex/token/pools` field names. */
 const poolRow = (addr: string, liq: number | null, v24: number | null, exn = 'Uniswap V3') =>
   ({ addr, exn, liqUsd: liq, v24, t0: { addr: EVM, sym: 'XAUT' }, t1: { addr: EVM2, sym: 'USDC' }, pubAt: 1_700_000_000 })
@@ -130,24 +140,39 @@ Deno.test('deployments are read through cmcDeployments and keep the verbatim add
   eq(sui.contractAddress, '0x9d297676e7a4b771ab023291377b2adfaa4938fb::xaum::XAUM')
 })
 
-Deno.test('a token with no crypto_id is not a subject, and the tokenised value comes off the asset', () => {
-  const subjects = subjectsFromRwaPage([
-    rwaAsset(1, 'Gold', 4_700_000_000, [token(4705, 'PAXG', 'Paxos'), { symbol: 'NOID' }]),
-  ], 'commodity')
+Deno.test('subjects come from the wrapper capture, and a token with no crypto_id is not one', () => {
+  const subjects = subjectsFromWrapperCapture([
+    wrapperToken(1, 4705, 'PAXG', 1_894_589_902, 'Paxos'),
+    { ...wrapperToken(1, 0, 'NOID', 1), crypto_id: null },
+    // The same token twice in one capture is one subject, not two.
+    wrapperToken(1, 4705, 'PAXG', 1_894_589_902, 'Paxos'),
+  ], [wrapperAsset(1, 'Gold', 4_700_000_000)])
   eq(subjects.length, 1)
   eq(subjects[0].tokenKey, 'cmc:4705')
   eq(subjects[0].rwaName, 'Gold')
   eq(subjects[0].assetType, 'commodity')
   eq(subjects[0].issuerName, 'Paxos')
+  // TWO sizes, kept apart: the asset's whole tokenised float and this token's cap.
   eq(subjects[0].underlyingValueUsd, 4_700_000_000)
+  eq(subjects[0].tokenMarketCap, 1_894_589_902)
+  // A token whose asset row is missing from the capture is still a subject: it is
+  // a wrapper somebody holds, and the asset fields are honestly null.
+  const orphan = subjectsFromWrapperCapture([wrapperToken(99, 5176, 'XAUt', 1)], [])
+  eq(orphan.length, 1)
+  eq(orphan[0].rwaName, null)
+  eq(orphan[0].underlyingValueUsd, null)
+  // The list figure answers when the quotes figure is absent.
+  const listOnly = subjectsFromWrapperCapture([wrapperToken(1, 4705, 'PAXG', 1)],
+    [{ ...wrapperAsset(1, 'Gold', 0), tokenized_market_cap: null, list_tokenized_market_cap: 12_345 }])
+  eq(listOnly[0].underlyingValueUsd, 12_345)
 })
 
 Deno.test('pinned subjects come first and a reviewed token is promoted rather than duplicated', () => {
   const reviewed = reviewedCryptoIds()
   assert(reviewed.includes('4705'), 'the issuer reviews name PAX Gold')
   const discovered = [
-    ...subjectsFromRwaPage([rwaAsset(9, 'SpaceX', 9e9, [token(99999, 'SPCX')])], 'stock'),
-    ...subjectsFromRwaPage([rwaAsset(1, 'Gold', 1e6, [token(4705, 'PAXG')])], 'commodity'),
+    ...subjectsFromWrapperCapture([wrapperToken(9, 99999, 'SPCX', 9e9)], [wrapperAsset(9, 'SpaceX', 9e9, 'stock')]),
+    ...subjectsFromWrapperCapture([wrapperToken(1, 4705, 'PAXG', 1e6)], [wrapperAsset(1, 'Gold', 1e6)]),
   ]
   const pinned = [{
     tokenKey: 'contract:eip155:1:' + EVM.toLowerCase(), cryptoId: null, symbol: 'BUIDL', tokenName: null,
@@ -156,6 +181,13 @@ Deno.test('pinned subjects come first and a reviewed token is promoted rather th
   }]
   const subjects = depthSubjects(discovered, pinned)
   eq(subjects.length, 3, 'the reviewed token is promoted in place, never added twice')
+  // THE TOKEN'S OWN market cap is the rank, not the asset's tokenised float: a
+  // thin wrapper of a large asset is the finding, and the token is what is held.
+  const ranked = depthSubjects([
+    { ...discovered[0], tokenMarketCap: 10, underlyingValueUsd: 9e9 },
+    { ...discovered[1], pinned: false, tokenMarketCap: 5_000, underlyingValueUsd: 1 },
+  ], [])
+  eq(ranked.map((row) => row.tokenKey), ['cmc:4705', 'cmc:99999'])
   // PAXG wraps the SMALLER asset here, and is still ahead of SpaceX because the
   // issuer reviews name it. Order is the budget.
   eq(subjects.map((s) => s.tokenKey).slice(0, 2).includes('cmc:4705'), true)
@@ -182,6 +214,14 @@ Deno.test('pool rows are read in the reviewed field names; a pool with no liquid
   eq(poolRows({ data: Array.from({ length: 40 }, (_, i) => poolRow('0x' + String(i).padStart(40, 'd'), 1, 1)) }, 'ethereum').length, POOL_PAGE_SIZE)
   // A leg with no symbol leaves the pair unnamed rather than inventing a side.
   eq(poolRows({ data: [{ ...poolRow(EVM2, 1, 1), t1: { addr: EVM2 } }] }, 'ethereum')[0].pair, null)
+  // EVERY legal "no pool" shape reads as zero pools, not as a broken answer. The
+  // provider refused three of these for a credit each on 2026-09-20.
+  for (const empty of [{ data: null }, { data: [] }, { data: {} }, { data: { pools: [] } }, { status: { error_code: 0 } }]) {
+    eq(poolRows(empty, 'ethereum').length, 0, JSON.stringify(empty))
+  }
+  // A documented container that DOES carry rows is read through the same helper
+  // the transport's validator uses, so the two can never disagree.
+  eq(poolRows({ data: { pools: [poolRow(EVM2, 7, 1)] } }, 'ethereum')[0].liquidityUsd, 7)
 })
 
 Deno.test('the depth reading sums only reported liquidity and says how many pools it was built from', () => {
@@ -235,7 +275,6 @@ Deno.test('the deployment digest is order independent and case insensitive on th
 })
 
 // ── The lane ──────────────────────────────────────────────────────────────────
-
 Deno.test('below Startup the lane spends nothing to discover it cannot run', async () => {
   const { request, calls } = fakeRequest(() => null)
   const result = await captureRwaDepth(fakeDb(), ctxFor, NOW, 'builder', { request })
@@ -252,9 +291,17 @@ Deno.test('a disabled policy row stops the lane, and a run inside the cadence sk
   eq(calls.length, 0, 'neither skip costs a provider call')
 })
 
-Deno.test('one full run resolves deployments from the catalogue, reads pools and explains every state', async () => {
+Deno.test('one full run discovers subjects from our own store, reads pools and explains every state', async () => {
   const writes: Record<string, unknown[]> = {}
   const db = fakeDb({
+    ...wrapperSeed(
+      [wrapperAsset(1, 'Gold', 4_700_000_000), wrapperAsset(3, 'US Treasury', 1_000_000_000, 'government_security')],
+      [
+        wrapperToken(1, 4705, 'PAXG', 1_894_589_902, 'Paxos'),
+        wrapperToken(1, 20245, 'CGO', 5_000_000, 'Comtech Gold'),
+        wrapperToken(3, 30001, 'FUND', 900_000_000, 'A Sponsor'),
+      ],
+    ),
     market_assets: [
       // PAXG: one readable Ethereum deployment with pools.
       { source_provider: 'coinmarketcap', provider_id: '4705', symbol: 'PAXG', name: 'PAX Gold', market_cap: 2_000_000_000,
@@ -272,20 +319,13 @@ Deno.test('one full run resolves deployments from the catalogue, reads pools and
   }, writes)
 
   const { request, calls } = fakeRequest((name, params) => {
-    if (name === 'rwaList') {
-      if (params.asset_type === 'commodity') {
-        return rwaPage([
-          rwaAsset(1, 'Gold', 4_700_000_000, [token(4705, 'PAXG', 'Paxos'), token(20245, 'CGO', 'Comtech Gold')]),
-        ])
-      }
-      if (params.asset_type === 'government_security') return rwaPage([rwaAsset(3, 'US Treasury', 1_000_000_000, [token(30001, 'FUND', 'A Sponsor')])])
-      return rwaPage([])
-    }
     if (name === 'dexPools') {
       if (params.address === EVM.toLowerCase()) {
         return { payload: { data: [poolRow(EVM2, 900_000, 40_000), poolRow('0x' + 'f'.repeat(40), 100_000, 2_000, 'Curve')] } }
       }
-      return { payload: { data: [] } }
+      // A permissioned fund with no public pool. This is the production shape
+      // that used to be refused as malformed for a credit.
+      return { payload: { status: { error_code: 0 }, data: null } }
     }
     if (name === 'dexHolderCount') return { payload: { data: { count: 4321, platformId: 1, tokenAddress: params.tokenAddress } } }
     if (name === 'metadata') return { payload: { data: {} } }
@@ -295,17 +335,21 @@ Deno.test('one full run resolves deployments from the catalogue, reads pools and
   const result = await captureRwaDepth(db, ctxFor, NOW, 'startup', { request })
   eq(result.error, undefined)
   eq(result.snapshotDate, DAY)
-  // 6 rwaList + 2 dexPools (PAXG and FUND; CGO has no readable chain) + 1 holder count.
-  eq(calls.filter((c) => c.name === 'rwaList').length, 6)
-  eq(calls.filter((c) => c.name === 'dexPools').length, 2)
+  // NOT ONE universe call. `/v5/real-world-assets/assets/list` has no tokens[],
+  // and it was billed live rather than answered from cache, so the lane reads
+  // its subjects out of the wrapper capture instead.
+  eq(calls.filter((c) => c.name === 'rwaList').length, 0)
+  eq(calls.filter((c) => c.name === 'dexPools').length, 2, 'PAXG and FUND; CGO has no readable chain')
   eq(calls.filter((c) => c.name === 'dexHolderCount').length, 1)
   eq(calls.filter((c) => c.name === 'metadata').length, 0, 'the catalogue already held every deployment')
-  eq(result.credits, 9)
-
-  // The universe read uses EXACTLY the hourly rwa lane's params, or it misses its cache.
-  const universe = calls.find((c) => c.name === 'rwaList')!
-  eq(universe.params.limit, 250)
-  eq(universe.params.start, 1)
+  eq(result.credits, 3)
+  eq(result.subjects, 3)
+  // The shape of the empty answer is recorded, because only a real run can tell
+  // us which of the legal empty shapes the provider sends.
+  eq((result.poolShapes as Record<string, number>)['empty:null'], 1)
+  eq((result.poolShapes as Record<string, number>).pools, 1)
+  eq(result.emptyPoolReads, 1)
+  eq(result.withPools, 1, 'a zero-pool read is not a token with pools')
 
   const depth = (writes[DEPTH_TABLE] || []) as Record<string, unknown>[]
   const byKey = new Map(depth.map((row) => [String(row.token_key), row]))
@@ -322,6 +366,8 @@ Deno.test('one full run resolves deployments from the catalogue, reads pools and
   eq(paxg.chains_read, ['ethereum'])
   eq(paxg.token_market_cap, 2_000_000_000)
   eq(paxg.underlying_value_usd, 4_700_000_000)
+  eq(paxg.issuer_name, 'Paxos')
+  eq(paxg.asset_type, 'commodity')
   // NO derived ratio is stored: concentration and exitability are the read
   // module's, so a formula change cannot leave a stale number behind.
   assert(!('concentration_pct' in paxg))
@@ -347,15 +393,63 @@ Deno.test('one full run resolves deployments from the catalogue, reads pools and
   eq(deployments.find((row) => row.platform_key === 'xdc-network')!.dex_platform, null)
 })
 
-Deno.test('a token with no stored deployments costs exactly one metadata call for the whole set', async () => {
+Deno.test('a read that finds no pool anywhere reaches the finding rather than provider_unavailable', async () => {
+  // The production run of 2026-09-20: three permissioned funds, three refusals,
+  // three credits and not one usable row. Now the same answer is a finding.
+  const writes: Record<string, unknown[]> = {}
+  const db = fakeDb({
+    ...wrapperSeed([wrapperAsset(3, 'US Treasury', 1e9, 'government_security')], [wrapperToken(3, 30001, 'FUND', 9e8)]),
+    market_assets: [{ source_provider: 'coinmarketcap', provider_id: '30001', symbol: 'FUND', name: 'A Fund', market_cap: 1,
+      facts: { deployments: [{ platformSlug: 'ethereum', platformName: 'Ethereum', chain: 'ethereum', address: EVM }] } }],
+  }, writes)
+  const { request } = fakeRequest((name) => (name === 'dexPools' ? { payload: { data: { pools: [] } } } : null))
+  const result = await captureRwaDepth(db, ctxFor, NOW, 'startup', { request })
+  const row = ((writes[DEPTH_TABLE] || []) as Record<string, unknown>[])[0]
+  // No restriction row is stored for this contract, so the state is the plain
+  // liquidity finding and it names the chain it read.
+  eq(row.depth_state, 'no_pool_on_read_chains')
+  eq(row.chains_read, ['ethereum'])
+  eq(row.pool_count, 0)
+  eq(result.partial, 'no_pools_on_any_read_chain')
+  eq((result.poolShapes as Record<string, number>)['empty:{pools:array[0]}'], 1)
+})
+
+Deno.test('an empty wrapper capture is a stated reason, never an unexplained empty run', async () => {
   const writes: Record<string, unknown[]> = {}
   const db = fakeDb({ market_assets: [] }, writes)
-  const { request, calls } = fakeRequest((name, params) => {
-    if (name === 'rwaList') {
-      return params.asset_type === 'stock'
-        ? rwaPage([rwaAsset(9, 'SpaceX', 2e8, [token(11, 'AAA'), token(12, 'BBB')])])
-        : rwaPage([])
-    }
+  const { request, calls } = fakeRequest(() => null)
+  const result = await captureRwaDepth(db, ctxFor, NOW, 'startup', { request })
+  eq(result.partial, 'no_wrapper_capture_yet')
+  eq(result.skipped, 'no_rwa_tokens')
+  eq(result.credits, 0)
+  eq(calls.length, 0, 'an empty store costs nothing to discover')
+  eq((writes[DEPTH_TABLE] || []).length, 0)
+})
+
+Deno.test('the alias map subjects are still read when the wrapper lane has not run', async () => {
+  // Run at the real clock, because an assertion is dated and is not yet current
+  // at the frozen NOW the other lane tests use.
+  const at = new Date()
+  assert(assertedTokenContracts(at.getTime()).length > 0, 'the dated alias map asserts contracts today')
+  const writes: Record<string, unknown[]> = {}
+  const db = fakeDb({ market_assets: [] }, writes)
+  const { request, calls } = fakeRequest((name) => (name === 'dexPools' ? { payload: { data: [poolRow(EVM2, 3, 1)] } } : null))
+  const result = await captureRwaDepth(db, ctxFor, at, 'startup', { request })
+  // An unrun wrapper lane does not empty this board: the pinned contracts the
+  // alias map asserts are subjects in their own right and are read.
+  eq(result.partial, 'no_wrapper_capture_yet')
+  assert((result.subjects as number) > 0, 'the alias map contributes subjects of its own')
+  assert(calls.filter((c) => c.name === 'dexPools').length > 0)
+  assert((writes[DEPTH_TABLE] || []).length > 0)
+})
+
+Deno.test('a token with no stored deployments costs exactly one metadata call for the whole set', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const db = fakeDb({
+    ...wrapperSeed([wrapperAsset(9, 'SpaceX', 2e8, 'stock')], [wrapperToken(9, 11, 'AAA', 20), wrapperToken(9, 12, 'BBB', 10)]),
+    market_assets: [],
+  }, writes)
+  const { request, calls } = fakeRequest((name) => {
     if (name === 'metadata') {
       return { payload: { data: {
         11: { id: 11, contract_address: [{ contract_address: EVM, platform: { name: 'Base', coin: { slug: 'base' } } }] },
@@ -374,6 +468,8 @@ Deno.test('a token with no stored deployments costs exactly one metadata call fo
   eq(depth.find((row) => row.token_key === 'cmc:12')!.depth_state, 'no_deployment_known')
   // A holder count of zero is a real answer and is stored as zero.
   eq(depth.find((row) => row.token_key === 'cmc:11')!.holder_count, 0)
+  // The token cap comes off the wrapper capture when our own catalogue has no row.
+  eq(depth.find((row) => row.token_key === 'cmc:11')!.token_market_cap, 20)
   eq(result.error, undefined)
 })
 
@@ -384,13 +480,14 @@ Deno.test('the per-run ceiling is enforced, and a token it does not reach is pen
     source_provider: 'coinmarketcap', provider_id: String(1000 + i), symbol: `T${i}`, name: `Token ${i}`, market_cap: 1000,
     facts: { deployments: [{ platformSlug: 'ethereum', platformName: 'Ethereum', chain: 'ethereum', address: '0x' + String(i).padStart(40, '1') }] },
   }))
-  const db = fakeDb({ market_assets: many }, writes)
-  const { request, calls } = fakeRequest((name, params) => {
-    if (name === 'rwaList') {
-      return params.asset_type === 'stock'
-        ? rwaPage(many.map((row, i) => rwaAsset(100 + i, `Asset ${i}`, 1e9 - i, [token(Number(row.provider_id), row.symbol)])))
-        : rwaPage([])
-    }
+  const db = fakeDb({
+    ...wrapperSeed(
+      many.map((_, i) => wrapperAsset(100 + i, `Asset ${i}`, 1e9 - i, 'stock')),
+      many.map((row, i) => wrapperToken(100 + i, Number(row.provider_id), String(row.symbol), 1e9 - i)),
+    ),
+    market_assets: many,
+  }, writes)
+  const { request, calls } = fakeRequest((name) => {
     if (name === 'dexPools') return { payload: { data: [poolRow(EVM2, 5_000, 100)] } }
     if (name === 'dexHolderCount') return { payload: { data: { count: 7 } } }
     return null
@@ -399,7 +496,7 @@ Deno.test('the per-run ceiling is enforced, and a token it does not reach is pen
   eq(result.subjects, TOKENS_PER_RUN, 'the subject set is bounded')
   eq(calls.filter((c) => c.name === 'dexPools').length, Math.min(TOKENS_PER_RUN, POOL_CALLS_PER_RUN))
   eq(calls.filter((c) => c.name === 'dexHolderCount').length, HOLDER_CALLS_PER_RUN)
-  assert((result.credits as number) <= 6 + 1 + POOL_CALLS_PER_RUN + HOLDER_CALLS_PER_RUN)
+  assert((result.credits as number) <= DEPTH_CREDIT_CEILING)
   const depth = (writes[DEPTH_TABLE] || []) as Record<string, unknown>[]
   eq(depth.length, TOKENS_PER_RUN)
   // Every subject got a row, and nothing the budget reached is mislabelled.
@@ -411,47 +508,55 @@ Deno.test('a token already read today with an unchanged deployment set is not pa
   const facts = { deployments: [{ platformSlug: 'ethereum', platformName: 'Ethereum', chain: 'ethereum', address: EVM }] }
   const digest = deploymentDigest(deploymentRows('cmc:4705', facts, 'catalogue_facts'))
   const db = fakeDb({
+    ...wrapperSeed([wrapperAsset(1, 'Gold', 1e9)], [wrapperToken(1, 4705, 'PAXG', 1e9)]),
     market_assets: [{ source_provider: 'coinmarketcap', provider_id: '4705', symbol: 'PAXG', name: 'PAX Gold', market_cap: 1, facts }],
     // A row from EARLIER today for the same deployment set. `captured_at` is
     // outside the cadence so the guard does not skip the whole run.
     [DEPTH_TABLE]: [{ provider: 'coinmarketcap', token_key: 'cmc:4705', snapshot_date: DAY, depth_state: 'pools_read', deployment_digest: digest, captured_at: new Date(NOW.getTime() - 2 * 86_400_000).toISOString() }],
   }, writes)
-  const { request, calls } = fakeRequest((name, params) => {
-    if (name === 'rwaList') return params.asset_type === 'commodity' ? rwaPage([rwaAsset(1, 'Gold', 1e9, [token(4705, 'PAXG')])]) : rwaPage([])
-    if (name === 'dexPools') return { payload: { data: [poolRow(EVM2, 1, 1)] } }
-    return null
-  })
+  const { request, calls } = fakeRequest((name) => (name === 'dexPools' ? { payload: { data: [poolRow(EVM2, 1, 1)] } } : null))
   const result = await captureRwaDepth(db, ctxFor, NOW, 'startup', { request })
   eq(result.skippedToday, 1)
   eq(calls.filter((c) => c.name === 'dexPools').length, 0)
   eq((writes[DEPTH_TABLE] || []).length, 0, 'the existing row is left alone')
 })
 
+Deno.test('a snapshot that established nothing does not count as read, so a later run today retries it', async () => {
+  // PRODUCTION, 2026-09-20: three tokens were stored `provider_unavailable`
+  // because a no-pool answer was being refused. Treating that as "already read"
+  // would have frozen the unknown for the rest of the UTC day.
+  const facts = { deployments: [{ platformSlug: 'ethereum', platformName: 'Ethereum', chain: 'ethereum', address: EVM }] }
+  const digest = deploymentDigest(deploymentRows('cmc:4705', facts, 'catalogue_facts'))
+  const stale = new Date(NOW.getTime() - 2 * 86_400_000).toISOString()
+  for (const state of ['provider_unavailable', 'budget_deferred']) {
+    const writes: Record<string, unknown[]> = {}
+    const db = fakeDb({
+      ...wrapperSeed([wrapperAsset(1, 'Gold', 1e9)], [wrapperToken(1, 4705, 'PAXG', 1e9)]),
+      market_assets: [{ source_provider: 'coinmarketcap', provider_id: '4705', symbol: 'PAXG', name: 'PAX Gold', market_cap: 1, facts }],
+      [DEPTH_TABLE]: [{ provider: 'coinmarketcap', token_key: 'cmc:4705', snapshot_date: DAY, depth_state: state, deployment_digest: digest, captured_at: stale }],
+    }, writes)
+    const { request, calls } = fakeRequest((name) => (name === 'dexPools' ? { payload: { data: [poolRow(EVM2, 1, 1)] } } : null))
+    const result = await captureRwaDepth(db, ctxFor, NOW, 'startup', { request })
+    eq(result.skippedToday, 0, state)
+    eq(calls.filter((c) => c.name === 'dexPools').length, 1, state)
+    eq(((writes[DEPTH_TABLE] || [])[0] as Record<string, unknown>).depth_state, 'pools_read', state)
+  }
+})
+
 Deno.test('a failed pool read leaves the depth unknown rather than reporting it as thin', async () => {
   const writes: Record<string, unknown[]> = {}
   const db = fakeDb({
+    ...wrapperSeed([wrapperAsset(1, 'Gold', 1e9)], [wrapperToken(1, 4705, 'PAXG', 1e9)]),
     market_assets: [{ source_provider: 'coinmarketcap', provider_id: '4705', symbol: 'PAXG', name: 'PAX Gold', market_cap: 1,
       facts: { deployments: [{ platformSlug: 'ethereum', platformName: 'Ethereum', chain: 'ethereum', address: EVM }] } }],
   }, writes)
-  const { request } = fakeRequest((name, params) => {
-    if (name === 'rwaList') return params.asset_type === 'commodity' ? rwaPage([rwaAsset(1, 'Gold', 1e9, [token(4705, 'PAXG')])]) : rwaPage([])
-    if (name === 'dexPools') return { payload: null, reason: 'rate_limited' }
-    return null
-  })
+  const { request } = fakeRequest((name) => (name === 'dexPools' ? { payload: null, reason: 'rate_limited' } : null))
   const result = await captureRwaDepth(db, ctxFor, NOW, 'startup', { request })
   eq(result.partial, 'rate_limited')
+  eq((result.poolShapes as Record<string, number>)['refused:rate_limited'], 1)
   const row = ((writes[DEPTH_TABLE] || []) as Record<string, unknown>[]).find((r) => r.token_key === 'cmc:4705')!
   eq(row.depth_state, 'provider_unavailable')
   eq(row.total_liquidity_usd, null)
-})
-
-Deno.test('the universe read failing entirely is a reason, not an exception, and writes nothing', async () => {
-  const writes: Record<string, unknown[]> = {}
-  const { request } = fakeRequest(() => ({ payload: null, reason: 'insufficient_entitlement' }))
-  const result = await captureRwaDepth(fakeDb({}, writes), ctxFor, NOW, 'startup', { request })
-  eq(result.skipped, 'no_rwa_tokens')
-  eq(result.partial, 'insufficient_entitlement')
-  eq((writes[DEPTH_TABLE] || []).length, 0)
 })
 
 Deno.test('the op surface is registered and the schedule constant matches the migration', async () => {
@@ -460,8 +565,11 @@ Deno.test('the op surface is registered and the schedule constant matches the mi
   const schedule = RWA_DEPTH_CAPTURE_SCHEDULE.rwa_depth
   assert(migration.includes(`cron.schedule('${schedule.job}', '${schedule.cron}'`), 'the migration schedules the job this module names')
   assert(migration.includes(`'op','${'rwa_depth'}'`), 'the cron body posts this lane\'s op')
-  // The credit ceiling the policy row states is the one the constants add up to.
-  assert(migration.includes(`'rwa_depth', 86400, true, 'startup', ${6 + 1 + POOL_CALLS_PER_RUN + HOLDER_CALLS_PER_RUN}`), 'the policy row states the lane\'s own ceiling')
+  // The credit ceiling the policy row states is the one the constants add up to,
+  // and it no longer carries the six rwaList calls this lane does not make.
+  eq(DEPTH_CREDIT_CEILING, 1 + POOL_CALLS_PER_RUN + HOLDER_CALLS_PER_RUN)
+  assert(migration.includes(`'rwa_depth', 86400, true, 'startup', ${DEPTH_CREDIT_CEILING}`), 'the policy row states the lane\'s own ceiling')
+  assert(!/rwaList per asset type/.test(migration), 'the policy row no longer claims a universe call')
   // Both tables the lane writes are created by the migration it names.
   assert(migration.includes(`CREATE TABLE public.${DEPTH_TABLE}`))
   assert(migration.includes(`CREATE TABLE public.${DEPLOYMENT_TABLE}`))

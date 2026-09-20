@@ -68,9 +68,15 @@ export const DEPTH_FALLBACK_SCOPE =
  * rather than restated, so a chain added there appears in the copy by itself. */
 export const READ_CHAINS: string[] = CMC_DEX_NETWORKS.map((network) => network.label)
 
-/** The endpoints every figure on these views came from, named on the page. */
+/** The endpoints every figure on these views came from, named on the page.
+ *
+ * The two RWA endpoints are where the token identities and the tokenised values
+ * originate: since 2026-09-20 the depth lane takes them from the wrapper lane's
+ * stored capture rather than calling for them itself, but the figures are still
+ * the provider's from those two paths and the page says so. */
 export const DEPTH_ENDPOINTS = [
-  '/v5/real-world-assets/assets/list', '/v2/cryptocurrency/info', '/v1/dex/token/pools', '/v1/dex/holders/count',
+  '/v5/real-world-assets/quotes/latest', '/v5/real-world-assets/assets/list',
+  '/v2/cryptocurrency/info', '/v1/dex/token/pools', '/v1/dex/holders/count',
 ] as const
 
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }

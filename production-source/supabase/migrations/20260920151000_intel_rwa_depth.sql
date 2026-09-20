@@ -53,25 +53,28 @@
 -- greater than 1e30, an all-NULL array yields NULL and coalesce lets it pass. Copied from 20260916150000.
 --
 -- ── SCHEDULE POLICY ROW AND WHAT A RUN COSTS ─────────────────────────────────────────────────────────────────────
---   ('coinmarketcap', 'rwa_depth', 86400, true, 'startup', 87, '<reason>')
+--   ('coinmarketcap', 'rwa_depth', 86400, true, 'startup', 81, '<reason>')
 --   provider 'coinmarketcap'  so `loadSchedulePolicy` in capture-jobs.ts picks the row up with the other CMC lanes and
 --                             the cadence calibrator can stretch it. Setting enabled = false stops the lane.
 --   cadence_seconds 86400     daily. The lane ALSO carries 86400 as its own fallback (LANE_CADENCE in
 --                             capture-rwa-depth.ts), because `schedulePolicy` defaults an unknown feature to one hour
---                             and one hour would mean 87 credits an hour.
+--                             and one hour would mean 81 credits an hour.
 --   min_plan 'startup'        `/v1/dex/token/pools` and `/v1/dex/holders/count` are Startup capabilities. Below
 --                             Startup the lane skips itself with `plan_below_startup` and spends nothing to find out.
---   max_credits 87            the PER-RUN ceiling, which is also the daily ceiling at this cadence:
---                               6   `rwaList`, one per asset type, with params IDENTICAL to the hourly `rwa` universe
---                                   lane's, so the shared transport answers from ITS cache for 0 CREDITS whenever
---                                   that lane ran inside the hour. 6 is the worst case, not the expected one.
+--   max_credits 81            the PER-RUN ceiling, which is also the daily ceiling at this cadence:
+--                               0   SUBJECT DISCOVERY. Two database reads of the newest intel_rwa_wrapper_tokens /
+--                                   intel_rwa_wrapper_assets capture. CORRECTED 2026-09-20 from 6 `rwaList` calls: the
+--                                   first production run showed that `/v5/real-world-assets/assets/list` carries no
+--                                   `tokens` key at all (3 subjects discovered instead of hundreds) and that the six
+--                                   calls were logged `live` at 1 credit each, not as the cache hits assumed here.
 --                               1   `/v2/cryptocurrency/info`, up to 50 ids in one call, only for tokens whose
 --                                   deployments `market_assets.facts` does not already hold.
 --                              60   `/v1/dex/token/pools`, one per readable deployment (POOL_CALLS_PER_RUN).
 --                              20   `/v1/dex/holders/count`, only for the deepest tokens (HOLDER_CALLS_PER_RUN).
---                             Typical measured cost is therefore ~81 credits a day, and a token whose deployment set
---                             is unchanged and whose depth was already read today is skipped, so a retried or resumed
---                             run walks forward instead of paying twice.
+--                             A token whose deployment set is unchanged and whose depth was already read today is
+--                             skipped, so a retried or resumed run walks forward instead of paying twice. A snapshot in
+--                             a RETRYABLE state (`budget_deferred`, `provider_unavailable`) does NOT count as read: it
+--                             established nothing, so a later run the same day tries it again.
 --
 -- ── SCHEDULE ────────────────────────────────────────────────────────────────────────────────────────────────────
 -- Minute 34 of hour 3 UTC. Checked against cron.job on 2026-09-20: nothing else is scheduled at 34 3, the nearest
@@ -250,8 +253,8 @@ GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.intel_rwa_depth_snapshots T
 
 -- 3. Cadence, enablement and the per-run credit ceiling. A later edit to the row wins, so re-running never resets one.
 INSERT INTO public.provider_schedule_policy (provider, feature, cadence_seconds, enabled, min_plan, max_credits, reason) VALUES
-  ('coinmarketcap', 'rwa_depth', 86400, true, 'startup', 87,
-   'Daily tokenised-asset depth capture: rwaList per asset type (params identical to the hourly rwa lane, so the shared transport answers from its cache for 0 credits), one bounded /v2/cryptocurrency/info call for tokens whose deployments market_assets.facts does not hold, then /v1/dex/token/pools per readable deployment (max 60) and /v1/dex/holders/count for the deepest tokens (max 20). max_credits 87 is the PER-RUN ceiling and, at this cadence, the daily one; the typical run is about 81 because the universe read is a cache hit. Startup minimum: the two DEX endpoints are Startup capabilities and the lane skips itself below that without spending a call.')
+  ('coinmarketcap', 'rwa_depth', 86400, true, 'startup', 81,
+   'Daily tokenised-asset depth capture. Subjects come from the newest intel_rwa_wrapper_tokens and intel_rwa_wrapper_assets capture, which is two database reads and no provider call: /v5/real-world-assets/assets/list carries no tokens[] to discover them from. The paid calls are one bounded /v2/cryptocurrency/info for tokens whose deployments market_assets.facts does not hold, /v1/dex/token/pools per readable deployment (max 60) and /v1/dex/holders/count for the deepest tokens (max 20). max_credits 81 is the PER-RUN ceiling and, at this cadence, the daily one. Startup minimum: the two DEX endpoints are Startup capabilities and the lane skips itself below that without spending a call.')
 ON CONFLICT (provider, feature) DO NOTHING;
 
 -- SECTION: schedule
