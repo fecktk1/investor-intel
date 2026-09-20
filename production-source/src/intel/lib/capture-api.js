@@ -46,6 +46,10 @@ export const CAPTURE_VIEWS = [
   // the single-token block on the asset page
   // (capture-rwa-depth-read.ts, RWA_DEPTH_CAPTURE_VIEWS).
   'rwa_depth', 'rwa_token_depth',
+  // Wrapper premium, discount, dispersion and the two-endpoint reconciliation
+  // (capture-rwa-wrappers-read.ts, RWA_WRAPPER_CAPTURE_VIEWS). Precomputed by a
+  // six-hourly lane, so the read itself spends no provider credit.
+  'rwa_wrappers',
 ]
 
 let rememberedClient = null

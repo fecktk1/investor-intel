@@ -1,0 +1,548 @@
+import React, { useEffect, useMemo, useState } from 'react'
+import { Link } from 'react-router'
+import { useTranslation } from 'react-i18next'
+import BoardTableHeader from './BoardTableHeader'
+import TokenAvatar from './TokenAvatar'
+import FigureProvenance from './FigureProvenance'
+import { Scatter } from '../charts'
+import { useProfile } from '../../lib/profile-context'
+import { useSupabase } from '../../lib/useSupabase'
+import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/capture-api'
+import { formatUsd, formatCompact, formatPrice } from '../lib/market-format'
+
+// Wrapper premium, discount and dispersion for one tokenised real-world asset.
+//
+// THE QUESTION THIS BOARD ANSWERS. Gold is wrapped by six tokens from six
+// issuers, and those six do not trade at the same price. Which wrapper is dear,
+// which is cheap, how far apart are they, and which is the cheapest route you
+// could actually reach.
+//
+// THE ANCHOR IS NAMED ON EVERY ROW, because that is the whole argument. A
+// premium measured against the average of the wrappers is circular, so either
+// the anchor is the fund's own published net asset value (independent of every
+// wrapper) or it is the volume-weighted median of the wrappers that cleared the
+// liquidity floor, and the row says which.
+//
+// Three rules this file may never soften:
+//   1. A THIN WRAPPER IS SHOWN. It keeps its premium, it is marked "too thin to
+//      anchor", and it is excluded from the anchor only. Hiding it would remove
+//      the wrapper a reader most needs warning about.
+//   2. AN ACCRUAL IS NOT A PREMIUM. A wrapper that accrues yield inside its
+//      price carries an accrual gap in its own column and no premium at all.
+//   3. A FIGURE WE COMPUTE SAYS SO, names its inputs and carries its capture
+//      time. The provenance drawer names both endpoints behind the board.
+//
+// House visual language: no pills and no cards. Eyebrows, hairlines and plain
+// tables, matching RwaUniverse.jsx and RwaIssuerLegitimacy.jsx.
+
+const num = value => {
+  if (value == null || value === '' || typeof value === 'boolean') return null
+  const n = Number(value)
+  return Number.isFinite(n) ? n : null
+}
+
+const rule = 'border-b border-[var(--border-default)]'
+const cell = `${rule} py-2 pr-3 align-top`
+const numCell = `${cell} intel-number`
+
+/** Basis points, signed, with an explicit plus so a premium and a discount are
+ * never confused at a glance. Exactly 0 prints as 0 bps: the two prices agreed,
+ * which is a measurement and not an absence.
+ *
+ * The unit abbreviation is passed in rather than hardcoded: it differs by locale
+ * (Bp in German, pb in the Romance languages) and belongs in the locale file
+ * like every other unit on this workspace. */
+export function bpsLabel(value, unit = 'bps') {
+  const n = num(value)
+  if (n == null) return null
+  const rounded = Math.round(n * 10) / 10
+  return `${rounded > 0 ? '+' : ''}${rounded.toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`
+}
+
+/** A range is never signed: it is a width. */
+export function widthLabel(value, unit = 'bps') {
+  const n = num(value)
+  return n == null ? null : `${(Math.round(n * 10) / 10).toLocaleString(undefined, { maximumFractionDigits: 1 })} ${unit}`
+}
+
+/** A ratio between the two endpoints, to three decimals so a 0.995 reads as a
+ * near-agreement rather than rounding to 1. */
+export function ratioLabel(value) {
+  const n = num(value)
+  return n == null ? null : n.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+}
+
+/** A capture or observation instant as a readable UTC minute. */
+export const utcMinute = value => {
+  const text = String(value || '')
+  return /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(text) ? `${text.slice(0, 10)} ${text.slice(11, 16)} UTC` : null
+}
+
+/** The catalogue link for a wrapper. The RWA id is not a catalogue id, so only a
+ * wrapper's own crypto id opens a market page; an asset row links to the RWA
+ * investigation instead. */
+export function wrapperHref(token) {
+  if (!/^[1-9][0-9]{0,11}$/.test(String(token?.cryptoId ?? ''))) return null
+  const label = token.symbol || token.name || String(token.cryptoId)
+  return `/intel/markets/${encodeURIComponent(label)}?provider=coinmarketcap&id=${token.cryptoId}`
+}
+
+export function assetHref(row) {
+  if (!/^[1-9][0-9]{0,11}$/.test(String(row?.rwaId ?? ''))) return null
+  return `/intel/investigate?asset=rwa%3Acoinmarketcap%3A${row.rwaId}&lens=sessions`
+}
+
+/** Every machine reason this board can render, in words. Anything the lane adds
+ * later falls back to the code itself rather than being swallowed by a generic
+ * sentence, so a new state is visible instead of silent. */
+const REASONS = {
+  not_enough_liquid_wrappers: 'Fewer than two wrappers cleared the volume floor, so a median of them would be one wrapper priced against itself.',
+  no_liquid_wrapper: 'No wrapper cleared the volume floor, so there is nothing deep enough to anchor against.',
+  no_wrappers_reported: 'The provider reported no tokens for this asset.',
+  no_nav_feed_mapped: 'No published net asset value is mapped to this asset, so the wrappers themselves are the reference.',
+  nav_not_captured: 'The mapped net asset value feed has not been captured yet.',
+  nav_not_validated: 'The mapped feed could not be proved on chain, so its figure was not used.',
+  nav_stale: 'The mapped net asset value is older than its own published heartbeat, so the wrappers are the reference instead.',
+  nav_feed_mismatch: 'The captured feed is not the one recorded for this asset.',
+  nav_currency_not_usd: 'The net asset value is not in US dollars and the wrapper prices are, so the two were not subtracted.',
+  asset_name_mismatch: 'The provider now reports a different name for this asset, so the recorded net asset value was not applied to it.',
+  asset_symbol_mismatch: 'The provider now reports a different symbol for this asset, so the recorded net asset value was not applied to it.',
+  no_nav: 'The feed carried no usable net asset value.',
+  price_not_reported: 'The provider listed this wrapper without a price.',
+  below_volume_floor: 'Too thin to anchor: its reported 24 hour volume is below the floor, so it is shown but excluded from the anchor.',
+  volume_not_reported: 'The provider reported no 24 hour volume for this wrapper, so it is excluded from the anchor.',
+  accrues_in_price: 'This wrapper accrues its yield inside the token price, so its gap to the anchor is an accrual and not a premium.',
+  accrual_name_mismatch: 'This wrapper is recorded as accruing under a different name, so the accrual exemption was not applied and its gap is reported as a premium.',
+  price_matches_no_known_weight_unit: 'Unit not established: the price matches neither the asset\'s unit nor a troy ounce to gram conversion, so no premium is reported.',
+  price_far_from_peers: 'Unit not established: the price sits too far from the other wrappers of this asset to be the same unit, so no premium is reported.',
+  list_value_not_reported: 'The list endpoint reported no value for this asset in the capture being compared.',
+  no_wrapper_reported_a_value: 'No wrapper reported a market value, so there is nothing to sum against the list endpoint.',
+  list_endpoint_reports_zero: 'The list endpoint prices this asset at zero while its own tokens report a value.',
+  both_endpoints_report_zero: 'Both endpoints report zero, which is agreement rather than a measurement.',
+  outside_band: 'The two endpoints are outside the stated band.',
+  ratio_not_computable: 'The ratio between the two endpoints could not be computed.',
+}
+
+export function reasonText(t, code) {
+  const key = String(code ?? '').trim()
+  if (!key) return null
+  const known = REASONS[key]
+  return known ? t(`rwa_wrappers.reason_${key}`, { defaultValue: known }) : key
+}
+
+const ANCHOR_LABELS = {
+  published_nav: 'Published NAV',
+  liquid_wrapper_median: 'Liquid wrapper median',
+  none: 'No anchor',
+}
+const STATE_LABELS = {
+  liquid: 'Anchors the reference',
+  too_thin_to_anchor: 'Too thin to anchor',
+  volume_not_reported: 'No volume reported',
+  no_price: 'No price reported',
+  unit_not_established: 'Unit not established',
+  accrues_in_price: 'Accrues in price',
+}
+const UNIT_LABELS = {
+  consistent: 'Same unit as its peers',
+  normalised_troy_ounce: 'Priced per gram, restated per troy ounce',
+  normalised_gram: 'Priced per troy ounce, restated per gram',
+  not_established: 'Unit not established',
+  not_assessed: 'Unit not assessed',
+}
+
+export default function RwaWrapperSpread() {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  const { org } = useProfile()
+  // Service-role capture tables: the read travels on the reader's own
+  // authenticated client, never the anonymous one.
+  const { supabase } = useSupabase()
+  const orgId = org?.id || null
+  const [read, setRead] = useState({ status: 'loading', payload: null, reason: null })
+  const [open, setOpen] = useState(() => new Set())
+
+  useEffect(() => {
+    const controller = new AbortController()
+    let alive = true
+    setRead({ status: 'loading', payload: null, reason: null })
+    readCaptureView('rwa_wrappers', {}, { orgId, signal: controller.signal, supabase })
+      .then(payload => { if (alive) setRead({ status: 'ready', payload, reason: null }) })
+      .catch(error => { if (alive) setRead({ status: 'unavailable', payload: null, reason: captureUnavailable(error).reason }) })
+    return () => { alive = false; controller.abort() }
+  }, [orgId, supabase])
+
+  const payload = read.payload || {}
+  const rows = useMemo(() => (Array.isArray(payload.rows) ? payload.rows : []), [payload])
+  const points = useMemo(() => (Array.isArray(payload.points) ? payload.points : []), [payload])
+  const reconciliation = useMemo(() => (Array.isArray(payload.reconciliation) ? payload.reconciliation : []), [payload])
+  const summary = payload.summary && typeof payload.summary === 'object' ? payload.summary : {}
+  const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {}
+  const captureTime = payload.schedule?.rwa_wrappers?.utc || '02:47, 08:47, 14:47, 20:47'
+  const bps = t('rwa_wrappers.bps_unit', { defaultValue: 'bps' })
+  const floor = num(settings.volumeFloorUsd) ?? 250000
+  const bandLow = num(settings.reconcileBandLow) ?? 0.85
+  const bandHigh = num(settings.reconcileBandHigh) ?? 1.15
+
+  const toggle = id => setOpen(prev => {
+    const next = new Set(prev)
+    if (next.has(id)) next.delete(id); else next.add(id)
+    return next
+  })
+
+  const anchorLabel = kind => t(`rwa_wrappers.anchor_${kind}`, { defaultValue: ANCHOR_LABELS[kind] || kind })
+  const stateLabel = state => t(`rwa_wrappers.state_${state}`, { defaultValue: STATE_LABELS[state] || state })
+  const unitLabel = unit => t(`rwa_wrappers.unit_${unit}`, { defaultValue: UNIT_LABELS[unit] || unit })
+
+  // The provenance envelope for the whole board. `stored`, because every figure
+  // here is read back from rows a scheduled lane already wrote: opening the page
+  // makes no provider call, and the clock is the capture's, not this read's.
+  const envelope = payload.asOf
+    ? { kind: 'stored', source: 'coinmarketcap', freshness: 'cached', fetchedAt: payload.asOf, scope: payload.scope || null }
+    : null
+
+  const columns = [
+    t('rwa_wrappers.col_asset', { defaultValue: 'Underlying asset' }),
+    t('rwa_wrappers.col_wrappers', { defaultValue: 'Wrappers' }),
+    t('rwa_wrappers.col_anchor', { defaultValue: 'Anchor' }),
+    t('rwa_wrappers.col_premium', { defaultValue: 'Widest premium' }),
+    t('rwa_wrappers.col_discount', { defaultValue: 'Widest discount' }),
+    t('rwa_wrappers.col_dispersion', { defaultValue: 'Dispersion' }),
+    t('rwa_wrappers.col_cheapest', { defaultValue: 'Cheapest liquid route' }),
+    t('rwa_wrappers.col_volume', { defaultValue: '24h tokenised volume' }),
+  ]
+  const tokenColumns = [
+    t('rwa_wrappers.col_token', { defaultValue: 'Wrapper' }),
+    t('rwa_wrappers.col_issuer', { defaultValue: 'Issuer' }),
+    t('rwa_wrappers.col_price', { defaultValue: 'Price' }),
+    t('rwa_wrappers.col_premium_bps', { defaultValue: 'Premium' }),
+    t('rwa_wrappers.col_token_volume', { defaultValue: '24h volume' }),
+    t('rwa_wrappers.col_note', { defaultValue: 'State' }),
+  ]
+
+  return (
+    <section className="intel-rwa-wrappers space-y-6" aria-label={t('rwa_wrappers.title', { defaultValue: 'Wrapper premium and dispersion' })}>
+      <div>
+        <div className="eyebrow">{t('rwa_wrappers.eyebrow', { defaultValue: 'Our calculation' })}</div>
+        <h3 className="text-lg font-medium mt-1">{t('rwa_wrappers.title', { defaultValue: 'Wrapper premium and dispersion' })}</h3>
+        <p className="text-[11px] leading-relaxed text-[var(--fg-4)] mt-1 max-w-[80ch]">
+          {t('rwa_wrappers.intro', {
+            floor: formatUsd(floor),
+            defaultValue: 'One real-world asset is often wrapped by several tokens from several issuers, at several prices. Each premium or discount below is our own calculation against the anchor named on that row: either the fund\'s own published net asset value, or the volume-weighted median of the wrappers that cleared a {{floor}} floor on reported 24 hour volume. A wrapper under that floor is still shown, marked as too thin to anchor, and left out of the anchor. A premium is not a tradable arbitrage.',
+          })}
+        </p>
+      </div>
+
+      {read.status === 'loading' && <p role="status">{t('rwa_wrappers.loading', { defaultValue: 'Reading the captured wrapper prices…' })}</p>}
+
+      {read.status === 'unavailable' && (
+        <p role="alert">
+          {t('rwa_wrappers.unavailable', {
+            reason: captureReasonText(t, read.reason),
+            defaultValue: 'The wrapper board could not be read. {{reason}} No premium is asserted for any wrapper.',
+          })}
+        </p>
+      )}
+
+      {read.status === 'ready' && (
+        <>
+          {payload.reason && (
+            <p role="status" className="text-[12px]">
+              {t('rwa_wrappers.partial', { reason: payload.reason, defaultValue: 'Part of this read did not answer ({{reason}}). What did load is shown, and nothing was replaced with a zero.' })}
+            </p>
+          )}
+
+          {!payload.asOf && (
+            <p role="status" className="text-[12px]">
+              {t('rwa_wrappers.not_captured', { times: captureTime, defaultValue: 'No wrapper capture has been stored yet. The capture runs four times a day at {{times}}.' })}
+            </p>
+          )}
+
+          {payload.asOf && rows.length === 0 && (
+            <p role="status" className="text-[12px]">
+              {t('rwa_wrappers.no_multi_wrapper', { defaultValue: 'The last capture found no tokenised asset carrying two or more wrappers, so there is nothing to compare. Assets with a single wrapper are covered by the RWA universe figure.' })}
+            </p>
+          )}
+
+          {rows.length > 0 && (
+            <>
+              <p className="text-[12px]">
+                {t('rwa_wrappers.summary', {
+                  assets: num(summary.assets) ?? rows.length,
+                  wrappers: num(summary.wrappers) ?? 0,
+                  thin: num(summary.thin) ?? 0,
+                  normalised: num(summary.unitNormalised) ?? 0,
+                  accruing: num(summary.accruing) ?? 0,
+                  // Written as labelled counts rather than a sentence with
+                  // plural nouns: "1 assets" is wrong in English and the
+                  // agreement rules differ again in every other locale.
+                  defaultValue: 'Assets: {{assets}}. Wrappers: {{wrappers}}. Too thin to anchor: {{thin}}. Price unit restated: {{normalised}}. Accruing inside the token price, so carrying an accrual gap rather than a premium: {{accruing}}.',
+                })}
+              </p>
+
+              {/* One dot per wrapper: how deep it trades against how far it sits
+                  from its asset's anchor. Both axes are linear because the
+                  premium axis is signed and a log scale cannot carry a discount;
+                  volume is therefore shown in millions so the axis stays
+                  readable. The horizontal divider at zero IS the anchor. */}
+              <Scatter
+                title={t('rwa_wrappers.chart_title', { defaultValue: 'Premium against depth, one dot per wrapper' })}
+                description={t('rwa_wrappers.chart_sub', {
+                  floor: formatUsd(floor),
+                  defaultValue: 'Each dot is one wrapper of one asset. The horizontal line is its asset\'s anchor; above it the wrapper is dearer than the anchor, below it cheaper. The vertical line is the {{floor}} volume floor: dots left of it are shown but do not anchor anything.',
+                })}
+                points={points.map(point => ({
+                  key: point.key,
+                  label: `${point.assetSymbol || point.assetName || ''} · ${point.symbol || point.name || point.cryptoId}`,
+                  x: (num(point.x) ?? 0) / 1e6,
+                  y: num(point.y) ?? 0,
+                }))}
+                log={false}
+                xLabel={t('rwa_wrappers.chart_x', { defaultValue: 'Reported 24h volume (USD millions)' })}
+                yLabel={t('rwa_wrappers.chart_y', { unit: bps, defaultValue: 'Premium to anchor ({{unit}})' })}
+                quadrants={{
+                  x: floor / 1e6,
+                  y: 0,
+                  labels: [
+                    t('rwa_wrappers.q_dear_thin', { defaultValue: 'Dearer, too thin to anchor' }),
+                    t('rwa_wrappers.q_dear_deep', { defaultValue: 'Dearer, anchors the reference' }),
+                    t('rwa_wrappers.q_cheap_thin', { defaultValue: 'Cheaper, too thin to anchor' }),
+                    t('rwa_wrappers.q_cheap_deep', { defaultValue: 'Cheaper, anchors the reference' }),
+                  ],
+                }}
+                formatX={value => formatCompact(num(value))}
+                formatY={value => (num(value) == null ? '—' : Math.round(num(value)).toLocaleString())}
+                state={points.length ? 'ready' : 'error'}
+                kind="no_data"
+                reason={t('rwa_wrappers.chart_empty', { defaultValue: 'No wrapper in this capture carries both a premium and a reported volume, so there is nothing to plot.' })}
+              />
+
+              <div className="overflow-x-auto">
+                <table className="w-full text-[12px]">
+                  <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">
+                    {t('rwa_wrappers.table_caption', {
+                      at: utcMinute(payload.asOf) || '—',
+                      defaultValue: 'Widest dispersion first, from the capture of {{at}}. Open a row to read its wrappers.',
+                    })}
+                  </caption>
+                  <thead><BoardTableHeader columns={columns} numeric={[1, 2, 3, 4, 5, 7]} /></thead>
+                  <tbody>
+                    {rows.map(row => {
+                      const href = assetHref(row)
+                      const expanded = open.has(row.rwaId)
+                      const cheapest = row.tokens.find(token => token.cryptoId === row.cheapestCryptoId) || null
+                      return (
+                        <React.Fragment key={row.rwaId}>
+                          <tr>
+                            <th scope="row" className={`${cell} text-left font-normal`}>
+                              <span className="flex items-center gap-2">
+                                <TokenAvatar symbol={row.symbol} name={row.name} size="sm" />
+                                <span>
+                                  {href
+                                    ? <Link className="intel-text-link" to={href}>{row.name || row.symbol || row.rwaId}</Link>
+                                    : <span>{row.name || row.symbol || row.rwaId}</span>}
+                                  <span className="block text-[11px] text-[var(--fg-4)]">
+                                    {[row.symbol, row.assetType ? String(row.assetType).replaceAll('_', ' ') : null].filter(Boolean).join(' · ')}
+                                  </span>
+                                </span>
+                              </span>
+                            </th>
+                            <td className={numCell}>
+                              {row.wrapperCount}
+                              <button
+                                type="button"
+                                className="intel-text-link block text-[11px] ml-auto"
+                                aria-expanded={expanded}
+                                onClick={() => toggle(row.rwaId)}
+                              >
+                                {expanded
+                                  ? t('rwa_wrappers.collapse', { defaultValue: 'Hide wrappers' })
+                                  : t('rwa_wrappers.expand', { defaultValue: 'Show wrappers' })}
+                              </button>
+                            </td>
+                            <td className={numCell}>
+                              {row.anchorPrice == null ? '—' : formatPrice(row.anchorPrice)}
+                              <span className="block text-[11px] text-[var(--fg-4)]">{anchorLabel(row.anchorKind)}</span>
+                            </td>
+                            <td className={numCell}>{bpsLabel(row.widestPremiumBps, bps) || '—'}</td>
+                            <td className={numCell}>{bpsLabel(row.widestDiscountBps, bps) || '—'}</td>
+                            <td className={numCell}>
+                              {widthLabel(row.dispersionBps, bps) || '—'}
+                              {row.weightedSpreadBps != null && (
+                                <span className="block text-[11px] text-[var(--fg-4)]">
+                                  {t('rwa_wrappers.weighted', { value: widthLabel(row.weightedSpreadBps, bps), defaultValue: 'Volume weighted {{value}}' })}
+                                </span>
+                              )}
+                            </td>
+                            <td className={cell}>
+                              {cheapest
+                                ? <>
+                                    {wrapperHref(cheapest)
+                                      ? <Link className="intel-text-link" to={wrapperHref(cheapest)}>{cheapest.symbol || cheapest.name}</Link>
+                                      : <span>{cheapest.symbol || cheapest.name}</span>}
+                                    <span className="block text-[11px] text-[var(--fg-4)]">{bpsLabel(row.cheapestPremiumBps, bps)}</span>
+                                  </>
+                                : <span className="text-[11px] text-[var(--fg-4)]">{reasonText(t, row.anchorReason) || t('rwa_wrappers.no_route', { defaultValue: 'No liquid wrapper to name as a route.' })}</span>}
+                            </td>
+                            <td className={numCell}>{row.tokenizedVolume24h == null ? '—' : formatUsd(row.tokenizedVolume24h)}</td>
+                          </tr>
+                          {expanded && (
+                            <tr>
+                              <td colSpan={columns.length} className={`${rule} py-3 pr-3`}>
+                                <p className="text-[11px] text-[var(--fg-4)] max-w-[80ch]">
+                                  {row.anchorMeaning}
+                                  {row.anchorReason ? ` ${reasonText(t, row.anchorReason)}` : ''}
+                                </p>
+                                {/* The provider's wrapper rows carry no chain, so
+                                    the chain is not a column here: a column of
+                                    "not reported" would be a wall of dashes. The
+                                    wrapper link opens its asset page, which does
+                                    carry the chain. */}
+                                <p className="text-[11px] text-[var(--fg-4)] mt-1">
+                                  {t('rwa_wrappers.no_chain', { defaultValue: 'The provider reports no chain on a wrapper row. Open a wrapper to read its network on its asset page.' })}
+                                </p>
+                                <div className="overflow-x-auto mt-2">
+                                  <table className="w-full text-[12px]">
+                                    <thead><BoardTableHeader columns={tokenColumns} numeric={[2, 3, 4]} /></thead>
+                                    <tbody>
+                                      {row.tokens.map(token => (
+                                        <tr key={token.cryptoId}>
+                                          <th scope="row" className={`${cell} text-left font-normal`}>
+                                            <span className="flex items-center gap-2">
+                                              <TokenAvatar symbol={token.symbol} name={token.name} size="xs" />
+                                              <span>
+                                                {wrapperHref(token)
+                                                  ? <Link className="intel-text-link" to={wrapperHref(token)}>{token.name || token.symbol}</Link>
+                                                  : <span>{token.name || token.symbol}</span>}
+                                                <span className="block text-[11px] text-[var(--fg-4)]">{token.symbol}</span>
+                                              </span>
+                                            </span>
+                                          </th>
+                                          <td className={cell}>{token.issuerName || t('rwa_wrappers.issuer_unreported', { defaultValue: 'Issuer not reported' })}</td>
+                                          <td className={numCell}>
+                                            {token.price == null ? '—' : formatPrice(token.price)}
+                                            {token.normalisedPrice != null && token.unitState !== 'consistent' && token.unitState !== 'not_assessed' && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">
+                                                {t('rwa_wrappers.restated', { value: formatPrice(token.normalisedPrice), defaultValue: 'Restated {{value}}' })}
+                                              </span>
+                                            )}
+                                          </td>
+                                          <td className={numCell}>
+                                            {token.premiumBps != null
+                                              ? bpsLabel(token.premiumBps, bps)
+                                              : token.accrualGapBps != null
+                                                ? <span>{t('rwa_wrappers.accrual', { value: bpsLabel(token.accrualGapBps, bps), defaultValue: '{{value}} accrual' })}</span>
+                                                : '—'}
+                                          </td>
+                                          <td className={numCell}>{token.volume24h == null ? '—' : formatUsd(token.volume24h)}</td>
+                                          <td className={cell}>
+                                            {stateLabel(token.state)}
+                                            {token.unitState !== 'consistent' && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{unitLabel(token.unitState)}</span>
+                                            )}
+                                            {token.reason && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{reasonText(t, token.reason)}</span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              </td>
+                            </tr>
+                          )}
+                        </React.Fragment>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              </div>
+
+              {/* The two endpoints behind every figure above, and the capture
+                  time they were read at. */}
+              <FigureProvenance envelope={envelope} />
+              <p className="text-[11px] text-[var(--fg-4)] max-w-[80ch]">
+                {t('rwa_wrappers.provenance', {
+                  quotes: '/v5/real-world-assets/quotes/latest',
+                  list: '/v5/real-world-assets/assets/list',
+                  at: utcMinute(payload.asOf) || '—',
+                  defaultValue: 'Wrapper prices, volumes and issuers come from {{quotes}}. Each asset\'s own reported value comes from {{list}}. Both were read in the capture of {{at}}; the premium, the anchor and the dispersion are our calculation over those two reads.',
+                })}
+              </p>
+
+              {/* ── Two-endpoint reconciliation ── */}
+              <div className="pt-4 border-t border-[var(--border-default)]">
+                <div className="eyebrow">{t('rwa_wrappers.recon_eyebrow', { defaultValue: 'Two endpoints' })}</div>
+                <h4 className="text-base font-medium mt-1">{t('rwa_wrappers.recon_title', { defaultValue: 'Where the two endpoints disagree' })}</h4>
+                <p className="text-[11px] leading-relaxed text-[var(--fg-4)] mt-1 max-w-[80ch]">
+                  {t('rwa_wrappers.recon_intro', {
+                    low: bandLow.toFixed(2),
+                    high: bandHigh.toFixed(2),
+                    defaultValue: 'Two endpoints describe the same asset. The list endpoint reports one value for the asset as a whole; the quotes endpoint reports a value for each of its tokens, which we add up. The two should be close, and usually are. Where the ratio of the token sum to the asset value falls outside {{low}} to {{high}}, the row is flagged below with both numbers and both read times. This is a finding about the data, not a claim that either figure is wrong: it says the two endpoints disagree, and it is worth knowing before either number is used on its own.',
+                  })}
+                </p>
+                {reconciliation.length === 0 ? (
+                  <p className="text-[12px] mt-2">
+                    {t('rwa_wrappers.recon_none', { defaultValue: 'No asset in this capture could be compared across both endpoints: each one was missing a value on one side, which is stated on its row above.' })}
+                  </p>
+                ) : (
+                  <div className="overflow-x-auto mt-2">
+                    <table className="w-full text-[12px]">
+                      <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">
+                        {t('rwa_wrappers.recon_caption', {
+                          outside: num(summary.reconcileOutside) ?? 0,
+                          total: reconciliation.length,
+                          defaultValue: '{{outside}} of {{total}} comparable assets fall outside the band. Largest money gap first.',
+                        })}
+                      </caption>
+                      <thead>
+                        <BoardTableHeader
+                          columns={[
+                            t('rwa_wrappers.recon_col_asset', { defaultValue: 'Asset' }),
+                            t('rwa_wrappers.recon_col_list', { defaultValue: 'Asset value, list endpoint' }),
+                            t('rwa_wrappers.recon_col_tokens', { defaultValue: 'Sum of token values, quotes endpoint' }),
+                            t('rwa_wrappers.recon_col_ratio', { defaultValue: 'Ratio' }),
+                            t('rwa_wrappers.recon_col_state', { defaultValue: 'Verdict' }),
+                          ]}
+                          numeric={[1, 2, 3]}
+                        />
+                      </thead>
+                      <tbody>
+                        {reconciliation.map(row => (
+                          <tr key={row.rwaId}>
+                            <th scope="row" className={`${cell} text-left font-normal`}>
+                              {row.name || row.symbol || row.rwaId}
+                              <span className="block text-[11px] text-[var(--fg-4)]">{row.symbol}</span>
+                            </th>
+                            <td className={numCell}>
+                              {row.listTokenizedMarketCap == null ? '—' : formatUsd(row.listTokenizedMarketCap)}
+                              <span className="block text-[11px] text-[var(--fg-4)]">{utcMinute(row.listObservedAt) || utcMinute(row.listCapturedAt) || '—'}</span>
+                            </td>
+                            <td className={numCell}>
+                              {row.tokenMarketCapSum == null ? '—' : formatUsd(row.tokenMarketCapSum)}
+                              <span className="block text-[11px] text-[var(--fg-4)]">{utcMinute(row.quotesObservedAt) || utcMinute(row.quotesCapturedAt) || '—'}</span>
+                            </td>
+                            <td className={numCell}>{ratioLabel(row.ratio) || '—'}</td>
+                            <td className={cell}>
+                              {t(`rwa_wrappers.recon_state_${row.state}`, {
+                                defaultValue: row.state === 'agree' ? 'The two endpoints agree' : row.state === 'outside_band' ? 'The two endpoints disagree' : 'Not comparable',
+                              })}
+                              {row.reason && <span className="block text-[11px] text-[var(--fg-4)]">{reasonText(t, row.reason)}</span>}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* Attribution, plain text, always rendered once the read succeeded. */}
+          <p className="text-[11px] text-[var(--fg-4)]">{t('rwa_wrappers.source', { defaultValue: 'Data: CoinMarketCap' })}</p>
+        </>
+      )}
+    </section>
+  )
+}

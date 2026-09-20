@@ -30,6 +30,7 @@ const CategoriesPage = React.lazy(() => import('./pages/CategoriesPage'))
 const AirdropsPage = React.lazy(() => import('./pages/AirdropsPage'))
 const ListingsPage = React.lazy(() => import('./pages/ListingsPage'))
 const GraduationPage = React.lazy(() => import('./pages/GraduationPage'))
+const RwaWrapperPage = React.lazy(() => import('./pages/RwaWrapperPage'))
 const MarketAssetPage = deferredRoute(() => import('./pages/MarketAssetPage'), <div className="intel-route-loading" role="status">Loading research…</div>)
 const PortfolioPage = React.lazy(() => import('./pages/PortfolioPage'))
 const PortfolioAssetPage = React.lazy(() => import('./pages/PortfolioAssetPage'))
@@ -107,6 +108,9 @@ export default function IntelApp() {
           <Route path="listings" element={<ListingsPage />} />
           <Route path="graduation" element={<GraduationPage />} />
           <Route path="rwa" element={<MarketResearchPage workspace="rwa" />} />
+          {/* Free, precomputed: the same underlying asset wrapped several times, and
+              the prices those wrappers disagree at. Read through capture_views. */}
+          <Route path="rwa/wrappers" element={<RwaWrapperPage />} />
           <Route path="market-structure" element={<MarketResearchPage workspace="structure" />} />
           <Route path="discovery" element={<MarketResearchPage workspace="discovery" />} />
           <Route path="market-context" element={<MarketResearchPage workspace="context" />} />
