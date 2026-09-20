@@ -122,7 +122,9 @@ ALTER TABLE public.intel_rwa_depth_snapshots ADD CONSTRAINT intel_rwa_depth_coun
   (recognised_pool_count IS NULL OR pool_count IS NULL OR recognised_pool_count <= pool_count)
   AND (unrecognised_pool_count IS NULL OR pool_count IS NULL OR unrecognised_pool_count <= pool_count)
   AND (recognised_liquidity_pools IS NULL OR recognised_pool_count IS NULL OR recognised_liquidity_pools <= recognised_pool_count)
-  AND (recognised_liquidity_usd IS NULL OR total_liquidity_usd IS NULL OR recognised_liquidity_usd <= total_liquidity_usd)
+  AND (recognised_liquidity_usd IS NULL OR total_liquidity_usd IS NULL OR recognised_liquidity_usd <= total_liquidity_usd * 1.000001 + 0.01)
+  -- (the tolerance is for floating point: the two sums are added in different orders by the lane, and an exact
+  -- comparison could refuse a whole upsert batch over a rounding difference in the ninth decimal place)
   AND (deepest_recognised_liquidity_usd IS NULL OR recognised_liquidity_usd IS NULL
        OR deepest_recognised_liquidity_usd <= recognised_liquidity_usd)
   AND (exit_liquidity_pools IS NULL OR recognised_pool_count IS NULL OR exit_liquidity_pools <= recognised_pool_count));
