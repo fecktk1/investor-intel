@@ -37,6 +37,10 @@ export const CAPTURE_VIEWS = [
   // holder concentration and transfer restrictions
   // (capture-rwa-issuer-read.ts, RWA_ISSUER_CAPTURE_VIEWS).
   'rwa_issuer_legitimacy',
+  // Wrapper premium, discount, dispersion and the two-endpoint reconciliation
+  // (capture-rwa-wrappers-read.ts, RWA_WRAPPER_CAPTURE_VIEWS). Precomputed by a
+  // six-hourly lane, so the read itself spends no provider credit.
+  'rwa_wrappers',
 ]
 
 let rememberedClient = null
