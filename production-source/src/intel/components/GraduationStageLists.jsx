@@ -57,7 +57,7 @@ export default function GraduationStageLists({ funnel = [], stageLabel, emptyNot
                 {contracts.length ? contracts.map((row, index) => (
                   <tr key={`${row?.chain}-${row?.contractAddress}-${index}`}>
                     <th scope="row" className={`text-left font-normal text-[var(--fg-2)] ${BOARD_CELL_CLASS}`}>
-                      <AssetName row={row} text={row?.symbol || '—'} t={t} />
+                      <AssetName row={row} t={t} />
                     </th>
                     <td className={BOARD_CELL_CLASS}>{row?.name || '—'}</td>
                     <td className={BOARD_CELL_CLASS}>{padLabel(row) || '—'}</td>

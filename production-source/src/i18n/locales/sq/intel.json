@@ -665,10 +665,10 @@
   "graduation": {
     "eyebrow": "Diplomimi i meme-ve",
     "title": "Cikli i jetës së diplomimit të meme-ve",
-    "subtitle": "Veprimtaria e launchpad-eve nga dy shirita kapjeje: shiriti onchain i CoinGecko, që lexon Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 dhe Pons në Solana, BNB Chain, Base dhe Robinhood Chain, dhe listat e lansimeve DEX të CoinMarketCap. Të dy kapen një herë në orë dhe lexohen si një cikël jete: çfarë ndodhet tani në secilën fazë, sa nga një kohortë u diplomua, sa zgjati kjo dhe sa prej saj mbeti e listuar më vonë. Ora e kapjes është e jona, prandaj çdo shifër orësh është koha që kur e pamë një kontratë për herë të parë, jo që kur ajo u vendos.",
+    "subtitle": "Veprimtaria e launchpad-eve nga tre shirita kapjeje: shiriti onchain i CoinGecko, që lexon Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 dhe Pons në Solana, BNB Chain, Base dhe Robinhood Chain, regjistri i lansimeve të SunPump i lexuar drejtpërdrejt në TRON, dhe listat e lansimeve DEX të CoinMarketCap. Të tre kapen një herë në orë dhe lexohen si një cikël jete: çfarë ndodhet tani në secilën fazë, sa nga një kohortë u diplomua, sa zgjati kjo dhe sa prej saj mbeti e listuar më vonë. Ora e kapjes është e jona, prandaj çdo shifër orësh është koha që kur e pamë një kontratë për herë të parë, jo që kur ajo u vendos.",
     "funnel_title": "Gypi i fazave të lansimit",
     "funnel_sub": "Pasqyra e fazave vetëm e kapjes MË TË RE, nga krijimet e reja, te gati për diplomim, deri te të diplomuarat. Unaza e jashtme është faza më e madhe; unazat brenda saj lexohen si pjesë e saj. Kjo është një pamje e një ore të vetme, kurrë një shumë përgjatë dritares.",
-    "clock": "Listat e lansimeve kapen një herë në orë, nga shiriti onchain i CoinGecko në Solana, BNB Chain, Base dhe Robinhood Chain dhe nga shiriti i CoinMarketCap në platformat e veta DEX. Asnjëri prej dy ofruesve nuk publikon orë për një listë zbulimi, prandaj ora e kapjes është E JONA dhe çdo shifër orësh këtu është koha që kur e pamë NE kontratën për herë të parë, jo që kur ajo u vendos.",
+    "clock": "Listat e lansimeve kapen një herë në orë, nga shiriti onchain i CoinGecko në Solana, BNB Chain, Base dhe Robinhood Chain, nga shiriti i SunPump drejtpërdrejt në TRON dhe nga shiriti i CoinMarketCap në platformat e veta DEX. Asnjëri prej ofruesve nuk publikon orë për një listë zbulimi, prandaj ora e kapjes është E JONA dhe çdo shifër orësh këtu është koha që kur e pamë NE kontratën për herë të parë, jo që kur ajo u vendos.",
     "empty_provider": "Kapja orare u ekzekutua dhe nuk raportoi asnjë lansim për këtë rrjet dhe këtë launchpad në kapjen e fundit.",
     "empty_never": "Ende nuk është ruajtur asnjë kapje e fazave të lansimit. Faturat e kapjes më sipër tregojnë kur u ekzekutua për herë të fundit kapja orare dhe si u përgjigj ofruesi.",
     "stage_new": "Krijime të reja",
@@ -724,14 +724,12 @@
     "progress_unpublished": "asnjë kurbë e publikuar",
     "progress_label": "Kurba e bonding {{pct}}",
     "open_asset": "Hap faqen e asetit për {{address}}",
-    "copy_address": "Kopjo adresën e kontratës",
-    "copied": "U kopjua",
-    "copy_unavailable": "Kujtesa e fragmenteve nuk është e disponueshme këtu. Adresa e plotë është e përzgjedhur, kopjoje me tastierë.",
     "sources_title": "Shiritat e kapjes në këtë dritare",
     "source_line": "{{source}}: {{rows}} rreshta në këtë dritare, kapja e fundit {{at}}.",
     "source_none": "{{source}}: asnjë rresht brenda kësaj dritareje.",
     "source_coingecko": "CoinGecko onchain",
-    "source_coinmarketcap": "CoinMarketCap"
+    "source_coinmarketcap": "CoinMarketCap",
+    "source_trongrid": "SunPump në TRON"
   },
   "network": {
     "plan_note": "Statistikat e rrjetit nuk kapen në planin CoinMarketCap të kësaj hapësire pune.",
@@ -3886,6 +3884,7 @@
     "venue_orderbook": "Thellësia e librit të porosive",
     "venue_dex": "Pool DEX",
     "lane_launchpad_stages": "Fazat e launchpad-it",
+    "lane_sunpump_stages": "Regjistri i lansimeve të SunPump",
     "sources_title": "Çfarë la secili shirit kapjeje në këtë dritare"
   },
   "receipt": {
@@ -3965,5 +3964,10 @@
     "base_rate_resolved": "Norma bazë për të gjitha tezat e tua të zgjidhura",
     "no_resolved": "Asnjë tezë e zgjidhur",
     "base_rate_line": "Norma bazë: {{successes}} nga {{n}} teza të zgjidhura, në të gjitha qëndrimet, u konfirmuan plotësisht ose pjesërisht ({{rate}}). Tezat e hapura nuk numërohen."
+  },
+  "copy_address": {
+    "copy": "Kopjo adresën e kontratës",
+    "copied": "U kopjua",
+    "manual": "Ky shfletues nuk kopjon në vend tonin. Adresa e plotë është e përzgjedhur, kopjojeni me tastierë."
   }
 }

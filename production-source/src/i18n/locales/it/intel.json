@@ -665,10 +665,10 @@
   "graduation": {
     "eyebrow": "Graduazione delle meme",
     "title": "Ciclo di vita della graduazione delle meme",
-    "subtitle": "Attività dei launchpad da due corsie di acquisizione: la corsia onchain di CoinGecko, che legge Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 e Pons su Solana, BNB Chain, Base e Robinhood Chain, e gli elenchi di lanci DEX di CoinMarketCap. Entrambe vengono acquisite una volta all’ora e lette come un ciclo di vita: cosa si trova ora in ciascuna fase, quanta parte di una coorte si è graduata, quanto tempo ci è voluto e quanta parte era ancora quotata in seguito. L’ora di acquisizione è la nostra, quindi ogni cifra oraria è il tempo trascorso da quando abbiamo visto un contratto per la prima volta, non dal suo deploy.",
+    "subtitle": "Attività dei launchpad da tre corsie di acquisizione: la corsia onchain di CoinGecko, che legge Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 e Pons su Solana, BNB Chain, Base e Robinhood Chain, il registro dei lanci SunPump letto direttamente su TRON, e gli elenchi di lanci DEX di CoinMarketCap. Tutte e tre vengono acquisite una volta all’ora e lette come un ciclo di vita: cosa si trova ora in ciascuna fase, quanta parte di una coorte si è graduata, quanto tempo ci è voluto e quanta parte era ancora quotata in seguito. L’ora di acquisizione è la nostra, quindi ogni cifra oraria è il tempo trascorso da quando abbiamo visto un contratto per la prima volta, non dal suo deploy.",
     "funnel_title": "Imbuto delle fasi di lancio",
     "funnel_sub": "Il quadro delle fasi della SOLA acquisizione più recente, dalle nuove creazioni a quelle prossime alla graduazione fino alle graduate. L’anello esterno è la fase più grande; gli anelli al suo interno si leggono come una quota di essa. Questa è un’istantanea di un’ora, mai una somma sulla finestra.",
-    "clock": "Gli elenchi di lanci vengono acquisiti una volta all’ora, dalla corsia onchain di CoinGecko su Solana, BNB Chain, Base e Robinhood Chain e dalla corsia di CoinMarketCap sulle sue piattaforme DEX. Nessuno dei due fornitori pubblica un orologio per un elenco di scoperta, quindi l’ora di acquisizione è la NOSTRA e ogni cifra oraria qui è il tempo trascorso da quando NOI abbiamo visto il contratto per la prima volta, non dal suo deploy.",
+    "clock": "Gli elenchi di lanci vengono acquisiti una volta all’ora, dalla corsia onchain di CoinGecko su Solana, BNB Chain, Base e Robinhood Chain, dalla corsia SunPump direttamente su TRON e dalla corsia di CoinMarketCap sulle sue piattaforme DEX. Nessuno dei fornitori pubblica un orologio per un elenco di scoperta, quindi l’ora di acquisizione è la NOSTRA e ogni cifra oraria qui è il tempo trascorso da quando NOI abbiamo visto il contratto per la prima volta, non dal suo deploy.",
     "empty_provider": "L’acquisizione oraria è stata eseguita e non ha riportato alcun lancio per questa chain e questo launchpad all’ultima acquisizione.",
     "empty_never": "Non è ancora archiviata alcuna acquisizione delle fasi di lancio. Le ricevute di acquisizione qui sopra mostrano quando l’acquisizione oraria è stata eseguita l’ultima volta e come ha risposto il fornitore.",
     "stage_new": "Nuove creazioni",
@@ -724,14 +724,12 @@
     "progress_unpublished": "nessuna curva pubblicata",
     "progress_label": "Curva di bonding {{pct}}",
     "open_asset": "Apri la pagina dell’asset per {{address}}",
-    "copy_address": "Copia l’indirizzo del contratto",
-    "copied": "Copiato",
-    "copy_unavailable": "Gli appunti non sono disponibili qui. L’indirizzo completo è selezionato, copialo con la tastiera.",
     "sources_title": "Corsie di acquisizione in questa finestra",
     "source_line": "{{source}}: {{rows}} righe in questa finestra, ultima acquisizione {{at}}.",
     "source_none": "{{source}}: nessuna riga in questa finestra.",
     "source_coingecko": "CoinGecko onchain",
-    "source_coinmarketcap": "CoinMarketCap"
+    "source_coinmarketcap": "CoinMarketCap",
+    "source_trongrid": "SunPump su TRON"
   },
   "network": {
     "plan_note": "Le statistiche di rete non vengono acquisite con il piano CoinMarketCap di questo workspace.",
@@ -3886,6 +3884,7 @@
     "venue_orderbook": "Profondità dell’order book",
     "venue_dex": "Pool DEX",
     "lane_launchpad_stages": "Fasi di launchpad",
+    "lane_sunpump_stages": "Registro dei lanci SunPump",
     "sources_title": "Cosa ha lasciato ciascuna corsia di acquisizione in questa finestra"
   },
   "receipt": {
@@ -3965,5 +3964,10 @@
     "base_rate_resolved": "Tasso di base su tutte le tue tesi risolte",
     "no_resolved": "Nessuna tesi risolta",
     "base_rate_line": "Tasso di base: {{successes}} di {{n}} tesi risolte, su tutte le posizioni, sono state confermate o confermate in parte ({{rate}}). Le tesi aperte non sono conteggiate."
+  },
+  "copy_address": {
+    "copy": "Copia l’indirizzo del contratto",
+    "copied": "Copiato",
+    "manual": "Questo browser non copia al posto nostro. L’indirizzo completo è selezionato, copialo con la tastiera."
   }
 }

@@ -791,10 +791,10 @@
   "graduation": {
     "eyebrow": "Meme graduation",
     "title": "Meme graduation lifecycle",
-    "subtitle": "Launchpad activity from two capture lanes: the CoinGecko onchain lane, which reads Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 and Pons across Solana, BNB Chain, Base and Robinhood Chain, and the CoinMarketCap DEX launch lists. Both are captured once an hour and read as a lifecycle: what is at each stage now, how much of a cohort graduated, how long that took and how much of it was still listed later. The capture hour is ours, so every hour figure is time since we first saw a contract, not since it was deployed.",
+    "subtitle": "Launchpad activity from three capture lanes: the CoinGecko onchain lane, which reads Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 and Pons across Solana, BNB Chain, Base and Robinhood Chain, the SunPump launch log read straight off TRON, and the CoinMarketCap DEX launch lists. All three are captured once an hour and read as a lifecycle: what is at each stage now, how much of a cohort graduated, how long that took and how much of it was still listed later. The capture hour is ours, so every hour figure is time since we first saw a contract, not since it was deployed.",
     "funnel_title": "Launch stage funnel",
     "funnel_sub": "The stage board of the NEWEST capture only, from new creations through about-to-graduate to graduates. The outer ring is the largest stage; the rings inside it are read as a share of it. This is a snapshot of one hour, never a sum over the window.",
-    "clock": "The launch lists are captured once an hour, by the CoinGecko onchain lane across Solana, BNB Chain, Base and Robinhood Chain and by the CoinMarketCap lane on its own DEX platforms. Neither provider publishes a clock for a discovery list, so the capture hour is OURS and every hour figure here is time since WE first saw the contract, not since it was deployed.",
+    "clock": "The launch lists are captured once an hour, by the CoinGecko onchain lane across Solana, BNB Chain, Base and Robinhood Chain, by the SunPump lane reading TRON directly, and by the CoinMarketCap lane on its own DEX platforms. No provider publishes a clock for a discovery list, so the capture hour is OURS and every hour figure here is time since WE first saw the contract, not since it was deployed.",
     "empty_provider": "The hourly capture ran and reported no launches for this chain and launchpad at the last capture.",
     "empty_never": "No launch stage capture is stored yet. Capture receipts above shows when the hourly capture last ran and how the provider answered it.",
     "stage_new": "New creations",
@@ -850,14 +850,12 @@
     "progress_unpublished": "no curve published",
     "progress_label": "Bonding curve {{pct}}",
     "open_asset": "Open the asset page for {{address}}",
-    "copy_address": "Copy contract address",
-    "copied": "Copied",
-    "copy_unavailable": "The clipboard is unavailable here. The full address is selected, so copy it with your keyboard.",
     "sources_title": "Capture lanes in this window",
     "source_line": "{{source}}: {{rows}} rows in this window, latest capture {{at}}.",
     "source_none": "{{source}}: no row inside this window.",
     "source_coingecko": "CoinGecko onchain",
-    "source_coinmarketcap": "CoinMarketCap"
+    "source_coinmarketcap": "CoinMarketCap",
+    "source_trongrid": "SunPump on TRON"
   },
   "network": {
     "plan_note": "Network statistics are not captured on this workspace’s CoinMarketCap plan.",
@@ -3886,6 +3884,7 @@
     "venue_orderbook": "Order book depth",
     "venue_dex": "DEX pool",
     "lane_launchpad_stages": "Launchpad stages",
+    "lane_sunpump_stages": "SunPump launch log",
     "sources_title": "What each capture lane left in this window"
   },
   "receipt": {
@@ -3965,5 +3964,10 @@
     "base_rate_resolved": "Base rate across all your resolved theses",
     "no_resolved": "No resolved theses",
     "base_rate_line": "Base rate: {{successes}} of {{n}} resolved theses across every stance were confirmed or partially confirmed ({{rate}}). Open theses are not counted."
+  },
+  "copy_address": {
+    "copy": "Copy contract address",
+    "copied": "Copied",
+    "manual": "This browser will not copy for us. The full address is selected, so copy it with your keyboard."
   }
 }

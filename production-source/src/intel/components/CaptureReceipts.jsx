@@ -16,7 +16,7 @@ const LANE_DEFAULTS = {
   regime: 'Market regime', network_stats: 'Network statistics', rank: 'Rank history', rwa: 'Tokenized asset universe',
   index: 'Index constituents', liquidations: 'Liquidations', attention: 'Attention lists', exchange_reserves: 'Exchange reserves',
   venue_share: 'Venue share', categories: 'Categories', airdrops: 'Airdrops', new_listings: 'New listings', meme_stages: 'Meme launch stages',
-  launchpad_stages: 'Launchpad stages',
+  launchpad_stages: 'Launchpad stages', sunpump_stages: 'SunPump launch log',
 }
 
 /** Receipts for figures read from the capture tables (Play 1 on the capture

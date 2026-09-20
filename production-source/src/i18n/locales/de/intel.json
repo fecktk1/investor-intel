@@ -665,10 +665,10 @@
   "graduation": {
     "eyebrow": "Meme-Graduierung",
     "title": "Lebenszyklus der Meme-Graduierung",
-    "subtitle": "Launchpad-Aktivität aus zwei Erfassungsspuren: der CoinGecko-Onchain-Spur, die Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 und Pons auf Solana, BNB Chain, Base und Robinhood Chain liest, und den CoinMarketCap-DEX-Launch-Listen. Beide werden einmal pro Stunde erfasst und als Lebenszyklus gelesen: was jetzt in welcher Phase steht, wie viel einer Kohorte graduiert ist, wie lange das gedauert hat und wie viel davon später noch gelistet war. Die Erfassungsstunde ist unsere, daher ist jede Stundenangabe die Zeit, seit wir einen Vertrag zuerst gesehen haben, nicht seit seiner Bereitstellung.",
+    "subtitle": "Launchpad-Aktivität aus drei Erfassungsspuren: der CoinGecko-Onchain-Spur, die Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 und Pons auf Solana, BNB Chain, Base und Robinhood Chain liest, dem SunPump-Startprotokoll, das direkt von TRON gelesen wird, und den CoinMarketCap-DEX-Launch-Listen. Alle drei werden einmal pro Stunde erfasst und als Lebenszyklus gelesen: was jetzt in welcher Phase steht, wie viel einer Kohorte graduiert ist, wie lange das gedauert hat und wie viel davon später noch gelistet war. Die Erfassungsstunde ist unsere, daher ist jede Stundenangabe die Zeit, seit wir einen Vertrag zuerst gesehen haben, nicht seit seiner Bereitstellung.",
     "funnel_title": "Trichter der Launch-Phasen",
     "funnel_sub": "Die Phasentafel ausschließlich der NEUESTEN Erfassung, von neuen Erstellungen über kurz vor der Graduierung bis zu den Graduierten. Der äußere Ring ist die größte Phase; die Ringe darin werden als Anteil daran gelesen. Das ist eine Momentaufnahme einer Stunde, nie eine Summe über das Zeitfenster.",
-    "clock": "Die Launch-Listen werden einmal pro Stunde erfasst, von der CoinGecko-Onchain-Spur auf Solana, BNB Chain, Base und Robinhood Chain und von der CoinMarketCap-Spur auf deren eigenen DEX-Plattformen. Keiner der beiden Anbieter veröffentlicht für eine Entdeckungsliste einen Zeitstempel, daher ist die Erfassungsstunde UNSERE, und jede Stundenangabe hier ist die Zeit, seit WIR den Vertrag zuerst gesehen haben, nicht seit seiner Bereitstellung.",
+    "clock": "Die Launch-Listen werden einmal pro Stunde erfasst, von der CoinGecko-Onchain-Spur auf Solana, BNB Chain, Base und Robinhood Chain, von der SunPump-Spur direkt auf TRON und von der CoinMarketCap-Spur auf deren eigenen DEX-Plattformen. Keiner der Anbieter veröffentlicht für eine Entdeckungsliste einen Zeitstempel, daher ist die Erfassungsstunde UNSERE, und jede Stundenangabe hier ist die Zeit, seit WIR den Vertrag zuerst gesehen haben, nicht seit seiner Bereitstellung.",
     "empty_provider": "Die stündliche Erfassung lief und hat bei der letzten Erfassung keine Launches für diese Chain und dieses Launchpad gemeldet.",
     "empty_never": "Es ist noch keine Erfassung der Launch-Phasen gespeichert. Die Erfassungsbelege oben zeigen, wann die stündliche Erfassung zuletzt lief und wie der Anbieter geantwortet hat.",
     "stage_new": "Neue Erstellungen",
@@ -724,14 +724,12 @@
     "progress_unpublished": "keine Kurve veröffentlicht",
     "progress_label": "Bonding-Kurve {{pct}}",
     "open_asset": "Asset-Seite für {{address}} öffnen",
-    "copy_address": "Vertragsadresse kopieren",
-    "copied": "Kopiert",
-    "copy_unavailable": "Die Zwischenablage ist hier nicht verfügbar. Die vollständige Adresse ist ausgewählt, kopiere sie mit der Tastatur.",
     "sources_title": "Erfassungsspuren in diesem Zeitfenster",
     "source_line": "{{source}}: {{rows}} Zeilen in diesem Zeitfenster, letzte Erfassung {{at}}.",
     "source_none": "{{source}}: keine Zeile in diesem Zeitfenster.",
     "source_coingecko": "CoinGecko Onchain",
-    "source_coinmarketcap": "CoinMarketCap"
+    "source_coinmarketcap": "CoinMarketCap",
+    "source_trongrid": "SunPump auf TRON"
   },
   "network": {
     "plan_note": "Netzwerkstatistiken werden im CoinMarketCap-Tarif dieses Workspace nicht erfasst.",
@@ -3886,6 +3884,7 @@
     "venue_orderbook": "Orderbuchtiefe",
     "venue_dex": "DEX-Pool",
     "lane_launchpad_stages": "Launchpad-Phasen",
+    "lane_sunpump_stages": "SunPump-Startprotokoll",
     "sources_title": "Was jede Erfassungsspur in diesem Zeitfenster hinterlassen hat"
   },
   "receipt": {
@@ -3965,5 +3964,10 @@
     "base_rate_resolved": "Basisrate über alle deine aufgelösten Thesen",
     "no_resolved": "Keine aufgelösten Thesen",
     "base_rate_line": "Basisrate: {{successes}} von {{n}} aufgelösten Thesen über alle Ausrichtungen wurden bestätigt oder teilweise bestätigt ({{rate}}). Offene Thesen werden nicht gezählt."
+  },
+  "copy_address": {
+    "copy": "Vertragsadresse kopieren",
+    "copied": "Kopiert",
+    "manual": "Dieser Browser kopiert nicht für uns. Die vollständige Adresse ist markiert, kopiere sie mit der Tastatur."
   }
 }

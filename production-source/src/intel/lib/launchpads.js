@@ -31,6 +31,19 @@ export const LEGACY_CHAINS = [
   { chain: 'eip155:42161', label: 'Arbitrum' },
 ]
 
+/** Chains a CHAIN-LOG lane reads, mirroring CHAIN_LOG_PADS in the capture
+ *  registry. SunPump has no GeckoTerminal dex id at all, so `capture-sunpump.ts`
+ *  reads its launch log off TRON directly and writes the same two tables.
+ *
+ *  The name is the CAPTURE's: `tron` is TRON, which is what the capture
+ *  registry, TRON's own foundation and TronScan call it. The app-wide registry
+ *  in src/intel/lib/chains.js spells the same chain `Tron` for the portfolio
+ *  side, and a page that took one name for its filter and the other for its
+ *  Chain column would print two names for one network. */
+export const CHAIN_LOG_CHAINS = [
+  { chain: 'tron', label: 'TRON' },
+]
+
 /** `role: 'pad'` entries only. A graduation destination is an AMM, never a
  *  launchpad, and it never appears in this control. */
 export const LAUNCHPADS = [
@@ -52,9 +65,12 @@ export const LAUNCHPADS = [
   { key: 'bankr-robinhood', label: 'Bankr', chain: 'eip155:4663' },
   { key: 'virtuals-robinhood', label: 'Virtuals', chain: 'eip155:4663' },
   { key: 'o1-launchpad-robinhood', label: 'o1 Launchpad', chain: 'eip155:4663' },
+  // A chain-log pad: no dex id, read straight off TRON by the SunPump lane. It
+  // is a launchpad like any other to a reader, so it is on the same control.
+  { key: 'sunpump', label: 'SunPump', chain: 'tron' },
 ]
 
-export const CHAIN_LABELS = Object.fromEntries([...LAUNCHPAD_CHAINS, ...LEGACY_CHAINS].map(row => [row.chain, row.label]))
+export const CHAIN_LABELS = Object.fromEntries([...LAUNCHPAD_CHAINS, ...CHAIN_LOG_CHAINS, ...LEGACY_CHAINS].map(row => [row.chain, row.label]))
 export const PAD_LABELS = Object.fromEntries(LAUNCHPADS.map(pad => [pad.key, pad.label]))
 export const PAD_CHAINS = Object.fromEntries(LAUNCHPADS.map(pad => [pad.key, pad.chain]))
 

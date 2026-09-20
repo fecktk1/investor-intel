@@ -1,6 +1,7 @@
-import React, { useCallback, useEffect, useRef, useState } from 'react'
+import React from 'react'
 import { Link } from 'react-router'
 import { toneColor } from '../charts'
+import CopyAddress from './CopyAddress'
 import { getChain, chainIdFor } from '../lib/chains'
 import { CHAIN_LABELS, PAD_LABELS } from '../lib/launchpads'
 import { contractRoute } from '../lib/workspace-search'
@@ -17,10 +18,11 @@ import { formatUsd } from '../lib/market-format'
 // what a reader can copy or open.
 
 /** The app-facing chain ids this page's control offers, in the order it shows
- *  them. The first four are the networks the launchpad lane reads; the last two
- *  are the CoinMarketCap lane's platforms, kept because that lane still writes
- *  these tables and a window of its rows must stay filterable. */
-export const MEME_CHAINS = ['all', 'solana', 'bnb', 'base', 'robinhood', 'ethereum', 'arbitrum']
+ *  them. The first four are the networks the CoinGecko launchpad lane reads,
+ *  `tron` is the chain-log lane's (SunPump, read off TRON directly), and the
+ *  last two are the CoinMarketCap lane's platforms, kept because that lane still
+ *  writes these tables and a window of its rows must stay filterable. */
+export const MEME_CHAINS = ['all', 'solana', 'bnb', 'base', 'robinhood', 'tron', 'ethereum', 'arbitrum']
 
 /** Chains the app-wide registry does not carry. Robinhood Chain is read by the
  *  launchpad lane and is not an Alchemy/Helius chain, so it has no entry in
@@ -45,22 +47,28 @@ export const num = value => {
  *  written) is passed straight back as the CAIP it already is. */
 export function chainCaip(id) {
   if (!id || id === 'all') return null
-  if (MEME_CHAINS.includes(id)) {
-    const chain = getChain(id)
-    if (chain) return chain.namespace === 'eip155' ? `eip155:${chain.caip2Ref}` : chain.id
-    return EXTRA_CAIP[id] ?? null
-  }
+  const chain = getChain(id)
+  if (chain) return chain.namespace === 'eip155' ? `eip155:${chain.caip2Ref}` : chain.id
+  if (EXTRA_CAIP[id]) return EXTRA_CAIP[id]
   return CAIP_SHAPE.test(id) ? id : null
 }
 
-/** A stored CAIP chain, named the way chains.js names it, then the way the
- *  launchpad registry names it, and otherwise shown verbatim rather than folded
- *  onto a network we did not read. */
+/** A stored CAIP chain, named the way the CAPTURE registry names it, then the
+ *  way the app-wide registry does, and otherwise shown verbatim rather than
+ *  folded onto a network we did not read.
+ *
+ *  The capture's own name comes FIRST, and that order is the point. The two
+ *  registries agree on every chain they both carry except one: the capture
+ *  registry and TRON's own foundation call `tron` TRON, while chains.js spells
+ *  it Tron for the portfolio side. The chain control is built from what the read
+ *  named, so a Chain column that resolved through chains.js instead would print
+ *  a second name for the network the filter above it just named. */
 export function chainLabel(caip) {
   const raw = String(caip ?? '').trim()
   if (!raw) return '—'
+  if (CHAIN_LABELS[raw]) return CHAIN_LABELS[raw]
   const [namespace, reference] = raw.includes(':') ? [raw.slice(0, raw.indexOf(':')), raw.slice(raw.indexOf(':') + 1)] : [raw, 'mainnet']
-  return getChain(chainIdFor(namespace, reference) || '')?.label || CHAIN_LABELS[raw] || raw
+  return getChain(chainIdFor(namespace, reference) || '')?.label || raw
 }
 
 /** The pad's human name. The page never prints a dex id at a reader: the read
@@ -88,12 +96,18 @@ export const hoursText = value => (num(value) == null ? '—' : `${Number(value)
  *  launchpad token on a free membership, so every captured row that names a
  *  chain and an address opens — nothing is gated on the catalogue having heard
  *  of the token first. The route is minted by the shared helper so this page and
- *  the workspace search can never disagree about its shape. */
+ *  the workspace search can never disagree about its shape.
+ *
+ *  The path segment is the SYMBOL, and where the source published none it is the
+ *  ADDRESS: an identifier either way. A display name is not one — it carries
+ *  spaces, punctuation and whatever a deployer typed — and the asset page reads
+ *  the segment as a lookup input whenever the query has no identity on it. The
+ *  identity is on `provider=contract&id=<chain>:<address>` regardless. */
 export function contractHref(row) {
   const chain = String(row?.chain ?? '').trim()
   const address = String(row?.contractAddress ?? '').trim()
   if (!chain || !address) return null
-  return contractRoute(row?.symbol || row?.name || address, chain, address)
+  return contractRoute(row?.symbol || address, chain, address)
 }
 
 /** Bonding-curve progress as the chart kit draws an inline value: a small mark
@@ -140,88 +154,48 @@ export function ValueCell({ row, t }) {
   return <>{`${formatUsd(fdv)} ${t('graduation.fdv_suffix', { defaultValue: 'FDV' })}`}</>
 }
 
-const selectNode = node => {
-  try {
-    const selection = window.getSelection?.()
-    if (!selection || !node) return
-    const range = document.createRange()
-    range.selectNodeContents(node)
-    selection.removeAllRanges()
-    selection.addRange(range)
-  } catch { /* a browser that refuses the selection still shows the full text */ }
-}
-
 /**
  * The captured contract: shortened on screen, whole in the title attribute,
  * whole on the clipboard, and never a dead end.
  *
  * The address opens the Markets asset page through the contract route, which
- * resolves a launchpad token for any member. When the clipboard API is missing
- * or refuses, the control does not fail silently: it swaps the shortened text
- * for the FULL address in a focusable element and selects it, so the address is
- * still reachable and copyable from the keyboard.
+ * resolves a launchpad token for any member.
+ *
+ * The copy control is the SHARED one. Every Intel surface that prints an address
+ * prints it through CopyAddress, so the rule that the button writes the full
+ * address and never the shortened label, the "Copied" status and the fallback a
+ * browser with no clipboard API gets are one implementation and not three that
+ * drift apart. It is asked not to print the address itself, because here the
+ * address is a link and only this cell knows where it goes.
  */
 export function ContractCell({ row, t }) {
   const address = String(row?.contractAddress ?? '').trim()
-  const [state, setState] = useState('idle')
-  const full = useRef(null)
-  const timer = useRef(null)
-  useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
-
-  const copy = useCallback(() => {
-    const manual = () => {
-      setState('manual')
-      // The node only exists once the manual branch has rendered it.
-      setTimeout(() => selectNode(full.current), 0)
-    }
-    let written = null
-    try { written = navigator.clipboard?.writeText?.(address) } catch { written = null }
-    if (!written) { manual(); return }
-    Promise.resolve(written)
-      .then(() => {
-        setState('copied')
-        if (timer.current) clearTimeout(timer.current)
-        timer.current = setTimeout(() => setState('idle'), 1600)
-      })
-      .catch(manual)
-  }, [address])
-
   if (!address) return <>—</>
   const href = contractHref(row)
-  const shown = state === 'manual'
-    ? <code ref={full} tabIndex={0} className="font-mono text-[var(--fg-2)] break-all">{address}</code>
-    : <code title={address} className="font-mono text-[var(--fg-2)]">{shortAddress(address)}</code>
+  const shown = <code title={address} className="font-mono text-[var(--fg-2)]">{shortAddress(address)}</code>
 
   return (
     <span className="inline-flex flex-wrap items-center gap-2">
       {href
         ? <Link to={href} title={t('graduation.open_asset', { address, defaultValue: 'Open the asset page for {{address}}' })}>{shown}</Link>
         : shown}
-      <button
-        type="button"
-        className="intel-text-link text-[11px]"
-        aria-label={t('graduation.copy_address', { defaultValue: 'Copy contract address' })}
-        title={t('graduation.copy_address', { defaultValue: 'Copy contract address' })}
-        onClick={copy}
-      >
-        {t('graduation.copy_address', { defaultValue: 'Copy contract address' })}
-      </button>
-      {state === 'copied'
-        ? <span role="status" className="text-[11px] text-[var(--fg-4)]">{t('graduation.copied', { defaultValue: 'Copied' })}</span>
-        : null}
-      {state === 'manual'
-        ? <span role="status" className="text-[11px] text-[var(--fg-4)]">{t('graduation.copy_unavailable', { defaultValue: 'The clipboard is unavailable here. The full address is selected, so copy it with your keyboard.' })}</span>
-        : null}
+      <CopyAddress value={address} showAddress={false} />
     </span>
   )
 }
 
-/** Symbol or name, linked to the asset page. Every captured row that names a
- *  chain and an address opens; a row that names neither is plain text rather
- *  than a link to nowhere. */
+/** The row's name on the asset page, linked there.
+ *
+ *  EVERY captured row links. A source that published no symbol still published a
+ *  contract, so the link text falls back to the SHORTENED ADDRESS rather than to
+ *  a dash: a dash is not a name, and a row a reader cannot open from the column
+ *  they are reading is a dead end on the one page whose job is to name new
+ *  contracts. Only a row carrying neither a chain nor an address has nowhere to
+ *  go, and that is plain text rather than a link to nowhere. */
 export function AssetName({ row, text, t }) {
-  const label = text || row?.symbol || row?.name || '—'
+  const address = String(row?.contractAddress ?? '').trim()
+  const label = text || row?.symbol || (address ? shortAddress(address) : null) || row?.name || '—'
   const href = contractHref(row)
   if (!href) return <>{label}</>
-  return <Link to={href} title={t('graduation.open_asset', { address: row?.contractAddress || label, defaultValue: 'Open the asset page for {{address}}' })}>{label}</Link>
+  return <Link to={href} title={t('graduation.open_asset', { address: address || label, defaultValue: 'Open the asset page for {{address}}' })}>{label}</Link>
 }

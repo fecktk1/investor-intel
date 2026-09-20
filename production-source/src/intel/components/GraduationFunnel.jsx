@@ -21,14 +21,17 @@ import {
 // per-launchpad board, three stage lists, a cohort graduation rate, a
 // time-to-graduate distribution and a retention table.
 //
-// TWO CAPTURE LANES WRITE THE SAME TWO TABLES. `launchpad_stages` reads real
+// THREE CAPTURE LANES WRITE THE SAME TWO TABLES. `launchpad_stages` reads real
 // launchpads on Solana, BNB Chain, Base and Robinhood Chain through CoinGecko's
-// onchain API; `meme_stages` reads the CoinMarketCap DEX launch lists. Every row
-// carries the lane that first wrote it, so `sources[]` can say which of them the
-// window actually holds instead of leaving a reader to assume.
+// onchain API; `sunpump_stages` reads SunPump's launch log straight off TRON
+// through TronGrid, because SunPump has no dex id for the CoinGecko lane to ask
+// for; `meme_stages` reads the CoinMarketCap DEX launch lists. Every row carries
+// the lane that first wrote it, so `sources[]` can say which of them the window
+// actually holds instead of leaving a reader to assume.
 //
 // Contract: `meme_graduation` takes { days: 1|7|30, chain?, launchpad? } —
-// `chain` is a CAIP chain and `launchpad` a dex id, each omitted for "all" —
+// `chain` is a CAIP chain and `launchpad` a launchpad id (a dex id for the two
+// registry lanes, a bare pad id for a chain-log one), each omitted for "all" —
 // and answers { funnel, graduationRate, cohort, timeToGraduate, retention,
 // recent, launchpads, chains, sources, captures, attribution, asOf, coverage,
 // reason }. BOTH filters are applied in the DATABASE, so a filtered window is
@@ -86,7 +89,7 @@ const RECENT_MAX = 25
 const PAD_SHAPE = /^[A-Za-z0-9][A-Za-z0-9_.-]{0,119}$/
 /** The capture lanes that write these two tables. A lane absent from `sources`
  *  wrote nothing into the window, and that is a fact worth printing. */
-const LANES = ['coingecko', 'coinmarketcap']
+const LANES = ['coingecko', 'trongrid', 'coinmarketcap']
 // Hoisted so useUrlState's memo/callback identities stay stable across renders.
 const URL_DEFAULTS = {
   g_days: String(DEFAULT_DAYS), g_chain: DEFAULT_CHAIN, g_pad: DEFAULT_PAD,
@@ -278,7 +281,7 @@ export default function GraduationFunnel({ onSources }) {
   const frameText = (key, options) => (key === 'charts.empty' && emptyNote ? emptyNote : t(key, options))
 
   const clock = t('graduation.clock', {
-    defaultValue: 'The launch lists are captured once an hour, by the CoinGecko onchain lane across Solana, BNB Chain, Base and Robinhood Chain and by the CoinMarketCap lane on its own DEX platforms. Neither provider publishes a clock for a discovery list, so the capture hour is OURS and every hour figure here is time since WE first saw the contract, not since it was deployed.',
+    defaultValue: 'The launch lists are captured once an hour, by the CoinGecko onchain lane across Solana, BNB Chain, Base and Robinhood Chain, by the SunPump lane reading TRON directly, and by the CoinMarketCap lane on its own DEX platforms. No provider publishes a clock for a discovery list, so the capture hour is OURS and every hour figure here is time since WE first saw the contract, not since it was deployed.',
   })
   const historyNote = t('graduation.history_note', {
     captures: HISTORY_CAPTURES,
@@ -297,7 +300,12 @@ export default function GraduationFunnel({ onSources }) {
     ? t('graduation.source_coingecko', { defaultValue: 'CoinGecko onchain' })
     : name === 'coinmarketcap'
       ? t('graduation.source_coinmarketcap', { defaultValue: 'CoinMarketCap' })
-      : String(name || '—'))
+      // The stored source is the API the lane calls; the reader is told which
+      // launchpad and which chain that lane is, because "trongrid" is the name
+      // of a gateway and not of anything a reader is looking for.
+      : name === 'trongrid'
+        ? t('graduation.source_trongrid', { defaultValue: 'SunPump on TRON' })
+        : String(name || '—'))
 
   // Every lane that COULD have written, not only the ones that did: a lane
   // absent from `sources` wrote nothing into this window, and saying so is the
@@ -568,7 +576,7 @@ export default function GraduationFunnel({ onSources }) {
           <tbody>
             {recent.length ? recent.map((row, index) => (
               <tr key={`${row?.chain}-${row?.contractAddress}-${index}`}>
-                <th scope="row" className={`text-left font-normal text-[var(--fg-2)] ${BOARD_CELL_CLASS}`}><AssetName row={row} text={row?.symbol || '—'} t={t} /></th>
+                <th scope="row" className={`text-left font-normal text-[var(--fg-2)] ${BOARD_CELL_CLASS}`}><AssetName row={row} t={t} /></th>
                 <td className={BOARD_CELL_CLASS}>{row?.name || '—'}</td>
                 <td className={BOARD_CELL_CLASS}>{padLabel(row) || '—'}</td>
                 <td className={BOARD_CELL_CLASS}>{chainLabel(row?.chain)}</td>

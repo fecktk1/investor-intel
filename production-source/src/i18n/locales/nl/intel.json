@@ -665,10 +665,10 @@
   "graduation": {
     "eyebrow": "Meme-graduatie",
     "title": "Levenscyclus van meme-graduatie",
-    "subtitle": "Launchpad-activiteit uit twee vastlegbanen: de CoinGecko-onchain-baan, die Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 en Pons op Solana, BNB Chain, Base en Robinhood Chain leest, en de DEX-lanceringslijsten van CoinMarketCap. Beide worden eenmaal per uur vastgelegd en gelezen als een levenscyclus: wat er nu in elke fase zit, hoeveel van een cohort gradueerde, hoe lang dat duurde en hoeveel daarvan later nog genoteerd stond. Het vastlegtijdstip is het onze, dus elk uurcijfer is de tijd sinds wij een contract voor het eerst zagen, niet sinds het werd uitgerold.",
+    "subtitle": "Launchpad-activiteit uit drie vastlegbanen: de CoinGecko-onchain-baan, die Pump.fun, Meteora DBC, LetsBonk on Raydium LaunchLab, Four.meme, TikTok.fun, Virtuals, Bankr, o1 en Pons op Solana, BNB Chain, Base en Robinhood Chain leest, het SunPump-lanceringslogboek dat rechtstreeks op TRON wordt gelezen, en de DEX-lanceringslijsten van CoinMarketCap. Alle drie worden eenmaal per uur vastgelegd en gelezen als een levenscyclus: wat er nu in elke fase zit, hoeveel van een cohort gradueerde, hoe lang dat duurde en hoeveel daarvan later nog genoteerd stond. Het vastlegtijdstip is het onze, dus elk uurcijfer is de tijd sinds wij een contract voor het eerst zagen, niet sinds het werd uitgerold.",
     "funnel_title": "Trechter van lanceringsfasen",
     "funnel_sub": "Het fasenoverzicht van uitsluitend de NIEUWSTE vastlegging, van nieuwe creaties via bijna gegradueerd tot gegradueerd. De buitenste ring is de grootste fase; de ringen daarbinnen worden gelezen als aandeel daarvan. Dit is een momentopname van één uur, nooit een som over het venster.",
-    "clock": "De lanceringslijsten worden eenmaal per uur vastgelegd, door de CoinGecko-onchain-baan op Solana, BNB Chain, Base en Robinhood Chain en door de CoinMarketCap-baan op de eigen DEX-platformen. Geen van beide aanbieders publiceert een klok voor een ontdekkingslijst, dus het vastlegtijdstip is het ONZE en elk uurcijfer hier is de tijd sinds WIJ het contract voor het eerst zagen, niet sinds het werd uitgerold.",
+    "clock": "De lanceringslijsten worden eenmaal per uur vastgelegd, door de CoinGecko-onchain-baan op Solana, BNB Chain, Base en Robinhood Chain, door de SunPump-baan rechtstreeks op TRON en door de CoinMarketCap-baan op de eigen DEX-platformen. Geen van de aanbieders publiceert een klok voor een ontdekkingslijst, dus het vastlegtijdstip is het ONZE en elk uurcijfer hier is de tijd sinds WIJ het contract voor het eerst zagen, niet sinds het werd uitgerold.",
     "empty_provider": "De uurlijkse vastlegging is gedraaid en rapporteerde bij de laatste vastlegging geen lanceringen voor deze chain en dit launchpad.",
     "empty_never": "Er is nog geen vastlegging van de lanceerfasen opgeslagen. De vastlegbonnen hierboven tonen wanneer de uurlijkse vastlegging voor het laatst draaide en hoe de aanbieder antwoordde.",
     "stage_new": "Nieuwe creaties",
@@ -724,14 +724,12 @@
     "progress_unpublished": "geen curve gepubliceerd",
     "progress_label": "Bonding-curve {{pct}}",
     "open_asset": "Open de assetpagina voor {{address}}",
-    "copy_address": "Contractadres kopiëren",
-    "copied": "Gekopieerd",
-    "copy_unavailable": "Het klembord is hier niet beschikbaar. Het volledige adres is geselecteerd, kopieer het met het toetsenbord.",
     "sources_title": "Vastlegbanen in dit venster",
     "source_line": "{{source}}: {{rows}} rijen in dit venster, laatste vastlegging {{at}}.",
     "source_none": "{{source}}: geen rij binnen dit venster.",
     "source_coingecko": "CoinGecko onchain",
-    "source_coinmarketcap": "CoinMarketCap"
+    "source_coinmarketcap": "CoinMarketCap",
+    "source_trongrid": "SunPump op TRON"
   },
   "network": {
     "plan_note": "Netwerkstatistieken worden niet vastgelegd in het CoinMarketCap-abonnement van deze werkruimte.",
@@ -3886,6 +3884,7 @@
     "venue_orderbook": "Orderboekdiepte",
     "venue_dex": "DEX-pool",
     "lane_launchpad_stages": "Launchpad-fasen",
+    "lane_sunpump_stages": "SunPump-lanceringslogboek",
     "sources_title": "Wat elke vastlegbaan in dit venster heeft achtergelaten"
   },
   "receipt": {
@@ -3965,5 +3964,10 @@
     "base_rate_resolved": "Basispercentage over al jouw afgeronde theses",
     "no_resolved": "Geen afgeronde theses",
     "base_rate_line": "Basispercentage: {{successes}} van {{n}} afgeronde theses over alle standpunten zijn bevestigd of deels bevestigd ({{rate}}). Open theses worden niet meegeteld."
+  },
+  "copy_address": {
+    "copy": "Contractadres kopiëren",
+    "copied": "Gekopieerd",
+    "manual": "Deze browser kopieert niet voor ons. Het volledige adres is geselecteerd, kopieer het met je toetsenbord."
   }
 }
