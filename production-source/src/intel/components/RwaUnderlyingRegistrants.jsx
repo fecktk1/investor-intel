@@ -63,9 +63,23 @@ export function boardValue(row, key) {
 }
 
 /** Registrants our own day count puts past the stated threshold. Exported so the
- *  test asserts the rule rather than the sentence. */
+ *  test asserts the rule rather than the sentence.
+ *
+ *  A row whose periodic report simply was not inside the filings we read is NOT
+ *  in here and never may be. EDGAR's recent block holds about a thousand entries,
+ *  so a bank that files thousands of prospectus supplements a year pushes its own
+ *  10-K out of it: on 2026-09-20 Bank of America and JPMorgan were both stored
+ *  with no annual and no quarterly date, and calling either of them overdue would
+ *  be our mistake reported as their delinquency. */
 export function overdueRows(rows = []) {
   return rows.filter(row => row?.periodic?.state === 'overdue')
+}
+
+/** Registrants whose filings we did not read far enough back to judge. Their day
+ *  count is null, so they already sort to the end of the "days since" column;
+ *  this names them so the board can say why in words. */
+export function notReadBackRows(rows = []) {
+  return rows.filter(row => row?.periodic?.state === 'not_in_read_filings')
 }
 
 /** The daily capture times (UTC) the read view serves, with the migration's own
@@ -135,6 +149,7 @@ export default function RwaUnderlyingRegistrants() {
     [rows, sort, dir],
   )
   const overdue = useMemo(() => overdueRows(rows), [rows])
+  const notReadBack = useMemo(() => notReadBackRows(rows), [rows])
   const universe = payload.universe || {}
   const times = captureTimes(payload.schedule)
   const thresholds = payload.thresholds || {}
@@ -170,10 +185,17 @@ export default function RwaUnderlyingRegistrants() {
             </p>
           ) : (
             <p className="text-[13px]" data-testid="rwa-underlying-coverage">
-              {t('rwa_underlying.coverage', {
-                withCik: fmtNum(withCik ?? 0), tokenised: fmtNum(tokenised ?? 0), confirmed: fmtNum(confirmed ?? 0),
-                defaultValue: '{{withCik}} of {{tokenised}} tokenized equities and funds carry an SEC filer number from CoinMarketCap; {{confirmed}} confirmed against EDGAR.',
-              })}
+              {/* A universe enumeration that stopped at its page ceiling gives a
+                  FLOOR, never a total, and the sentence says "at least". */}
+              {payload.countsTruncated
+                ? t('rwa_underlying.coverage_truncated', {
+                  withCik: fmtNum(withCik ?? 0), tokenised: fmtNum(tokenised ?? 0), confirmed: fmtNum(confirmed ?? 0),
+                  defaultValue: '{{withCik}} of at least {{tokenised}} tokenized equities and funds carry an SEC filer number from CoinMarketCap; {{confirmed}} confirmed against EDGAR. The enumeration stopped at its page limit, so the total is a floor rather than a count.',
+                })
+                : t('rwa_underlying.coverage', {
+                  withCik: fmtNum(withCik ?? 0), tokenised: fmtNum(tokenised ?? 0), confirmed: fmtNum(confirmed ?? 0),
+                  defaultValue: '{{withCik}} of {{tokenised}} tokenized equities and funds carry an SEC filer number from CoinMarketCap; {{confirmed}} confirmed against EDGAR.',
+                })}
             </p>
           )}
 
@@ -188,6 +210,15 @@ export default function RwaUnderlyingRegistrants() {
               {t('rwa_underlying.not_found_note', {
                 count: num(universe.notFoundAtEdgar),
                 defaultValue: 'EDGAR has no filer under the number the provider gave for {{count}} of these assets. That is a finding about the provider\'s number, not about the company.',
+              })}
+            </p>
+          )}
+
+          {notReadBack.length > 0 && (
+            <p role="status" className="text-[12px]" data-testid="rwa-underlying-not-read-back">
+              {t('rwa_underlying.not_read_back_note', {
+                count: notReadBack.length,
+                defaultValue: 'For {{count}} of these filers the filings EDGAR lists as recent do not reach back a year, so no annual or quarterly report was among them. That is a limit of what we read, not a finding about the company: those rows carry no day count and are not counted as late.',
               })}
             </p>
           )}
@@ -276,7 +307,12 @@ export default function RwaUnderlyingRegistrants() {
                           <td className={cell}><Filing filing={registrant?.quarterly} t={t} /></td>
                           <td className={`intel-number ${cell}`}>
                             {days == null
-                              ? <span className="text-[var(--fg-4)]" title={t('rwa_underlying.days_unknown_title', { defaultValue: 'No annual or quarterly report has been read for this filer, so there is nothing to subtract from.' })}>—</span>
+                              ? row?.periodic?.state === 'not_in_read_filings'
+                                ? <span className="text-[var(--fg-4)]" title={t('rwa_underlying.not_read_back_title', {
+                                  from: row?.periodic?.readBackTo || '—', days: row?.periodic?.readBackDays ?? '—',
+                                  defaultValue: 'The filings EDGAR lists as recent for this filer only go back to {{from}}, about {{days}} days, so an annual or quarterly report could not have been among them. Nothing here says this company filed late.',
+                                })}>{t('rwa_underlying.not_read_back', { defaultValue: 'not in the filings read' })}</span>
+                                : <span className="text-[var(--fg-4)]" title={t('rwa_underlying.days_unknown_title', { defaultValue: 'No annual or quarterly report has been read for this filer, so there is nothing to subtract from.' })}>—</span>
                               : <span data-days title={t('rwa_underlying.days_title', {
                                 from: row?.periodic?.from || '—',
                                 basis: t(`rwa_underlying.basis_${row?.periodic?.basis || 'none'}`, { defaultValue: row?.periodic?.basis || 'none' }),

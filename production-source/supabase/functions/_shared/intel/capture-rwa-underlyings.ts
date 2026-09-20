@@ -41,7 +41,10 @@
 //                           for the UTC day in intel_rwa_asset_map_counts. The
 //                           counts are a COUNT of enumerated ids, not a page
 //                           length, so they do not stop at 250 the way a list
-//                           page does. Credits: 0.
+//                           page does. Each count row also says how many pages it
+//                           was built from and whether the type hit the page
+//                           ceiling, so a count that is a FLOOR can never be
+//                           printed as a total. Credits: 0.
 //
 //   rwa_asset_profiles      Read `rwaInfo` in batches for assets WITH TOKENS,
 //                           oldest-profiled first (never profiled first), and
@@ -57,10 +60,16 @@
 //                           submissions JSON through the existing keyless EDGAR
 //                           reader and store the registrant's name, SIC, state,
 //                           fiscal year end and its latest annual, quarterly and
-//                           current-report filings. Credits: 0. EDGAR's ceiling
-//                           is 10 requests a second; this op is far gentler (see
-//                           EDGAR_SPACING_MS) and stops starting reads at its
-//                           own wall-clock guard.
+//                           current-report filings, plus the SPAN the filings
+//                           block actually covered. When that block is too short
+//                           to reach a filer's own annual or quarterly report -
+//                           a bank filing thousands of prospectus supplements a
+//                           year pushes its 10-K out of `filings.recent` - up to
+//                           OLDER_PAGES_PER_FILER of the older pages EDGAR names
+//                           in the same document are followed, and only then.
+//                           Credits: 0. EDGAR's ceiling is 10 requests a second;
+//                           this op is far gentler (see EDGAR_SPACING_MS) and
+//                           stops starting reads at its own wall-clock guard.
 //
 // NEVER THROWS. Every failure becomes a named reason on the JobResult, and a
 // source that failed never empties a table: the writes are upserts keyed so a
@@ -70,8 +79,8 @@ import { RWA_ASSET_TYPES, utcDate } from './capture-jobs.ts'
 import type { CaptureDeps, JobResult, SchedulePolicyRow } from './capture-jobs.ts'
 import { cmcRows } from '../market-assets/cmc-capabilities.ts'
 import type { MarketAssetsContext } from '../market-assets/types.ts'
-import { edgarFilerUrl, fetchSubmissions } from './rwa-sources/edgar.ts'
-import type { SubmissionsRecord } from './rwa-sources/edgar.ts'
+import { edgarFilerUrl, fetchSubmissionPage, fetchSubmissions } from './rwa-sources/edgar.ts'
+import type { FilingRef, SubmissionsRecord } from './rwa-sources/edgar.ts'
 import { resolveEdgarUserAgent } from './rwa-sources/edgar-agent.ts'
 import type { SourceDeps } from './rwa-sources/http.ts'
 
@@ -101,9 +110,21 @@ export const RWA_UNDERLYING_CAPTURE_SCHEDULE = {
 /** `rwaMap` rows per page. `cmcRows` keeps at most 250 rows from any registry
  * response, so asking for more would silently drop the tail. */
 export const MAP_PAGE = 250
-/** Pages per asset type. Six types times four pages is a 6,000 asset ceiling at
- * zero credits; a type that answers a short page stops early. */
-export const MAP_PAGES_PER_TYPE = 4
+/** Pages per asset type: a HARD SAFETY CEILING, not a target.
+ *
+ * RAISED from 4 on 2026-09-20, because 4 was not a safety ceiling at all - it was
+ * the answer. The first production run stored stock 1,000 and etf 1,000, exactly
+ * four pages each, while the list endpoint's own `total_size` reported 4,812
+ * stocks and 3,126 ETFs. A count pinned at a page ceiling presented as a total is
+ * precisely the failure this table was built to avoid.
+ *
+ * `rwaMap` is a ZERO-CREDIT capability, so the only cost of paging the whole
+ * universe is wall clock: the 12-page run took 3.1 s, about 0.26 s a page, so the
+ * ~35 pages the present universe needs is around 10 s and the 40-page ceiling
+ * below bounds one type at about 10 s on its own. A type that answers a short page
+ * stops early, and a type that reaches the ceiling RECORDS that it did
+ * (`truncated`), so a capped count reads as "at least N" rather than as a total. */
+export const MAP_PAGES_PER_TYPE = 40
 
 /** Ids per `rwaInfo` call. Fifty is deliberately below the hundred-item bucket
  * the provider bills metadata in, so one call is one credit however the account
@@ -138,6 +159,28 @@ export const QUARTERLY_FORMS = ['10-Q', '10-Q/A', '10-QT', '10-QT/A'] as const
 export const CURRENT_FORMS = ['8-K', '8-K/A', '6-K', '6-K/A'] as const
 export const PERIODIC_FORMS = [...ANNUAL_FORMS, ...QUARTERLY_FORMS, ...CURRENT_FORMS] as const
 
+/** How far back a filer's OWN filing cadence reaches, in days, per form family.
+ *
+ * These are not deadlines and nothing expires on them. They answer one question:
+ * could the `recent` block possibly have contained this form? A block whose
+ * oldest filing is NEWER than the window simply did not go back far enough, and
+ * the absence of the form in it is evidence of nothing at all. An annual report
+ * is due within four months of a year end, so 400 days covers a filer that files
+ * on time and one that files late; a quarterly report is 40 to 45 days after a
+ * quarter end, so 140 days covers the same range. */
+export const ANNUAL_LOOKBACK_DAYS = 400
+export const QUARTERLY_LOOKBACK_DAYS = 140
+/** Older submissions pages one filer may cost, and only in the case above.
+ *
+ * EDGAR's `filings.recent` holds about a thousand entries. A bank filing
+ * thousands of 424B2 prospectus supplements a year pushes its own 10-K and 10-Q
+ * out of it, which is exactly what happened to BANK OF AMERICA CORP and JPMORGAN
+ * CHASE & CO on 2026-09-20. Two further pages cover several more years of such a
+ * filer, they are the same public JSON on the same host, and they are read under
+ * the same pacing and the same wall clock as every other EDGAR request here.
+ * They are NEVER read for a filer whose recent block already answered. */
+export const OLDER_PAGES_PER_FILER = 2
+
 /** What the profile row's scope string says, in the schema's own words. A row
  * without it is refused, because a CIK shown without saying whose it is invites
  * exactly the confusion this lane is built around. */
@@ -146,7 +189,7 @@ export const PROFILE_SCOPE =
 
 /** And what the registrant row's scope string says. */
 export const REGISTRANT_SCOPE =
-  'Read by us from the SEC EDGAR submissions record for the filer number CoinMarketCap asserts for this asset\'s underlying company. The filing dates and accession numbers are EDGAR\'s; the name comparison is ours and is an exact comparison of normalised strings, never a similarity score. A name that differs is reported as differing: it may mean the provider\'s filer number belongs to a different company, or simply that the asset is named after a ticker rather than a registered legal name. Neither this row nor the comparison identifies who issued the token.'
+  'Read by us from the SEC EDGAR submissions record for the filer number CoinMarketCap asserts for this asset\'s underlying company. The filing dates and accession numbers are EDGAR\'s; the name comparison is ours and is an exact comparison of normalised strings, never a similarity score. A name that differs is reported as differing: it may mean the provider\'s filer number belongs to a different company, or simply that the asset is named after a ticker rather than a registered legal name. The filings we read are the block EDGAR publishes as recent, plus up to two older pages when that block is too short to reach back to a filer\'s own annual or quarterly report; the span that was actually covered is on this row, and a form missing from a block that does not reach far enough is not evidence that the filer did not file it. Neither this row nor the comparison identifies who issued the token.'
 
 const num = (v: unknown): number | null => { if (v == null || v === '' || typeof v === 'boolean') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
 const int = (v: unknown): number | null => { const n = num(v); return n == null ? null : Math.trunc(n) }
@@ -170,6 +213,33 @@ async function upsert(db: any, table: string, rows: Record<string, unknown>[], o
     if (error) return { rows: 0, error: String(error.message || error).slice(0, 200) }
     return { rows: rows.length }
   } catch (e) { return { rows: 0, error: ((e as Error)?.message || 'write_failed').slice(0, 200) } }
+}
+
+/**
+ * Advance a resume cursor on rows that ALREADY EXIST.
+ *
+ * It must be an UPDATE, never an upsert. Postgres evaluates the NOT NULL columns
+ * of the would-be INSERT row BEFORE it reaches ON CONFLICT, so an upsert of
+ * `{rwa_id, registrant_checked_at}` against a table with a NOT NULL `captured_at`
+ * fails the whole statement every time. That is exactly what happened on
+ * 2026-09-20 15:57 UTC: 25 registrant rows were written and not one was stamped,
+ * so the same 25 filers would have been re-read for ever and the queue would
+ * never have advanced. The map table's stamp only appeared to work because its
+ * other columns happen to be nullable or defaulted; it is an UPDATE here too,
+ * because "it happens to insert a usable row" is not a reason to insert one.
+ *
+ * A failed stamp is a stated reason, never an exception: the capture itself is
+ * already written and a stall is better reported than hidden.
+ */
+// deno-lint-ignore no-explicit-any
+async function stampRows(db: any, table: string, ids: number[], patch: Record<string, unknown>, chunk = 200): Promise<string | null> {
+  for (let i = 0; i < ids.length; i += chunk) {
+    try {
+      const { error } = await db.from(table).update(patch).in('rwa_id', ids.slice(i, i + chunk))
+      if (error) return String(error.message || error).slice(0, 200)
+    } catch (e) { return ((e as Error)?.message || 'stamp_failed').slice(0, 200) }
+  }
+  return null
 }
 
 // deno-lint-ignore no-explicit-any
@@ -219,14 +289,43 @@ export function compareNames(registrantName: unknown, assetName: unknown): { mat
   return { match: 'differs', registrant, asset }
 }
 
-/** The newest filing of a given form family, by EDGAR's own filing date. */
-export function latestFiling(record: SubmissionsRecord | null, forms: readonly string[]): { form: string; filingDate: string | null; accessionNumber: string } | null {
+/** The newest filing of a given form family, by EDGAR's own filing date.
+ *
+ * Accepts either a submissions record or a plain filing list, so the same
+ * function answers over the recent block alone and over the recent block plus
+ * the older pages that were read for it. */
+export function latestFiling(source: SubmissionsRecord | FilingRef[] | null, forms: readonly string[]): { form: string; filingDate: string | null; accessionNumber: string } | null {
   const wanted = new Set(forms)
-  const rows = (record?.filings ?? []).filter((f) => wanted.has(f.form) && !!f.accessionNumber)
+  const all = Array.isArray(source) ? source : source?.filings ?? []
+  const rows = all.filter((f) => wanted.has(f.form) && !!f.accessionNumber)
   if (!rows.length) return null
   rows.sort((a, b) => String(b.filingDate ?? '').localeCompare(String(a.filingDate ?? '')))
   const newest = rows[0]
   return { form: newest.form, filingDate: newest.filingDate, accessionNumber: newest.accessionNumber }
+}
+
+/**
+ * Whether the `recent` block is too SHORT to settle the periodic question.
+ *
+ * True only when a form family is missing AND the block's oldest filing is newer
+ * than that family's lookback window: the form could not have been in there, so
+ * its absence says nothing about the filer and an older page is worth one
+ * request. False when the form was found, when the block reaches back past the
+ * window (the absence is then a real finding), and when there is no span at all
+ * to reason from.
+ */
+export function needsOlderFilings(
+  record: SubmissionsRecord | null,
+  filings: FilingRef[],
+  at: number,
+): boolean {
+  const oldest = day(record?.recent?.oldest)
+  if (!oldest || !record?.olderFiles?.length) return false
+  const oldestAt = Date.parse(`${oldest}T00:00:00.000Z`)
+  if (!Number.isFinite(oldestAt)) return false
+  const reach = Math.floor((at - oldestAt) / 86_400_000)
+  const missing = (forms: readonly string[], window: number) => !latestFiling(filings, forms) && reach < window
+  return missing(ANNUAL_FORMS, ANNUAL_LOOKBACK_DAYS) || missing(QUARTERLY_FORMS, QUARTERLY_LOOKBACK_DAYS)
 }
 
 // ─── 1. The universe, at zero credits ────────────────────────────────────────
@@ -256,13 +355,21 @@ export async function captureRwaAssetMap(
     let rows = 0
     // One entry per rwa id, so a duplicate across pages cannot double a count.
     const seen = new Map<number, Record<string, unknown>>()
-    const counts = new Map<string, { assets: number; withTokens: number }>()
+    const counts = new Map<string, { assets: number; withTokens: number; pages: number; truncated: boolean }>()
+    // Pages read per REQUESTED type, and whether that type stopped because it ran
+    // out of assets or because it ran into the ceiling. A type is only `truncated`
+    // when its last page was FULL and it had no page left: a short page is the end
+    // of the type, and a page that failed is a reason, not a truncation.
+    const typePages = new Map<string, { pages: number; truncated: boolean }>()
 
     for (const assetType of RWA_ASSET_TYPES) {
       let start = 1
+      const progress = { pages: 0, truncated: false }
+      typePages.set(assetType, progress)
       for (let page = 0; page < MAP_PAGES_PER_TYPE; page++) {
         const result = await deps.request('rwaMap', { asset_type: assetType, limit: MAP_PAGE, start }, ctx).catch(() => null)
         pages += 1
+        progress.pages += 1
         if (!result?.payload) { reasons[assetType] = result?.reason || 'provider_unavailable'; break }
         const page_rows = cmcRows('rwaMap', result.payload).rows
         for (const row of page_rows) {
@@ -271,7 +378,7 @@ export async function captureRwaAssetMap(
           const type = text(row?.asset_type, 40) || assetType
           const hasTokens = bool(row?.has_tokens)
           if (!seen.has(rwaId)) {
-            const bucket = counts.get(type) ?? { assets: 0, withTokens: 0 }
+            const bucket = counts.get(type) ?? { assets: 0, withTokens: 0, pages: 0, truncated: false }
             bucket.assets += 1
             if (hasTokens === true) bucket.withTokens += 1
             counts.set(type, bucket)
@@ -295,6 +402,9 @@ export async function captureRwaAssetMap(
         // that failed: the loop above already broke out on that.
         if (page_rows.length < MAP_PAGE) break
         start += MAP_PAGE
+        // A FULL last page with no page left means the provider has more and we
+        // stopped, so this type's count is a floor rather than a total.
+        if (page + 1 >= MAP_PAGES_PER_TYPE) progress.truncated = true
       }
     }
 
@@ -309,20 +419,30 @@ export async function captureRwaAssetMap(
     }
 
     // TRUE counts: a COUNT over enumerated ids, not the length of one list page.
-    let allAssets = 0, allWithTokens = 0
+    // `truncated` travels with each one, because a count that stopped at the page
+    // ceiling is a floor and must never be printed as a total.
+    let allAssets = 0, allWithTokens = 0, anyTruncated = false
     const countRows: Record<string, unknown>[] = []
     for (const [assetType, bucket] of counts) {
+      // A row lands under the type the PROVIDER stamped on it, which is usually
+      // but not always the type that was asked for; the paging state belongs to
+      // the requested type, so that is where the truncation is read from.
+      const progress = typePages.get(assetType) ?? { pages: bucket.pages, truncated: false }
       allAssets += bucket.assets
       allWithTokens += bucket.withTokens
+      anyTruncated = anyTruncated || progress.truncated
       countRows.push({
         asset_type: assetType, snapshot_date: snapshotDate,
         asset_count: bucket.assets, with_tokens_count: bucket.withTokens,
+        pages_read: progress.pages, truncated: progress.truncated,
         map_source: 'coinmarketcap:rwaMap', captured_at: capturedAt,
       })
     }
     countRows.push({
       asset_type: 'all', snapshot_date: snapshotDate,
       asset_count: allAssets, with_tokens_count: allWithTokens,
+      // The total is truncated when ANY type was: the sum is then a floor too.
+      pages_read: pages, truncated: anyTruncated,
       map_source: 'coinmarketcap:rwaMap', captured_at: capturedAt,
     })
     const countWrite = await upsert(admin, MAP_COUNT_TABLE, countRows, 'asset_type,snapshot_date')
@@ -330,7 +450,14 @@ export async function captureRwaAssetMap(
     rows += countWrite.rows
 
     const reason = Object.entries(reasons).map(([type, why]) => `${type}:${why}`).join(' ')
-    return { job, rows, credits: 0, pages, assets: assets.length, types: counts.size, ...(reason ? { partial: reason.slice(0, 200) } : {}) }
+    const truncatedTypes = [...typePages.entries()].filter(([, p]) => p.truncated).map(([type]) => type)
+    return {
+      job, rows, credits: 0, pages, assets: assets.length, types: counts.size,
+      pageCeiling: MAP_PAGES_PER_TYPE,
+      // Named, not merely flagged: a run that hit the ceiling says which types did.
+      ...(truncatedTypes.length ? { truncatedTypes } : {}),
+      ...(reason ? { partial: reason.slice(0, 200) } : {}),
+    }
   } catch (e) {
     return { job, rows: 0, credits: 0, error: ((e as Error)?.message || 'rwa_asset_map_failed').slice(0, 200) }
   }
@@ -442,11 +569,8 @@ export async function captureRwaAssetProfiles(
     // provider answered nothing for. Without this a single unanswerable id would
     // sit at the head of the queue for ever and the lane would stall.
     const asked = queue.ids.slice(0, Math.min(queue.ids.length, INFO_CALLS_PER_RUN * PROFILE_BATCH))
-    const stamp = asked.map((rwaId) => ({ rwa_id: rwaId, profiled_at: capturedAt }))
-    for (let i = 0; i < stamp.length; i += 500) {
-      const write = await upsert(admin, MAP_TABLE, stamp.slice(i, i + 500), 'rwa_id')
-      if (write.error) { reasons.queue = write.error; break }
-    }
+    const stampReason = await stampRows(admin, MAP_TABLE, asked, { profiled_at: capturedAt }, 500)
+    if (stampReason) reasons.queue = stampReason
 
     const reason = Object.entries(reasons).map(([where, why]) => `${where}:${why}`).join(' ')
     return { job, rows, credits, asked: asked.length, profiled: profiled.length, ...(reason ? { partial: reason.slice(0, 200) } : {}) }
@@ -526,7 +650,9 @@ export async function captureRwaUnderlyingRegistrants(
       byCik.set(row.cik, list)
     }
 
-    let rows = 0, read = 0, stopped = false
+    // `read` counts FILERS (and paces the loop); `requests` counts every EDGAR
+    // request including the older pages, so the two are never conflated.
+    let rows = 0, read = 0, requests = 0, olderPagesTotal = 0, stopped = false
     const checked: number[] = []
     const registrantRows: Record<string, unknown>[] = []
 
@@ -535,11 +661,31 @@ export async function captureRwaUnderlyingRegistrants(
       if (read) await sleep(EDGAR_SPACING_MS)
       const submissions = await fetchSubmissions(cik, sources, { forms: PERIODIC_FORMS, limit: 200 })
       read += 1
+      requests += 1
       if (submissions.reason) reasons.edgar = submissions.reason
       const record = submissions.record
-      const annual = latestFiling(record, ANNUAL_FORMS)
-      const quarterly = latestFiling(record, QUARTERLY_FORMS)
-      const current = latestFiling(record, CURRENT_FORMS)
+      let filings: FilingRef[] = [...(record?.filings ?? [])]
+      // A `recent` block too short to hold this filer's own 10-K is not evidence
+      // that there is none. Follow at most OLDER_PAGES_PER_FILER of the pages
+      // EDGAR names in the same document, newest period first, stopping as soon
+      // as both an annual and a quarterly report are in hand. Inside the same
+      // pacing and the same wall clock as every other read here.
+      let olderPagesRead = 0
+      for (const older of (record?.olderFiles ?? [])) {
+        if (olderPagesRead >= OLDER_PAGES_PER_FILER) break
+        if (!needsOlderFilings(record, filings, at)) break
+        if (clock() > deadline) { stopped = true; break }
+        await sleep(EDGAR_SPACING_MS)
+        const page = await fetchSubmissionPage(older.name, sources, { forms: PERIODIC_FORMS, limit: 200 })
+        olderPagesRead += 1
+        olderPagesTotal += 1
+        requests += 1
+        if (page.reason) reasons.edgar_older = page.reason
+        filings = [...filings, ...page.filings]
+      }
+      const annual = latestFiling(filings, ANNUAL_FORMS)
+      const quarterly = latestFiling(filings, QUARTERLY_FORMS)
+      const current = latestFiling(filings, CURRENT_FORMS)
       for (const asset of assets) {
         const comparison = compareNames(record?.name, asset.name)
         registrantRows.push({
@@ -566,7 +712,15 @@ export async function captureRwaUnderlyingRegistrants(
           latest_current_form: current?.form ?? null,
           latest_current_date: day(current?.filingDate),
           latest_current_accession: current?.accessionNumber ?? null,
-          filings_read: record?.filings?.length ?? 0,
+          filings_read: filings.length,
+          // THE SPAN THE READ ACTUALLY COVERED. Without these three, "no annual
+          // report" is indistinguishable from "this filer's annual report is
+          // older than the block EDGAR calls recent", and the second must never
+          // be printed as lateness. See needsOlderFilings and the read view.
+          recent_filings_count: int(record?.recent?.count),
+          recent_oldest_date: day(record?.recent?.oldest),
+          recent_newest_date: day(record?.recent?.newest),
+          older_pages_read: olderPagesRead,
           // Both raw names and both normalised names, so the verdict is
           // reproducible and a mismatch is legible rather than hidden.
           asset_name: asset.name,
@@ -590,15 +744,15 @@ export async function captureRwaUnderlyingRegistrants(
 
     // Advance the queue for everything we actually looked at, so the next run
     // moves on rather than re-reading the same filers for ever.
-    const stamp = checked.map((rwaId) => ({ rwa_id: rwaId, registrant_checked_at: capturedAt }))
-    for (let i = 0; i < stamp.length; i += 200) {
-      const write = await upsert(admin, PROFILE_TABLE, stamp.slice(i, i + 200), 'rwa_id')
-      if (write.error) { reasons.queue = write.error; break }
-    }
+    const stampReason = await stampRows(admin, PROFILE_TABLE, checked, { registrant_checked_at: capturedAt })
+    if (stampReason) reasons.queue = stampReason
 
     const reason = Object.entries(reasons).map(([where, why]) => `${where}:${why}`).join(' ')
     return {
       job, rows, credits: 0, ciks: read, assets: checked.length,
+      // Every EDGAR request, including the older pages, so the run's real
+      // politeness is visible and not only its filer count.
+      requests, olderPages: olderPagesTotal,
       ...(stopped ? { stopped: 'wall_clock' } : {}),
       ...(reason ? { partial: reason.slice(0, 200) } : {}),
     }
@@ -617,8 +771,9 @@ export const RWA_UNDERLYING_CAPTURE_OPS: Record<string, (
   deps: UnderlyingLaneDeps,
   body: Record<string, unknown>,
 ) => Promise<JobResult>> = {
-  // Six asset types times four pages, plus headroom for a retry inside the
-  // transport. Zero credits either way: rwaMap is a zero-cost capability.
+  // Six asset types times the 40-page safety ceiling. Zero credits either way:
+  // rwaMap is a zero-cost capability, so this bounds wall clock, not spend, and
+  // only three of the six types currently return any asset at all.
   rwa_asset_map: (admin, ctxFor, now, _plan, deps) =>
     captureRwaAssetMap(admin, ctxFor('rwa-asset-map', RWA_ASSET_TYPES.length * MAP_PAGES_PER_TYPE) as MarketAssetsContext, now, deps),
   rwa_asset_profiles: (admin, ctxFor, now, _plan, deps) =>

@@ -107,6 +107,49 @@ export function cmcDexHolderPage(data:any):{rows:any[];cursor:string|null}|null 
   const cursor=Array.isArray(data)?null:data?.lastId??data?.nextId??null
   return {rows,cursor:cursor==null||cursor===''?null:String(cursor)}
 }
+/** One page of /v1/dex/token/pools, and the place where ZERO POOLS stops being a
+ * malformed answer.
+ *
+ * A permissioned tokenised fund can have no public DEX pool at all, and that is
+ * the finding, not a failure. On 2026-09-20 15:45 UTC the RWA depth lane read
+ * three such contracts on Ethereum: every one answered HTTP 200 with error_code
+ * 0 and nothing usable under `data`, and every one was refused
+ * `malformed_response` for one credit, which made "this fund has no pool"
+ * indistinguishable from "the provider broke".
+ *
+ * The published reference puts the rows in a bare `data` array. An ABSENT or null
+ * `data`, an empty object, and an empty list under a documented container name
+ * are all read here as zero pools. A container that HOLDS rows is returned so
+ * those rows are validated exactly as a bare array's are. Anything else - a
+ * scalar, a string, an object with unknown content - is still not a page at all
+ * and returns null, so the transport keeps refusing it.
+ */
+// deno-lint-ignore no-explicit-any
+export function cmcDexPoolPage(data:unknown):{rows:any[]}|null {
+ if(data==null)return {rows:[]}
+ if(Array.isArray(data))return {rows:data}
+ if(typeof data!=='object')return null
+ const d=data as Record<string,unknown>
+ for(const key of ['pools','list','pairs'])if(Array.isArray(d[key]))return {rows:d[key] as any[]}
+ return Object.keys(d).length?null:{rows:[]}
+}
+/** A bounded description of a response's SHAPE for a diagnostic log: top-level
+ * keys, the type of each and the length of every array. NEVER a value, never an
+ * address, never a body. It exists because the empty-pool shape cannot be
+ * reproduced from a test - only a real run can tell us which of the several legal
+ * empty shapes CoinMarketCap answers with, and a shape is safe to record. */
+export function cmcShapeSummary(value:unknown,depth=2,max=120):string {
+ const describe=(v:unknown,left:number):string=>{
+  if(v===undefined)return 'absent'
+  if(v===null)return 'null'
+  if(Array.isArray(v))return `array[${v.length}]`
+  if(typeof v!=='object')return typeof v
+  const keys=Object.keys(v as Record<string,unknown>).sort().slice(0,8)
+  if(left<=0)return `object(${keys.length})`
+  return `{${keys.map(k=>`${k}:${describe((v as Record<string,unknown>)[k],left-1)}`).join(',')}}`
+ }
+ return describe(value,depth).slice(0,max)
+}
 /** The reference names the wallet key walletAddress; address and holderAddress
  * are the observed aliases. It identifies a classified account, never a person. */
 export function cmcDexHolderAddress(row:any):string|null {
@@ -231,7 +274,17 @@ export function validateCmcDexResponse(name:string,body:any,params:Record<string
   if(name==='dexSecurity')return Array.isArray(d)&&d.length<=1&&d.every(r=>same(r.tokenContractAddress,address)&&r.platformId===network.platformId)
   if(name==='dexHolderHistory')return Array.isArray(d)&&d.length<=Number(params.limit)&&d.every(r=>same(r.tokenAddress,address)&&r.platform===network.platformId)
   if(name==='dexLiquidityEvents')return !!d&&Array.isArray(d.lcs)&&d.lcs.length<=Number(params.limit)&&d.lcs.every((r:any)=>same(r.t0a,address)||same(r.t1a,address))&&(!d.lastId||isCmcDexCursor(d.lastId))
-  if(name==='dexPools')return Array.isArray(d)&&d.length<=Number(params.size)&&d.every(r=>cmcDexAddress(r?.addr,network.platform)&&(same(r.t0?.addr,address)||same(r.t1?.addr,address)))
+  // A ZERO-POOL answer is accepted and a non-empty page is validated exactly as
+  // before: every row must be a pool on the requested chain and one of its two
+  // legs must be the contract that was asked about. See cmcDexPoolPage for what
+  // counts as empty and why. The empty case carries no row to identify and no
+  // page to bound, so neither test applies to it.
+  if(name==='dexPools'){
+   const page=cmcDexPoolPage(d)
+   if(!page)return false
+   if(!page.rows.length)return true
+   return withinLimit(page.rows,params.size)&&page.rows.every((r:any)=>cmcDexAddress(r?.addr,network.platform)&&(same(r.t0?.addr,address)||same(r.t1?.addr,address)))
+  }
   // `ma` is the MAKER ADDRESS of the swap. Probed against the documented
   // /v1/dex/tokens/transactions body recorded in docs/investor-intel/live-on-chain-tape.md
   // (the 2026-09-15 BRETT-on-Base session), whose row is

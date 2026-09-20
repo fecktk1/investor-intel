@@ -1,6 +1,6 @@
 import { strict as assert } from 'node:assert'
 import {
-  COVERAGE_VIEW, DOMESTIC_PERIODIC_DAYS, FOREIGN_PERIODIC_DAYS, ROW_CAP,
+  COVERAGE_VIEW, DOMESTIC_PERIODIC_DAYS, FOREIGN_PERIODIC_DAYS, RECENT_BLOCK_REACH_DAYS, ROW_CAP,
   filerUrl, filingUrl, periodicStanding, readRwaAssetProfile, readRwaUnderlyingRegistrants,
 } from './capture-rwa-underlyings-read.ts'
 import { MAP_COUNT_TABLE, PROFILE_TABLE, REGISTRANT_TABLE } from './capture-rwa-underlyings.ts'
@@ -217,4 +217,86 @@ Deno.test('a missing rwa id is a named reason, and an uncaptured asset is a null
   assert.equal(uncaptured.reason, null)
   assert.equal(uncaptured.profile, null)
   assert.equal(uncaptured.asOf, null)
+})
+
+// ─── a block too short to hold a 10-K is never lateness ──────────────────────
+
+Deno.test('a filer whose recent block does not reach back a year is NOT overdue and NOT unknown', () => {
+  // PRODUCTION, 2026-09-20: BANK OF AMERICA CORP and JPMORGAN CHASE & CO were
+  // both stored with no annual and no quarterly date, because EDGAR's recent
+  // block holds about a thousand entries and a bank's own 10-K falls out of it.
+  // Sorted by "days since the last periodic filing" they would have led this
+  // board as its most delinquent filers. The state says whose limit it is.
+  const short = periodicStanding({
+    latest_annual_date: null, latest_quarterly_date: null,
+    recent_filings_count: 1000, recent_oldest_date: '2026-08-01', older_pages_read: 2,
+  }, NOW)
+  assert.equal(short.state, 'not_in_read_filings')
+  assert.equal(short.days, null, 'there is nothing to subtract, so nothing is alleged')
+  assert.equal(short.readBackTo, '2026-08-01')
+  assert.equal(short.readBackDays, 50)
+
+  // A block that DOES reach back years and still shows no periodic report is a
+  // real finding about the filer, and it keeps the old honest 'unknown'.
+  const deep = periodicStanding({
+    latest_annual_date: null, latest_quarterly_date: null,
+    recent_filings_count: 12, recent_oldest_date: '2019-01-04',
+  }, NOW)
+  assert.equal(deep.state, 'unknown')
+  assert.equal(deep.readBackTo, '2019-01-04')
+
+  // A row captured before the span was recorded carries nothing to reason from
+  // and keeps 'unknown' rather than being given a state it cannot support.
+  assert.equal(periodicStanding({ latest_annual_date: null, latest_quarterly_date: null }, NOW).state, 'unknown')
+
+  // A filer whose reports WERE read is judged exactly as before.
+  assert.equal(periodicStanding({ latest_annual_date: '2026-02-21', latest_quarterly_date: '2026-08-27', recent_oldest_date: '2026-08-01' }, NOW).state, 'current')
+})
+
+Deno.test('the span of what was read travels onto the board row', async () => {
+  const db = fakeDb({
+    [COVERAGE_VIEW]: coverage,
+    [PROFILE_TABLE]: [profile()],
+    [REGISTRANT_TABLE]: [registrant({
+      latest_annual_date: null, latest_annual_form: null, latest_quarterly_date: null,
+      recent_filings_count: 1000, recent_oldest_date: '2026-08-01', recent_newest_date: '2026-09-18', older_pages_read: 2,
+    })],
+  })
+  const result = await readRwaUnderlyingRegistrants(db, {}, NOW)
+  const row = (result.rows as Record<string, any>[])[0]
+  assert.equal(row.periodic.state, 'not_in_read_filings')
+  assert.deepEqual(row.registrant.filingsCovered, { count: 1000, oldest: '2026-08-01', newest: '2026-09-18', olderPagesRead: 2 })
+  // The threshold block publishes the reach the state was judged against, so the
+  // client never invents one.
+  assert.equal((result.thresholds as Record<string, unknown>).recentBlockReachDays, RECENT_BLOCK_REACH_DAYS)
+})
+
+// ─── an enumeration that stopped at its page ceiling is a floor ──────────────
+
+Deno.test('a capped enumeration is reported as a floor, and a complete one is not', async () => {
+  const complete = await readRwaUnderlyingRegistrants(fakeDb({
+    [COVERAGE_VIEW]: coverage,
+    [MAP_COUNT_TABLE]: [{ asset_type: 'stock', snapshot_date: '2026-09-20', asset_count: 4812, with_tokens_count: 600, pages_read: 20, truncated: false, captured_at: '2026-09-20T03:11:00.000Z' }],
+  }), {}, NOW)
+  assert.equal(complete.countsTruncated, false)
+  assert.equal((complete.mapCounts as Record<string, unknown>[])[0].pagesRead, 20)
+
+  const capped = await readRwaUnderlyingRegistrants(fakeDb({
+    [COVERAGE_VIEW]: coverage,
+    [MAP_COUNT_TABLE]: [
+      { asset_type: 'stock', snapshot_date: '2026-09-20', asset_count: 10000, with_tokens_count: 600, pages_read: 40, truncated: true, captured_at: '2026-09-20T03:11:00.000Z' },
+      { asset_type: 'etf', snapshot_date: '2026-09-20', asset_count: 3126, with_tokens_count: 60, pages_read: 13, truncated: false, captured_at: '2026-09-20T03:11:00.000Z' },
+    ],
+  }), {}, NOW)
+  assert.equal(capped.countsTruncated, true)
+  assert.equal((capped.mapCounts as Record<string, unknown>[])[0].truncated, true)
+  assert.equal((capped.mapCounts as Record<string, unknown>[])[1].truncated, false)
+
+  // A row written before the column existed claims nothing either way.
+  const older = await readRwaUnderlyingRegistrants(fakeDb({
+    [COVERAGE_VIEW]: coverage,
+    [MAP_COUNT_TABLE]: [{ asset_type: 'stock', snapshot_date: '2026-09-20', asset_count: 1000, with_tokens_count: 600, captured_at: '2026-09-20T03:11:00.000Z' }],
+  }), {}, NOW)
+  assert.equal(older.countsTruncated, false)
+  assert.equal((older.mapCounts as Record<string, unknown>[])[0].pagesRead, null)
 })

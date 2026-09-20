@@ -1,10 +1,12 @@
 import { strict as assert } from 'node:assert'
 import {
-  ANNUAL_FORMS, CURRENT_FORMS, INFO_CALLS_PER_RUN, MAP_COUNT_TABLE, MAP_PAGE, MAP_TABLE, PROFILE_BATCH,
+  ANNUAL_FORMS, CURRENT_FORMS, INFO_CALLS_PER_RUN, MAP_COUNT_TABLE, MAP_PAGE, MAP_PAGES_PER_TYPE, MAP_TABLE,
+  OLDER_PAGES_PER_FILER, PERIODIC_FORMS, PROFILE_BATCH,
   PROFILE_TABLE, QUARTERLY_FORMS, REGISTRANT_TABLE, RWA_UNDERLYING_CAPTURE_SCHEDULE,
   captureRwaAssetMap, captureRwaAssetProfiles, captureRwaUnderlyingRegistrants,
-  cikDigits, compareNames, httpsOnly, latestFiling, normalizeName, underlyingPolicy,
+  cikDigits, compareNames, httpsOnly, latestFiling, needsOlderFilings, normalizeName, underlyingPolicy,
 } from './capture-rwa-underlyings.ts'
+import { normalizeSubmissions } from './rwa-sources/edgar.ts'
 import { __resetRwaSourceStateForTests } from './rwa-sources/http.ts'
 import { deps as sourceDeps, fakeFetch, EDGAR_AGENT } from './rwa-sources/test-support.ts'
 
@@ -13,22 +15,45 @@ import { deps as sourceDeps, fakeFetch, EDGAR_AGENT } from './rwa-sources/test-s
 
 interface Written { table: string; rows: Record<string, unknown>[]; onConflict: string }
 
+interface Updated { table: string; patch: Record<string, unknown>; column: string; values: unknown[] }
+
+/** Columns Postgres would refuse a NULL in, per table.
+ *
+ * This is the whole of defect 4. `INSERT ... ON CONFLICT DO UPDATE` evaluates the
+ * NOT NULL columns of the would-be INSERT row BEFORE it ever reaches the conflict
+ * clause, so an upsert of `{rwa_id, registrant_checked_at}` against a table with a
+ * NOT NULL `captured_at` fails the statement outright. On 2026-09-20 that left 25
+ * registrant rows written and not one filer stamped, so the same 25 filers would
+ * have been re-read for ever and the queue would never have advanced. The fake
+ * enforces it, so a cursor must be advanced with an UPDATE or this file fails. */
+const NOT_NULL: Record<string, string[]> = {
+  [PROFILE_TABLE]: ['rwa_id', 'captured_at', 'scope'],
+  [REGISTRANT_TABLE]: ['rwa_id', 'cik', 'checked_at', 'scope'],
+  [MAP_COUNT_TABLE]: ['asset_type', 'snapshot_date', 'asset_count', 'with_tokens_count', 'captured_at'],
+}
+
 /**
  * A PostgREST-shaped fake. `seed` holds rows the queue reads back; `writes`
- * records every upsert. Every builder method returns `this`, so the chain the
- * lane actually writes (select, not, order, order, limit) is the chain exercised.
+ * records every upsert and `updates` every UPDATE, which also mutates the seeded
+ * rows so a cursor can be read back the way the next run would see it. Every
+ * builder method returns `this`, so the chain the lane actually writes (select,
+ * not, order, order, limit) is the chain exercised.
  */
 // deno-lint-ignore no-explicit-any
 function fakeDb(seed: Record<string, any[]> = {}, failing: Record<string, string> = {}) {
   const writes: Written[] = []
+  const updates: Updated[] = []
   const reads: string[] = []
   const filters: { table: string; op: string; args: unknown[] }[] = []
   return {
     writes,
+    updates,
     reads,
     filters,
     rowsFor(table: string) { return writes.filter((w) => w.table === table).flatMap((w) => w.rows) },
     conflictFor(table: string) { return writes.find((w) => w.table === table)?.onConflict ?? null },
+    // deno-lint-ignore no-explicit-any
+    seededRow(table: string, rwaId: number): any { return (seed[table] ?? []).find((r) => Number(r?.rwa_id) === rwaId) ?? null },
     from(table: string) {
       const builder = {
         // deno-lint-ignore no-explicit-any
@@ -41,8 +66,27 @@ function fakeDb(seed: Record<string, any[]> = {}, failing: Record<string, string
           const rows = seed[table] ?? []
           return Promise.resolve({ data: typeof count === 'number' ? rows.slice(0, count) : rows, error: null })
         },
+        update(patch: Record<string, unknown>) {
+          return {
+            in(column: string, values: unknown[]) {
+              if (failing[table]) return Promise.resolve({ error: { message: failing[table] } })
+              updates.push({ table, patch, column, values })
+              // An UPDATE touches rows that already exist and never supplies the
+              // rest of their columns, so no NOT NULL check applies to it.
+              for (const row of (seed[table] ?? [])) {
+                if (values.some((v) => String(v) === String(row?.[column]))) Object.assign(row, patch)
+              }
+              return Promise.resolve({ error: null })
+            },
+          }
+        },
         upsert(rows: Record<string, unknown>[], options: { onConflict: string }) {
           if (failing[table]) return Promise.resolve({ error: { message: failing[table] } })
+          for (const column of NOT_NULL[table] ?? []) {
+            if (rows.some((row) => row[column] == null)) {
+              return Promise.resolve({ error: { message: `null value in column "${column}" of relation "${table}" violates not-null constraint` } })
+            }
+          }
           writes.push({ table, rows, onConflict: options.onConflict })
           return Promise.resolve({ error: null })
         },
@@ -54,6 +98,9 @@ function fakeDb(seed: Record<string, any[]> = {}, failing: Record<string, string
 
 const NOW = new Date('2026-09-20T15:20:00.000Z')
 const CTX = { supabase: null, jobName: 'test', caller: 'test', kind: 'job' as const, maxCalls: 40 } as never
+/** The enumeration ceiling is six types of forty pages, so a test that exercises
+ * the paging needs a context whose call budget does not bind first. */
+const WIDE_CTX = { supabase: null, jobName: 'test', caller: 'test', kind: 'job' as const, maxCalls: 300 } as never
 
 /** A `rwaMap` page for one asset type. */
 const mapPage = (assetType: string, ids: number[]) => ({
@@ -124,6 +171,7 @@ Deno.test('the newest filing of a family is chosen by EDGAR filing date, amendme
   const record = {
     cik: '0001045810', name: 'NVIDIA CORP', stateOfIncorporation: 'DE', formerNames: [],
     sic: '3674', sicDescription: 'Semiconductors', fiscalYearEnd: '0126', exchanges: ['Nasdaq'], tickers: ['NVDA'],
+    recent: { count: 4, oldest: '2026-02-21', newest: '2026-09-02' }, olderFiles: [],
     filings: [
       { accessionNumber: '0001045810-26-000010', form: '10-Q', filingDate: '2026-08-27', primaryDocument: null },
       { accessionNumber: '0001045810-26-000002', form: '10-K', filingDate: '2026-02-21', primaryDocument: null },
@@ -136,6 +184,10 @@ Deno.test('the newest filing of a family is chosen by EDGAR filing date, amendme
   assert.equal(latestFiling(record, QUARTERLY_FORMS)?.accessionNumber, '0001045810-26-000010')
   assert.equal(latestFiling(record, CURRENT_FORMS)?.filingDate, '2026-09-02')
   assert.equal(latestFiling(null, ANNUAL_FORMS), null)
+  // A plain filing list answers the same question, which is what lets the lane
+  // merge the recent block with the older pages it had to read.
+  assert.equal(latestFiling(record.filings, QUARTERLY_FORMS)?.filingDate, '2026-08-27')
+  assert.equal(latestFiling([], ANNUAL_FORMS), null)
 })
 
 // ─── the map op ──────────────────────────────────────────────────────────────
@@ -237,8 +289,13 @@ Deno.test('the profile op stores the provider assertion with the field it came f
   // And it says in words whose filer number it is.
   assert.match(String(row.scope), /UNDERLYING LISTED COMPANY/)
   assert.match(String(row.scope), /not of the firm that issued the token/)
-  // The queue cursor advances so the next run moves on.
-  assert.equal(db.rowsFor(MAP_TABLE)[0].profiled_at, NOW.toISOString())
+  // The queue cursor advances so the next run moves on, and it advances through
+  // an UPDATE of rows that already exist rather than through an upsert that would
+  // have to invent every other column of them.
+  const stamp = db.updates.find((u) => u.table === MAP_TABLE)!
+  assert.deepEqual(stamp.patch, { profiled_at: NOW.toISOString() })
+  assert.equal(stamp.column, 'rwa_id')
+  assert.equal(db.seededRow(MAP_TABLE, 11).profiled_at, NOW.toISOString())
 })
 
 Deno.test('the profile op is bounded by its stated credit ceiling and batches ids', async () => {
@@ -260,8 +317,8 @@ Deno.test('an asset the provider will not describe still advances the queue, so 
   const db = fakeDb({ [MAP_TABLE]: [{ rwa_id: 77, profiled_at: null }] })
   await captureRwaAssetProfiles(db, CTX, NOW, { request })
   assert.equal(db.rowsFor(PROFILE_TABLE).length, 0)
-  assert.equal(db.rowsFor(MAP_TABLE)[0].rwa_id, 77)
-  assert.equal(db.rowsFor(MAP_TABLE)[0].profiled_at, NOW.toISOString())
+  assert.deepEqual(db.updates.find((u) => u.table === MAP_TABLE)!.values, [77])
+  assert.equal(db.seededRow(MAP_TABLE, 77).profiled_at, NOW.toISOString())
 })
 
 Deno.test('the queue asks about an asset whose has_tokens the map never learned, so the lane cannot stall', async () => {
@@ -331,8 +388,20 @@ Deno.test('the EDGAR op stores what we read, keeps the clocks apart and reports 
   assert.equal(row.asset_name_normalized, 'nvidia')
   assert.match(String(row.source_url), /^https:\/\/www\.sec\.gov\//)
   assert.equal(db.conflictFor(REGISTRANT_TABLE), 'rwa_id')
-  // The cursor advances on the profile row.
-  assert.equal(db.rowsFor(PROFILE_TABLE)[0].registrant_checked_at, NOW.toISOString())
+  // The cursor advances on the profile row, through an UPDATE. The fake refuses
+  // an upsert that omits the table's NOT NULL columns, exactly as Postgres does,
+  // so an upsert here would leave this assertion failing.
+  const cursor = db.updates.find((u) => u.table === PROFILE_TABLE)!
+  assert.deepEqual(cursor.patch, { registrant_checked_at: NOW.toISOString() })
+  assert.deepEqual(cursor.values, [11])
+  assert.equal(db.seededRow(PROFILE_TABLE, 11).registrant_checked_at, NOW.toISOString())
+  assert.equal(result.partial, undefined, 'the stamp does not fail the statement')
+  // The span of what was read travels with the row, so an absent report can be
+  // told apart from a filer that did not file one.
+  assert.equal(row.recent_filings_count, 3)
+  assert.equal(row.recent_oldest_date, '2026-02-21')
+  assert.equal(row.recent_newest_date, '2026-09-02')
+  assert.equal(row.older_pages_read, 0)
 })
 
 Deno.test('a mismatch is stored as a finding rather than dropped', async () => {
@@ -399,4 +468,200 @@ Deno.test('the schedule this lane reports matches the cron jobs the migration sc
   for (const table of [MAP_TABLE, MAP_COUNT_TABLE, PROFILE_TABLE, REGISTRANT_TABLE]) {
     assert.ok(sql.includes(`public.${table}`), `migration is missing ${table}`)
   }
+})
+
+// ─── the enumeration stops where the universe stops, or says it did not ──────
+
+Deno.test('the map op pages past 1,000 rows a type and does not stop at four pages', async () => {
+  // PRODUCTION, 2026-09-20: four pages of 250 stored "stock 1000" while the
+  // provider's own total_size reported 4,812. Six full pages here would have been
+  // capped at four before this change, and the count would have read 1000.
+  const full = (n: number) => mapPage('stock', Array.from({ length: MAP_PAGE }, (_, i) => n * MAP_PAGE + i + 1))
+  const { request, calls } = fakeRequest({
+    rwaMap: [full(0), full(1), full(2), full(3), full(4), mapPage('stock', [9001]),
+      mapPage('commodity', []), mapPage('currency', []), mapPage('government_security', []), mapPage('etf', []), mapPage('real_estate', [])],
+  })
+  const db = fakeDb()
+  const result = await captureRwaAssetMap(db, WIDE_CTX, NOW, { request })
+  assert.equal(calls.filter((c) => c.params.asset_type === 'stock').length, 6)
+  const stock = db.rowsFor(MAP_COUNT_TABLE).find((r) => r.asset_type === 'stock')!
+  assert.equal(stock.asset_count, MAP_PAGE * 5 + 1)
+  // A type that ran out of assets is NOT truncated, and says so.
+  assert.equal(stock.truncated, false)
+  assert.equal(stock.pages_read, 6)
+  assert.equal(result.truncatedTypes, undefined)
+  assert.equal(result.pageCeiling, MAP_PAGES_PER_TYPE)
+})
+
+Deno.test('a type that reaches the page ceiling records a FLOOR, never a total', async () => {
+  // Every page full, right up to the ceiling: the provider has more and we
+  // stopped. The count is then "at least N", and the row must say so.
+  const pages = Array.from({ length: MAP_PAGES_PER_TYPE }, (_, page) =>
+    mapPage('stock', Array.from({ length: MAP_PAGE }, (_, i) => page * MAP_PAGE + i + 1)))
+  const { request, calls } = fakeRequest({
+    rwaMap: [...pages, mapPage('commodity', [1000001]), mapPage('currency', []), mapPage('government_security', []), mapPage('etf', []), mapPage('real_estate', [])],
+  })
+  const db = fakeDb()
+  const result = await captureRwaAssetMap(db, WIDE_CTX, NOW, { request })
+  // The safety ceiling holds: a runaway type cannot page for ever.
+  assert.equal(calls.filter((c) => c.params.asset_type === 'stock').length, MAP_PAGES_PER_TYPE)
+  const counts = db.rowsFor(MAP_COUNT_TABLE)
+  const stock = counts.find((r) => r.asset_type === 'stock')!
+  assert.equal(stock.truncated, true)
+  assert.equal(stock.asset_count, MAP_PAGE * MAP_PAGES_PER_TYPE)
+  // A type that finished is not tainted by one that did not.
+  assert.equal(counts.find((r) => r.asset_type === 'commodity')!.truncated, false)
+  // The 'all' row sums a floor and is therefore a floor too.
+  assert.equal(counts.find((r) => r.asset_type === 'all')!.truncated, true)
+  assert.deepEqual(result.truncatedTypes, ['stock'])
+})
+
+// ─── the resume cursors, which an upsert cannot write ────────────────────────
+
+Deno.test('a cursor is advanced by UPDATE, because an upsert of two columns fails the NOT NULL check', async () => {
+  // The production failure of 2026-09-20 15:57 UTC, reproduced: the fake refuses
+  // an INSERT ... ON CONFLICT whose would-be row lacks captured_at, exactly as
+  // Postgres does, because the NOT NULL columns are evaluated before the conflict
+  // clause is ever reached. 25 registrant rows were written and not one filer was
+  // stamped, so the same 25 would have been re-read every day for ever.
+  __resetRwaSourceStateForTests()
+  const { impl } = fakeFetch({ [edgarUrl('0001045810')]: { body: submissions() } })
+  const db = fakeDb({ [PROFILE_TABLE]: [{ rwa_id: 11, cik: '0001045810', name: 'Nvidia', symbol: 'NVDAX', registrant_checked_at: null }] })
+  const result = await captureRwaUnderlyingRegistrants(db, NOW, laneDeps(impl))
+  assert.equal(result.partial, undefined)
+  assert.equal(db.updates.filter((u) => u.table === PROFILE_TABLE).length, 1)
+  assert.equal(db.writes.filter((w) => w.table === PROFILE_TABLE).length, 0, 'the cursor is never written through an upsert')
+  assert.equal(db.seededRow(PROFILE_TABLE, 11).registrant_checked_at, NOW.toISOString())
+})
+
+Deno.test('a cursor that cannot be written is a stated reason, and the capture is still kept', async () => {
+  __resetRwaSourceStateForTests()
+  const { impl } = fakeFetch({ [edgarUrl('0001045810')]: { body: submissions() } })
+  // The queue read succeeds and only the cursor write fails, which is the shape
+  // of a permission or constraint problem on that one column.
+  const db = fakeDb({ [PROFILE_TABLE]: [{ rwa_id: 11, cik: '0001045810', name: 'Nvidia', symbol: 'NVDAX', registrant_checked_at: null }] })
+  const guarded = {
+    ...db,
+    from(table: string) {
+      const builder = db.from(table)
+      if (table !== PROFILE_TABLE) return builder
+      return { ...builder, update: () => ({ in: () => Promise.resolve({ error: { message: 'permission denied for column' } }) }) }
+    },
+  }
+  const result = await captureRwaUnderlyingRegistrants(guarded as never, NOW, laneDeps(impl))
+  assert.match(String(result.partial), /queue:permission denied/)
+  assert.equal(db.rowsFor(REGISTRANT_TABLE).length, 1, 'the registrant row is still written')
+})
+
+// ─── a recent block too short to hold a 10-K is not a finding about the filer ─
+
+/** A filer whose `recent` block is all prospectus supplements: what EDGAR
+ * actually returns for a large bank. No 10-K, no 10-Q, and a block that starts
+ * weeks rather than years ago. */
+const bankSubmissions = (over: Record<string, unknown> = {}) => ({
+  cik: '0000019617', name: 'JPMORGAN CHASE & CO', sic: '6021', sicDescription: 'National Commercial Banks',
+  stateOfIncorporation: 'DE', fiscalYearEnd: '1231', exchanges: ['NYSE'], tickers: ['JPM'], formerNames: [],
+  filings: {
+    recent: {
+      accessionNumber: ['0000019617-26-000900', '0000019617-26-000899'],
+      form: ['424B2', '424B2'],
+      filingDate: ['2026-09-18', '2026-08-01'],
+      primaryDocument: ['a.htm', 'b.htm'],
+    },
+    files: [
+      { name: 'CIK0000019617-submissions-001.json', filingCount: 1000, filingFrom: '2025-01-02', filingTo: '2026-07-31' },
+      { name: 'CIK0000019617-submissions-002.json', filingCount: 1000, filingFrom: '2023-01-03', filingTo: '2025-01-01' },
+      { name: '../../../etc/passwd', filingCount: 1, filingFrom: null, filingTo: '2099-01-01' },
+    ],
+  },
+  ...over,
+})
+
+const pageUrl = (name: string) => `https://data.sec.gov/submissions/${name}`
+const olderPage = {
+  accessionNumber: ['0000019617-26-000150', '0000019617-26-000040'],
+  form: ['10-Q', '10-K'],
+  filingDate: ['2026-05-02', '2026-02-14'],
+  primaryDocument: ['q.htm', 'k.htm'],
+}
+
+Deno.test('a filer whose 10-K fell out of the recent block is read from the older page, not reported as absent', async () => {
+  __resetRwaSourceStateForTests()
+  const fake = fakeFetch({
+    [edgarUrl('0000019617')]: { body: bankSubmissions() },
+    [pageUrl('CIK0000019617-submissions-001.json')]: { body: olderPage },
+  })
+  const db = fakeDb({ [PROFILE_TABLE]: [{ rwa_id: 21, cik: '0000019617', name: 'JPMorgan Chase & Co', symbol: 'JPMX', registrant_checked_at: null }] })
+  const result = await captureRwaUnderlyingRegistrants(db, NOW, laneDeps(fake.impl))
+  const row = db.rowsFor(REGISTRANT_TABLE)[0]
+  assert.equal(row.latest_annual_form, '10-K')
+  assert.equal(row.latest_annual_date, '2026-02-14')
+  assert.equal(row.latest_quarterly_date, '2026-05-02')
+  assert.equal(row.older_pages_read, 1, 'it stopped as soon as both forms were in hand')
+  // The span of the recent block is stored whatever the outcome.
+  assert.equal(row.recent_filings_count, 2)
+  assert.equal(row.recent_oldest_date, '2026-08-01')
+  assert.equal(row.recent_newest_date, '2026-09-18')
+  assert.equal(result.olderPages, 1)
+  assert.equal(result.ciks, 1)
+  assert.equal(result.requests, 2)
+  // A name EDGAR did not publish in the documented shape is never turned into a
+  // path: the traversal entry in `files` is dropped rather than requested.
+  assert.ok(!fake.calls.some((call: { url: string }) => String(call.url).includes('passwd')))
+})
+
+Deno.test('an older page is never read for a filer whose recent block already answered', async () => {
+  __resetRwaSourceStateForTests()
+  const base = submissions()
+  const fake = fakeFetch({
+    [edgarUrl('0001045810')]: {
+      body: submissions({
+        filings: { recent: base.filings.recent, files: [{ name: 'CIK0001045810-submissions-001.json', filingCount: 10, filingFrom: '2020-01-01', filingTo: '2024-01-01' }] },
+      }),
+    },
+  })
+  const db = fakeDb({ [PROFILE_TABLE]: [{ rwa_id: 11, cik: '0001045810', name: 'Nvidia', symbol: 'NVDAX', registrant_checked_at: null }] })
+  const result = await captureRwaUnderlyingRegistrants(db, NOW, laneDeps(fake.impl))
+  assert.equal(fake.calls.length, 1, 'one request, because the recent block held both reports')
+  assert.equal(result.olderPages, 0)
+  assert.equal(db.rowsFor(REGISTRANT_TABLE)[0].older_pages_read, 0)
+})
+
+Deno.test('the older-page budget is bounded, and a filer we still cannot answer for is left honest', async () => {
+  __resetRwaSourceStateForTests()
+  // Three older pages offered and none of them carries a periodic report.
+  const empty = { accessionNumber: ['0000019617-26-000001'], form: ['424B2'], filingDate: ['2026-07-01'], primaryDocument: ['x.htm'] }
+  const fake = fakeFetch({
+    [edgarUrl('0000019617')]: { body: bankSubmissions() },
+    [pageUrl('CIK0000019617-submissions-001.json')]: { body: empty },
+    [pageUrl('CIK0000019617-submissions-002.json')]: { body: empty },
+  })
+  const db = fakeDb({ [PROFILE_TABLE]: [{ rwa_id: 21, cik: '0000019617', name: 'JPMorgan Chase & Co', symbol: 'JPMX', registrant_checked_at: null }] })
+  const result = await captureRwaUnderlyingRegistrants(db, NOW, laneDeps(fake.impl))
+  assert.equal(result.olderPages, OLDER_PAGES_PER_FILER, 'at most two, however many pages are offered')
+  const row = db.rowsFor(REGISTRANT_TABLE)[0]
+  assert.equal(row.latest_annual_date, null)
+  // Still stored, still stamped, and the span says how far we looked, so the read
+  // view can say "not in the filings read" instead of alleging lateness.
+  assert.equal(row.recent_oldest_date, '2026-08-01')
+  assert.equal(db.seededRow(PROFILE_TABLE, 21).registrant_checked_at, NOW.toISOString())
+})
+
+Deno.test('needsOlderFilings asks only when the block is too short to have held the form', () => {
+  const base = bankSubmissions()
+  const short = normalizeSubmissions(base, { forms: PERIODIC_FORMS, limit: 200 })!
+  // Nothing found and the block starts weeks ago: worth one more request.
+  assert.equal(needsOlderFilings(short, short.filings, NOW.getTime()), true)
+  // The same block with both reports already in hand: no request at all.
+  assert.equal(needsOlderFilings(short, [
+    { accessionNumber: 'a', form: '10-K', filingDate: '2026-02-14', primaryDocument: null },
+    { accessionNumber: 'b', form: '10-Q', filingDate: '2026-05-02', primaryDocument: null },
+  ], NOW.getTime()), false)
+  // A block that DOES reach back years and still shows no annual report is a real
+  // finding about the filer, and buying more pages would not change it.
+  const deep = normalizeSubmissions({ ...base, filings: { ...base.filings, recent: { ...base.filings.recent, filingDate: ['2026-09-18', '2019-01-04'] } } }, { forms: PERIODIC_FORMS, limit: 200 })!
+  assert.equal(needsOlderFilings(deep, deep.filings, NOW.getTime()), false)
+  // A filer EDGAR offers no older pages for cannot be asked again.
+  const none = normalizeSubmissions({ ...base, filings: { recent: base.filings.recent } }, { forms: PERIODIC_FORMS, limit: 200 })!
+  assert.equal(needsOlderFilings(none, none.filings, NOW.getTime()), false)
 })
