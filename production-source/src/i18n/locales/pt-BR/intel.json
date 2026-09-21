@@ -922,7 +922,15 @@
     "relevant_signals": "Sinais da sua watchlist e das suas posições",
     "rename": "Renomear",
     "sharing_order": "O conteúdo das listas é compartilhado com membros autorizados do workspace. Sua lista selecionada é pessoal. Itens fixados aparecem primeiro; as setas definem a ordem dentro de cada grupo. A ordem manual permanece fixa quando os preços mudam.",
-    "track_in_portfolio": "acompanhe o P&L real na carteira"
+    "track_in_portfolio": "acompanhe o P&L real na carteira",
+    "address_not_on_chain": "Esse identificador não é um endereço em {{chain}}. Escolha a rede à qual o endereço pertence e adicione de novo.",
+    "address_looks_evm": "Parece um endereço de contrato EVM: 0x seguido de 40 caracteres.",
+    "address_looks_solana": "Parece um mint da Solana.",
+    "address_looks_tron": "Parece um endereço da Tron.",
+    "resolve_failed": "Esse identificador não pôde ser resolvido. Verifique e adicione de novo.",
+    "unnamed": "Nenhuma fonte que temos deu nome a este token ainda. O endereço do contrato está ao lado.",
+    "added_to": "Adicionado a {{list}}.",
+    "open_list": "Abrir a lista"
   },
   "confidence": {
     "high": "Alta confiança",

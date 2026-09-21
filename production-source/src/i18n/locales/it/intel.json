@@ -922,7 +922,15 @@
     "relevant_signals": "Segnali sulla tua watchlist e sulle tue posizioni",
     "rename": "Rinomina",
     "sharing_order": "Il contenuto delle liste è condiviso con i membri autorizzati del workspace. La lista che hai selezionato è personale. Gli elementi fissati appaiono per primi; le frecce impostano l’ordine all’interno di ciascun gruppo. L’ordine manuale resta invariato quando i prezzi cambiano.",
-    "track_in_portfolio": "monitora il P&L reale nel portafoglio"
+    "track_in_portfolio": "monitora il P&L reale nel portafoglio",
+    "address_not_on_chain": "Questo identificatore non è un indirizzo su {{chain}}. Scegli la chain a cui appartiene l’indirizzo e aggiungilo di nuovo.",
+    "address_looks_evm": "Sembra un indirizzo di contratto EVM: 0x seguito da 40 caratteri.",
+    "address_looks_solana": "Sembra un mint di Solana.",
+    "address_looks_tron": "Sembra un indirizzo Tron.",
+    "resolve_failed": "Questo identificatore non è stato risolto. Controllalo e aggiungilo di nuovo.",
+    "unnamed": "Nessuna fonte in nostro possesso ha ancora dato un nome a questo token. Il suo indirizzo di contratto è accanto.",
+    "added_to": "Aggiunto a {{list}}.",
+    "open_list": "Apri la lista"
   },
   "confidence": {
     "high": "Alta confidenza",

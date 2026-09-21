@@ -922,7 +922,15 @@
     "relevant_signals": "Signaux sur votre watchlist & vos positions",
     "rename": "Renommer",
     "sharing_order": "Le contenu des listes est partagé avec les membres autorisés de l’espace de travail. Votre sélection de liste est personnelle. Les éléments épinglés apparaissent en premier ; les flèches définissent l’ordre au sein de chaque groupe. L’ordre manuel reste fixe lorsque les prix changent.",
-    "track_in_portfolio": "suivre le P&L réel dans le portefeuille"
+    "track_in_portfolio": "suivre le P&L réel dans le portefeuille",
+    "address_not_on_chain": "Cet identifiant n'est pas une adresse sur {{chain}}. Choisissez la chaîne à laquelle appartient l'adresse, puis ajoutez-la de nouveau.",
+    "address_looks_evm": "Il ressemble à une adresse de contrat EVM : 0x suivi de 40 caractères.",
+    "address_looks_solana": "Il ressemble à un mint Solana.",
+    "address_looks_tron": "Il ressemble à une adresse Tron.",
+    "resolve_failed": "Cet identifiant n'a pas pu être résolu. Vérifiez-le et ajoutez-le de nouveau.",
+    "unnamed": "Aucune source dont nous disposons n'a encore nommé ce jeton. Son adresse de contrat est à côté.",
+    "added_to": "Ajouté à {{list}}.",
+    "open_list": "Ouvrir la liste"
   },
   "confidence": {
     "high": "Confiance élevée",
