@@ -288,7 +288,9 @@
     "sort_unusual_volume": "Volume incomum",
     "sort_multi_exchange_strength": "Força em várias exchanges",
     "currency_note": "Valores monetários em {{currency}}, convertidos de USD no momento da exibição.",
-    "currency_fallback": "Taxas indisponíveis: os valores monetários são exibidos em USD."
+    "currency_fallback": "Taxas indisponíveis: os valores monetários são exibidos em USD.",
+    "suggest_open_contract": "Abrir este contrato na {{chain}}",
+    "dex_liquidity": "Liquidez em DEX"
   },
   "brand": {
     "name": "Investor Intel",

@@ -288,7 +288,9 @@
     "sort_unusual_volume": "Unusual volume",
     "sort_multi_exchange_strength": "Multi-exchange strength",
     "currency_note": "Money figures in {{currency}}, converted from USD at display time.",
-    "currency_fallback": "Rates unavailable, so money figures are shown in USD."
+    "currency_fallback": "Rates unavailable, so money figures are shown in USD.",
+    "suggest_open_contract": "Open this contract on {{chain}}",
+    "dex_liquidity": "DEX liquidity"
   },
   "degen": {
     "subtitle": "Multi-chain memecoin discovery and risk context. Extremely high risk, not financial advice.",

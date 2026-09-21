@@ -288,7 +288,9 @@
     "sort_unusual_volume": "Ungewöhnliches Volumen",
     "sort_multi_exchange_strength": "Stärke über mehrere Börsen",
     "currency_note": "Geldbeträge in {{currency}}, bei der Anzeige aus USD umgerechnet.",
-    "currency_fallback": "Kurse nicht verfügbar: Beträge werden in USD angezeigt."
+    "currency_fallback": "Kurse nicht verfügbar: Beträge werden in USD angezeigt.",
+    "suggest_open_contract": "Diesen Vertrag auf {{chain}} öffnen",
+    "dex_liquidity": "DEX-Liquidität"
   },
   "brand": {
     "name": "Investor Intel",

@@ -206,6 +206,27 @@ const text = (v: unknown): string | null => {
   const s = typeof v === 'string' ? v.trim() : typeof v === 'number' ? String(v) : ''
   return s ? s.slice(0, 120) : null
 }
+/**
+ * A logo address, whole or not at all.
+ *
+ * `text()` caps a value at 120 characters, which is right for a ticker and a
+ * project name and WRONG for a URL: a cut URL is not a shorter URL, it is a
+ * different one that 404s. Our own mirrored memecoin logo
+ * (`…/public-assets/market-logos/memecoin/solana/<44-character mint>.jpg`) is
+ * 157 characters, so every mirrored Solana logo was stored as its first 120 —
+ * ".../solana/2wqw81f24mx" — and the watchlist fell back to a text monogram
+ * while tokens whose logo happened to sit on a short CDN path kept theirs.
+ *
+ * So: trimmed, https only, and a URL longer than the column allows is dropped
+ * rather than truncated. 500 is the ceiling `intel_upsert_on_demand_asset`
+ * validates against, so what we keep is what the catalogue will accept.
+ */
+export const MAX_LOGO_URL_LENGTH = 500
+export const normalizeLogoUrl = (v: unknown): string | null => {
+  const s = typeof v === 'string' ? v.trim() : ''
+  if (!s || s.length > MAX_LOGO_URL_LENGTH) return null
+  return /^https:\/\/[^\s<>"]+$/.test(s) ? s : null
+}
 const numeric = (v: unknown): number | null => {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() ? Number(v) : NaN
   return Number.isFinite(n) ? n : null
@@ -284,7 +305,7 @@ function addDeployment(state: State, chain: string | null, address: string, sour
 function absorb(state: State, fields: { symbol?: unknown; name?: unknown; logoUrl?: unknown; decimals?: unknown }): void {
   state.symbol ??= text(fields.symbol)
   state.name ??= text(fields.name)
-  state.logoUrl ??= text(fields.logoUrl)
+  state.logoUrl ??= normalizeLogoUrl(fields.logoUrl)
   state.decimals ??= numeric(fields.decimals)
 }
 

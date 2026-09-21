@@ -152,9 +152,16 @@ const holding = (over: Record<string, unknown>) => ({
 
 const MEMBERSHIP = { org_members: [{ user_id: USER, org_id: ORG }], profiles: [{ id: USER, is_super_admin: false }] }
 
+/** The free-DEX fallback pass, stubbed to silence by default. These tests are
+ * about the CoinMarketCap pass and the writes it makes, and a stub is also what
+ * keeps them off the network. The fallback has its own tests at the end of this
+ * file and its own unit tests in _shared/intel/contract-holding-price.test.ts. */
 // deno-lint-ignore no-explicit-any
-const call = (db: any, body: unknown, provider?: ReturnType<typeof fakeProvider>) =>
-  handlePortfolioIdentity(post(body), clientFactoryFor(db) as never, { request: provider?.request, now: () => NOW })
+const noContractPrices: any = () => Promise.resolve([])
+
+// deno-lint-ignore no-explicit-any
+const call = (db: any, body: unknown, provider?: ReturnType<typeof fakeProvider>, priceContracts: any = noContractPrices) =>
+  handlePortfolioIdentity(post(body), clientFactoryFor(db) as never, { request: provider?.request, now: () => NOW, priceContracts })
 
 Deno.test('coverage reports the open book by chain and calls no provider', async () => {
   const db = fakeDb({
@@ -502,6 +509,7 @@ Deno.test('unprice resets only this feature\'s own writes, in this org', async (
   const H2 = '77777777-7777-4777-8777-777777777777'
   const H3 = '88888888-8888-4888-8888-888888888888'
   const H4 = '99999999-9999-4999-8999-999999999999'
+  const H5 = '55555555-5555-4555-8555-555555555555'
   const db = fakeDb({
     ...MEMBERSHIP,
     investor_portfolio_holdings: [
@@ -511,16 +519,18 @@ Deno.test('unprice resets only this feature\'s own writes, in this org', async (
       holding({ id: H3, price_status: 'priced', price_source: 'birdeye_snapshot', current_price: 9, current_value: 18 }),
       // Another org's row, even if the id is supplied.
       holding({ id: H4, org_id: OTHER_ORG, price_status: 'priced', price_source: 'coinmarketcap_dex', current_price: 9 }),
+      // This feature's OTHER write: the free-DEX fallback. It is ours too.
+      holding({ id: H5, price_status: 'priced', price_source: 'contract_dex', current_price: 0.0005327, current_value: 5 }),
     ],
   })
-  const body = await (await call(db, { op: 'unprice', orgId: ORG, holdingIds: [H1, H2, H3, H4, H1] })).json()
+  const body = await (await call(db, { op: 'unprice', orgId: ORG, holdingIds: [H1, H2, H3, H4, H5, H1] })).json()
 
   eq(body.op, 'unprice')
-  eq(body.requested, 4, 'duplicate ids are collapsed before anything is touched')
-  eq(body.reset, 2)
+  eq(body.requested, 5, 'duplicate ids are collapsed before anything is touched')
+  eq(body.reset, 3)
   eq(body.skipped, 2)
-  eq(body.holdingIds.sort(), [H1, H2].sort())
-  eq(body.priceSource, 'coinmarketcap_dex')
+  eq(body.holdingIds.sort(), [H1, H2, H5].sort())
+  eq(body.priceSources, ['coinmarketcap_dex', 'contract_dex'])
 
   const write = db.writes.find((w) => w.table === 'investor_portfolio_holdings')!
   eq(Object.keys(write.patch).sort(), ['current_price', 'current_value', 'last_priced_at', 'price_source', 'price_status'])
@@ -529,16 +539,17 @@ Deno.test('unprice resets only this feature\'s own writes, in this org', async (
   eq(write.patch.current_value, null)
   eq(write.patch.price_source, null)
   eq(write.patch.last_priced_at, null)
-  eq(write.filters, { org_id: ORG, price_source: 'coinmarketcap_dex' })
-  eq(write.matched.sort(), [H1, H2].sort())
+  eq(write.filters, { org_id: ORG })
+  eq(write.matched.sort(), [H1, H2, H5].sort())
 
   const rows = db.tables.investor_portfolio_holdings
   eq(rows.find((r: { id: string }) => r.id === H1).current_price, null)
+  eq(rows.find((r: { id: string }) => r.id === H5).current_price, null, 'the free-DEX price is ours to reset too')
   eq(rows.find((r: { id: string }) => r.id === H3).current_price, 9, 'the Birdeye price is untouched')
   eq(rows.find((r: { id: string }) => r.id === H4).current_price, 9, 'the other org is untouched')
   // Recorded in the same ledger, spending nothing.
   const run = db.inserts.find((i) => i.table === 'intel_holding_resolution_runs')!
-  eq([run.row.requested, run.row.priced, run.row.credits], [4, 0, 0])
+  eq([run.row.requested, run.row.priced, run.row.credits], [5, 0, 0])
 })
 
 Deno.test('an undo is never refused by the rate limit', async () => {
@@ -619,4 +630,99 @@ Deno.test('a failed write is reported rather than counted as success', async () 
   })
   const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider)).json()
   eq(body.writeErrors, ['permission denied'])
+})
+
+// ── The free-DEX fallback ────────────────────────────────────────────────────
+//
+// A Solana mint a member holds and CoinMarketCap does not index answered
+// `not_found_on_provider`, and the position stayed blank in the book while the
+// asset page showed a price for that exact mint from the free readers.
+
+const FORGE_MINT = '2wqw81F24mxBsQTAvKFAufzmzPZVnq29CJqftekforgE'
+
+/** A stub of the free-DEX pass: records what it was asked and answers with the
+ * real shape. No provider is contacted from a test. */
+// deno-lint-ignore no-explicit-any
+function fakeContractPrices(answer: (request: any) => any) {
+  const asked: Record<string, unknown>[][] = []
+  // deno-lint-ignore no-explicit-any
+  const priceContracts: any = (_admin: unknown, requests: any[]) => {
+    asked.push(requests)
+    return Promise.resolve(requests.map(answer))
+  }
+  return { asked, priceContracts }
+}
+
+Deno.test('a contract CoinMarketCap does not index is priced by the free DEX readers', async () => {
+  const db = fakeDb({
+    ...MEMBERSHIP,
+    investor_portfolio_holdings: [holding({ id: 'h1', chain: 'solana', contract_address: FORGE_MINT, quantity: 1000 })],
+  })
+  // CoinMarketCap answers about nothing, which is the live behaviour for a mint
+  // it does not list.
+  const provider = fakeProvider({ dexBatch: { data: [] }, dexPriceBatch: { data: [] } })
+  const fallback = fakeContractPrices((request) => ({
+    holdingId: request.holdingId, chain: 'solana', address: FORGE_MINT,
+    price: 0.0005327, value: 0.5327, quantity: 1000, symbol: 'FORGE', name: 'TheContentForge',
+    sourceLabel: 'DEX Screener', provider: 'dexscreener', liquidityUsd: 59_367.54, marketCapUsd: 532_751,
+    observedAt: '2026-09-21T17:11:48.922Z', implausible: null, reason: 'priced',
+  }))
+  const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider, fallback.priceContracts)).json()
+
+  eq(fallback.asked.length, 1)
+  eq(fallback.asked[0], [{ holdingId: 'h1', chain: 'solana', address: FORGE_MINT, quantity: 1000, wasUnpriced: true }])
+  eq(body.priced, 1)
+  eq(body.contractDex.priced, 1)
+  eq(body.contractDex.priceSource, 'contract_dex')
+
+  const write = db.writes.find((w) => w.table === 'investor_portfolio_holdings')!
+  eq(Object.keys(write.patch).sort(), [
+    'current_price', 'current_value', 'last_priced_at', 'price_source', 'price_status',
+    'provider', 'provider_confidence', 'provider_network',
+  ])
+  eq(write.patch.current_price, 0.0005327)
+  eq(write.patch.price_source, 'contract_dex')
+  eq(write.patch.price_status, 'priced')
+  // The time the SOURCE observed the quote, not the time we asked.
+  eq(write.patch.last_priced_at, '2026-09-21T17:11:48.922Z')
+  eq(write.patch.provider, 'dexscreener')
+  eq(write.patch.provider_network, 'solana')
+  eq(write.patch.provider_confidence, PROVIDER_CONFIDENCE_MEDIUM)
+})
+
+Deno.test('a chain CoinMarketCap cannot be asked about is still offered to the free readers', async () => {
+  // `sui` has no CoinMarketCap DEX platform, so the paid plan skips it outright
+  // and the run never reaches the provider at all.
+  const db = fakeDb({
+    ...MEMBERSHIP,
+    investor_portfolio_holdings: [holding({ id: 'h1', chain: 'sui', contract_address: '0x2::sui::SUI' })],
+  })
+  const provider = fakeProvider({})
+  const fallback = fakeContractPrices((request) => ({
+    holdingId: request.holdingId, chain: 'sui', address: '0x2::sui::SUI', price: null, value: null,
+    quantity: 2, symbol: null, name: null, sourceLabel: null, provider: null,
+    liquidityUsd: null, marketCapUsd: null, observedAt: null, implausible: null, reason: 'price_unavailable',
+  }))
+  const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider, fallback.priceContracts)).json()
+
+  eq(provider.calls, [], 'nothing was asked of CoinMarketCap and no run slot was claimed')
+  eq(fallback.asked[0].map((r: Record<string, unknown>) => r.holdingId), ['h1'])
+  eq(body.contractDex.unavailable, 1)
+  eq(body.contractDex.priced, 0)
+  eq(db.writes.length, 0, 'an unanswered holding stays unpriced rather than being given a number')
+})
+
+Deno.test('a holding the paid pass already priced is never asked twice', async () => {
+  const db = fakeDb({
+    ...MEMBERSHIP,
+    investor_portfolio_holdings: [holding({ id: 'h1' })],
+  })
+  const provider = fakeProvider({
+    dexBatch: { data: [{ pid: 199, addr: BASE_A, sym: 'A', p: 1, liqUsd: 70_000, mcap: 4_000_000 }] },
+    dexPriceBatch: { data: [{ pid: 199, a: BASE_A, p: 1 }] },
+  })
+  const fallback = fakeContractPrices((request) => ({ holdingId: request.holdingId, reason: 'priced' }))
+  const body = await (await call(db, { op: 'resolve', orgId: ORG }, provider, fallback.priceContracts)).json()
+  eq(fallback.asked, [], 'a priced holding is not re-read for free either')
+  eq(body.priced, 1)
 })

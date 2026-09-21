@@ -18,6 +18,7 @@
 import { detectIdentifier } from './asset-identifier.ts'
 import { marketPlatformSlugs } from './market-read-quality.ts'
 import { getChain } from '../chains.ts'
+import { contractIdentityOf, contractRouteHref, isContractIdentityProvider } from './contract-identity-route.ts'
 
 export const SUGGEST_MIN_LENGTH = 2
 export const SUGGEST_MAX_LENGTH = 100
@@ -103,8 +104,22 @@ const num = (v: unknown): number | null => {
   return v == null || v === '' || !Number.isFinite(n) ? null : n
 }
 
+/**
+ * Where one catalogue row opens.
+ *
+ * A catalogue row opens at its own provider identity. A row the on-demand
+ * indexer wrote (`source_provider = 'on_demand'`) is a CONTRACT carrying a
+ * catalogue name, so it opens at the contract route the asset page can actually
+ * read — `?provider=contract&id=<chain>:<address>`. Linking it under its own
+ * catalogue name is what made an owner's own token answer 503: the market read
+ * accepts three provider names and `on_demand` was never one of them.
+ */
 export function suggestHref(sourceProvider: string, providerId: string, symbol: string | null): string {
   const label = symbol && symbol.trim() ? symbol.trim() : providerId
+  if (isContractIdentityProvider(sourceProvider)) {
+    const contract = contractIdentityOf(sourceProvider, providerId)
+    if (contract) return contractRouteHref(contract.chain, contract.address, label)
+  }
   return `/intel/markets/${encodeURIComponent(label)}?${new URLSearchParams({ provider: sourceProvider, id: providerId })}`
 }
 
@@ -118,8 +133,9 @@ export function splitChainPrefix(value: string): { chain: string; address: strin
 }
 
 /** The chain-bound readings of a pasted identifier, using the resolver's own
- *  pure detection. A bare EVM address reads as every EVM chain, so the caller
- *  only offers an uncatalogued contract route when exactly one reading stands. */
+ *  pure detection. A Solana mint, a Tron account or a TON address reads as one
+ *  chain; a bare EVM address reads as every eip155 chain in the registry, which
+ *  is what `evmChainChoice` below narrows to something a reader can act on. */
 export function contractReadings(query: string): { chain: string; address: string }[] {
   const prefixed = splitChainPrefix(query)
   const detection = prefixed
@@ -130,6 +146,54 @@ export function contractReadings(query: string): { chain: string; address: strin
     .filter((c) => !!c.chain && !!c.address)
     .map((c) => ({ chain: c.chain as string, address: c.address }))
     .slice(0, 24)
+}
+
+/** Uncatalogued contract routes offered for one pasted address. A bare EVM hex
+ *  belongs to every eip155 chain, so the list is narrowed before it is offered
+ *  and never becomes twenty guesses. */
+export const CONTRACT_SUGGESTION_MAX = 3
+
+/**
+ * Which readings of a pasted address are worth offering.
+ *
+ * One reading is the answer. Several readings mean a bare EVM address, and the
+ * chains we have ALREADY OBSERVED that address on are the ones a reader means:
+ * `known` is those chains, read from rows another pass wrote. With nothing
+ * observed, Ethereum leads — it is the chain a bare hex address is read as
+ * everywhere else — and the rest of the spread is not guessed at.
+ */
+export function evmChainChoice(
+  readings: { chain: string; address: string }[],
+  known: string[] = [],
+): { chain: string; address: string }[] {
+  if (readings.length <= 1) return readings
+  const seen = new Set(known.map((chain) => String(chain || '').toLowerCase()))
+  const observed = readings.filter((reading) => seen.has(reading.chain))
+  if (observed.length) return observed.slice(0, CONTRACT_SUGGESTION_MAX)
+  const ethereum = readings.find((reading) => reading.chain === 'ethereum')
+  return ethereum ? [ethereum] : readings.slice(0, 1)
+}
+
+/** Chains an address has already been observed on, from rows other passes wrote.
+ *  Two bounded reads, no provider call and no credit; a failure is simply no
+ *  knowledge, never a failed suggestion. */
+// deno-lint-ignore no-explicit-any
+export async function observedChains(admin: any, address: string): Promise<string[]> {
+  const variants = [...new Set([address, address.toLowerCase()].filter(Boolean))]
+  const read = async (table: string, column: string): Promise<string[]> => {
+    try {
+      const { data, error } = await admin.from(table).select('chain').in(column, variants).limit(12)
+      if (error || !Array.isArray(data)) return []
+      return data.map((row: Record<string, unknown>) => String(row?.chain || '').toLowerCase()).filter(Boolean)
+    } catch {
+      return []
+    }
+  }
+  const [memecoins, pairs] = await Promise.all([
+    read('memecoin_latest_tokens', 'token_address'),
+    read('dex_pair_snapshots', 'token_address'),
+  ])
+  return [...new Set([...memecoins, ...pairs])]
 }
 
 // deno-lint-ignore no-explicit-any
@@ -269,17 +333,21 @@ export async function suggestMarketAssets(admin: any, rawQuery: unknown, rawLimi
       (a.sourceProvider === 'coinmarketcap' ? 0 : 1) - (b.sourceProvider === 'coinmarketcap' ? 0 : 1) ||
       a.providerId.localeCompare(b.providerId))
 
-  // An address no catalogue carries still has a route. It is offered only when
-  // exactly one chain can be read from it, so a bare EVM address never becomes
-  // twenty guesses.
-  if (!matches.length && readings.length === 1) {
-    const { chain, address } = readings[0]
-    const providerId = `${chain}:${address}`
-    matches.push({
-      sourceProvider: 'contract', providerId, symbol: null, displayName: null, normalizedSymbol: null,
-      chain, marketCap: null, rank: null, imageUrl: null, match: 'contract', alsoIn: [],
-      href: `/intel/markets/${encodeURIComponent(address)}?${new URLSearchParams({ provider: 'contract', id: providerId })}`,
-    })
+  // An address no catalogue carries still has a route: the reader is offered the
+  // contract page itself. A single-chain address (a Solana mint, a Tron account)
+  // is one offer; a bare EVM address is narrowed to the chains we have already
+  // observed it on, and to Ethereum when we have observed none, so it is never
+  // twenty guesses. The row carries no symbol and no name because nothing has
+  // named it yet — the caller says "Open this contract on <chain>" in words.
+  if (!matches.length && readings.length) {
+    const known = readings.length > 1 ? await observedChains(admin, readings[0].address) : []
+    for (const { chain, address } of evmChainChoice(readings, known)) {
+      matches.push({
+        sourceProvider: 'contract', providerId: `${chain}:${address}`, symbol: null, displayName: null,
+        normalizedSymbol: null, chain, marketCap: null, rank: null, imageUrl: null,
+        match: 'contract', alsoIn: [], href: contractRouteHref(chain, address),
+      })
+    }
   }
 
   return { q, limit, matches: matches.slice(0, limit), error: null }

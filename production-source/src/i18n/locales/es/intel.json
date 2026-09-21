@@ -288,7 +288,9 @@
     "sort_unusual_volume": "Volumen inusual",
     "sort_multi_exchange_strength": "Fortaleza en varios exchanges",
     "currency_note": "Los importes se muestran en {{currency}}, convertidos desde USD en el momento de mostrarlos.",
-    "currency_fallback": "Tipos de cambio no disponibles: los importes se muestran en USD."
+    "currency_fallback": "Tipos de cambio no disponibles: los importes se muestran en USD.",
+    "suggest_open_contract": "Abrir este contrato en {{chain}}",
+    "dex_liquidity": "Liquidez en DEX"
   },
   "brand": {
     "name": "Investor Intel",

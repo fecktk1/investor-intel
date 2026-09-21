@@ -27,6 +27,7 @@ import CopyAddress from '../components/CopyAddress'
 import { fmtPrice, fmtPct, fmtVol, fmtNum, pctClass, bucketConfidence } from '../lib/market-format'
 import { useDisplayCurrency } from '../lib/display-currency'
 import MarketSignalBadge from '../components/MarketSignalBadge'
+import { isUncataloguedContract, uncataloguedContractLabel } from '../lib/contract-suggestion'
 import ConfidenceChip from '../components/ConfidenceChip'
 import ProviderCoveragePill from '../components/ProviderCoveragePill'
 import TokenChart, { CHART_RANGE_MS, candleIntervals, candleIntervalLabel } from '../components/TokenChart'
@@ -285,7 +286,9 @@ export default function MarketAssetPage() {
       {(!error || candidates.length > 0) && <p className="py-8 text-sm text-[var(--fg-4)]">{candidates.length ? t('markets.choose_identity', { defaultValue: 'This symbol identifies more than one asset. Choose the asset you want to investigate.' }) : t('markets.assetNotFound', { defaultValue: 'No exchange market data for this asset yet.' })}</p>}
       {error && !candidates.length && <p role="alert">{t('asset.read_failed', { defaultValue: 'The asset read could not be completed.' })} <button className="underline" onClick={() => setRetry(value => value + 1)}>{t('common.retry', { defaultValue: 'Retry' })}</button></p>}
       {candidates.map(row => <Link className="intel-asset-choice" key={`${row.sourceProvider}:${row.providerId}`} to={row.href} state={location.state}>
-        <strong>{row.displayName || row.symbol || row.providerId}</strong>
+        {/* A pasted address that reads as several chains offers one row per
+            chain we have already observed it on, named as the offer it is. */}
+        <strong>{isUncataloguedContract(row) ? uncataloguedContractLabel(row, t) : row.displayName || row.symbol || row.providerId}</strong>
         <span>{[row.symbol, row.chain, `${row.sourceProvider} ${row.providerId}`].filter(Boolean).join(' · ')}</span>
         <em>{row.marketCap == null ? t('markets.suggest_no_market_cap', { defaultValue: 'No market cap' }) : money.formatMoney(row.marketCap)}</em>
       </Link>)}
@@ -304,6 +307,10 @@ export default function MarketAssetPage() {
     ['FDV', cap?.fdv != null ? money.formatMoney(cap.fdv) : '—'],
     [t('markets.supply', { defaultValue: 'Circ. supply' }), cap?.circulating_supply != null ? fmtNum(cap.circulating_supply) : '—'],
   ]
+  // Pool liquidity is the one figure a contract identity has that a listed asset
+  // does not, and it is the figure that says whether the price above means
+  // anything. Shown only when the answering DEX source reported it.
+  if (d.contract?.liquidityUsd != null) stats.push([t('markets.dex_liquidity', { defaultValue: 'DEX liquidity' }), money.formatMoney(d.contract.liquidityUsd)])
 
   return (
     <IntelPageShell className="intel-asset-desk">
@@ -335,7 +342,11 @@ export default function MarketAssetPage() {
             <span className="text-[var(--fg-4)]">{t('asset.contract_address', { defaultValue: 'Contract address' })}</span>
             <CopyAddress value={riskAddress} />
           </p>}
-          {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'&&d.sourceFreshness!=='cached'?` · ${d.sourceFreshness}`:''}</p>}
+          {/* `quoteProvider` is the shape of the identity, and for a contract it
+              is the literal word "contract" — not the name of a source. The
+              answering source's own label rides in the response, so a DEX quote
+              is credited to "DEX Screener" and never to "contract". */}
+          {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteSourceLabel||d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'&&d.sourceFreshness!=='cached'?` · ${d.sourceFreshness}`:''}</p>}
           {/* Play 1 and 7: what answered the quote (the minute refresh replaces
               these with its own receipts) and what the price does not mean. */}
           <FigureProvenance envelope={d.quoteProvenance?.price} receipts={d.quoteReceipts} />
