@@ -3,7 +3,7 @@
 // `entities` row (see _shared/entity-resolver.ts) under the caller's RLS.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { resolveEntity } from '../_shared/entity-resolver.ts'
+import { EntityResolveRefusal, resolveEntity } from '../_shared/entity-resolver.ts'
 
 const corsHeaders = {
   'Access-Control-Allow-Origin': '*',
@@ -32,6 +32,10 @@ Deno.serve(async (req) => {
     const entity = await resolveEntity(supabase, orgId, { kind, chain, value, assetType, issuer, currency, symbol, displaySymbol })
     return json({ entity })
   } catch (e) {
+    // A shape refusal is answered with its machine code and the chain it was
+    // refused against, so the page can say why in the reader's own language
+    // instead of printing an English sentence from the server.
+    if (e instanceof EntityResolveRefusal) return json({ error: e.details.code, refusal: e.details }, 400)
     return json({ error: (e as Error)?.message || 'resolve_failed' }, 400)
   }
 })

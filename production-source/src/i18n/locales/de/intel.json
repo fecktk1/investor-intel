@@ -922,7 +922,15 @@
     "relevant_signals": "Signale zu deiner Watchlist & deinen Beständen",
     "rename": "Umbenennen",
     "sharing_order": "Listeninhalte werden mit berechtigten Workspace-Mitgliedern geteilt. Deine ausgewählte Liste ist persönlich. Angeheftete Einträge erscheinen zuerst; Pfeile legen die Reihenfolge innerhalb jeder Gruppe fest. Die manuelle Reihenfolge bleibt bei Preisänderungen unverändert.",
-    "track_in_portfolio": "echte P&L im Portfolio verfolgen"
+    "track_in_portfolio": "echte P&L im Portfolio verfolgen",
+    "address_not_on_chain": "Diese Kennung ist keine Adresse auf {{chain}}. Wähle die Chain, zu der die Adresse gehört, und füge sie erneut hinzu.",
+    "address_looks_evm": "Sie sieht aus wie eine EVM-Contract-Adresse: 0x gefolgt von 40 Zeichen.",
+    "address_looks_solana": "Sie sieht aus wie ein Solana-Mint.",
+    "address_looks_tron": "Sie sieht aus wie eine Tron-Adresse.",
+    "resolve_failed": "Diese Kennung konnte nicht aufgelöst werden. Prüfe sie und füge sie erneut hinzu.",
+    "unnamed": "Noch keine unserer Quellen hat diesen Token benannt. Seine Contract-Adresse steht daneben.",
+    "added_to": "Zu {{list}} hinzugefügt.",
+    "open_list": "Liste öffnen"
   },
   "confidence": {
     "high": "Hohe Konfidenz",

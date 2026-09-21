@@ -1750,7 +1750,15 @@
     "relevant_signals": "Signals on your watchlist & holdings",
     "rename": "Rename",
     "sharing_order": "List contents are shared with authorized workspace members. Your selected list is personal. Pins appear first; arrows set order within each group. Manual order stays fixed when prices change.",
-    "track_in_portfolio": "track real P&L in Portfolio"
+    "track_in_portfolio": "track real P&L in Portfolio",
+    "address_not_on_chain": "That identifier is not an address on {{chain}}. Choose the chain the address belongs to, then add it again.",
+    "address_looks_evm": "It looks like an EVM contract address: 0x followed by 40 characters.",
+    "address_looks_solana": "It looks like a Solana mint.",
+    "address_looks_tron": "It looks like a Tron address.",
+    "resolve_failed": "That identifier could not be resolved. Check it and add it again.",
+    "unnamed": "No source we hold has named this token yet. Its contract address is beside it.",
+    "added_to": "Added to {{list}}.",
+    "open_list": "Open the list"
   },
   "confidence": {
     "high": "High confidence",

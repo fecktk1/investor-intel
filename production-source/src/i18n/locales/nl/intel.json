@@ -922,7 +922,15 @@
     "relevant_signals": "Signalen over je watchlist en posities",
     "rename": "Hernoemen",
     "sharing_order": "De inhoud van lijsten wordt gedeeld met bevoegde leden van de werkruimte. Je geselecteerde lijst is persoonlijk. Vastgezette items staan bovenaan; pijlen bepalen de volgorde binnen elke groep. Een handmatige volgorde blijft vast wanneer prijzen veranderen.",
-    "track_in_portfolio": "volg echte P&L in Portfolio"
+    "track_in_portfolio": "volg echte P&L in Portfolio",
+    "address_not_on_chain": "Die identificatie is geen adres op {{chain}}. Kies de chain waar het adres bij hoort en voeg het opnieuw toe.",
+    "address_looks_evm": "Het lijkt op een EVM-contractadres: 0x gevolgd door 40 tekens.",
+    "address_looks_solana": "Het lijkt op een Solana-mint.",
+    "address_looks_tron": "Het lijkt op een Tron-adres.",
+    "resolve_failed": "Die identificatie kon niet worden herleid. Controleer hem en voeg hem opnieuw toe.",
+    "unnamed": "Geen enkele bron die wij hebben heeft deze token al een naam gegeven. Het contractadres staat ernaast.",
+    "added_to": "Toegevoegd aan {{list}}.",
+    "open_list": "Lijst openen"
   },
   "confidence": {
     "high": "Hoge zekerheid",

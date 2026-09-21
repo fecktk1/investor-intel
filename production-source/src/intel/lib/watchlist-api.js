@@ -4,11 +4,43 @@
 import { normalizeAssetEntity, nativeAssetChain, assetLogoUrl } from './asset-identity'
 import { isRevisionConflict } from './revision-conflict'
 
+/** A refusal carries its machine code and the chain it was refused against, so
+ *  the page can say why in the reader's own language. Reading the function's
+ *  body matters: a non-2xx invoke only ever reports "non-2xx status code", so
+ *  before this the server's reason never reached the member at all. */
+export class ResolveRefused extends Error {
+  constructor(code, details) {
+    super(code)
+    this.name = 'ResolveRefused'
+    this.code = code
+    this.details = details || null
+  }
+}
+
 export async function resolveEntity(supabase, orgId, input) {
   const { data, error } = await supabase.functions.invoke('intel-resolve', { body: { orgId, ...input } })
-  if (error) throw new Error(error.message || 'resolve_failed')
-  if (data?.error) throw new Error(data.error)
+  if (error) {
+    const body = await error.context?.json?.().catch(() => null)
+    if (body?.error) throw new ResolveRefused(body.error, body.refusal)
+    throw new Error(error.message || 'resolve_failed')
+  }
+  if (data?.error) throw new ResolveRefused(data.error, data.refusal)
   return normalizeAssetEntity(data.entity)
+}
+
+/** Name the entities behind these refs. The endpoint answers from our own
+ *  catalogue and caches first and stores what it finds on the entity, so a
+ *  ref asked for once is answered from the row itself ever after. */
+export async function loadEntityIdentities(supabase, orgId, refs) {
+  const wanted = [...new Set((refs || []).filter(Boolean))].slice(0, 40)
+  if (!orgId || !wanted.length) return {}
+  const { data, error } = await supabase.functions.invoke('intel-entity-identity', { body: { orgId, refs: wanted } })
+  if (error) {
+    const body = await error.context?.json?.().catch(() => null)
+    throw new Error(body?.error || error.message || 'entity_identity_failed')
+  }
+  if (data?.error) throw new Error(data.error)
+  return data?.identities || {}
 }
 
 export async function ensureDefaultWatchlist(supabase, orgId, userId) {

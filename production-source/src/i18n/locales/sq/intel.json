@@ -922,7 +922,15 @@
     "relevant_signals": "Sinjale në watchlist-in dhe zotërimet e tua",
     "rename": "Riemërto",
     "sharing_order": "Përmbajtja e listës ndahet me anëtarët e autorizuar të hapësirës së punës. Lista jote e zgjedhur është personale. Elementet e fiksuara shfaqen të parat; shigjetat caktojnë renditjen brenda çdo grupi. Renditja manuale mbetet e pandryshuar kur ndryshojnë çmimet.",
-    "track_in_portfolio": "ndiq P&L real në portofol"
+    "track_in_portfolio": "ndiq P&L real në portofol",
+    "address_not_on_chain": "Ky identifikues nuk është adresë në {{chain}}. Zgjidh chain-in të cilit i përket adresa dhe shtoje sërish.",
+    "address_looks_evm": "Duket si adresë kontrate EVM: 0x e ndjekur nga 40 karaktere.",
+    "address_looks_solana": "Duket si mint i Solana-s.",
+    "address_looks_tron": "Duket si adresë Tron.",
+    "resolve_failed": "Ky identifikues nuk u zgjidh dot. Kontrolloje dhe shtoje sërish.",
+    "unnamed": "Asnjë burim që kemi nuk e ka emërtuar ende këtë token. Adresa e kontratës së tij është pranë.",
+    "added_to": "U shtua te {{list}}.",
+    "open_list": "Hap listën"
   },
   "confidence": {
     "high": "Besueshmëri e lartë",
