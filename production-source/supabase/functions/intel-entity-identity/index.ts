@@ -47,6 +47,13 @@ export const MAX_RESOLVES = 12
 /** How long an honest "nothing could name this" is trusted before we try again. */
 export const UNRESOLVED_TTL_MS = 24 * 60 * 60 * 1000
 
+// Naming a row a member already added is not worth a CoinMarketCap credit. The
+// resolver's CMC rungs are held to the shared cache (kind 'render', maxCalls 0,
+// noDemand), so the catalogue and our own caches answer for free and only the
+// long tail reaches the DEX / on-chain rungs, which are bounded by the resolver
+// itself. Every answer is then stored, so a row is named at most once.
+const CACHE_ONLY_CMC = { kind: 'render' as const, maxCalls: 0, noDemand: true }
+
 export type EntityIdentity = {
   ref: string
   symbol: string | null
@@ -151,7 +158,7 @@ Deno.serve(async (req) => {
       }
       assetCalls += 1
       const result = await resolveAsset(admin, {
-        query: asset.address, chain: asset.chain, orgId, userId: actor?.userId ?? null, ctx: { supabase: admin },
+        query: asset.address, chain: asset.chain, orgId, userId: actor?.userId ?? null, ctx: { supabase: admin, ...CACHE_ONLY_CMC },
       }).catch(() => null)
       const identity = result?.identity ?? null
       assetIdentities[key] = identity && (identity.symbol || identity.name)
@@ -200,7 +207,7 @@ Deno.serve(async (req) => {
         chain,
         orgId,
         userId: actor?.userId ?? null,
-        ctx: { supabase: admin },
+        ctx: { supabase: admin, ...CACHE_ONLY_CMC },
       }).catch(() => null)
 
       const identity = result?.identity ?? null
