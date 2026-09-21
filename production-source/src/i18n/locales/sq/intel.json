@@ -288,7 +288,9 @@
     "sort_unusual_volume": "Volum i pazakontë",
     "sort_multi_exchange_strength": "Forcë në shumë bursa",
     "currency_note": "Shifrat monetare në {{currency}}, të konvertuara nga USD në çastin e shfaqjes.",
-    "currency_fallback": "Kurset nuk janë të disponueshme: shifrat monetare shfaqen në USD."
+    "currency_fallback": "Kurset nuk janë të disponueshme: shifrat monetare shfaqen në USD.",
+    "suggest_open_contract": "Hape këtë kontratë në {{chain}}",
+    "dex_liquidity": "Likuiditet në DEX"
   },
   "brand": {
     "name": "Investor Intel",

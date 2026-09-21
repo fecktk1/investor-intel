@@ -288,7 +288,9 @@
     "sort_unusual_volume": "Ongebruikelijk volume",
     "sort_multi_exchange_strength": "Sterk op meerdere exchanges",
     "currency_note": "Geldbedragen in {{currency}}, omgerekend vanuit USD op het moment van weergeven.",
-    "currency_fallback": "Koersen niet beschikbaar: geldbedragen worden in USD getoond."
+    "currency_fallback": "Koersen niet beschikbaar: geldbedragen worden in USD getoond.",
+    "suggest_open_contract": "Dit contract op {{chain}} openen",
+    "dex_liquidity": "DEX-liquiditeit"
   },
   "brand": {
     "name": "Investor Intel",

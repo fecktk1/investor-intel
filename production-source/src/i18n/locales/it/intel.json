@@ -288,7 +288,9 @@
     "sort_unusual_volume": "Volume insolito",
     "sort_multi_exchange_strength": "Forza multi-exchange",
     "currency_note": "Importi in {{currency}}, convertiti da USD al momento della visualizzazione.",
-    "currency_fallback": "Tassi non disponibili: gli importi sono mostrati in USD."
+    "currency_fallback": "Tassi non disponibili: gli importi sono mostrati in USD.",
+    "suggest_open_contract": "Apri questo contratto su {{chain}}",
+    "dex_liquidity": "Liquidità DEX"
   },
   "brand": {
     "name": "Investor Intel",

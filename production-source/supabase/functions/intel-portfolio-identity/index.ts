@@ -57,10 +57,14 @@ import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
 import { requestCmc } from '../_shared/market-assets/cmc-transport.ts'
 import { cmcDexAddress, cmcDexParams } from '../_shared/market-assets/cmc-dex.ts'
 import {
-  applyBatchAnswers, canonicalAddress, cmcPlatformForChain, coverageByChain,
+  applyBatchAnswers, canonicalAddress, cmcPlatformForChain, coverageByChain, holdingAddress,
   HOLDING_RUN_LIMIT_MAX, planHoldingResolution, summarizeAnswers,
   type HoldingAnswer, type HoldingIdentityRow,
 } from '../_shared/intel/holding-identity.ts'
+import {
+  CONTRACT_DEX_PRICE_SOURCE, priceContractHoldings, summarizeContractPrices,
+  type ContractPriceAnswer, type ContractPriceRequest,
+} from '../_shared/intel/contract-holding-price.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 const json = (body: unknown, status = 200, extra: Record<string, string> = {}) =>
@@ -80,6 +84,10 @@ export const UNPRICE_MAX = 50
  * feature's writes and nothing else: an exchange or Birdeye price belongs to the
  * path that wrote it. */
 export const DEX_PRICE_SOURCE = 'coinmarketcap_dex'
+/** Every `price_source` THIS feature writes, and therefore every one `unprice`
+ * reverses. The free-DEX fallback below is this feature's write too: a price it
+ * produced has to be undoable from the UI for the same reason the paid one is. */
+export const UNDOABLE_PRICE_SOURCES = [DEX_PRICE_SOURCE, CONTRACT_DEX_PRICE_SOURCE]
 /** A read ceiling so a very large book is truncated loudly, not silently. */
 const HOLDING_ROW_LIMIT = 5000
 const ENTITY_ROW_LIMIT = 500
@@ -102,6 +110,8 @@ type Db = any
 export interface IdentityDeps {
   request?: typeof requestCmc
   now?: () => Date
+  /** The free-DEX fallback pass, injected so a test never reaches a provider. */
+  priceContracts?: typeof priceContractHoldings
 }
 
 /** One shared provider context for a whole run. `maxCalls` is the run's own
@@ -180,6 +190,24 @@ async function writePricedHolding(admin: Db, orgId: string, answer: HoldingAnswe
   return error ? String(error.message ?? 'write_failed') : null
 }
 
+/** The free-DEX fallback's own write. Same eight columns, same meaning, with
+ * the answering DEX reader named in `provider` and its own `price_source` so
+ * `unprice` can reverse it and nothing confuses it with a paid CMC DEX price. */
+async function writeContractPricedHolding(admin: Db, orgId: string, answer: ContractPriceAnswer, nowIso: string) {
+  const { error } = await admin.from('investor_portfolio_holdings').update({
+    current_price: answer.price,
+    current_value: answer.value,
+    price_source: CONTRACT_DEX_PRICE_SOURCE,
+    price_status: 'priced',
+    // The time the answering source observed the quote, not the time we asked.
+    last_priced_at: answer.observedAt || nowIso,
+    provider: answer.provider,
+    provider_network: answer.chain,
+    provider_confidence: PROVIDER_CONFIDENCE_MEDIUM,
+  }).eq('id', answer.holdingId).eq('org_id', orgId)
+  return error ? String(error.message ?? 'write_failed') : null
+}
+
 /** An identity-only match fills a BLANK label and never overwrites one: the
  * member's own naming of a position outranks the provider's. */
 async function writeIdentityOnly(admin: Db, orgId: string, answer: HoldingAnswer, row: HoldingIdentityRow | undefined) {
@@ -201,6 +229,65 @@ async function inBatches<T>(items: T[], size: number, run: (item: T) => Promise<
   return failures
 }
 
+/**
+ * The free DEX pass, for every holding the CoinMarketCap pass did not price.
+ *
+ * A contract CoinMarketCap does not index answered `not_found_on_provider` and
+ * the position stayed blank in the book — while the asset page showed a price
+ * for that exact mint seconds later, from the free readers. Those readers are
+ * asked here, through the same contract identity path the asset page uses and
+ * the same plausibility gate the paid pass uses, and they cost no CoinMarketCap
+ * credit.
+ *
+ * Holdings the paid pass could not ask about AT ALL are included: "CoinMarketCap
+ * does not list this chain" is not "this token has no price".
+ */
+async function contractFallbackPass(
+  admin: Db, orgId: string, byId: Map<string, HoldingIdentityRow>,
+  plan: { skipped: { holdingId: string; chain: string; reason: string }[] }, answers: HoldingAnswer[], nowIso: string,
+  priceContracts: typeof priceContractHoldings,
+) {
+  const requests: ContractPriceRequest[] = []
+  const asked = new Set<string>()
+  const unpriced = new Set(['not_found_on_provider', 'price_unavailable'])
+  const add = (holdingId: string, chain: string, address: string | null, quantity: unknown) => {
+    if (!address || asked.has(holdingId)) return
+    asked.add(holdingId)
+    const row = byId.get(holdingId)
+    requests.push({
+      holdingId, chain, address,
+      quantity: Number(quantity ?? NaN),
+      // A row that is merely stale has been priced before, so the first-pricing
+      // ceiling in the gate does not apply to it.
+      wasUnpriced: row?.price_status !== 'stale',
+    })
+  }
+  for (const answer of answers) {
+    if (!unpriced.has(answer.reason)) continue
+    add(answer.holdingId, answer.chain, answer.address, answer.quantity)
+  }
+  // `over_run_limit` is a holding this run deliberately left for the next one;
+  // only a chain the paid endpoints cannot be asked about is picked up here.
+  for (const skipped of plan.skipped) {
+    if (skipped.reason !== 'unsupported_platform') continue
+    const row = byId.get(skipped.holdingId)
+    if (!row) continue
+    add(skipped.holdingId, skipped.chain, holdingAddress(row), row.quantity)
+  }
+
+  const priced = requests.length
+    ? await priceContracts(admin, requests, {
+      supabase: admin, jobName: 'intel-portfolio-identity', caller: 'holding-contract-price',
+    })
+    : []
+  const writeErrors = await inBatches(
+    priced.filter((a) => a.reason === 'priced'), WRITE_CONCURRENCY,
+    (a) => writeContractPricedHolding(admin, orgId, a, nowIso),
+  )
+  const summary = summarizeContractPrices(priced)
+  return { summary, writeErrors, report: { ...summary, priceSource: CONTRACT_DEX_PRICE_SOURCE, holdings: priced } }
+}
+
 export async function runCoverage(admin: Db, orgId: string, portfolioId: string | null, now: Date) {
   const { rows, truncated } = await readOpenHoldings(admin, orgId, portfolioId)
   if (!rows) return json({ error: 'holdings_unavailable' }, 503)
@@ -210,7 +297,7 @@ export async function runCoverage(admin: Db, orgId: string, portfolioId: string 
 
 export async function runResolve(
   admin: Db, orgId: string, portfolioId: string | null, limit: number | null,
-  request: typeof requestCmc, now: Date,
+  request: typeof requestCmc, now: Date, priceContracts: typeof priceContractHoldings = priceContractHoldings,
 ) {
   const nowIso = now.toISOString()
   const { rows, truncated } = await readOpenHoldings(admin, orgId, portfolioId)
@@ -223,9 +310,16 @@ export async function runResolve(
     calls: 0, holdings: applyBatchAnswers(plan, [], []), truncated, planTruncated: plan.truncated,
     writeErrors: [] as string[], asOf: nowIso,
   }
-  // Nothing to ask means nothing to spend and no run slot consumed. The skipped
-  // holdings are still reported, each with the reason it could not be asked.
-  if (!plan.subjects.length) return json(empty)
+  const byId = new Map(rows.map((row) => [String(row.id), row]))
+  // Nothing to ask CoinMarketCap means nothing to spend and no run slot
+  // consumed — but it does NOT mean nothing can be priced. A book that is all
+  // contracts CoinMarketCap does not list used to end here with every position
+  // blank; the free DEX pass still runs, and the skipped holdings are still
+  // reported with the reason they could not be asked of the paid endpoints.
+  if (!plan.subjects.length) {
+    const fallback = await contractFallbackPass(admin, orgId, byId, plan, [], nowIso, priceContracts)
+    return json({ ...empty, priced: fallback.summary.priced, contractDex: fallback.report, writeErrors: fallback.writeErrors })
+  }
 
   const window = await resolutionWindow(admin, orgId, now)
   if (!window) return json({ error: 'resolution_rate_unavailable' }, 503)
@@ -255,7 +349,6 @@ export async function runResolve(
 
   const answers = applyBatchAnswers(plan, batchRows, priceRows)
   const summary = summarizeAnswers(answers)
-  const byId = new Map(rows.map((row) => [String(row.id), row]))
 
   // A refused price still carried a real identity, so a blank label is still
   // filled — but not one column of pricing is written for it.
@@ -264,6 +357,8 @@ export async function runResolve(
     ...await inBatches(answers.filter((a) => a.reason === 'priced'), WRITE_CONCURRENCY, (a) => writePricedHolding(admin, orgId, a, nowIso)),
     ...await inBatches(identityOnly, WRITE_CONCURRENCY, (a) => writeIdentityOnly(admin, orgId, a, byId.get(a.holdingId))),
   ]
+  const fallback = await contractFallbackPass(admin, orgId, byId, plan, answers, nowIso, priceContracts)
+  writeErrors.push(...fallback.writeErrors)
 
   // One aggregate demand counter per matched contract, never per holding and
   // never with an actor: `intel_record_asset_demand` takes no user or org.
@@ -286,7 +381,10 @@ export async function runResolve(
     op: 'resolve',
     requested: plan.requested,
     matched: summary.matched,
-    priced: summary.priced,
+    priced: summary.priced + fallback.summary.priced,
+    // The free-DEX fallback, reported separately so a reader can see which
+    // prices cost a credit and which did not.
+    contractDex: fallback.report,
     identityOnly: summary.identityOnly,
     implausible: summary.implausible,
     unsupported: plan.unsupported,
@@ -326,7 +424,7 @@ export async function runUnprice(admin: Db, orgId: string, holdingIds: string[],
     price_source: null,
     price_status: 'unpriced',
     last_priced_at: null,
-  }).eq('org_id', orgId).eq('price_source', DEX_PRICE_SOURCE).in('id', holdingIds).select('id')
+  }).eq('org_id', orgId).in('price_source', UNDOABLE_PRICE_SOURCES).in('id', holdingIds).select('id')
   if (error) return json({ error: 'unprice_failed', detail: String(error.message ?? 'write_failed') }, 503)
 
   const reset = ((data ?? []) as { id: string }[]).map((row) => String(row.id))
@@ -339,6 +437,7 @@ export async function runUnprice(admin: Db, orgId: string, holdingIds: string[],
     // feature, is simply not ours to reset.
     skipped: holdingIds.length - reset.length,
     holdingIds: reset,
+    priceSources: UNDOABLE_PRICE_SOURCES,
     priceSource: DEX_PRICE_SOURCE,
     asOf: nowIso,
   })
@@ -455,7 +554,7 @@ export async function handlePortfolioIdentity(
 
     const op = typeof body.op === 'string' ? body.op : 'coverage'
     if (op === 'coverage') return await runCoverage(admin, orgId, portfolioId, now)
-    if (op === 'resolve') return await runResolve(admin, orgId, portfolioId, limit, request, now)
+    if (op === 'resolve') return await runResolve(admin, orgId, portfolioId, limit, request, now, deps.priceContracts ?? priceContractHoldings)
     if (op === 'unprice') {
       const raw = Array.isArray(body.holdingIds) ? body.holdingIds : null
       if (!raw || !raw.length) return json({ error: 'invalid_holding_ids' }, 400)

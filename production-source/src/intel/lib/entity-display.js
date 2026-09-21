@@ -62,18 +62,31 @@ export function entityDisplay(item, overrides = {}) {
 /**
  * The asset page for a display identity.
  *
- * A catalogue identity opens the market page by its provider id, exactly as
- * the markets table links it. A contract the catalogue does not know opens the
- * contract route the app already uses (`provider=contract`), so the link is
- * never a dead end and never a ticker guess.
+ * A CATALOGUE identity (CoinMarketCap or CoinGecko) opens the market page by
+ * its provider id, exactly as the markets table links it. Everything else that
+ * carries a chain and an address opens the contract route (`provider=contract`),
+ * which is the one address the market read can answer for a token no catalogue
+ * lists.
+ *
+ * The allowlist is the point. An identity resolved today is stored with
+ * whatever provider named it — `contract`, and `on_demand` once the first
+ * resolution has indexed it — and linking a row under a provider the market
+ * read does not accept produced a page that refused the read before making it.
+ * So a provider is only used as a route when it IS a catalogue namespace.
  */
+export const CATALOGUE_PROVIDERS = ['coinmarketcap', 'coingecko']
+
 export function entityDisplayHref({ symbol, provider, providerId, chainId, address }) {
-  if (provider && provider !== 'contract' && providerId && symbol) {
+  if (provider && CATALOGUE_PROVIDERS.includes(provider) && providerId && symbol) {
     return `/intel/markets/${encodeURIComponent(symbol)}?${new URLSearchParams({ provider, id: String(providerId) })}`
   }
   if (chainId && address) {
     const id = `${chainId}:${address}`
-    return `/intel/markets/${encodeURIComponent(address)}?${new URLSearchParams({ provider: 'contract', id })}`
+    // The path segment is the ticker when a source has named the token, so the
+    // address bar reads FORGE rather than a 44-character mint. The identity
+    // that is READ is the query string, so the label can never become a lookup.
+    const label = symbol && String(symbol).trim() ? String(symbol).trim() : address
+    return `/intel/markets/${encodeURIComponent(label)}?${new URLSearchParams({ provider: 'contract', id })}`
   }
   return null
 }

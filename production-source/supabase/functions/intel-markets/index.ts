@@ -19,7 +19,7 @@ import { marketChain, marketCanonicalIdentity, marketIdentityChoices, verifiedNa
 import {readNativeChainPerformance} from '../_shared/intel/chain-performance-read.ts'
 import { marketScreenResponse } from '../_shared/intel/markets-screen.ts'
 import {resolveMarketAsset} from '../_shared/intel/market-asset-resolver.ts'
-import {parseContractProviderId} from '../_shared/intel/contract-market-asset.ts'
+import {contractIdentityOf,isContractIdentityProvider} from '../_shared/intel/contract-identity-route.ts'
 import {loadAssetHistory,historyPlan,unavailableHistory} from '../_shared/intel/asset-history.ts'
 import {realizedVolatility,maxDrawdown,distanceFromHigh,timeUnderWaterDays} from '../_shared/intel/risk-metrics.ts'
 import {marketCoverage,type MarketIdentityKind} from '../_shared/intel/market-coverage.ts'
@@ -407,6 +407,13 @@ async function marketDetail(admin: any, sym: string, opts: { timeframe?: string;
     // The on-chain workspace for a pasted contract — present ONLY for a
     // contract identity, so catalogue responses are unchanged.
     ...(canonical?.contract ? { contract: canonical.contract } : {}),
+    // Who the quote came from, in the words the source is credited under. A
+    // contract identity's `quoteProvider` is the literal string 'contract',
+    // which is the shape of the identity and not the name of a source: the row
+    // already carries the answering source's own label, so it is passed through
+    // and the page prints "DEX Screener", never "contract".
+    quoteSourceLabel: canonical?.source_label ? String(canonical.source_label) : null,
+    quoteAttribution: canonical?.attribution_label ? String(canonical.attribution_label) : null,
   }
   // Every identity reports the SAME section list: what is present, and why the
   // rest is not. Sections are never dropped for a less-covered asset.
@@ -431,8 +438,8 @@ const NO_RISK_METRICS = { volatility30d: null, maxDrawdown: null, distanceFromHi
 async function marketHistory(admin: any, sym: string, opts: { range?: string; sourceProvider?: string; providerId?: string } = {}, actor: OrgActor): Promise<Response> {
   const range = opts.range || '90d'
   if (!historyPlan(range)) return json({ error: 'invalid_history_range' }, 400)
-  if (opts.sourceProvider === 'contract') {
-    const parsed = opts.providerId ? parseContractProviderId(opts.providerId) : null
+  if (isContractIdentityProvider(opts.sourceProvider)) {
+    const parsed = contractIdentityOf(opts.sourceProvider, opts.providerId)
     if (!parsed) return json({ error: 'invalid_provider' }, 400)
     return json({ history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS,
       identity: { kind: 'contract' as const, provider: 'contract', providerId: `${parsed.chain}:${parsed.address}`, chain: parsed.chain, address: parsed.address } })

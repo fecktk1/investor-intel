@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useDisplayCurrency } from '../lib/display-currency'
+import { isUncataloguedContract, uncataloguedContractLabel } from '../lib/contract-suggestion'
 
 // Investor Intel — the Markets search box.
 //
@@ -41,6 +42,10 @@ const CACHE_MS = 30_000
 export function suggestionLabel(row) {
   return row?.displayName || row?.symbol || ''
 }
+
+// A pasted address no catalogue carries is named by the shared helper, so the
+// asset page's identity choice says exactly the same thing this list does.
+export { isUncataloguedContract, uncataloguedContractLabel }
 
 /** The identity line under the name: ticker, then the chain when the catalogue
  *  knows one and the provider identity otherwise. Never a claim we do not hold. */
@@ -192,7 +197,7 @@ export default function MarketSearchTypeahead({ value, onChange, onOpen, suggest
             onClick={() => choose(row)}
             className="intel-market-typeahead-option"
           >
-            <span className="intel-market-typeahead-name">{suggestionLabel(row) || t('markets.suggest_unnamed', { defaultValue: 'Unnamed contract' })}</span>
+            <span className="intel-market-typeahead-name">{isUncataloguedContract(row) ? uncataloguedContractLabel(row, t) : suggestionLabel(row) || t('markets.suggest_unnamed', { defaultValue: 'Unnamed contract' })}</span>
             <span className="intel-market-typeahead-meta">{suggestionIdentity(row)}</span>
             <span className="intel-market-typeahead-cap">{row.marketCap == null ? t('markets.suggest_no_market_cap', { defaultValue: 'No market cap' }) : money.formatMoney(row.marketCap)}</span>
           </div>

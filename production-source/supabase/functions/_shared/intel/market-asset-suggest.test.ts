@@ -134,16 +134,21 @@ Deno.test('A pasted contract the catalogue carries answers as that catalogue ass
   assertEquals(result.matches[0].href, '/intel/markets/USDC?provider=coinmarketcap&id=3408')
 })
 
-Deno.test('An address no catalogue carries keeps a route only when one chain can be read from it', async () => {
+Deno.test('An address no catalogue carries still has a route, narrowed to one chain', async () => {
   const solana = await suggestMarketAssets(catalogue([SOL_CMC]), 'So11111111111111111111111111111111111111112')
   assertEquals(solana.matches.length, 1)
   assertEquals(solana.matches[0].sourceProvider, 'contract')
   assertEquals(solana.matches[0].providerId, 'solana:So11111111111111111111111111111111111111112')
   assertEquals(solana.matches[0].marketCap, null)
-  // A bare EVM address reads as many chains, so it is never turned into a list
-  // of guesses; the paste box resolver remains the way in.
+  // A bare EVM address reads as every eip155 chain, so it is never turned into
+  // a list of guesses: with nothing observed it leads with Ethereum, which is
+  // how a bare hex address is read everywhere else, and offers nothing beyond
+  // it. The case where we HAVE observed the address on other chains is covered
+  // by `evmChainChoice` in contract-identity-route.test.ts.
   const evm = await suggestMarketAssets(catalogue([SOL_CMC]), '0x1111111111111111111111111111111111111111')
-  assertEquals(evm.matches, [])
+  assertEquals(evm.matches.length, 1)
+  assertEquals(evm.matches[0].chain, 'ethereum')
+  assertEquals(evm.matches[0].href, '/intel/markets/0x1111111111111111111111111111111111111111?provider=contract&id=ethereum%3A0x1111111111111111111111111111111111111111')
 })
 
 Deno.test('Typed punctuation cannot reshape the catalogue filter and wildcards stay literal', async () => {
