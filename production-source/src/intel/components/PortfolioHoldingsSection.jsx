@@ -1,6 +1,26 @@
-import React,{useEffect,useRef,useState} from 'react'
+import React,{useEffect,useMemo,useRef,useState} from 'react'
 import {useLocation,useSearchParams} from 'react-router'
 import {getPortfolioPage,exportPortfolioHoldings,downloadCsv,HOLDINGS_CSV_COLUMNS} from '../lib/portfolio-api'
+import {applyContractIdentities,contractIdentityKey,holdingsNeedingIdentity,loadContractIdentities} from '../lib/contract-identity-api'
+
+// Name the held contracts our own tables have not named yet. A token
+// CoinMarketCap does not list arrives from the recompute with name = null and
+// logo_url = null, so the row would show only the ticker the member typed
+// beside a raw mint. Resolving also indexes the contract into the shared
+// catalogue, which is where the next recompute reads the name from.
+function useNamedHoldings(supabase,orgId,rows) {
+ const [named,setNamed]=useState({})
+ useEffect(()=>{
+  const wanted=holdingsNeedingIdentity(rows).filter(asset=>!named[contractIdentityKey(asset.chain,asset.address)])
+  if(!orgId||!wanted.length)return
+  let alive=true
+  loadContractIdentities(supabase,orgId,wanted)
+   .then(found=>{if(alive&&found&&Object.keys(found).length)setNamed(previous=>({...previous,...found}))})
+   .catch(()=>{/* the table keeps the member's own ticker */})
+  return()=>{alive=false}
+ },[supabase,orgId,rows,named])
+ return useMemo(()=>applyContractIdentities(rows,named),[rows,named])
+}
 
 export function PortfolioPageControls({page,total,hasMore,onPage,label,busy}) {
  return <nav className="intel-page-controls" aria-label={label}><span>{total==null?'':`${total.toLocaleString()} records · `}Page {page+1}</span><button className="btn btn--ghost btn--sm" disabled={busy||page===0} onClick={()=>onPage(page-1)}>Previous</button><button className="btn btn--ghost btn--sm" disabled={busy||!hasMore} onClick={()=>onPage(page+1)}>Next</button></nav>
@@ -21,11 +41,12 @@ function HoldingPage({supabase,orgId,userId,portfolioId,initial,view,hideDust,Ta
   return()=>{canceled=true;controller.abort()}
  },[supabase,scope,initial,retry]) // eslint-disable-line react-hooks/exhaustive-deps
  const current=state?.scope===scope?state:null,data=useInitial?initial:current?.data,busy=!data&&!current?.error
+ const namedRows=useNamedHoldings(supabase,orgId,data?.rows)
  const change=(key,value)=>setParams(previous=>{const next=new URLSearchParams(previous);value?next.set(prefix+key,String(value)):next.delete(prefix+key);if(key!=='Page')next.delete(prefix+'Page');return next},{replace:true})
  const returnState={portfolioReturn:{url:location.pathname+location.search,orgId,userId,portfolioId}}
  return <div className="intel-holding-page">
   <form className="intel-holdings-filter" onSubmit={e=>{e.preventDefault();change('Search',draft.trim())}}><label>Search {view==='closed'?'realized positions':'holdings'}<input className="input" maxLength={160} type="search" value={draft} onChange={e=>setDraft(e.target.value)}/></label><button className="btn" type="submit">Search</button><label>Sort by<select className="select" value={sort} onChange={e=>change('Sort',e.target.value)}><option value="value">Value</option><option value="asset">Asset</option><option value="pnl">{view==='closed'?'Realized':'Unrealized'} P&amp;L</option></select></label></form>
-  {busy?<p role="status">Loading {view==='closed'?'realized positions':'holdings'}…</p>:current?.error?<div role="alert">{current.error} <button className="btn" onClick={()=>setRetry(n=>n+1)}>Retry</button></div>:data?.rows?.length?<Table holdings={data.rows} ctxMap={{}} portfolioId={portfolioId} returnState={returnState} closed={view==='closed'} t={t}/>:<p>{search?'No positions match this search.':view==='closed'?'No closed positions recorded.':'No open holdings in this view. Your recorded history remains available.'}</p>}
+  {busy?<p role="status">Loading {view==='closed'?'realized positions':'holdings'}…</p>:current?.error?<div role="alert">{current.error} <button className="btn" onClick={()=>setRetry(n=>n+1)}>Retry</button></div>:data?.rows?.length?<Table holdings={namedRows} ctxMap={{}} portfolioId={portfolioId} returnState={returnState} closed={view==='closed'} t={t}/>:<p>{search?'No positions match this search.':view==='closed'?'No closed positions recorded.':'No open holdings in this view. Your recorded history remains available.'}</p>}
   <PortfolioPageControls page={page} total={data?.total} hasMore={data?.hasMore} busy={busy} onPage={n=>change('Page',n)} label={view==='closed'?'Realized position pages':'Holding pages'}/>
  </div>
 }

@@ -16,6 +16,12 @@
 // POST { orgId, refs: string[], refresh?: boolean }
 //   → { identities: { [canonical_ref_key]: Identity }, resolved, deferred }
 //
+// POST { orgId, assets: [{ chain, address }] }
+//   → { assets: { ["<chain>:<address>"]: Identity } }
+// The same answer for a holding, which has no entities row. Resolving also
+// indexes the contract into the shared catalogue, so the next portfolio
+// recompute reads the name from our own tables with no lookup at all.
+//
 // Auth: signed-in member of orgId with Investor Intel access (requireIntelAccess).
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
@@ -117,12 +123,45 @@ Deno.serve(async (req) => {
     const refs = Array.isArray(body.refs)
       ? [...new Set(body.refs.filter((r): r is string => typeof r === 'string' && !!r.trim() && r.length <= 256))]
       : []
-    if (!refs.length) return json({ error: 'invalid_refs' }, 400)
+    const assets = Array.isArray(body.assets)
+      ? (body.assets as Array<Record<string, unknown>>)
+        .map((a) => ({ chain: typeof a?.chain === 'string' ? a.chain : '', address: typeof a?.address === 'string' ? a.address.trim() : '' }))
+        .filter((a) => a.chain && a.chain.length <= 40 && a.address && a.address.length <= 256)
+        .slice(0, MAX_REFS)
+      : []
+    if (!refs.length && !assets.length) return json({ error: 'invalid_refs' }, 400)
     if (refs.length > MAX_REFS) return json({ error: 'too_many_refs' }, 400)
     const refresh = body.refresh === true
 
     const admin = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!)
     const actor = await requireIntelAccess(req, createClient, admin, orgId)
+
+    // A holding has no entities row, so its answer is returned rather than
+    // stored on one. Resolving still indexes the contract into the shared
+    // catalogue, which is where the next portfolio recompute reads it from.
+    const assetIdentities: Record<string, EntityIdentity> = {}
+    let assetCalls = 0
+    for (const asset of assets) {
+      const key = `${asset.chain}:${asset.address}`
+      if (assetIdentities[key]) continue
+      if (assetCalls >= MAX_RESOLVES) {
+        assetIdentities[key] = { ref: key, symbol: null, name: null, imageUrl: null, provider: null, providerId: null,
+          chain: asset.chain, address: asset.address, state: 'deferred' }
+        continue
+      }
+      assetCalls += 1
+      const result = await resolveAsset(admin, {
+        query: asset.address, chain: asset.chain, orgId, userId: actor?.userId ?? null, ctx: { supabase: admin },
+      }).catch(() => null)
+      const identity = result?.identity ?? null
+      assetIdentities[key] = identity && (identity.symbol || identity.name)
+        ? { ref: key, symbol: text(identity.symbol), name: text(identity.name), imageUrl: httpsUrl(identity.logoUrl),
+          provider: identity.provider, providerId: identity.providerId, chain: identity.chain ?? asset.chain,
+          address: asset.address, state: 'resolved' }
+        : { ref: key, symbol: null, name: null, imageUrl: null, provider: null, providerId: null,
+          chain: asset.chain, address: asset.address, state: 'unresolved', reason: result?.reason ?? 'no_source_answered' }
+    }
+    if (!refs.length) return json({ assets: assetIdentities, resolved: assetCalls, deferred: Math.max(0, assets.length - assetCalls) })
 
     const { data, error } = await admin
       .from('entities')
@@ -219,7 +258,7 @@ Deno.serve(async (req) => {
       }
     }
 
-    return json({ identities, resolved, deferred: Math.max(0, pending.length - resolved) })
+    return json({ identities, assets: assetIdentities, resolved, deferred: Math.max(0, pending.length - resolved) })
   } catch (e) {
     if (e instanceof OrgAuthzError) return json({ error: e.message }, e.status ?? 403)
     return json({ error: (e as Error)?.message || 'entity_identity_failed' }, 500)
