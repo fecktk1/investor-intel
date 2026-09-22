@@ -53,6 +53,16 @@ export const CAPTURE_VIEWS = [
   // (capture-rwa-wrappers-read.ts, RWA_WRAPPER_CAPTURE_VIEWS). Precomputed by a
   // six-hourly lane, so the read itself spends no provider credit.
   'rwa_wrappers',
+  // The three picks (cheapest, closest, most liquid) for one asset, read from
+  // the same newest wrapper capture (capture-rwa-wrappers-read.ts).
+  'rwa_wrapper_picks',
+  // Premium over time for one asset's wrappers (capture-rwa-wrapper-history-read.ts):
+  // stored six-hourly captures plus any reconstructed days before them.
+  'rwa_wrapper_history',
+  // Daily universe coverage, the day-over-day changes feed and issuer
+  // concentration (capture-rwa-coverage-read.ts, RWA_COVERAGE_CAPTURE_VIEWS).
+  // Precomputed by a daily lane; the reads spend no provider credit.
+  'rwa_coverage', 'rwa_universe_changes', 'rwa_concentration',
   // "Unusual for this asset": each asset's newest complete day scored against
   // its own trailing distribution (capture-unusual-read.ts,
   // UNUSUAL_CAPTURE_VIEWS). Precomputed hourly, zero provider credits.
@@ -83,12 +93,12 @@ export async function readCaptureView(view, params = {}, { orgId, signal, supaba
     // keeps "this view is not captured yet" distinct from "nothing answered".
     const details = await error.context?.json?.().catch(() => null)
     const failure = new Error(details?.error || details?.reason || error.message || 'capture_unavailable')
-    failure.code = details?.error || details?.reason || null
+    failure.code = details?.code || details?.error || details?.reason || null
     throw failure
   }
   if (data?.error) {
     const failure = new Error(data.error)
-    failure.code = data.error
+    failure.code = data.code || data.error
     throw failure
   }
   // A body that is not an object is not a read: treat it as a failure with its
@@ -125,6 +135,9 @@ const REASONS = {
   capture_read_empty: ['capture.reason_empty_body', 'The capture service answered without a body.'],
   method_not_allowed: ['capture.reason_failed', 'The capture service did not answer this read.'],
   'Failed to fetch': ['capture.reason_failed', 'The capture service did not answer this read.'],
+  // The public demo (src/intel/demo) answers a read it has no snapshot for with
+  // this code; it never reaches the capture service.
+  demo_not_in_snapshot: ['intel_demo.not_in_snapshot', "Not in today's demo snapshot. Create a free account to look it up."],
 }
 
 export function captureReasonText(t, reason) {

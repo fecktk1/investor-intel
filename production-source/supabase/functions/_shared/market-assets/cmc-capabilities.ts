@@ -33,6 +33,12 @@ export const CMC_DEX_SCHEMA_VALIDATED=new Set<string>([...CMC_DEX_DISCOVERY,'dex
  * decides what an empty body may look like (see cmcDexPoolPage), and a non-empty
  * body is validated exactly as strictly as before. */
 export const CMC_EMPTY_DATA_CAPABILITIES=new Set<string>(['dexPools'])
+/** Maps, block statistics and price-conversion either reject convert or carry the
+ * caller's own reviewed conversion target; the transport never overwrites it. DEX
+ * paths never take it either. One list, read by the transport and by the
+ * reproduce command (cmc-reproduce.ts), so a copied call matches the real one. */
+export const CMC_CONVERT_EXEMPT:readonly string[]=Object.freeze(['map','metadata','exchangeInfo','exchangeAssets','exchangeMap','fiatMap','blockchainStats','priceConversion','categories','rwaMap','rwaInfo','issuers','issuer','fearGreed','fearGreedHistory','altcoinSeason','altcoinSeasonHistory','cmc100','cmc20','cmc100History','cmc20History','content','community'])
+export const cmcAddsConvert=(name:string)=>!name.startsWith('dex')&&!CMC_CONVERT_EXEMPT.includes(name)
 /** Single-contract DEX capabilities: exactly one verified platform + address. */
 const dexContract=(name:string)=>name.startsWith('dex')&&!isDexDiscovery(name)&&!['dexPlatforms','dexSearch','dexBatch','dexPriceBatch'].includes(name)
 const klineIntervals=['1min','5min','15min','30min','1h','4h','1d','1w']

@@ -5,6 +5,7 @@ import { Layers } from 'lucide-react'
 import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
 import CaptureReceipts from '../components/CaptureReceipts'
 import RwaWrapperSpread from '../components/RwaWrapperSpread'
+import RwaWrapperHistory from '../components/RwaWrapperHistory'
 
 // /intel/rwa/wrappers — the same real-world asset wrapped several times, and the
 // prices those wrappers disagree at.
@@ -46,6 +47,9 @@ export default function RwaWrapperPage() {
           so the figure is asked not to repeat its own. It keeps them wherever it
           is embedded in a section of another page. */}
       <RwaWrapperSpread showHeading={false} />
+      {/* The same premiums over time, for one asset and one wrapper. The asset
+          comes from ?asset=<rwa_id>, which the board's "Over time" link sets. */}
+      <RwaWrapperHistory />
       <p className="text-[12px]">
         <Link className="intel-text-link" to="/intel/structure">
           {t('rwa_wrappers.back_to_structure', { defaultValue: 'Back to the structure figures, including the RWA universe' })}

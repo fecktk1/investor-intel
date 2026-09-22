@@ -1,6 +1,8 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import SourceCallReceipt from './SourceCallReceipt'
+import DemoNotInSnapshot from '../demo/DemoNotInSnapshot'
+import { DEMO_MISS_CODE, DEMO_MISS_TEXT } from '../demo/demo-fetch'
 
 export function sourceHref(value) { try { const url = new URL(value); return url.protocol === 'https:' ? url.href : null } catch { return null } }
 const title = key => key.replace(/_/g, ' ').replace(/\busd\b/gi, 'USD')
@@ -20,6 +22,8 @@ export function ResearchStatus({ query, showObserved=true }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { result, loading, error, refresh } = query
   if (loading) return <p role="status" className="intel-event-meta py-4">{t('research.loading_evidence', { defaultValue: 'Loading market evidence…' })}</p>
+  // Public demo: a read today's snapshot does not hold. No retry: it cannot answer differently.
+  if (result?.reason === DEMO_MISS_CODE || error === DEMO_MISS_CODE || error === DEMO_MISS_TEXT) return <p role="status" className="py-4 text-sm text-[var(--fg-4)]"><DemoNotInSnapshot/></p>
   const unavailableReason = result?.reason === 'insufficient_entitlement' && result?.capability === 'rwaPairs' ? 'RWA market pairs require CMC Growth or above. Token prices and issuer research remain available.' : null
   if (error || ['unavailable', 'unsupported', 'refreshing'].includes(result?.state)) return <div role="status" className="py-4 text-sm text-[var(--fg-4)]">
     {error&&result&&<p role="alert">The latest read failed. Previously loaded evidence keeps its original source time.</p>}

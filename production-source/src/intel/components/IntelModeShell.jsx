@@ -24,6 +24,9 @@ import { intelSearchActions } from '../lib/search-actions'
 import { THESIS_JOURNAL_ENABLED } from '../lib/flags'
 import { MarketDetailCacheProvider } from '../context/MarketDetailCache'
 import PinnedResearch from './PinnedResearch'
+import IntelDemoBanner from '../demo/IntelDemoBanner'
+import IntelDemoPersonalNote from '../demo/IntelDemoPersonalNote'
+import { isIntelDemoActive } from '../demo/demo-mode'
 
 // Investor Intel shell. Modeled on the demo shell (src/demo/components/
 // DemoLayout.jsx) — same design tokens — but auth-guarded and driven by real
@@ -245,6 +248,9 @@ export default function IntelModeShell({ children }) {
           </button>
           <button className="intel-text-link intel-window-control" onClick={() => setCompactMode(!compact)}>{compact ? t('shell.full_workspace', { defaultValue: 'Full workspace' }) : t('shell.compact_workspace', { defaultValue: 'Compact workspace' })}</button>
         </header>
+        {/* Public demo: a persistent hairline notice with text links (src/intel/demo). */}
+        {isIntelDemoActive() && <IntelDemoBanner />}
+        {isIntelDemoActive() && <IntelDemoPersonalNote />}
         {contextBarsOpen && <><IntelDisclaimer variant="bar"/><PinnedResearch/></>}
         <main id="intel-main" ref={scrollRef} className="flex-1 overflow-y-auto p-4 lg:p-6 xl:p-7">
           <div className="max-w-7xl mx-auto"><MarketDetailCacheProvider key={`${user?.id || ""}:${org?.id || ""}`}>{children}</MarketDetailCacheProvider><footer className="mt-6 pt-3 border-t border-[var(--border-default)] text-xs text-[var(--fg-4)]"><a href="https://coinmarketcap.com/" target="_blank" rel="noreferrer" className="underline underline-offset-4">Data provided by CoinMarketCap.com</a><span> · Additional sources identified alongside their data.</span></footer></div>

@@ -5,10 +5,11 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable } from '../lib/capture-api'
 import { formatUsd, formatCompact } from '../lib/market-format'
+import DemoNotInSnapshot, { isDemoMissReason } from '../demo/DemoNotInSnapshot'
 
 // RWA issuer legitimacy, admission reality and holder concentration.
 //
-// The common answer to "can I legally invest in this?" is a hand-curated
+// A common answer to "can I legally invest in this?" is a hand-curated
 // registry. This board answers from primary sources, and its most important
 // rows are the ones a curated registry cannot have:
 //
@@ -123,7 +124,7 @@ export default function RwaIssuerLegitimacy() {
       {read.status === 'loading' && <p role="status">{t('rwa_issuer.loading', { defaultValue: 'Reading primary sources…' })}</p>}
 
       {read.status === 'unavailable' && (
-        <p role="alert">{t('rwa_issuer.unavailable', { reason: read.reason || 'unknown', defaultValue: 'The issuer legitimacy board could not be read ({{reason}}). Nothing is asserted about any issuer.' })}</p>
+        isDemoMissReason(read.reason) ? <p role="status"><DemoNotInSnapshot /></p> : <p role="alert">{t('rwa_issuer.unavailable', { reason: read.reason || 'unknown', defaultValue: 'The issuer legitimacy board could not be read ({{reason}}). Nothing is asserted about any issuer.' })}</p>
       )}
 
       {read.status === 'ready' && (

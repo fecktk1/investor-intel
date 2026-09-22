@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import assert from 'node:assert/strict'
-import { PUBLIC_DOCS, PRIVATE_DOCS, deniedPackagePaths, isBinaryPackagePath, findSecretShapes } from './intel-extraction-package-guards.mjs'
+import { PUBLIC_DOCS, PRIVATE_DOCS, DRAFT_MARKER, deniedPackagePaths, isBinaryPackagePath, findSecretShapes } from './intel-extraction-package-guards.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const require=createRequire(import.meta.url)
 function run(args,cwd=root){const result=spawnSync(process.execPath,args,{cwd,windowsHide:true,encoding:'utf8',timeout:120000});if(result.error||result.status!==0)throw Error(result.error?.message||result.stderr||result.stdout);return result.stdout}
@@ -65,6 +65,14 @@ for(const dir of productRoots){
     assert.ok(!code.includes('coinmarketcap_keyless'),`keyless source label used outside the extraction: ${file}`)
   }
 }
+// The production snapshot ships, carries no drafting markers, and runs its own
+// Deno tests inside the emitted folder, which proves its imports are closed.
+assert.ok(packaged.some(file=>file==='production-source/supabase/functions/_shared/market-assets/cmc-transport.ts'))
+assert.ok(packaged.some(file=>file==='production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.ts'))
+for(const file of packaged.filter(file=>!isBinaryPackagePath(file)))assert.ok(!readFileSync(path.join(target,file),'utf8').includes(DRAFT_MARKER),`drafting marker in ${file}`)
+const deno=spawnSync('deno',['test','--allow-read','--allow-env','--no-check','-q','production-source/supabase'],{cwd:target,windowsHide:true,encoding:'utf8',timeout:600000,shell:process.platform==='win32'})
+if(deno.error||deno.status!==0)throw Error(`production-source tests failed: ${deno.error?.message||(deno.stdout+deno.stderr).slice(-2000)}`)
+console.log((deno.stdout+deno.stderr).trim().split(/\r?\n/).pop())
 const vite=path.join(path.dirname(require.resolve('vite/package.json')),'bin/vite.js')
 console.log(run(['--test',...manifest.files.filter(f=>f.file.startsWith('tests/')&&f.file.endsWith('.test.mjs')).map(f=>f.file)],target))
 console.log(run([vite,'build',target,'--config',path.join(target,'vite.config.mjs')],target))

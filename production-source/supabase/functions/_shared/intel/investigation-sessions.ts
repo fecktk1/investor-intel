@@ -36,6 +36,24 @@ export function equitySession(asOf: number, market: string | null) {
     sourceUrl:EQUITY_CALENDAR_SOURCE, verifiedAt:'2026-09-10', timezone:'America/New_York',
     reason:'Scheduled core equity session only. Emergency halts, extended sessions, token venues and issuer redemption are separate.' }
 }
+/** Years the NYSE holiday list above covers. Outside them only weekends are
+ * known, and a caller must say so rather than imply a full calendar. */
+export const NYSE_HOLIDAY_YEARS = { from: 2026, to: 2028 } as const
+/** Calendar dates (UTC date keys) in [fromMs, toMs] on which the NYSE core
+ * session does not open: every Saturday and Sunday, plus the scheduled full-day
+ * holidays for 2026-2028. Early closes are open days and are not included.
+ * Bounded to 1,100 days so a runaway range cannot loop. */
+export function nyseClosedDays(fromMs: number, toMs: number): { date: string; kind: 'weekend' | 'holiday' }[] {
+  if (!Number.isFinite(fromMs) || !Number.isFinite(toMs) || toMs < fromMs) return []
+  const out: { date: string; kind: 'weekend' | 'holiday' }[] = []
+  const start = Math.floor(fromMs / 86400000) * 86400000
+  for (let t = start, n = 0; t <= toMs && n < 1100; t += 86400000, n++) {
+    const day = new Date(t), key = day.toISOString().slice(0, 10)
+    if (day.getUTCDay() === 0 || day.getUTCDay() === 6) out.push({ date: key, kind: 'weekend' })
+    else if (holidays.has(key)) out.push({ date: key, kind: 'holiday' })
+  }
+  return out
+}
 /** Published conventional Ondo sessions, never live trading/redemption status.
  * Holiday/early-close exceptions and per-asset off-hours are not inferred. */
 export function ondoConventionalSession(asOf:number) {

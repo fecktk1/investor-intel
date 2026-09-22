@@ -1,9 +1,9 @@
 import { assertEquals as eq, assert } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
   concentrationPct, contractList, exitabilitySizes, readRwaDepth, readRwaTokenDepth,
-  DEPTH_ENDPOINTS, EXITABILITY_FRACTIONS, EXITABILITY_METHOD, READ_CHAINS, RWA_DEPTH_CAPTURE_VIEWS,
+  DEPTH_ENDPOINTS, EXITABILITY_FRACTIONS, EXITABILITY_METHOD, PROVIDER_VOLUME_REASONS, READ_CHAINS, RWA_DEPTH_CAPTURE_VIEWS,
 } from './capture-rwa-depth-read.ts'
-import { DEPTH_TABLE, DEPLOYMENT_TABLE, DEPTH_SCOPE } from './capture-rwa-depth.ts'
+import { DEPTH_TABLE, DEPLOYMENT_TABLE, DEPTH_SCOPE, WRAPPER_TOKEN_TABLE } from './capture-rwa-depth.ts'
 
 const NOW = Date.now()
 const DAY = new Date(NOW).toISOString().slice(0, 10)
@@ -429,4 +429,116 @@ Deno.test('the asset-page view carries the split, the excluded group and the exi
   eq((token.unrecognisedPools as unknown[]).length, 1)
   eq(token.onlyUnrecognised, false)
   assert(String(result.exitLiquidityScope).includes('quote leg'))
+})
+
+// ── The all-venue volume join (exit simulator, second scenario) ────────────────
+
+const wrapperToken = (over: Record<string, unknown> = {}) => ({
+  provider: 'coinmarketcap', rwa_id: '1', crypto_id: '4705', volume_24h: 12_500_000,
+  captured_at: new Date(NOW - 2 * 3_600_000).toISOString(), ...over,
+})
+
+Deno.test('the board carries the newest all-venue 24h volume per token from the wrapper capture', async () => {
+  const db = fakeDb({
+    [DEPTH_TABLE]: [depthRow(), depthRow({ token_key: 'cmc:9999', crypto_id: '9999', symbol: 'MISS' })],
+    [DEPLOYMENT_TABLE]: [deployment()],
+    [WRAPPER_TOKEN_TABLE]: [
+      // Older capture of the same token: the newest wins.
+      wrapperToken({ volume_24h: 1, captured_at: new Date(NOW - 8 * 3_600_000).toISOString() }),
+      wrapperToken(),
+      // Outside the window: never paired with a depth row.
+      wrapperToken({ crypto_id: '9999', captured_at: new Date(NOW - 5 * 86_400_000).toISOString() }),
+    ],
+  })
+  const result = await readRwaDepth(db, {}, NOW)
+  const rows = result.rows as Record<string, unknown>[]
+  const paxg = rows.find((row) => row.cryptoId === '4705')!
+  eq(paxg.providerVolume24hUsd, 12_500_000)
+  eq(paxg.providerVolumeCapturedAt, wrapperToken().captured_at)
+  eq(paxg.providerVolumeReason, null)
+  // The pool volume, the other scenario's input, is untouched.
+  eq(paxg.totalVolume24hUsd, 42_000)
+  const miss = rows.find((row) => row.cryptoId === '9999')!
+  eq(miss.providerVolume24hUsd, null)
+  eq(miss.providerVolumeReason, 'not_in_recent_wrapper_capture')
+  eq((result.providerVolume as Record<string, unknown>).reason, null)
+  eq(result.reason, null)
+})
+
+Deno.test('a failed volume join leaves the depth read intact and says why on every row', async () => {
+  const db = fakeDb(
+    { [DEPTH_TABLE]: [depthRow()], [DEPLOYMENT_TABLE]: [deployment()], [WRAPPER_TOKEN_TABLE]: [wrapperToken()] },
+    { [WRAPPER_TOKEN_TABLE]: 'permission denied for wrapper tokens' },
+  )
+  const result = await readRwaDepth(db, {}, NOW)
+  const rows = result.rows as Record<string, unknown>[]
+  eq(rows.length, 1)
+  eq(rows[0].totalLiquidityUsd, 1_000_000, 'depth figures survive the failed join')
+  eq(rows[0].providerVolume24hUsd, null)
+  eq(rows[0].providerVolumeCapturedAt, null)
+  eq(rows[0].providerVolumeReason, 'wrapper_read_failed')
+  eq((result.providerVolume as Record<string, unknown>).reason, 'permission denied for wrapper tokens')
+  // The depth read itself answered, so its own reason stays clean.
+  eq(result.reason, null)
+})
+
+Deno.test('a thrown volume join is contained the same way, and a missing provider id is named', async () => {
+  const base = fakeDb({ [DEPTH_TABLE]: [depthRow({ crypto_id: null, token_key: 'pin:eth:x' })], [DEPLOYMENT_TABLE]: [] })
+  const db = { from: (table: string) => { if (table === WRAPPER_TOKEN_TABLE) throw new Error('boom'); return base.from(table) } }
+  const result = await readRwaDepth(db, {}, NOW)
+  const rows = result.rows as Record<string, unknown>[]
+  eq(rows[0].providerVolumeReason, 'no_provider_id')
+  // No id to look up means no read was attempted at all.
+  eq((result.providerVolume as Record<string, unknown>).reason, null)
+
+  const thrown = { from: (table: string) => { if (table === WRAPPER_TOKEN_TABLE) throw new Error('boom'); return fakeDb({ [DEPTH_TABLE]: [depthRow()], [DEPLOYMENT_TABLE]: [deployment()] }).from(table) } }
+  const again = await readRwaDepth(thrown, {}, NOW)
+  eq((again.rows as Record<string, unknown>[])[0].providerVolumeReason, 'wrapper_read_failed')
+  eq((again.providerVolume as Record<string, unknown>).reason, 'boom')
+  eq(PROVIDER_VOLUME_REASONS.includes('wrapper_read_failed'), true)
+})
+
+Deno.test('the token view carries the same all-venue volume join', async () => {
+  const db = fakeDb({ [DEPTH_TABLE]: [depthRow()], [DEPLOYMENT_TABLE]: [deployment()], [WRAPPER_TOKEN_TABLE]: [wrapperToken({ volume_24h: null })] })
+  const result = await readRwaTokenDepth(db, { cryptoId: '4705' }, NOW)
+  const token = result.token as Record<string, unknown>
+  // A reported row with no volume is null, never zero, and not a missing row.
+  eq(token.providerVolume24hUsd, null)
+  eq(token.providerVolumeReason, null)
+  eq(token.providerVolumeCapturedAt, wrapperToken().captured_at)
+  eq((token.contracts as unknown[]).length, 1)
+  eq(token.totalVolume24hUsd, 42_000)
+})
+
+Deno.test('the volume join is one bounded read filtered to the board\'s own tokens', async () => {
+  const calls: Record<string, unknown>[] = []
+  const inner = fakeDb({ [DEPTH_TABLE]: [depthRow()], [DEPLOYMENT_TABLE]: [deployment()], [WRAPPER_TOKEN_TABLE]: [wrapperToken()] })
+  const db = {
+    from(table: string) {
+      const q = inner.from(table)
+      if (table !== WRAPPER_TOKEN_TABLE) return q
+      const record: Record<string, unknown> = { table }
+      calls.push(record)
+      // deno-lint-ignore no-explicit-any
+      const spy: any = {
+        select: (cols: string) => { record.select = cols; q.select(cols); return spy },
+        // deno-lint-ignore no-explicit-any
+        eq: (k: string, v: any) => { q.eq(k, v); return spy },
+        // deno-lint-ignore no-explicit-any
+        in: (k: string, v: any[]) => { record.in = v; q.in(k, v); return spy },
+        // deno-lint-ignore no-explicit-any
+        gte: (k: string, v: any) => { record.gte = k; q.gte(k, v); return spy },
+        // deno-lint-ignore no-explicit-any
+        order: (c: string, o: any) => { q.order(c, o); return spy },
+        limit: (max: number) => { record.limit = max; return q.limit(max) },
+      }
+      return spy
+    },
+  }
+  await readRwaDepth(db, {}, NOW)
+  eq(calls.length, 1)
+  eq(calls[0].select, 'crypto_id,volume_24h,captured_at')
+  eq(calls[0].in, ['4705'])
+  eq(calls[0].gte, 'captured_at')
+  assert((calls[0].limit as number) <= 2_000)
 })

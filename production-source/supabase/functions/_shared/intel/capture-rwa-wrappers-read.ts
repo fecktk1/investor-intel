@@ -27,6 +27,7 @@ import {
   RECONCILE_BAND_LOW, RECONCILE_BAND_HIGH, TROY_OUNCE_GRAMS,
   type AnchorKind,
 } from './rwa-wrapper-spread.ts'
+import { wrapperPicks, PICK_RULES } from './rwa-wrapper-picks.ts'
 
 /** One capture hour holds at most RWA_WRAPPER_ASSET_CAP assets, so 200 asset
  * rows spans several hours and always contains the newest one whole. */
@@ -41,7 +42,7 @@ const POINT_CAP = 240
 export interface Coverage { from: string | null; to: string | null; count: number; truncated?: boolean }
 export interface ViewResult { view: string; asOf: string | null; coverage: Coverage; reason?: string | null; [key: string]: unknown }
 
-export const RWA_WRAPPER_VIEWS = ['rwa_wrappers'] as const
+export const RWA_WRAPPER_VIEWS = ['rwa_wrappers', 'rwa_wrapper_picks'] as const
 
 const num = (v: unknown): number | null => { if (v == null || v === '' || typeof v === 'boolean') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
 const str = (v: unknown, max = 400): string | null => { const s = v == null ? '' : String(v).trim(); return s ? s.slice(0, max) : null }
@@ -96,6 +97,44 @@ const image = (v: unknown): string | null => {
 }
 
 interface Logo { cached: string | null; original: string | null }
+
+/** What the catalogue says about one wrapper's markets: how many market pairs
+ * CoinMarketCap counts for it, and whether it is in the catalogue's current
+ * refresh at all. Read in the same bounded query as the logos. */
+export interface CatalogueMarket { marketPairs: number | null; inCurrentCatalog: boolean | null }
+
+export const MARKET_COVERAGE_STATES = ['tradeable', 'priced_not_traded', 'listed_only', 'no_tracked_market'] as const
+export type MarketCoverage = typeof MARKET_COVERAGE_STATES[number]
+
+/** Whether a wrapper can be traded anywhere we can see, in four words.
+ *
+ *   listed_only        the provider lists the wrapper with no price at all.
+ *   priced_not_traded  a price, but no reported 24 hour volume (absent or zero),
+ *                      or the catalogue counts zero market pairs for it.
+ *   no_tracked_market  a price and a volume, but the wrapper is not in the
+ *                      market catalogue's current refresh, so there is no pair
+ *                      count of ours to confirm a market. The provider's volume
+ *                      is still shown beside it; this is a statement about OUR
+ *                      coverage, not a claim that it does not trade.
+ *   tradeable          a price, a volume, and a current catalogue row. A pair
+ *                      count the catalogue did not report is said as a reason,
+ *                      never read as zero.
+ *
+ * A catalogue read that FAILED assesses nothing: `state` is null and the reason
+ * says why, rather than every wrapper quietly becoming "no tracked market". */
+export function marketCoverage(
+  token: { price: number | null; volume24h: number | null },
+  market: CatalogueMarket | null,
+  catalogueRead: boolean,
+): { state: MarketCoverage | null; reason: string | null } {
+  if (token.price == null) return { state: 'listed_only', reason: 'price_not_reported' }
+  if (token.volume24h == null) return { state: 'priced_not_traded', reason: 'volume_not_reported' }
+  if (token.volume24h <= 0) return { state: 'priced_not_traded', reason: 'volume_reported_zero' }
+  if (!catalogueRead) return { state: null, reason: 'catalogue_unavailable' }
+  if (!market || market.inCurrentCatalog === false) return { state: 'no_tracked_market', reason: market ? 'not_in_current_catalogue' : 'not_in_catalogue' }
+  if (market.marketPairs === 0) return { state: 'priced_not_traded', reason: 'no_market_pairs' }
+  return { state: 'tradeable', reason: market.marketPairs == null ? 'pair_count_not_reported' : null }
+}
 
 /** CoinMarketCap's own coin image for a numeric crypto id, or null. The same URL
  * shape `assetLogoUrl` builds in the app (src/intel/lib/asset-identity.js). */
@@ -298,7 +337,7 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
       ? readRows(() => db.from(PROFILE_TABLE).select('rwa_id,logo_url').in('rwa_id', ids).limit(ROW_LIMIT))
       : Promise.resolve({ rows: [], reason: null }),
     cryptoIds.length
-      ? readRows(() => db.from(CATALOGUE_TABLE).select('provider_id,cached_image_url,image_url')
+      ? readRows(() => db.from(CATALOGUE_TABLE).select('provider_id,cached_image_url,image_url,num_market_pairs,in_current_catalog')
           .eq('source_provider', 'coinmarketcap').in('provider_id', cryptoIds).limit(LOGO_CAP))
       : Promise.resolve({ rows: [], reason: null }),
   ])
@@ -309,17 +348,37 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
     if (id && url) assetLogos.set(id, url)
   }
   const tokenLogos = new Map<string, Logo>()
+  // The same catalogue rows carry each wrapper's market pair count. Unlike a
+  // logo, a failed read here IS stated: per wrapper, as an unassessed coverage
+  // with a reason, and once on the payload.
+  const tokenMarkets = new Map<string, CatalogueMarket>()
   for (const row of tokenLogoRead.rows) {
     const id = str(row?.provider_id, 20)
-    if (id) tokenLogos.set(id, { cached: image(row?.cached_image_url), original: image(row?.image_url) })
+    if (!id) continue
+    tokenLogos.set(id, { cached: image(row?.cached_image_url), original: image(row?.image_url) })
+    tokenMarkets.set(id, { marketPairs: num(row?.num_market_pairs), inCurrentCatalog: bool(row?.in_current_catalog) })
   }
+  const catalogueRead = !tokenLogoRead.reason
 
-  const tokensByAsset = new Map<string, ReturnType<typeof wrapperRow>[]>()
+  type CoveredWrapper = ReturnType<typeof wrapperRow> & {
+    marketPairs: number | null; inCurrentCatalog: boolean | null
+    coverageState: MarketCoverage | null; coverageReason: string | null
+  }
+  const tokensByAsset = new Map<string, CoveredWrapper[]>()
   for (const row of tokenRead.rows) {
     const id = str(row?.rwa_id, 20)
     if (!id) continue
     const cryptoId = str(row?.crypto_id, 20)
-    tokensByAsset.set(id, [...(tokensByAsset.get(id) || []), wrapperRow(row, (cryptoId && tokenLogos.get(cryptoId)) || null)])
+    const token = wrapperRow(row, (cryptoId && tokenLogos.get(cryptoId)) || null)
+    const market = (cryptoId && tokenMarkets.get(cryptoId)) || null
+    const coverage = marketCoverage(token, market, catalogueRead)
+    tokensByAsset.set(id, [...(tokensByAsset.get(id) || []), {
+      ...token,
+      marketPairs: market?.marketPairs ?? null,
+      inCurrentCatalog: market?.inCurrentCatalog ?? null,
+      coverageState: coverage.state,
+      coverageReason: coverage.reason,
+    }])
   }
   // Dearest first inside an asset, with the wrappers that carry no premium last
   // and keeping their state rather than sorting to an implied zero.
@@ -334,7 +393,10 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
   const all = rankAssets(current.map((row) => {
     const id = str(row?.rwa_id, 20) ?? ''
     const tokens = tokensByAsset.get(id) || []
-    return wrapperAssetRow(row, tokens, assetLogos.get(id) ?? underlyingFallbackLogo(row?.asset_type, tokens))
+    const asset = wrapperAssetRow(row, tokens, assetLogos.get(id) ?? underlyingFallbackLogo(row?.asset_type, tokens))
+    // Which wrapper to name for three different questions, computed from the
+    // same rows the table shows, so the picks and the table cannot disagree.
+    return { ...asset, picks: wrapperPicks(asset) }
   }))
   const rows = all.slice(0, limit)
 
@@ -375,6 +437,10 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
       reconcileNotComparable: rows.filter((row) => row.reconcileState === 'not_comparable').length,
     },
     settings, scope: WRAPPER_SPREAD_SCOPE, anchorMeaning: ANCHOR_MEANING,
+    pickRules: PICK_RULES,
+    // Null when every wrapper's market coverage was assessed. A failed catalogue
+    // read leaves each wrapper's coverage null with a reason, and says so here.
+    marketCoverageReason: catalogueRead ? null : tokenLogoRead.reason,
     schedule: RWA_WRAPPER_CAPTURE_SCHEDULE,
     // The two endpoints behind every figure on this surface, named on the payload
     // so the surface states them rather than restating them in JSX.
@@ -389,10 +455,56 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
   }
 }
 
+/** The picks for ONE asset, named by its RWA id or by any one of its wrappers'
+ * CoinMarketCap ids. Served from the same newest-hour read as the board, so the
+ * page and an agent asking about the same asset read the same capture.
+ *
+ * An asset outside the board's bounded read (it keeps the 60 widest-dispersion
+ * assets of the newest hour) is answered as `not_in_capture` with a reason, never
+ * as an asset that has no wrappers. */
+// deno-lint-ignore no-explicit-any
+export async function readRwaWrapperPicks(db: any, params: { rwaId?: unknown; cryptoId?: unknown } = {}, now: Date | number = Date.now()): Promise<ViewResult> {
+  const wantId = (v: unknown) => { const s = String(v ?? '').trim(); return /^[1-9][0-9]{0,11}$/.test(s) ? s : null }
+  const rwaId = wantId(params.rwaId)
+  const cryptoId = wantId(params.cryptoId)
+  const base = { view: 'rwa_wrapper_picks', rwaId, cryptoId, pickRules: PICK_RULES, generatedAt: new Date(at(now)).toISOString() }
+  if (!rwaId && !cryptoId) {
+    return { ...base, state: 'no_asset_selected', asset: null, picks: null, asOf: null, coverage: emptyCoverage(), reason: 'no_asset_selected' }
+  }
+  const board = await readRwaWrappers(db, { limit: ROW_LIMIT }, now)
+  // deno-lint-ignore no-explicit-any
+  const rows = (board.rows as any[]) || []
+  const row = rows.find((r) => (rwaId && r.rwaId === rwaId)
+    // deno-lint-ignore no-explicit-any
+    || (!rwaId && cryptoId && r.tokens.some((t: any) => t.cryptoId === cryptoId))) || null
+  if (!row) {
+    return {
+      ...base, state: board.asOf ? 'not_in_capture' : 'not_captured', asset: null, picks: null,
+      asOf: board.asOf, coverage: board.coverage, reason: board.reason || null,
+      schedule: RWA_WRAPPER_CAPTURE_SCHEDULE,
+    }
+  }
+  return {
+    ...base, state: 'ready',
+    asset: {
+      rwaId: row.rwaId, symbol: row.symbol, name: row.name, assetType: row.assetType,
+      anchorKind: row.anchorKind, anchorPrice: row.anchorPrice, anchorReason: row.anchorReason,
+      anchorMeaning: row.anchorMeaning, anchorObservedAt: row.anchorObservedAt,
+      observedAt: row.observedAt, wrapperCount: row.wrapperCount,
+    },
+    picks: row.picks,
+    endpoints: board.endpoints,
+    asOf: board.asOf,
+    coverage: { from: board.asOf, to: board.asOf, count: 1 },
+    reason: board.reason || null,
+  }
+}
+
 /** Integration surface consumed by `intel-capture/index.ts`, keyed by view name. */
 export const RWA_WRAPPER_CAPTURE_VIEWS: Record<string, (
   // deno-lint-ignore no-explicit-any
   db: any, body: Record<string, unknown>, now: number
 ) => Promise<ViewResult>> = {
   rwa_wrappers: (db, body, now) => readRwaWrappers(db, body, now),
+  rwa_wrapper_picks: (db, body, now) => readRwaWrapperPicks(db, { rwaId: body.rwaId ?? body.rwa_id, cryptoId: body.cryptoId ?? body.crypto_id }, now),
 }

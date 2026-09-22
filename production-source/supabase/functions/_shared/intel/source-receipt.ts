@@ -131,8 +131,9 @@ export const CAPTURE_RECEIPT_LANES:Record<string,CaptureLane>={
  // Six-hourly, so its own schedule is what a reader should be told about, not
  // the policy row's minimum spacing.
  rwa_wrappers:{...cmcLane(['intel-capture-rwa-wrappers'],'rwa_wrappers','intel_rwa_wrapper_assets','captured_at'),scheduleSeconds:21600},
+ rwa_coverage:{...cmcLane(['intel-capture-rwa-coverage'],'rwa_coverage','intel_rwa_coverage_assets','captured_at'),scheduleSeconds:86400},
 }
-const FALLBACK_CADENCE:Record<string,number>={regime:3600,structure:300,rwa:3600,attention:3600,history:86400,airdrops:86400,categories:3600,network_stats:3600,listings:86400,meme_stages:3600,rwa_wrappers:21600,rwa_depth:86400,exchange_reserves:86400,venue_share:86400}
+const FALLBACK_CADENCE:Record<string,number>={regime:3600,structure:300,rwa:3600,attention:3600,history:86400,airdrops:86400,categories:3600,network_stats:3600,listings:86400,meme_stages:3600,rwa_wrappers:21600,rwa_coverage:86400,rwa_depth:86400,exchange_reserves:86400,venue_share:86400}
 /** Calls within this window before a caller's newest call belong to one run. */
 export const CAPTURE_RUN_WINDOW_MS=15*60_000
 const MAX_LANES=8,LOG_LIMIT=400,MAX_LOOKBACK_MS=3*86_400_000

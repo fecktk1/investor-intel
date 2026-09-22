@@ -6,6 +6,9 @@ import { IntelPageHeader, IntelPageShell } from '../components/IntelPrimitives'
 import CaptureReceipts from '../components/CaptureReceipts'
 import RankMap from '../components/RankMap'
 import RwaUniverse from '../components/RwaUniverse'
+import RwaCoverage from '../components/RwaCoverage'
+import RwaUniverseChanges from '../components/RwaUniverseChanges'
+import RwaConcentration from '../components/RwaConcentration'
 import RwaIssuerLegitimacy from '../components/RwaIssuerLegitimacy'
 import RwaUnderlyingRegistrants from '../components/RwaUnderlyingRegistrants'
 import RwaYieldProvenance from '../components/RwaYieldProvenance'
@@ -66,6 +69,12 @@ export default function MarketStructurePage() {
       <CaptureReceipts lanes={CAPTURE_RECEIPT_LANES} />
       <RankMap onLoad={seed} />
       <RwaUniverse />
+      {/* Listed is not the same as tradeable. The daily coverage lane reads every
+          tokenised asset in the map and says how many have no wrapper with a
+          tracked market, which tickers a reader expects and CoinMarketCap does not
+          carry, and what changed since yesterday. */}
+      <RwaCoverage />
+      <RwaUniverseChanges />
       {/* The same underlying assets, one level down: where several wrapper
           tokens of one asset disagree on its price. It is a route of its own
           rather than an eleventh figure here, because it carries a ranked
@@ -81,6 +90,9 @@ export default function MarketStructurePage() {
           so legitimacy is read first and yield provenance second. Both panels
           own their own read, so neither can blank the other. */}
       <RwaIssuerLegitimacy />
+      {/* How concentrated tokenised value is by issuer, from the same daily
+          coverage snapshot, and the chains wrappers are deployed on. */}
+      <RwaConcentration />
       {/* A DIFFERENT question from the issuer board immediately above, and placed
           next to it so the difference is legible: who issued the token, then what
           company is underneath it. The CIK CoinMarketCap publishes on a tokenized

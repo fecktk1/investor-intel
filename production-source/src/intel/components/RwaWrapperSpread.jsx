@@ -1,5 +1,5 @@
 import React, { useEffect, useMemo, useState } from 'react'
-import { Link } from 'react-router'
+import { Link, useLocation } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import BoardTableHeader from './BoardTableHeader'
 import SortableHeader, { StaticHeader } from './SortableHeader'
@@ -11,6 +11,8 @@ import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/capture-api'
 import { useColumnSort, sortRows } from '../lib/useColumnSort'
 import { formatUsd, formatCompact, formatPrice } from '../lib/market-format'
+import { downloadTableCsv } from '../lib/table-csv'
+import { WRAPPER_CSV_COLUMNS, wrapperCsvRows } from '../lib/rwa-wrapper-csv'
 
 // Wrapper premium, discount and dispersion for one tokenised real-world asset.
 //
@@ -201,6 +203,44 @@ export function reasonText(t, code) {
   return known ? t(`rwa_wrappers.reason_${key}`, { defaultValue: known }) : key
 }
 
+/** The same page with `?asset=<rwa id>` set, every other parameter kept, so
+ * the history panel below the board (RwaWrapperHistory, read from that
+ * parameter) opens on this asset. Null for anything but a numeric RWA id. */
+export function overTimeHref(location, rwaId) {
+  if (!/^[1-9][0-9]{0,11}$/.test(String(rwaId ?? ''))) return null
+  const params = new URLSearchParams(location?.search || '')
+  params.set('asset', String(rwaId))
+  return `${location?.pathname || ''}?${params.toString()}`
+}
+
+/** Market coverage per wrapper (capture-rwa-wrappers-read.ts, marketCoverage). */
+const COVERAGE_LABELS = {
+  tradeable: 'Tradeable',
+  priced_not_traded: 'Priced, not traded',
+  listed_only: 'Listed only',
+  no_tracked_market: 'No tracked market',
+}
+/** Only the coverage reasons the State column does not already say. A missing
+ * price or volume is stated there, once. */
+const COVERAGE_REASONS = {
+  not_in_catalogue: 'Not in the market catalogue, so no market count of ours confirms it. The provider\'s own volume is shown beside it.',
+  not_in_current_catalogue: 'Not in the market catalogue\'s current refresh, so no current market count of ours confirms it. The provider\'s own volume is shown beside it.',
+  no_market_pairs: 'The market catalogue counts no market pairs for this wrapper.',
+  pair_count_not_reported: 'The market catalogue has not reported a pair count for this wrapper.',
+  volume_reported_zero: 'The provider reports zero 24 hour volume.',
+  catalogue_unavailable: 'The market catalogue could not be read, so market coverage was not assessed.',
+}
+/** Why a pick could not be named, where the board's own reasons do not say it. */
+const PICK_REASONS = {
+  no_priced_wrapper: 'No wrapper carries both a premium and a reported volume.',
+  no_anchor: 'There is no anchor to measure a premium against.',
+}
+const PICK_LABELS = {
+  cheapest: 'Cheapest to its anchor',
+  closest: 'Closest to its anchor',
+  mostLiquid: 'Most traded',
+}
+
 const ANCHOR_LABELS = {
   published_nav: 'Published NAV',
   liquid_wrapper_median: 'Liquid wrapper median',
@@ -242,6 +282,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
   // columns mean the same thing in every open row.
   const [assetOrder, setAssetOrder] = useState({ sort: ASSET_DEFAULT_SORT, dir: 'desc' })
   const [tokenOrder, setTokenOrder] = useState({ sort: TOKEN_DEFAULT_SORT, dir: 'desc' })
+  const location = useLocation()
   const assetSort = useColumnSort({
     sort: assetOrder.sort, dir: assetOrder.dir, setSort: setAssetOrder,
     defaultSort: ASSET_DEFAULT_SORT, initialDir: key => (ASCENDING_FIRST.has(key) ? 'asc' : 'desc'),
@@ -304,6 +345,26 @@ export default function RwaWrapperSpread({ showHeading = true }) {
   const anchorLabel = kind => t(`rwa_wrappers.anchor_${kind}`, { defaultValue: ANCHOR_LABELS[kind] || kind })
   const stateLabel = state => t(`rwa_wrappers.state_${state}`, { defaultValue: STATE_LABELS[state] || state })
   const unitLabel = unit => t(`rwa_wrappers.unit_${unit}`, { defaultValue: UNIT_LABELS[unit] || unit })
+  const coverageLabel = state => (state
+    ? t(`rwa_wrapper_coverage.state_${state}`, { defaultValue: COVERAGE_LABELS[state] || state })
+    : t('rwa_wrapper_coverage.state_unassessed', { defaultValue: 'Not assessed' }))
+  const coverageReason = code => (COVERAGE_REASONS[code]
+    ? t(`rwa_wrapper_coverage.reason_${code}`, { defaultValue: COVERAGE_REASONS[code] })
+    : null)
+  const pickReason = code => (PICK_REASONS[code]
+    ? t(`rwa_wrapper_picks.reason_${code}`, { defaultValue: PICK_REASONS[code] })
+    : reasonText(t, code))
+
+  // The CSV is the board as the reader has it ordered: assets in the board's
+  // order, and inside each one the wrappers in the expanded tables' order. The
+  // licence flag comes from the read itself and fails closed.
+  const downloadCsv = () => downloadTableCsv({
+    view: 'rwa_wrappers',
+    asOf: payload.asOf || null,
+    columns: WRAPPER_CSV_COLUMNS,
+    rows: wrapperCsvRows(orderedRows, { asOf: payload.asOf || null, orderTokens }),
+    exportAllowed: payload.sourcePolicy?.exportAllowed === true,
+  })
 
   // The provenance envelope for the whole board. `stored`, because every figure
   // here is read back from rows a scheduled lane already wrote: opening the page
@@ -333,7 +394,9 @@ export default function RwaWrapperSpread({ showHeading = true }) {
     { key: 'price', align: 'right', label: t('rwa_wrappers.col_price', { defaultValue: 'Price' }) },
     { key: 'premium', align: 'right', label: t('rwa_wrappers.col_premium_bps', { defaultValue: 'Premium' }) },
     { key: 'token_volume', align: 'right', label: t('rwa_wrappers.col_token_volume', { defaultValue: '24h volume' }) },
-    { key: null, align: 'left', label: t('rwa_wrappers.col_note', { defaultValue: 'State' }) },
+    // A reading, not a figure, so not sortable, like the State column.
+    { key: null, id: 'coverage', align: 'left', label: t('rwa_wrapper_coverage.col', { defaultValue: 'Coverage' }) },
+    { key: null, id: 'state', align: 'left', label: t('rwa_wrappers.col_note', { defaultValue: 'State' }) },
   ]
 
   return (
@@ -455,6 +518,10 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                       at: utcMinute(payload.asOf) || '—',
                       defaultValue: 'Widest dispersion first, from the capture of {{at}}. Open a row to read its wrappers.',
                     })}
+                    {' '}
+                    <button type="button" className="intel-text-link" onClick={downloadCsv}>
+                      {t('rwa_wrapper_picks.download_csv', { defaultValue: 'Download CSV' })}
+                    </button>
                   </caption>
                   <thead>
                     <tr>
@@ -540,6 +607,13 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                   {row.anchorMeaning}
                                   {row.anchorReason ? ` ${reasonText(t, row.anchorReason)}` : ''}
                                 </p>
+                                {overTimeHref(location, row.rwaId) && (
+                                  <p className="text-[11px] mt-1">
+                                    <Link className="intel-text-link" to={overTimeHref(location, row.rwaId)}>
+                                      {t('rwa_wrapper_picks.over_time', { defaultValue: 'Over time' })}
+                                    </Link>
+                                  </p>
+                                )}
                                 {/* The provider's wrapper rows carry no chain, so
                                     the chain is not a column here: a column of
                                     "not reported" would be a wall of dashes. The
@@ -553,7 +627,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                     <thead>
                                       <tr>
                                         {tokenColumns.map(column => (!column.key
-                                          ? <StaticHeader key="state" label={column.label} align="left" />
+                                          ? <StaticHeader key={column.id} label={column.label} align="left" />
                                           : column.align === 'right'
                                             ? <SortableHeader key={column.key} sortKey={column.key} label={column.label} sort={tokenSort.sort} dir={tokenSort.dir} onToggle={tokenSort.toggle} align="right" />
                                             : <SortableHeader key={column.key} sortKey={column.key} label={column.label} sort={tokenSort.sort} dir={tokenSort.dir} onToggle={tokenSort.toggle} align="left" />
@@ -592,6 +666,17 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                           </td>
                                           <td className={numCell}>{token.volume24h == null ? '—' : formatUsd(token.volume24h)}</td>
                                           <td className={cell}>
+                                            {coverageLabel(token.coverageState)}
+                                            {num(token.marketPairs) != null && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">
+                                                {t('rwa_wrapper_coverage.pairs', { count: num(token.marketPairs), defaultValue: 'Market pairs: {{count}}' })}
+                                              </span>
+                                            )}
+                                            {coverageReason(token.coverageReason) && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{coverageReason(token.coverageReason)}</span>
+                                            )}
+                                          </td>
+                                          <td className={cell}>
                                             {stateLabel(token.state)}
                                             {token.unitState !== 'consistent' && (
                                               <span className="block text-[11px] text-[var(--fg-4)]">{unitLabel(token.unitState)}</span>
@@ -605,6 +690,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                     </tbody>
                                   </table>
                                 </div>
+                                {row.picks && <WrapperPicks picks={row.picks} tokens={row.tokens} t={t} bps={bps} stateLabel={stateLabel} pickReason={pickReason} />}
                               </td>
                             </tr>
                           )}
@@ -706,5 +792,97 @@ export default function RwaWrapperSpread({ showHeading = true }) {
         </>
       )}
     </section>
+  )
+}
+
+/** Which wrapper to name for one asset, three ways, from the picks the read
+ * attached to the row (rwa-wrapper-picks.ts). Three rows in a fixed order, then
+ * one line naming every wrapper that was eligible for none of them and why.
+ * Nothing here is ranked or computed again: the page and the MCP tool read the
+ * same object. */
+export function WrapperPicks({ picks, tokens = [], t, bps = 'bps', stateLabel = state => state, pickReason = code => code }) {
+  const byId = new Map((Array.isArray(tokens) ? tokens : []).map(token => [token.cryptoId, token]))
+  const wrapperCell = pick => {
+    const token = byId.get(pick.cryptoId) || pick
+    const href = wrapperHref(token)
+    const label = pick.symbol || pick.name || pick.cryptoId
+    return href ? <Link className="intel-text-link" to={href}>{label}</Link> : <span>{label}</span>
+  }
+  const rows = ['cheapest', 'closest', 'mostLiquid'].map(key => ({ key, pick: picks?.[key] || { available: false, reason: null } }))
+  const excluded = Array.isArray(picks?.excluded) ? picks.excluded : []
+  return (
+    <div className="mt-3">
+      <div className="eyebrow">{t('rwa_wrapper_picks.eyebrow', { defaultValue: 'Picks' })}</div>
+      <div className="intel-table-scroll mt-1">
+        <table className="intel-rwa-wrapper-picks w-full text-[12px]">
+          <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">
+            {t('rwa_wrapper_picks.caption', { defaultValue: 'Three different questions, three answers from the same capture. Cheapest and closest only consider wrappers that cleared the volume floor. Ties go to the higher volume, then the lower id. Not a recommendation.' })}
+          </caption>
+          <thead>
+            <BoardTableHeader
+              columns={[
+                t('rwa_wrapper_picks.col_pick', { defaultValue: 'Question' }),
+                t('rwa_wrapper_picks.col_wrapper', { defaultValue: 'Wrapper' }),
+                t('rwa_wrapper_picks.col_premium', { defaultValue: 'Premium' }),
+                t('rwa_wrapper_picks.col_volume', { defaultValue: '24h volume' }),
+                t('rwa_wrapper_picks.col_note', { defaultValue: 'Note' }),
+              ]}
+              numeric={[2, 3]}
+            />
+          </thead>
+          <tbody>
+            {rows.map(({ key, pick }) => (
+              <tr key={key}>
+                <th scope="row" className={`${cell} text-left font-normal`}>
+                  {t(`rwa_wrapper_picks.pick_${key}`, { defaultValue: PICK_LABELS[key] })}
+                </th>
+                {pick.available ? (
+                  <>
+                    <td className={cell}>{wrapperCell(pick)}</td>
+                    <td className={numCell}>{bpsLabel(pick.premiumBps, bps) || '—'}</td>
+                    <td className={numCell}>{pick.volume24h == null ? '—' : formatUsd(pick.volume24h)}</td>
+                    <td className={`${cell} text-[11px] text-[var(--fg-4)]`}>
+                      {key === 'closest' && pick.circular && (
+                        <span className="block">
+                          {pick.closestOther
+                            ? t('rwa_wrapper_picks.circular_other', {
+                                other: pick.closestOther.symbol || pick.closestOther.name || pick.closestOther.cryptoId,
+                                premium: bpsLabel(pick.closestOther.premiumBps, bps),
+                                defaultValue: 'This wrapper set the median it is measured against, so its distance is zero by construction. Nearest other wrapper: {{other}} at {{premium}}.',
+                              })
+                            : t('rwa_wrapper_picks.circular_alone', { defaultValue: 'This wrapper set the median it is measured against, so its distance is zero by construction. No other liquid wrapper carries a premium.' })}
+                        </span>
+                      )}
+                      {key === 'cheapest' && picks.cheapestMatchesCaptured === false && (
+                        <span className="block">
+                          {t('rwa_wrapper_picks.tie_note', { defaultValue: 'Tied on premium with the route named on the board; the tie is broken here by volume, then id.' })}
+                        </span>
+                      )}
+                    </td>
+                  </>
+                ) : (
+                  <>
+                    <td className={cell}>—</td>
+                    <td className={numCell}>—</td>
+                    <td className={numCell}>—</td>
+                    <td className={`${cell} text-[11px] text-[var(--fg-4)]`}>
+                      {pickReason(pick.reason) || t('rwa_wrapper_picks.unavailable', { defaultValue: 'No wrapper qualifies.' })}
+                    </td>
+                  </>
+                )}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[11px] text-[var(--fg-4)] mt-1 max-w-[80ch]">
+        {excluded.length
+          ? t('rwa_wrapper_picks.excluded', {
+              list: excluded.map(row => `${row.symbol || row.name || row.cryptoId} (${stateLabel(row.state)}: ${pickReason(row.reason)})`).join('; '),
+              defaultValue: 'Excluded from picks: {{list}}.',
+            })
+          : t('rwa_wrapper_picks.excluded_none', { defaultValue: 'Excluded from picks: none. Every wrapper was eligible for at least one question.' })}
+      </p>
+    </div>
   )
 }

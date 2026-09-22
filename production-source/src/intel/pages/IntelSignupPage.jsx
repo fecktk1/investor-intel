@@ -305,6 +305,11 @@ export default function IntelSignupPage() {
                   {t('signup.sign_in', { defaultValue: 'Sign in' })}
                 </Link>
               </p>
+              <p className="text-center text-xs">
+                <Link to="/intel/demo" className="underline underline-offset-4 text-[var(--fg-3)] hover:text-[var(--fg-1)]" data-intel-demo-entry="">
+                  {t('intel_demo.entry_link', { defaultValue: 'Browse the live demo, no account needed' })}
+                </Link>
+              </p>
             </>
           )}
 

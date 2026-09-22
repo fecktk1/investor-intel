@@ -196,7 +196,7 @@ export function useChartDrawings({project,unproject,width,height,scale,initialIt
  const list=history.items.length>0&&<details className="intel-chart-readings"><summary>{readOnly?t('chart.draw.read_list_readonly',{defaultValue:'Read {{count}} drawings',count:history.items.length}):t('chart.draw.read_list',{defaultValue:'Read and edit {{count}} drawings',count:history.items.length})}</summary>
   <ul className="intel-study-list">{history.items.map(drawing=><li key={drawing.id}>
    <span>{drawingToolLabel(t,drawing.tool)} · {drawing.text||drawing.url||drawing.anchors.map(a=>`${new Date(a.t).toISOString()} · ${a.price}`).join(' → ')}</span>
-   {!readOnly&&<button type="button" onClick={()=>setEditor(drawing)}>{t('chart.draw.edit_short',{defaultValue:'Edit'})}</button>}
+   {!readOnly&&<span className="flex items-center gap-3"><button type="button" onClick={()=>setEditor(drawing)}>{t('chart.draw.edit_short',{defaultValue:'Edit'})}</button><button type="button" onClick={()=>remove(drawing.id)}>{t('chart.draw.delete_short',{defaultValue:'Delete'})}</button></span>}
   </li>)}</ul></details>
  return {items:history.items,add:drawing=>readOnly?false:commit(drawing),reset:items=>{cancel();setSelected(null);dispatch({type:'reset',items})},
   // The toolbar now runs along the top edge of the plot; the price workstation's

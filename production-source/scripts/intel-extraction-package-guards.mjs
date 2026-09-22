@@ -21,6 +21,17 @@ import path from 'node:path'
 /** Public documents copied from examples/investor-intel-hackathon/docs. */
 export const PUBLIC_DOCS = Object.freeze([
   'docs/keyless-demo-mode.md',
+  'docs/real-api-call.md',
+  'docs/build-timeline.md',
+  'docs/demo-guide.md',
+])
+
+/** Private working documents. Never packaged, whatever path they appear under.
+ * The last five were filing preparation: the BUIDL is filed, the video is
+ * recorded, and their unverified drafting markers must not reach judges. */
+export const PRIVATE_DOCS = Object.freeze([
+  'docs/hackathon-submission.md',
+  'docs/filing-checklist.md',
   'docs/submission-requirements.md',
   'docs/judge-walkthrough.md',
   'docs/demo-video-script.md',
@@ -28,11 +39,8 @@ export const PUBLIC_DOCS = Object.freeze([
   'docs/licence-options.md',
 ])
 
-/** Private working documents. Never packaged, whatever path they appear under. */
-export const PRIVATE_DOCS = Object.freeze([
-  'docs/hackathon-submission.md',
-  'docs/filing-checklist.md',
-])
+/** An unresolved drafting marker is never published. */
+export const DRAFT_MARKER = '[[VERIFY-AFTER-MERGE'
 
 const privateNames = new Set(PRIVATE_DOCS.map(file => path.posix.basename(file).toLowerCase()))
 
@@ -77,12 +85,33 @@ export const SECRET_PATTERNS = Object.freeze([
 ])
 
 /**
+ * Exact values reviewed by hand and cleared for publication. Each is removed
+ * from a line before the scan, so any other match on the same line still stops
+ * packaging. Add a value only after reading every place it appears.
+ */
+export const REVIEWED_PUBLIC_VALUES = Object.freeze([
+  // The product's published support address, sent to SEC EDGAR as its contact.
+  'support@thecontentforge.io',
+  // A retired EDGAR agent string kept so old imports resolve; never sent.
+  'intel@thecontentforge.com',
+  // Test fixtures: reserved or obviously fake addresses and a patterned fake key.
+  'contact@example.test',
+  'row@example.test',
+  'x@y.io',
+  'pass@data.sec.gov',
+  '11111111-2222-3333-4444-555555555555',
+  // A made-up reservation id in the reproduce-command test (cmc-reproduce.test.ts).
+  '3f2c9a1e-8b7d-4c6e-9f00-1a2b3c4d5e6f',
+])
+
+/**
  * Findings for one file: [{ file, line, pattern }]. The matched text is never
  * returned. An empty array is the only result that permits packaging.
  */
 export function findSecretShapes(file, text) {
   const findings = []
   const lines = String(text).split(/\r?\n/)
+    .map(line => REVIEWED_PUBLIC_VALUES.reduce((rest, value) => rest.split(value).join(''), line))
   lines.forEach((content, index) => {
     for (const [pattern, expression] of SECRET_PATTERNS) {
       if (expression.test(content)) findings.push({ file, line: index + 1, pattern })
@@ -95,6 +124,8 @@ export function findSecretShapes(file, text) {
 export function assertPublishable(entries) {
   const denied = deniedPackagePaths(entries.map(entry => entry.file))
   if (denied.length) throw Error(`Private document refused by the package denylist: ${denied.join(', ')}`)
+  const drafts = entries.filter(entry => !isBinaryPackagePath(entry.file) && String(entry.text).includes(DRAFT_MARKER)).map(entry => entry.file)
+  if (drafts.length) throw Error(`Unresolved drafting marker; nothing was packaged: ${drafts.join(', ')}`)
   const findings = entries
     .filter(entry => !isBinaryPackagePath(entry.file))
     .flatMap(entry => findSecretShapes(entry.file, entry.text))

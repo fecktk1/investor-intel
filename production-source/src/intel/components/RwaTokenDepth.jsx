@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router'
 import { useProfile } from '../../lib/profile-context'
@@ -7,6 +7,8 @@ import CopyAddress from './CopyAddress'
 import { readCaptureView } from '../lib/capture-api'
 import { formatCompact } from '../lib/market-format'
 import { exitLiquidityText, pctLabel, readingText, unrecognisedText, usdLabel } from '../lib/rwa-depth-format'
+import { EXIT_SCENARIOS, daysLabel, rowExitScenarios } from '../lib/rwa-exit-capacity'
+import RwaExitInputs, { daysText, exitInputs, exitReasonText, initialExitForm } from './RwaExitInputs'
 
 // The "Tokenised asset" block on the asset page.
 //
@@ -23,6 +25,95 @@ import { exitLiquidityText, pctLabel, readingText, unrecognisedText, usdLabel } 
 // nothing. The board keeps the honesty contract; this block keeps the summary.
 
 const rule = 'border-b border-[var(--border-default)]'
+const cell = `${rule} py-2 pr-3 align-top`
+const head = `${rule} text-left font-normal py-2 pr-3`
+
+const SCENARIO_LABEL = {
+  recognised_pools: ['rwa_exit.scenario_pools', 'Recognised on-chain pools'],
+  all_venues: ['rwa_exit.scenario_venues', 'All venues (CoinMarketCap)'],
+}
+
+/** When the volume a scenario used was taken, as text. */
+const whenText = value => (value && Number.isFinite(Date.parse(value)) ? new Date(value).toLocaleString() : null)
+
+// The full single-token exit simulator. Two scenarios side by side, each with
+// its own volume, its own capture time and the arithmetic written out, so the
+// reader can check every day count by hand.
+function ExitSimulator({ token, asOf }) {
+  const { t } = useTranslation('intel', { useSuspense: false })
+  const [form, setForm] = useState(initialExitForm)
+  const inputs = useMemo(() => exitInputs(form), [form])
+  const scenarios = rowExitScenarios(token, inputs)
+  const pools = scenarios.recognised_pools
+  const volumeFor = name => (name === 'all_venues' ? token.providerVolume24hUsd : token.countedVolume24hUsd)
+  const takenFor = name => (name === 'all_venues' ? whenText(token.providerVolumeCapturedAt) : asOf)
+
+  return (
+    <div className="space-y-2" id="intel-rwa-exit">
+      <div className="eyebrow">{t('rwa_exit.eyebrow', { defaultValue: 'Exit capacity' })}</div>
+      <p className="text-[12px] max-w-[80ch]">{t('rwa_exit.token_intro', { defaultValue: 'How many days a position takes to sell if you never trade more than a set share of a day\'s volume. Two volumes are used, because they answer different questions: the pools on chain that this page counts, and every venue CoinMarketCap tracks.' })}</p>
+      <RwaExitInputs form={form} onChange={setForm} idPrefix="rwa-token-exit" />
+      <div className="overflow-x-auto">
+        <table className="w-full text-[12px]">
+          <thead>
+            <tr>
+              <th scope="col" className={head}>{t('rwa_exit.col_scenario', { defaultValue: 'Scenario' })}</th>
+              <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_exit.col_volume', { defaultValue: '24-hour volume' })}</th>
+              <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_exit.col_per_day', { defaultValue: 'Sold per day' })}</th>
+              <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_exit.col_days', { defaultValue: 'Days to exit' })}</th>
+              <th scope="col" className={head}>{t('rwa_exit.col_working', { defaultValue: 'Working' })}</th>
+            </tr>
+          </thead>
+          <tbody>
+            {EXIT_SCENARIOS.map(name => {
+              const estimate = scenarios[name]
+              const [key, fallback] = SCENARIO_LABEL[name]
+              const taken = takenFor(name)
+              return (
+                <tr key={name}>
+                  <th scope="row" className={`${cell} text-left font-normal`}>
+                    {t(key, { defaultValue: fallback })}
+                    {taken && <span className="block text-[var(--fg-4)]">{t('rwa_exit.volume_taken', { when: taken, defaultValue: 'Volume captured {{when}}' })}</span>}
+                  </th>
+                  <td className={`${cell} intel-number`}>{usdLabel(volumeFor(name))}</td>
+                  <td className={`${cell} intel-number`}>{usdLabel(estimate.perDayUsd)}</td>
+                  <td className={`${cell} intel-number`}>{daysText(estimate, t, estimate.volumeReason)}</td>
+                  <td className={`${cell} text-left text-[var(--fg-4)]`}>
+                    {estimate.days != null
+                      ? t('rwa_exit.working', {
+                        position: usdLabel(estimate.formula.positionUsd),
+                        participation: pctLabel(estimate.formula.participation * 100),
+                        volume: usdLabel(estimate.formula.volumeUsd),
+                        haircut: pctLabel(estimate.formula.haircut * 100),
+                        days: daysLabel(estimate.days),
+                        defaultValue: '{{position}} ÷ ({{participation}} × {{volume}} × (1 − {{haircut}})) = {{days}} days',
+                      })
+                      : '—'}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      </div>
+      <p className="text-[12px]">
+        {pools.positionPctOfPool != null
+          ? t(pools.poolBasis === 'exit_liquidity' ? 'rwa_exit.pool_relative_exit' : 'rwa_exit.pool_relative_counted', {
+            pct: pctLabel(pools.positionPctOfPool), base: usdLabel(pools.poolBaseUsd),
+            defaultValue: pools.poolBasis === 'exit_liquidity'
+              ? 'Size relative to recognised pools: the position is {{pct}} of the {{base}} on their quote side after the haircut.'
+              : 'Size relative to recognised pools: the position is {{pct}} of their {{base}} counted liquidity after the haircut.',
+          })
+          : t('rwa_exit.pool_relative_unavailable', { reason: exitReasonText(pools.poolUnavailable, t), defaultValue: 'Size relative to recognised pools: not available ({{reason}}).' })}
+      </p>
+      <p className="text-[11px] leading-relaxed text-[var(--fg-4)] max-w-[80ch]">
+        {t('rwa_exit.token_method', { defaultValue: 'Our calculation: position ÷ (share of daily volume × 24-hour volume × (1 − stress haircut)). "Recognised on-chain pools" uses the 24-hour volume of the pools counted above; "All venues" uses CoinMarketCap\'s 24-hour volume for the token, centralised exchanges included, from the tokenised-asset quotes capture. It assumes volume repeats day after day and models no price impact.' })}
+        {' '}
+        {t('rwa_exit.pool_method', { defaultValue: 'Size relative to recognised pools is the position ÷ the quote-side liquidity CoinMarketCap reported for the counted pools, or their counted liquidity where it reported none, after the same haircut. It compares a size with a pool; it is not a slippage estimate and not a quote.' })}
+      </p>
+    </div>
+  )
+}
 
 export default function RwaTokenDepth({ sourceProvider, providerId }) {
   const { t } = useTranslation('intel', { useSuspense: false })
@@ -133,6 +224,8 @@ export default function RwaTokenDepth({ sourceProvider, providerId }) {
           </ul>
         </div>
       )}
+
+      <ExitSimulator token={token} asOf={asOf} />
 
       <p className="text-[11px] leading-relaxed text-[var(--fg-4)] max-w-[80ch]">
         {exitLiquidityText(token, t) && payload?.exitLiquidityScope ? <>{payload.exitLiquidityScope}{' '}</> : null}
