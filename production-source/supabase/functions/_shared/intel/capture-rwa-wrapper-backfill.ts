@@ -78,6 +78,8 @@ export const RWA_WRAPPER_BACKFILL_CREDIT_CEILING = 400
 export const RWA_WRAPPER_BACKFILL_DAYS = 90
 /** A wrapper whose call failed this many times is no longer retried. */
 export const RWA_WRAPPER_BACKFILL_MAX_ATTEMPTS = 3
+/** Pause before an in-run retry of a failed wrapper, multiplied by the round. */
+const RETRY_PAUSE_MS = 750
 /** Live asset rows read, oldest first, to find each asset's first capture hour.
  * The lane captures at most 60 assets four times a day, so 5,000 rows is the
  * first three weeks of the live history: every asset first seen in that window
@@ -95,6 +97,8 @@ export interface RwaWrapperBackfillDeps extends CaptureDeps {
    * read it. Injected so the refusal is testable. */
   sourcePolicy?: (key: string) => string | undefined
   liquidityFloorUsd?: number
+  /** Pause between in-run retries of a failed wrapper. Injected so tests do not wait. */
+  sleep?: (ms: number) => Promise<void>
 }
 
 const num = (v: unknown): number | null => { if (v == null || v === '' || typeof v === 'boolean') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
@@ -375,8 +379,8 @@ export async function captureRwaWrapperBackfill(
       const beforeDay = dayKey(Date.parse(asset.firstCapturedAt))
       const closes = new Map<string, DailyClose[]>()
       const sourceRefs = new Map<string, string>()
-      const outcome = new Map<string, { spent: number; failure: string | null }>()
-      for (const cryptoId of ids) {
+      const outcome = new Map<string, { spent: number; failure: string | null; tries: number }>()
+      const fetchOne = async (cryptoId: string) => {
         const params = backfillParams(cryptoId)
         // deno-lint-ignore no-explicit-any
         const response: any = await deps.request('ohlcv', params, ctx).catch(() => null)
@@ -384,35 +388,47 @@ export async function captureRwaWrapperBackfill(
         // Credits count only for a request that reached the provider.
         const spent = response?.payload || response?.provenance?.fetchedAt ? estimateCmcCredits('ohlcv', params) : 0
         credits += spent
-        if (!response?.payload) { outcome.set(cryptoId, { spent, failure: text(response?.reason, 80) || 'provider_unavailable' }); continue }
+        const prior = outcome.get(cryptoId)
+        const record = { spent: (prior?.spent ?? 0) + spent, tries: (prior?.tries ?? 0) + 1, failure: null as string | null }
+        if (!response?.payload) { record.failure = text(response?.reason, 80) || 'provider_unavailable'; outcome.set(cryptoId, record); return }
         closes.set(cryptoId, dailyCloses(response.payload, cryptoId, beforeDay, at))
         const receipt = text(response?.receipt?.id ?? response?.provenance?.receiptId, 80)
         sourceRefs.set(cryptoId, `coinmarketcap:ohlcv:${cryptoId}:daily:${RWA_WRAPPER_BACKFILL_DAYS}:${text(response?.provenance?.fetchedAt, 40) || fetchedAt}${receipt ? `:${receipt}` : ''}`.slice(0, 300))
-        outcome.set(cryptoId, { spent, failure: null })
+        outcome.set(cryptoId, record)
+      }
+      for (const cryptoId of ids) await fetchOne(cryptoId)
+      // A wrapper that failed is retried HERE, in the same run, up to its attempt
+      // limit. Its siblings already answered and are never fetched (or paid for)
+      // again: a wrapper that still fails is closed as failed and the asset is
+      // rebuilt from the wrappers that answered, exactly as the terminal path did.
+      const priorAttempts = (cryptoId: string) => num(stateById.get(cryptoId)?.attempts) ?? 0
+      for (let round = 1; round < RWA_WRAPPER_BACKFILL_MAX_ATTEMPTS; round++) {
+        const retry = ids.filter((id) => outcome.get(id)?.failure && priorAttempts(id) + (outcome.get(id)?.tries ?? 0) < RWA_WRAPPER_BACKFILL_MAX_ATTEMPTS)
+        if (!retry.length || credits + perId * retry.length > budget) break
+        await (deps.sleep ?? ((ms: number) => new Promise((resolve) => setTimeout(resolve, ms))))(RETRY_PAUSE_MS * round)
+        for (const cryptoId of retry) await fetchOne(cryptoId)
       }
       assetsDone += 1
       const bump = (cryptoId: string) => (num(stateById.get(cryptoId)?.credits_spent) ?? 0) + (outcome.get(cryptoId)?.spent ?? 0)
-      const tries = (cryptoId: string) => (num(stateById.get(cryptoId)?.attempts) ?? 0) + 1
+      const tries = (cryptoId: string) => priorAttempts(cryptoId) + (outcome.get(cryptoId)?.tries ?? 1)
 
-      const anyFailed = [...outcome.values()].some((o) => o.failure)
-      if (anyFailed) {
-        for (const cryptoId of ids) {
-          const o = outcome.get(cryptoId)!
-          if (o.failure) { failed += 1; note(await saveState(db, cryptoId, { state: 'failed', reason: o.failure, attempts: tries(cryptoId), credits_spent: bump(cryptoId), updated_at: fetchedAt })) }
-          else note(await saveState(db, cryptoId, { state: 'pending', reason: 'waiting_for_other_wrappers_of_asset', attempts: tries(cryptoId), credits_spent: bump(cryptoId), updated_at: fetchedAt }))
-        }
-        continue
+      const failedIds = ids.filter((id) => outcome.get(id)?.failure)
+      for (const cryptoId of failedIds) {
+        failed += 1
+        note(await saveState(db, cryptoId, { state: 'failed', reason: outcome.get(cryptoId)!.failure, attempts: Math.max(tries(cryptoId), RWA_WRAPPER_BACKFILL_MAX_ATTEMPTS), credits_spent: bump(cryptoId), updated_at: fetchedAt }))
       }
+      const answered = ids.filter((id) => !outcome.get(id)?.failure)
+      if (!answered.length) continue
 
       const built = reconstructAsset(asset, closes, { fetchedAt, floor, sourceRefs })
       const write = await insertIgnoring(db, BACKFILL_TABLE, built, 'provider,rwa_id,crypto_id,day,method')
       if (write.error) {
-        for (const cryptoId of ids) note(await saveState(db, cryptoId, { state: 'failed', reason: `write_failed:${write.error}`.slice(0, 200), attempts: tries(cryptoId), credits_spent: bump(cryptoId), updated_at: fetchedAt }))
-        failed += ids.length
+        for (const cryptoId of answered) note(await saveState(db, cryptoId, { state: 'failed', reason: `write_failed:${write.error}`.slice(0, 200), attempts: tries(cryptoId), credits_spent: bump(cryptoId), updated_at: fetchedAt }))
+        failed += answered.length
         continue
       }
       rows += write.rows
-      for (const cryptoId of ids) {
+      for (const cryptoId of answered) {
         const days = built.filter((row) => row.crypto_id === cryptoId).map((row) => String(row.day)).sort()
         if (days.length) {
           complete += 1
