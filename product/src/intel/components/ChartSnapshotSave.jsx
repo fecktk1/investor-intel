@@ -1,0 +1,37 @@
+import React,{useEffect,useRef,useState} from 'react'
+import {Link} from 'react-router'
+import {useTranslation} from 'react-i18next'
+import {requestChartWorkspace} from '../lib/chart-workspace-api'
+export default function ChartSnapshotSave({context,captureLayout,seriesCapture,autoOpen=false}) {
+ const {t}=useTranslation('intel',{useSuspense:false})
+ const [preview,setPreview]=useState(null),[title,setTitle]=useState(t('chart.snapshot_save.default_title',{defaultValue:'Chart research'})),[selected,setSelected]=useState([]),[busy,setBusy]=useState(false),[error,setError]=useState(null),[saved,setSaved]=useState(null)
+ const dialog=useRef(null),trigger=useRef(null),operation=useRef(null),alive=useRef(true),generation=useRef(0)
+ useEffect(()=>{alive.current=true;return()=>{alive.current=false}},[])
+ useEffect(()=>{if(preview)dialog.current?.showModal()},[!!preview]) // eslint-disable-line
+ // Loaded on demand from the chart tools: the press that fetched this opens it.
+ const started=useRef(false)
+ useEffect(()=>{if(autoOpen&&!started.current){started.current=true;open()}},[autoOpen]) // eslint-disable-line react-hooks/exhaustive-deps
+ const close=()=>{generation.current++;setBusy(false);setPreview(null);trigger.current?.focus()}
+ const open=()=>{try{setPreview({layout:captureLayout(),capture:seriesCapture});setSelected([]);setError(null);setSaved(null)}catch(e){setError(e.message==='invalid_chart_asset'?t('chart.snapshot_save.invalid_asset',{asset:context?.asset||t('chart.snapshot_save.unresolved_asset',{defaultValue:'unresolved'}),defaultValue:'This chart cannot save the asset identity “{{asset}}”.'}):e.message)}}
+ const verified=preview?.layout.comparison?preview.capture?.series?.length===preview.layout.comparison.assets.length&&preview.capture.series.every((c,i)=>c.proof&&c.asset===preview.layout.comparison.assets[i].asset):!!preview?.capture?.proof
+ const save=async()=>{
+  const current=++generation.current
+  const body={operation:'snapshot_save',title,layout:preview.layout,capture:preview.capture,includeDrawingIds:selected}
+  const signature=JSON.stringify(body);if(operation.current?.signature!==signature)operation.current={signature,id:crypto.randomUUID()}
+  setBusy(true);setError(null)
+  try{const result=await requestChartWorkspace(context,{...body,operationId:operation.current.id});if(alive.current&&current===generation.current){setSaved(result.id);operation.current=null}}catch(e){if(alive.current&&current===generation.current)setError(e.message)}finally{if(alive.current&&current===generation.current)setBusy(false)}
+ }
+ return <><button type="button" ref={trigger} onClick={open}>{t('chart.snapshot_save.save_snapshot',{defaultValue:'Save snapshot'})}</button>{error&&!preview&&<span role="alert">{error}</span>}
+ {preview&&<dialog ref={dialog} className="intel-chart-study-dialog" aria-labelledby="chart-snapshot-save-title" onCancel={e=>{e.preventDefault();close()}}>
+  <div className="intel-investigation-analysis-heading"><h2 id="chart-snapshot-save-title">{t('chart.snapshot_save.preview_title',{defaultValue:'Preview your snapshot'})}</h2><button type="button" onClick={close}>{t('common.close',{defaultValue:'Close'})}</button></div>
+  <p className="intel-analysis-caption">{t('chart.snapshot_save.intro',{defaultValue:'A snapshot preserves one version of your chart in Saved Research. Sharing is a separate action.'})}</p>
+  <label>{t('chart.snapshot_save.title_label',{defaultValue:'Snapshot title'})}<input maxLength={120} value={title} disabled={busy||!!saved} onChange={e=>setTitle(e.target.value)}/></label>
+  <dl className="intel-event-facts"><dt>{t('chart.snapshot_save.asset',{defaultValue:'Asset'})}</dt><dd>{preview.layout.asset}</dd><dt>{t('chart.snapshot_save.visible_period',{defaultValue:'Visible period (UTC)'})}</dt><dd><div>{new Date(preview.layout.range.from).toISOString()}</div><div>{t('chart.snapshot_save.period_to',{date:new Date(preview.layout.range.to).toISOString(),defaultValue:'to {{date}}'})}</div></dd><dt>{t('chart.snapshot_save.studies',{defaultValue:'Indicators'})}</dt><dd>{preview.layout.studies.length}</dd><dt>{t('chart.snapshot_save.portfolio_trade_history',{defaultValue:'Portfolio and trade history'})}</dt><dd>{t('chart.snapshot_save.excluded',{defaultValue:'Excluded'})}</dd></dl>
+  {preview.layout.replay&&<p className="intel-analysis-caption">{t('chart.snapshot_save.replay_through',{date:new Date(preview.layout.replay.at).toISOString(),defaultValue:'Replay checkpoint through {{date}}.'})} {preview.layout.replay.knownOnly?t('chart.snapshot_save.replay_known_only',{defaultValue:'Only candles recorded by that time will be retained.'}):t('chart.snapshot_save.replay_corrections',{defaultValue:'Later source corrections may be present.'})} {t('chart.snapshot_save.replay_exclusions',{defaultValue:'Future candles and undated drawings are excluded. Saving now does not backdate the research.'})}</p>}
+  {!preview.layout.replay&&<fieldset className="intel-snapshot-annotations"><legend>{t('chart.snapshot_save.choose_annotations',{defaultValue:'Choose drawings and notes to include'})}</legend>{preview.layout.drawings.length===0?<p>{t('chart.snapshot_save.no_drawings',{defaultValue:'No drawings on this chart.'})}</p>:preview.layout.drawings.map(d=><label key={d.id}><input type="checkbox" disabled={busy||!!saved} checked={selected.includes(d.id)} onChange={e=>setSelected(ids=>e.target.checked?[...ids,d.id]:ids.filter(id=>id!==d.id))}/><span>{d.tool.replaceAll('_',' ')} · {d.text||d.anchors.map(a=>`${new Date(a.t).toISOString()} · ${a.price}`).join(' → ')}</span></label>)}</fieldset>}
+  {preview.layout.comparison&&<div className="intel-compare-readings" tabIndex={0} role="region" aria-label={t('chart.snapshot_save.comparison_preview',{defaultValue:'Comparison capture preview'})}><table><thead><tr><th>{t('chart.snapshot_save.asset',{defaultValue:'Asset'})}</th><th>{t('chart.snapshot_save.original_observations',{defaultValue:'Original observations'})}</th><th>{t('chart.snapshot_save.capture',{defaultValue:'Capture'})}</th></tr></thead><tbody>{preview.layout.comparison.assets.map((a,i)=><tr key={a.asset}><th scope="row">{a.label}<small>{a.asset}</small></th><td>{preview.capture?.series?.[i]?.bars?.length??0}</td><td>{preview.capture?.series?.[i]?.proof?t('chart.snapshot_save.capture_ready',{defaultValue:'Ready for source verification'}):t('chart.snapshot_save.capture_refresh',{defaultValue:'Refresh this asset before saving'})}</td></tr>)}</tbody></table></div>}
+  {!verified&&<p role="status">{t('chart.snapshot_save.unverified_capture',{defaultValue:'A price response has no verified capture. Refresh the comparison or asset chart before saving.'})}</p>}
+  <p className="intel-analysis-caption">{t('chart.snapshot_save.price_retention',{defaultValue:'Price retention depends on source permissions. Where unavailable, the snapshot keeps its source references and fingerprint with a gap notice.'})}</p>
+  {error&&<p role="alert">{error}</p>}{saved?<p role="status">{t('chart.snapshot_save.saved_privately',{defaultValue:'Snapshot saved privately.'})} <Link className="intel-text-link" to={`/intel/chart-snapshots/${saved}`}>{t('chart.snapshot_save.open_snapshot',{defaultValue:'Open snapshot'})}</Link></p>:<button type="button" className="btn btn--primary" disabled={busy||!title.trim()||!verified} onClick={save}>{busy?t('chart.snapshot_save.saving',{defaultValue:'Saving snapshot…'}):t('chart.snapshot_save.save_private',{defaultValue:'Save private snapshot'})}</button>}
+ </dialog>}</>
+}

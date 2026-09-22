@@ -1,0 +1,1819 @@
+{
+  "createdAt": "2026-09-22T17:53:42.045Z",
+  "sourceFiles": [
+    {
+      "source": "examples/investor-intel-hackathon/adapters/ChartWatchlistAdd.jsx",
+      "extracted": "product/src/intel/components/ChartWatchlistAdd.jsx"
+    },
+    {
+      "source": "examples/investor-intel-hackathon/adapters/WatchlistSelection.js",
+      "extracted": "product/src/intel/context/WatchlistSelection.jsx"
+    },
+    {
+      "source": "examples/investor-intel-hackathon/adapters/watchlist-api.js",
+      "extracted": "product/src/intel/lib/watchlist-api.js"
+    },
+    {
+      "source": "examples/investor-intel-hackathon/adapters/chart-working-state.js",
+      "extracted": "product/src/intel/lib/chart-working-state.js"
+    },
+    {
+      "source": "examples/investor-intel-hackathon/adapters/ChartWorkingState.jsx",
+      "extracted": "product/src/intel/components/ChartWorkingState.jsx"
+    },
+    {
+      "source": "examples/investor-intel-hackathon/adapters/ChartShareLaunch.jsx",
+      "extracted": "product/src/intel/components/ChartShareLaunch.jsx"
+    },
+    {
+      "source": "examples/investor-intel-hackathon/adapters/ChartTweetCard.jsx",
+      "extracted": "product/src/intel/components/ChartTweetCard.jsx"
+    },
+    {
+      "source": "src/intel/components/TokenChart.jsx",
+      "extracted": "product/src/intel/components/TokenChart.jsx"
+    },
+    {
+      "source": "src/intel/components/TokenChartFallback.jsx",
+      "extracted": "product/src/intel/components/TokenChartFallback.jsx"
+    },
+    {
+      "source": "src/intel/components/JournalMarkerReceipt.jsx",
+      "extracted": "product/src/intel/components/JournalMarkerReceipt.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartReplayControls.jsx",
+      "extracted": "product/src/intel/components/ChartReplayControls.jsx"
+    },
+    {
+      "source": "src/intel/components/ResponsiveChartTools.jsx",
+      "extracted": "product/src/intel/components/ResponsiveChartTools.jsx"
+    },
+    {
+      "source": "src/intel/components/EvidenceMarkerContext.jsx",
+      "extracted": "product/src/intel/components/EvidenceMarkerContext.jsx"
+    },
+    {
+      "source": "src/intel/components/PriceWorkstation.jsx",
+      "extracted": "product/src/intel/components/PriceWorkstation.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartDrawings.jsx",
+      "extracted": "product/src/intel/components/ChartDrawings.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartLayoutLibrary.jsx",
+      "extracted": "product/src/intel/components/ChartLayoutLibrary.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartAssetNavigator.jsx",
+      "extracted": "product/src/intel/components/ChartAssetNavigator.jsx"
+    },
+    {
+      "source": "src/intel/components/TokenAvatar.jsx",
+      "extracted": "product/src/intel/components/TokenAvatar.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartSnapshotSave.jsx",
+      "extracted": "product/src/intel/components/ChartSnapshotSave.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartAlertEditor.jsx",
+      "extracted": "product/src/intel/components/ChartAlertEditor.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartStructurePanel.jsx",
+      "extracted": "product/src/intel/components/ChartStructurePanel.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartOutcomePanel.jsx",
+      "extracted": "product/src/intel/components/ChartOutcomePanel.jsx"
+    },
+    {
+      "source": "src/intel/components/InvestigationTable.jsx",
+      "extracted": "product/src/intel/components/InvestigationTable.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartReadPanel.jsx",
+      "extracted": "product/src/intel/components/ChartReadPanel.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartPatternPanel.jsx",
+      "extracted": "product/src/intel/components/ChartPatternPanel.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartTimeframePanel.jsx",
+      "extracted": "product/src/intel/components/ChartTimeframePanel.jsx"
+    },
+    {
+      "source": "src/intel/components/deferred-panel.jsx",
+      "extracted": "product/src/intel/components/deferred-panel.jsx"
+    },
+    {
+      "source": "src/intel/components/deferred-tool.jsx",
+      "extracted": "product/src/intel/components/deferred-tool.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartDrawingEditor.jsx",
+      "extracted": "product/src/intel/components/ChartDrawingEditor.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartDrawingSurface.jsx",
+      "extracted": "product/src/intel/components/ChartDrawingSurface.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartDrawingToolbar.jsx",
+      "extracted": "product/src/intel/components/ChartDrawingToolbar.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartDrawingOptions.jsx",
+      "extracted": "product/src/intel/components/ChartDrawingOptions.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartDrawingMorePanel.jsx",
+      "extracted": "product/src/intel/components/ChartDrawingMorePanel.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartIndicatorDialog.jsx",
+      "extracted": "product/src/intel/components/ChartIndicatorDialog.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartIndicatorMenu.jsx",
+      "extracted": "product/src/intel/components/ChartIndicatorMenu.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartIndicatorPanel.jsx",
+      "extracted": "product/src/intel/components/ChartIndicatorPanel.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartLayoutLaunch.jsx",
+      "extracted": "product/src/intel/components/ChartLayoutLaunch.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartWatermark.jsx",
+      "extracted": "product/src/intel/components/ChartWatermark.jsx"
+    },
+    {
+      "source": "src/intel/components/ChartCandleProvenance.jsx",
+      "extracted": "product/src/intel/components/ChartCandleProvenance.jsx"
+    },
+    {
+      "source": "src/intel/components/FigureProvenance.jsx",
+      "extracted": "product/src/intel/components/FigureProvenance.jsx"
+    },
+    {
+      "source": "src/intel/components/SourceCallReceipt.jsx",
+      "extracted": "product/src/intel/components/SourceCallReceipt.jsx"
+    },
+    {
+      "source": "src/intel/components/ReceiptCostLine.jsx",
+      "extracted": "product/src/intel/components/ReceiptCostLine.jsx"
+    },
+    {
+      "source": "src/intel/lib/chart-history.js",
+      "extracted": "product/src/intel/lib/chart-history.js"
+    },
+    {
+      "source": "src/intel/lib/chart-event-changes.js",
+      "extracted": "product/src/intel/lib/chart-event-changes.js"
+    },
+    {
+      "source": "src/intel/lib/useChartAlertHistory.js",
+      "extracted": "product/src/intel/lib/useChartAlertHistory.js"
+    },
+    {
+      "source": "src/intel/lib/chart-workspace-api.js",
+      "extracted": "product/src/intel/lib/chart-workspace-api.js"
+    },
+    {
+      "source": "src/intel/lib/chart-replay.js",
+      "extracted": "product/src/intel/lib/chart-replay.js"
+    },
+    {
+      "source": "src/intel/lib/chart-renderer-data.js",
+      "extracted": "product/src/intel/lib/chart-renderer-data.js"
+    },
+    {
+      "source": "src/intel/lib/useChartStudies.js",
+      "extracted": "product/src/intel/lib/useChartStudies.js"
+    },
+    {
+      "source": "src/intel/lib/chart-study.worker.js",
+      "extracted": "product/src/intel/lib/chart-study.worker.js"
+    },
+    {
+      "source": "src/intel/lib/chart-drawings.js",
+      "extracted": "product/src/intel/lib/chart-drawings.js"
+    },
+    {
+      "source": "src/intel/lib/chains.js",
+      "extracted": "product/src/intel/lib/chains.js"
+    },
+    {
+      "source": "src/intel/lib/useChartStructure.js",
+      "extracted": "product/src/intel/lib/useChartStructure.js"
+    },
+    {
+      "source": "src/intel/lib/chart-structure.worker.js",
+      "extracted": "product/src/intel/lib/chart-structure.worker.js"
+    },
+    {
+      "source": "src/intel/lib/chart-drawing-snap.js",
+      "extracted": "product/src/intel/lib/chart-drawing-snap.js"
+    },
+    {
+      "source": "src/intel/lib/chart-drawing-tools.js",
+      "extracted": "product/src/intel/lib/chart-drawing-tools.js"
+    },
+    {
+      "source": "src/intel/lib/chart-size.js",
+      "extracted": "product/src/intel/lib/chart-size.js"
+    },
+    {
+      "source": "src/intel/lib/chart-watermark.js",
+      "extracted": "product/src/intel/lib/chart-watermark.js"
+    },
+    {
+      "source": "src/intel/lib/chart-indicators.js",
+      "extracted": "product/src/intel/lib/chart-indicators.js"
+    },
+    {
+      "source": "src/intel/lib/source-receipt.js",
+      "extracted": "product/src/intel/lib/source-receipt.js"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-workspace-contract.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-workspace-contract.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-analysis.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-analysis.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-outcome-contract.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-outcome-contract.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-drawing-geometry.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-drawing-geometry.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-outcome.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-outcome.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-read.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-read.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-levels.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-levels.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-structure.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-structure.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-patterns.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-patterns.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chart-timeframes.ts",
+      "extracted": "product/supabase/functions/_shared/intel/chart-timeframes.ts"
+    },
+    {
+      "source": "src/intel/vendor/lightweight-charts-5.2.0/renderer.mjs",
+      "extracted": "product/src/intel/vendor/lightweight-charts-5.2.0/renderer.mjs"
+    },
+    {
+      "source": "src/intel/vendor/lightweight-charts-5.2.0/LICENSE",
+      "extracted": "product/src/intel/vendor/lightweight-charts-5.2.0/LICENSE"
+    },
+    {
+      "source": "src/intel/vendor/lightweight-charts-5.2.0/NOTICE",
+      "extracted": "product/src/intel/vendor/lightweight-charts-5.2.0/NOTICE"
+    },
+    {
+      "source": "src/intel/workspace.css",
+      "extracted": "product/src/intel/workspace.css"
+    },
+    {
+      "source": "public/logo-light.png",
+      "extracted": "public/logo-light.png"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-capabilities.ts",
+      "extracted": "server/cmc-capabilities.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-dex.ts",
+      "extracted": "server/cmc-dex.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-evidence-shape.ts",
+      "extracted": "server/cmc-evidence-shape.ts"
+    },
+    {
+      "source": "public/vsx-fonts/inter-400.woff2",
+      "extracted": "public/vsx-fonts/inter-400.woff2"
+    },
+    {
+      "source": "public/vsx-fonts/barlow-condensed-600.woff2",
+      "extracted": "public/vsx-fonts/barlow-condensed-600.woff2"
+    },
+    {
+      "source": "public/vsx-fonts/geist-mono-400.woff2",
+      "extracted": "public/vsx-fonts/geist-mono-400.woff2"
+    },
+    {
+      "source": "public/vsx-fonts/LICENSE.md",
+      "extracted": "public/vsx-fonts/LICENSE.md"
+    },
+    {
+      "source": "docs/investor-intel/evidence/cmc-receipt-evidence-2026-09-16.json",
+      "extracted": "evidence/recorded-cmc-calls/cmc-receipt-evidence-2026-09-16.json"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-depth-read.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-depth-read.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-depth.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-depth.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-issuer-read.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer-read.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-issuer.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-underlyings-read.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings-read.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-underlyings.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-wrappers-read.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers-read.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-wrappers.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-yield-read.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-yield-read.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-yield.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-yield.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-depth-read.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-depth-read.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-depth.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-depth.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-issuer-read.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer-read.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-issuer.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-underlyings-read.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings-read.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-underlyings.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-wrappers.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-yield-read.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-yield-read.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-yield.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-yield.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-admission-drift.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-admission-drift.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-benchmark-rates.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-benchmark-rates.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-counter-leg.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-counter-leg.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-issuer-aliases.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-issuer-aliases.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-issuer-evidence.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-issuer-evidence.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-legitimacy.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-legitimacy.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-nav-integrity.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-nav-integrity.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-portfolio-exposure.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-portfolio-exposure.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-terms.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-terms.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-wrapper-spread.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-yield-realized.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-yield-realized.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-yield-register.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-yield-register.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-admission-drift.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-admission-drift.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-benchmark-rates.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-benchmark-rates.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-counter-leg.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-counter-leg.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-issuer-aliases.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-issuer-aliases.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-issuer-review-cycles.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-issuer-review-cycles.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-legitimacy.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-legitimacy.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-nav-integrity.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-nav-integrity.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-portfolio-exposure.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-portfolio-exposure.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-terms.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-terms.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-wrapper-spread.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-yield-realized.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-yield-realized.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-yield-register.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-yield-register.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/blockscout.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/blockscout.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/blockscout.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/blockscout.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/edgar-agent.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar-agent.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/edgar-agent.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar-agent.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/edgar.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/edgar.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/gleif.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/gleif.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/gleif.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/gleif.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/http.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/http.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/http.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/http.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/ofac.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/ofac.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/ofac.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/ofac.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/sourcify.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/sourcify.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/sourcify.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/sourcify.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/rwa-sources/test-support.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/rwa-sources/test-support.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chainlink-nav.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/chainlink-nav.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/chainlink-nav.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/chainlink-nav.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/sec-nmfp-yield.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/sec-nmfp-yield.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/sec-nmfp-yield.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/sec-nmfp-yield.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-jobs.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-jobs.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/bounded-request.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/bounded-request.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/market-source-versions.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/market-source-versions.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/market-source-reference.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/market-source-reference.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/investigation-normalize.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/investigation-normalize.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/investigation-evidence.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/investigation-evidence.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/stress-scenario-contract.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/stress-scenario-contract.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/cmc-dex-evidence.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/cmc-dex-evidence.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/market-figure-scope.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/market-figure-scope.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/market-read-quality.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/market-read-quality.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/representation-review.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/representation-review.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-capabilities.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-capabilities.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-demand-policy.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-demand-policy.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-dex-platforms.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-dex-platforms.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-dex.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-dex.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-evidence-shape.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-evidence-shape.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-live-focus.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-live-focus.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-operating-settings.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-operating-settings.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-price.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-price.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-quote-groups.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-quote-groups.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-refresh-planner.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-refresh-planner.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-transport.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-transport.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/coinmarketcap-provider.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/coinmarketcap-provider.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/issuer-identities.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/issuer-identities.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/types.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/types.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-cache-read-failure.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-cache-read-failure.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-catalog.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-catalog.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-connected-dex.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-connected-dex.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-demand-policy.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-demand-policy.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-dex-platforms.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-dex-platforms.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-evidence-shape.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-evidence-shape.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-live-focus.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-live-focus.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-operating-settings.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-operating-settings.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-price.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-price.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-quote-groups.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-quote-groups.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-recording-policy.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-recording-policy.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/market-assets/cmc-refresh-planner.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/market-assets/cmc-refresh-planner.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/chains.ts",
+      "extracted": "production-source/supabase/functions/_shared/chains.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/provider-budget.ts",
+      "extracted": "production-source/supabase/functions/_shared/provider-budget.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/memecoin/degen-gate.ts",
+      "extracted": "production-source/supabase/functions/_shared/memecoin/degen-gate.ts"
+    },
+    {
+      "source": "supabase/migrations/20260920150000_intel_rwa_wrapper_spread.sql",
+      "extracted": "production-source/supabase/migrations/20260920150000_intel_rwa_wrapper_spread.sql"
+    },
+    {
+      "source": "supabase/migrations/20260920151000_intel_rwa_depth.sql",
+      "extracted": "production-source/supabase/migrations/20260920151000_intel_rwa_depth.sql"
+    },
+    {
+      "source": "supabase/migrations/20260920152000_intel_rwa_underlying_registrants.sql",
+      "extracted": "production-source/supabase/migrations/20260920152000_intel_rwa_underlying_registrants.sql"
+    }
+  ],
+  "files": [
+    {
+      "file": "package.json",
+      "bytes": 627,
+      "sha256": "c3b32300bd40a679c54bed37ffd7779228402a612c17bfd766fdca3781d41500"
+    },
+    {
+      "file": "package-lock.json",
+      "bytes": 48296,
+      "sha256": "59ecab375d9e731bc2ba21993404fb2504f093b11047aa72b5ffb44459068e84"
+    },
+    {
+      "file": ".gitignore",
+      "bytes": 50,
+      "sha256": "cf9537927a9344ae058b0ae0416ed229ef2a6e0189c597accee33422cadd66d3"
+    },
+    {
+      "file": ".env.example",
+      "bytes": 526,
+      "sha256": "b794367e57bc839be873993269b8d0d67bc68b0b155eedbd1548201d3dfca27a"
+    },
+    {
+      "file": "README.md",
+      "bytes": 23800,
+      "sha256": "7f6355d867c043a6043917219637e18696f75fc7d9ebaf63df673d18cbdba597"
+    },
+    {
+      "file": "index.html",
+      "bytes": 317,
+      "sha256": "4dcce004b5c247b66d9ec4d652fa88855ace9473abf199845335c3650c85c321"
+    },
+    {
+      "file": "vite.config.mjs",
+      "bytes": 389,
+      "sha256": "5db96f64a464ff10eba3c87845b61011551dcb6dcbb251af4e5113dbbd081325"
+    },
+    {
+      "file": "dev.mjs",
+      "bytes": 767,
+      "sha256": "4e43ca899fa28e1d63b597c24387c8484c04198125bbfb7dfb3315519ecea846"
+    },
+    {
+      "file": "src/main.jsx",
+      "bytes": 27183,
+      "sha256": "f62f5022610725e510418ffd33046b9133f47cc03e78eba8d3192a4c23c6d516"
+    },
+    {
+      "file": "src/style.css",
+      "bytes": 17776,
+      "sha256": "1940cab29ced5b240979e44e69e210fe02c964406d56c8db950d4d9a5fc39054"
+    },
+    {
+      "file": "src/fixtures.mjs",
+      "bytes": 3429,
+      "sha256": "e249462baef341a479762c73e7ea3fa14b0847285023cebc74cee65e36c352d5"
+    },
+    {
+      "file": "src/notebook.mjs",
+      "bytes": 531,
+      "sha256": "19e8be61e98718ca06907fafbf564c76dcafd67440e1ed117241b45000387d0d"
+    },
+    {
+      "file": "src/chart-data.mjs",
+      "bytes": 1989,
+      "sha256": "a971f644d0510309c42407c1bf53e061b680763f9bef690ebb4fa038effa6395"
+    },
+    {
+      "file": "server/index.mjs",
+      "bytes": 2083,
+      "sha256": "41908c3c91a4475e1ca04348a4e28f22510225111c8fd761852e5e0ceaa2e855"
+    },
+    {
+      "file": "server/governance.mjs",
+      "bytes": 6740,
+      "sha256": "7c18f703236910705d6acc748644bd4422d83899690cbc8ab9a5dda52cdccdfb"
+    },
+    {
+      "file": "server/keyless.mjs",
+      "bytes": 14278,
+      "sha256": "3586b317e60de4551fd838370c9449ef6a53cf86723d373f9f0379fb358ba50f"
+    },
+    {
+      "file": "scripts/capture-keyless-evidence.mjs",
+      "bytes": 9442,
+      "sha256": "f128647f134036d92d8cce0887935c24fe2628e7169d93c2906b73bcf2bb0570"
+    },
+    {
+      "file": "tests/governance.test.mjs",
+      "bytes": 5307,
+      "sha256": "390c15d2c3765f380b5966358fe01959df9d4d2b9767885b237e0e189bb8fb29"
+    },
+    {
+      "file": "tests/keyless.test.mjs",
+      "bytes": 10935,
+      "sha256": "3fbd243c04dacc686c44a3ad9f10dcb85872f8d0819673915547cbc4af9bc4ec"
+    },
+    {
+      "file": "tests/notebook.test.mjs",
+      "bytes": 799,
+      "sha256": "9ddf9add3cf712404ccd454934f07e13992fbf26aff7dcbabe6a7c7c7dab0ee4"
+    },
+    {
+      "file": "tests/chart-data.test.mjs",
+      "bytes": 1658,
+      "sha256": "84a241aab403bb73a2994298c65c0b5d5fb84894fb210a456d26d498ba82a2c4"
+    },
+    {
+      "file": "tests/capture-keyless-evidence.test.mjs",
+      "bytes": 6932,
+      "sha256": "60726b8aea456868c27ee908e34621da2a20d9d7e9d5e6280fd21b9cff12a64a"
+    },
+    {
+      "file": "docs/keyless-demo-mode.md",
+      "bytes": 19471,
+      "sha256": "eaf20e42f2bb0d3fde6363acc419692ebde96f343645a8227b34d86f537c525d"
+    },
+    {
+      "file": "docs/real-api-call.md",
+      "bytes": 5272,
+      "sha256": "2526d1f93ea410edae4e4e71ac9c327be77bcd5cb8b572c8b4cc191e0453d60a"
+    },
+    {
+      "file": "product/src/intel/components/ChartWatchlistAdd.jsx",
+      "bytes": 151,
+      "sha256": "467370775c70167e1f4bc1cab0fbba81ec5d4733d009bbe2de70f3fb43cce538"
+    },
+    {
+      "file": "product/src/intel/context/WatchlistSelection.jsx",
+      "bytes": 205,
+      "sha256": "82d30b7839c59a7df7e40a353ed13688479347ba02f4e8e835659729aacef021"
+    },
+    {
+      "file": "product/src/intel/lib/watchlist-api.js",
+      "bytes": 128,
+      "sha256": "236c8e8def5bac46599db74e3657c13399aa15f4e766037f8466d837dbb43f77"
+    },
+    {
+      "file": "product/src/intel/lib/chart-working-state.js",
+      "bytes": 1077,
+      "sha256": "94ee85faa8d28b7b186a05d22840cf0bb5bb1901a275b308bf2a4cc4a7cd7717"
+    },
+    {
+      "file": "product/src/intel/components/ChartWorkingState.jsx",
+      "bytes": 1090,
+      "sha256": "219b8a3a32d36a93ac3a65809153a183664138cdacf81c7668aa788af239bd90"
+    },
+    {
+      "file": "product/src/intel/components/ChartShareLaunch.jsx",
+      "bytes": 1322,
+      "sha256": "22666dfc1f58d2ffb29c009e34d9ef210d33baea2e3375a8e10f2fbb251c2e14"
+    },
+    {
+      "file": "product/src/intel/components/ChartTweetCard.jsx",
+      "bytes": 2438,
+      "sha256": "a1fd0d75f43e8afa697b9d941d7b2164b50aae867925da47745d102e3e636d92"
+    },
+    {
+      "file": "product/src/intel/components/TokenChart.jsx",
+      "bytes": 38834,
+      "sha256": "d4c03c1bd66591237198410a769fc4541a06861c3fc239a0b1299aa0170913da"
+    },
+    {
+      "file": "product/src/intel/components/TokenChartFallback.jsx",
+      "bytes": 3636,
+      "sha256": "c99ce8f0dae48dce18b9580b9ba95cb729a001d2830f66b6435f30c6ac8d1cc5"
+    },
+    {
+      "file": "product/src/intel/components/JournalMarkerReceipt.jsx",
+      "bytes": 2259,
+      "sha256": "bc2b14bb030b4220e617c27be90bf53c7054ef636e7d1507e3e0c39f277311fe"
+    },
+    {
+      "file": "product/src/intel/components/ChartReplayControls.jsx",
+      "bytes": 4725,
+      "sha256": "770c07f9a878dd1866b45615a6586768a125bae019c92fd866eb03b9e0b37f57"
+    },
+    {
+      "file": "product/src/intel/components/ResponsiveChartTools.jsx",
+      "bytes": 635,
+      "sha256": "d4d38b39df2a0812a34e608f0adc8bd2fa598211830d61508dc3725603c4d058"
+    },
+    {
+      "file": "product/src/intel/components/EvidenceMarkerContext.jsx",
+      "bytes": 1915,
+      "sha256": "5eedbbe41291549ff13b23159be6f661c9c8f1edab5426343c2195ee396b8acb"
+    },
+    {
+      "file": "product/src/intel/components/PriceWorkstation.jsx",
+      "bytes": 42542,
+      "sha256": "1e8df365c1cc3a9ef210bfd4e6424e04853bc407591df4fbe911366b1f3e6c44"
+    },
+    {
+      "file": "product/src/intel/components/ChartDrawings.jsx",
+      "bytes": 14050,
+      "sha256": "716fa7681fea9ff62851b40b0c6bd652811a6b6703d1d37c791b77aca05a8363"
+    },
+    {
+      "file": "product/src/intel/components/ChartLayoutLibrary.jsx",
+      "bytes": 8673,
+      "sha256": "0e22e85220dd0957a0d28301984e3e5f104a9f65a7a3aa7fbda43783da4e20b6"
+    },
+    {
+      "file": "product/src/intel/components/ChartAssetNavigator.jsx",
+      "bytes": 6751,
+      "sha256": "87ec1a14acfe6aa28baa1d2da2eabc9fb1f77c275f1ee155cad55da9fc72f4ca"
+    },
+    {
+      "file": "product/src/intel/components/TokenAvatar.jsx",
+      "bytes": 2259,
+      "sha256": "a12cbde1ce5dae8b4d52ba2c69bcd37435c16f049a904127538c1a0706457850"
+    },
+    {
+      "file": "product/src/intel/components/ChartSnapshotSave.jsx",
+      "bytes": 7524,
+      "sha256": "6bf78f230e015d88599f0e6d36716f5c82c7a919dc12f194806ee7f4ca37021a"
+    },
+    {
+      "file": "product/src/intel/components/ChartAlertEditor.jsx",
+      "bytes": 8200,
+      "sha256": "aba19de10e4689bebd1c4861d1f6c5ec30121bdb3068b14ede014d6f6a811ab5"
+    },
+    {
+      "file": "product/src/intel/components/ChartStructurePanel.jsx",
+      "bytes": 7714,
+      "sha256": "177bf7d01b7865c74e9fdc24bc9e7b7edbe93537fdbac914ff3302c911602773"
+    },
+    {
+      "file": "product/src/intel/components/ChartOutcomePanel.jsx",
+      "bytes": 8279,
+      "sha256": "4d13b9d13ef1cd849e22b1718760075ba41a833db9d7c9443d2a710c885abd3c"
+    },
+    {
+      "file": "product/src/intel/components/InvestigationTable.jsx",
+      "bytes": 1791,
+      "sha256": "2bd49fa0c0f85ffea597f73cd12c44d9b89db79f7b8f4dabc3d5251766ae3ab0"
+    },
+    {
+      "file": "product/src/intel/components/ChartReadPanel.jsx",
+      "bytes": 5211,
+      "sha256": "5f2cee09ebc3b01ffd9dc6d9c72eab49e300cefc80e3baf2bbdfb7be468974b7"
+    },
+    {
+      "file": "product/src/intel/components/ChartPatternPanel.jsx",
+      "bytes": 7012,
+      "sha256": "c86274e7e737ade3ea0b9aa3bdee46e5029fd8729ac3a4c8fe56e0d7a64a47b9"
+    },
+    {
+      "file": "product/src/intel/components/ChartTimeframePanel.jsx",
+      "bytes": 3582,
+      "sha256": "cef7675841276f6d837937a8161846a76b0107a11686c9d05f812b6a73c227d5"
+    },
+    {
+      "file": "product/src/intel/components/deferred-panel.jsx",
+      "bytes": 1985,
+      "sha256": "b734bd2fffbd54ffba9001da8d7a902679f99bfd2882173e119422d779c3bec9"
+    },
+    {
+      "file": "product/src/intel/components/deferred-tool.jsx",
+      "bytes": 1309,
+      "sha256": "2e86c3642102e5c0b237efd4298da0b97c3ac91c3965f228faae2cc5a2dd1cd7"
+    },
+    {
+      "file": "product/src/intel/components/ChartDrawingEditor.jsx",
+      "bytes": 4392,
+      "sha256": "0fa6955d82e279e6506910001f4816c3df72f4d13b9fe532e03cbbd5458fafc9"
+    },
+    {
+      "file": "product/src/intel/components/ChartDrawingSurface.jsx",
+      "bytes": 5818,
+      "sha256": "8f981e35ebf7e614b6e69f151edb881051384072034aa6acd92d404dbc062107"
+    },
+    {
+      "file": "product/src/intel/components/ChartDrawingToolbar.jsx",
+      "bytes": 6706,
+      "sha256": "4d8fe0609163957ab3c3baea9e614440b105478a91d4055ff215690b577af63e"
+    },
+    {
+      "file": "product/src/intel/components/ChartDrawingOptions.jsx",
+      "bytes": 2406,
+      "sha256": "513a1330282e9308f5c1edd5877b4dc0fde2c55967c324ce0710a1b3be2d60e1"
+    },
+    {
+      "file": "product/src/intel/components/ChartDrawingMorePanel.jsx",
+      "bytes": 830,
+      "sha256": "2c170af4ef5820e577db2fdad9fc1d2561f7b7e21c921c84e98e014215c821bd"
+    },
+    {
+      "file": "product/src/intel/components/ChartIndicatorDialog.jsx",
+      "bytes": 3767,
+      "sha256": "b3c531d013263b7200d6c30d2fecc0f4ff7a7c66f11c67889599ea736e777d23"
+    },
+    {
+      "file": "product/src/intel/components/ChartIndicatorMenu.jsx",
+      "bytes": 2098,
+      "sha256": "10634aac5590a3e3faff969c917837d9a4298eea34b9ff83200556277501f5b7"
+    },
+    {
+      "file": "product/src/intel/components/ChartIndicatorPanel.jsx",
+      "bytes": 2349,
+      "sha256": "b4465656dae3fec453b309e0dcff69ec36d10beb844c332b6852999bb99ad1bc"
+    },
+    {
+      "file": "product/src/intel/components/ChartLayoutLaunch.jsx",
+      "bytes": 1541,
+      "sha256": "0aaaeddbe3334be594b2d2e09f3ff8c81c141b332f8439f7e2b84fe500951445"
+    },
+    {
+      "file": "product/src/intel/components/ChartWatermark.jsx",
+      "bytes": 861,
+      "sha256": "6f31d82e97c9ee93d3f5e755cf64d9a070e0e93c32513d91a339d56a7b10cb5b"
+    },
+    {
+      "file": "product/src/intel/components/ChartCandleProvenance.jsx",
+      "bytes": 1570,
+      "sha256": "8a2c02c5e7b36304852b096929fc815fe16ce553ca0ee9819abde19a4deaa68d"
+    },
+    {
+      "file": "product/src/intel/components/FigureProvenance.jsx",
+      "bytes": 4355,
+      "sha256": "0a34efd35f91f11352fc639d79cfaa66a698f8740b2e054d765779f0e09cfe65"
+    },
+    {
+      "file": "product/src/intel/components/SourceCallReceipt.jsx",
+      "bytes": 6230,
+      "sha256": "53c581e271954718afbc1208ca54f6630999cabb479963422e7a66a96f96ec04"
+    },
+    {
+      "file": "product/src/intel/components/ReceiptCostLine.jsx",
+      "bytes": 2964,
+      "sha256": "487bc63a73c0d4a2429856bbf35a28e80f1ccb1ebdc3a49ac02fa921207c59bb"
+    },
+    {
+      "file": "product/src/intel/lib/chart-history.js",
+      "bytes": 4517,
+      "sha256": "004110969570545ef3615e9fe81b69449296050ca4b868cf361799e5db6dacc6"
+    },
+    {
+      "file": "product/src/intel/lib/chart-event-changes.js",
+      "bytes": 1046,
+      "sha256": "2851e9f059d99e6262d70be28ef9c7bcb96cee0d4912728be8e42a5a49e279e4"
+    },
+    {
+      "file": "product/src/intel/lib/useChartAlertHistory.js",
+      "bytes": 4300,
+      "sha256": "e72336f8495235819dae0d292d8ea3018738a056df9cceb197dcebc16ce8bc3e"
+    },
+    {
+      "file": "product/src/intel/lib/chart-workspace-api.js",
+      "bytes": 4103,
+      "sha256": "8e329b14b46866c056c877012361ce18263efd8432a43b3965c40335368614d3"
+    },
+    {
+      "file": "product/src/intel/lib/chart-replay.js",
+      "bytes": 1321,
+      "sha256": "22a151f384af2ec7949d0aebfbb9a0fab20e438ebb7e4e3427bd8d4a06ff0658"
+    },
+    {
+      "file": "product/src/intel/lib/chart-renderer-data.js",
+      "bytes": 4647,
+      "sha256": "04319aa14383932da727070d08222f50d5a87e2662170c88cc473da44699b526"
+    },
+    {
+      "file": "product/src/intel/lib/useChartStudies.js",
+      "bytes": 1402,
+      "sha256": "25eef82de16507af1a922ca878853e93d85e9aabf27c75b57b59efa8339f7806"
+    },
+    {
+      "file": "product/src/intel/lib/chart-study.worker.js",
+      "bytes": 320,
+      "sha256": "dc7dfa0566ffa431e8efa749a355af03cbe017b7a0d17bc92c8a30ee126f081d"
+    },
+    {
+      "file": "product/src/intel/lib/chart-drawings.js",
+      "bytes": 1626,
+      "sha256": "76a6c2f87ee9be7020549281d005dbd92d2392031ccbfdc803fb5da29f2d7b0f"
+    },
+    {
+      "file": "product/src/intel/lib/chains.js",
+      "bytes": 26032,
+      "sha256": "b5c2b4ff045c34830f9bf1f3fd5eadf81fbed554176747dbe0d04b8ebbb4d31d"
+    },
+    {
+      "file": "product/src/intel/lib/useChartStructure.js",
+      "bytes": 1251,
+      "sha256": "0b57b92b44461d6f3e8bd07df6a5ebe956778abb3a9f0e95409c692bf5fc5266"
+    },
+    {
+      "file": "product/src/intel/lib/chart-structure.worker.js",
+      "bytes": 964,
+      "sha256": "efe05c19cf526f4e3cb4143d72a0045b06a2332e742ea9cabbea0432beabb886"
+    },
+    {
+      "file": "product/src/intel/lib/chart-drawing-snap.js",
+      "bytes": 2353,
+      "sha256": "893d0865bb4b83703522efe116cb85a2fe2f4b37a2167237a4f48bbc32952950"
+    },
+    {
+      "file": "product/src/intel/lib/chart-drawing-tools.js",
+      "bytes": 5323,
+      "sha256": "66790124518c97893797d6bff698d4cbfc053959c875317fb8bcd70ec8aaf269"
+    },
+    {
+      "file": "product/src/intel/lib/chart-size.js",
+      "bytes": 1058,
+      "sha256": "de662f4ef07695fcc5c69ad85311b3bb790b4f0e6cc5711db7d2e891937b59be"
+    },
+    {
+      "file": "product/src/intel/lib/chart-watermark.js",
+      "bytes": 1625,
+      "sha256": "cc7b1084b8051a5ff904329f4ebb8bb0ce06040dc06beb5ae172b671c63251c6"
+    },
+    {
+      "file": "product/src/intel/lib/chart-indicators.js",
+      "bytes": 1659,
+      "sha256": "2e0f4356bfbd6403fe10927ccac1cfeaefb1ee3f3979e4865cd90ec73f597a09"
+    },
+    {
+      "file": "product/src/intel/lib/source-receipt.js",
+      "bytes": 11307,
+      "sha256": "a164921339890c0c9ea3291c2636b29c5d280b6485a1ba60b47e99a246e15f48"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-workspace-contract.ts",
+      "bytes": 11948,
+      "sha256": "b550f1e0a2ee54b06ca1e66006204c40f6fa03a0db11b619d418badde8f58820"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-analysis.ts",
+      "bytes": 17679,
+      "sha256": "f8f4b1f5bee49c5454e06dbc34b85c3752db9b64546b2c0a6b5bb8365883ec67"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-outcome-contract.ts",
+      "bytes": 2552,
+      "sha256": "55bbde171c5cb79c34ae32fcb8ebb032255a169044dfd617be4292911086aa49"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-drawing-geometry.ts",
+      "bytes": 4611,
+      "sha256": "9017c25ec48b62cd29c14faeaedf91bceae29d2409ae3c9564bf0db37fd78c07"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-outcome.ts",
+      "bytes": 7366,
+      "sha256": "a17fa5f441afb7268768accaf337b671d2d3ac6803921904c271dc42a2c7bc93"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-read.ts",
+      "bytes": 6801,
+      "sha256": "50d977fb8c7700a505f3725d4c457c680870ae2edec4095dc6ed74cdf2b96077"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-levels.ts",
+      "bytes": 4157,
+      "sha256": "bc5cf1f3629ca7569fa8cae262d36ac215afd7adad12e4f394f432ebd69db38b"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-structure.ts",
+      "bytes": 7572,
+      "sha256": "0cc8bf6ba81b1c189c0d03278c2ecb3195a4bfdda6c9e734fc64e03c000257eb"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-patterns.ts",
+      "bytes": 13173,
+      "sha256": "a9910f7d402eb5fe6880847a1ec551012f180b781f782db393039722235626d4"
+    },
+    {
+      "file": "product/supabase/functions/_shared/intel/chart-timeframes.ts",
+      "bytes": 6837,
+      "sha256": "eecbd31f98e94f63e82d8cd8e5c50ff084ad2ebcc6db55cfea1510501a05ef95"
+    },
+    {
+      "file": "product/src/intel/vendor/lightweight-charts-5.2.0/renderer.mjs",
+      "bytes": 196108,
+      "sha256": "66ac22df1b08de08ec2fae2b401b0f9731a4653a28e18a9837c7c3553c33dbe2"
+    },
+    {
+      "file": "product/src/intel/vendor/lightweight-charts-5.2.0/LICENSE",
+      "bytes": 11347,
+      "sha256": "70c9d5382506dd184465425c08a99ad9bd6d9ac1313c252968ba0b585e5ef823"
+    },
+    {
+      "file": "product/src/intel/vendor/lightweight-charts-5.2.0/NOTICE",
+      "bytes": 101,
+      "sha256": "f76c6afab94884448f0426e30d6e9d555ca7247894cd3484e477d2f87513036e"
+    },
+    {
+      "file": "product/src/intel/workspace.css",
+      "bytes": 99401,
+      "sha256": "9bb5b8a62e2ce01fc140cb71a0946374e90639c3e54cfb5b13d36dfd1661b413"
+    },
+    {
+      "file": "public/logo-light.png",
+      "bytes": 39474,
+      "sha256": "003995154aa35a4c88ffa6455ab29136d1a1ca7499d734717ceef3848f64be89"
+    },
+    {
+      "file": "server/cmc-capabilities.ts",
+      "bytes": 40684,
+      "sha256": "4791e61f17ca08155245790a07db4610f545cb25c8c128ac7a09339b2e2dd8a1"
+    },
+    {
+      "file": "server/cmc-dex.ts",
+      "bytes": 27706,
+      "sha256": "95bf610cde613f8cef97226a34f972dbf248c32de9baa30c244f46f36c00ee2c"
+    },
+    {
+      "file": "server/cmc-evidence-shape.ts",
+      "bytes": 11049,
+      "sha256": "7c403c368cf902a9356eeff96ccf9a6a5347caa728e046db91f9c2a1a4d48bcb"
+    },
+    {
+      "file": "public/vsx-fonts/inter-400.woff2",
+      "bytes": 50696,
+      "sha256": "c5ef976fc27b16b9145b977611f41ca32b4838596c35f92615e46521140ccb11"
+    },
+    {
+      "file": "public/vsx-fonts/barlow-condensed-600.woff2",
+      "bytes": 28756,
+      "sha256": "e025e3a3ca04d99e3505abf7a981c3bb4c2cd2fb2cc1ef64d73fe338f04e499a"
+    },
+    {
+      "file": "public/vsx-fonts/geist-mono-400.woff2",
+      "bytes": 13028,
+      "sha256": "4ef72919fcd30fc2f7bb059191b8d87aac41378d73e6c1c2e59542857a5136c9"
+    },
+    {
+      "file": "public/vsx-fonts/LICENSE.md",
+      "bytes": 1313,
+      "sha256": "4dbfb86bdd553abdd1d7eaa1d9ea3743dd479f8a70e0d69b7c93db652160a7b7"
+    },
+    {
+      "file": "evidence/recorded-cmc-calls/cmc-receipt-evidence-2026-09-16.json",
+      "bytes": 11304,
+      "sha256": "5235b664a8cfb78b1d442052318968a3b3234c18192e2952f32e3fd3d7a850ff"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-depth-read.ts",
+      "bytes": 32712,
+      "sha256": "c08db14111b6df3f3a7389a40746189e86d845cf23dc400cdd968a08c78157d4"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-depth.ts",
+      "bytes": 59795,
+      "sha256": "1992017f4eb0ccd013d47a6a255f95dc7559c9e1e71192e01b5ca61127934713"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer-read.ts",
+      "bytes": 18387,
+      "sha256": "2c8632325958f856bf02e2377bb1e70bb519523b489330efb4875ffe73c2bfc2"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer.ts",
+      "bytes": 20265,
+      "sha256": "02d11c3ca927835709f946107dc6a51584afa086037a878ff7b4fc72e32d3829"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings-read.ts",
+      "bytes": 27459,
+      "sha256": "c7a152660fe61f4e7a2ca54ab696716e6e07d46ca0eae23004c22f1f4b76d9bb"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings.ts",
+      "bytes": 44307,
+      "sha256": "2330d3afbd600004cdf60a60dbc33d86f36fa181696a1528604770a2e837c74d"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers-read.ts",
+      "bytes": 21221,
+      "sha256": "bd8ea853536eeecb4f55929cc4966ee0314b510392f4950a10cc3bad4df12634"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts",
+      "bytes": 27668,
+      "sha256": "75fb3b21630c2212f783f17ea3ada57376957fb79b09f7c97292c31405eeee27"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-yield-read.ts",
+      "bytes": 16164,
+      "sha256": "38263aa244f338fa07620a1f12941dc76e92cc5a892f92bbd7b4e2c8422ca374"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-yield.ts",
+      "bytes": 21604,
+      "sha256": "c4ab0caa1f00900733656f9e997396ac3df5d21db58ff7fe7750658cacd7be89"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-depth-read.test.ts",
+      "bytes": 24553,
+      "sha256": "bd538ca78a88bb0e82394ce6bd31cc73b77a2933eca1dad42d4ffa7b8e9afb18"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-depth.test.ts",
+      "bytes": 35198,
+      "sha256": "be7218df29c26b544001946d96bba2f279530e358213b2cdfa5eff5422bf61bc"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer-read.test.ts",
+      "bytes": 16650,
+      "sha256": "064dab15587f6b7619f54a7d28700b910deed2e25bed9ea0e07ed7850588f21f"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer.test.ts",
+      "bytes": 14275,
+      "sha256": "c310105f78d0d1aa9a1e18f3ed698f1317c71a6d24d4ae5afaca70bc63de8b3d"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings-read.test.ts",
+      "bytes": 20351,
+      "sha256": "4b1cabab3ff5c232ddc636f66c31eab163701dc9e35a0344e7407ec32a2a0511"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-underlyings.test.ts",
+      "bytes": 37690,
+      "sha256": "bb77238f3a9b8a029ef80dd48c2b9315e9a4177b5846a417c886d1107d418e6a"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.test.ts",
+      "bytes": 33032,
+      "sha256": "85d8931427fcd2f11484bcce3c406e5da9ecd8f592456eff7821ca0d1f910ee5"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-yield-read.test.ts",
+      "bytes": 14861,
+      "sha256": "3376ffe88a9ed79f1ed978265ec9d8ecbfda408c601ca37c4eb5577301cc6a08"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-yield.test.ts",
+      "bytes": 16414,
+      "sha256": "a6b52837034701199ef4680e203cbd85a49d453e91312ad389f87713df614b2d"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-admission-drift.ts",
+      "bytes": 9636,
+      "sha256": "c7e39b2d3bac2dbe31220131c4d4785dfabe9ae9c50591729ed34e0e319dfb00"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-benchmark-rates.ts",
+      "bytes": 15124,
+      "sha256": "969207b70ac1819650f851a4187fdc5105a4ebd5e0b2350e5cc2e330caa5213e"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-counter-leg.ts",
+      "bytes": 21226,
+      "sha256": "bf9255b295774dc9071b458db1d33ff56dbdd5376280057f6e7e8ff7d3593935"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-issuer-aliases.ts",
+      "bytes": 34212,
+      "sha256": "dba07312676ae8b8f8e1cab3dbb458288c2524ad717d4b86e7a947412b76a702"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-issuer-evidence.ts",
+      "bytes": 22312,
+      "sha256": "c3dd6ad86d452713913e534b33c2d3e3ab1fb5a07dc9ff0c6a3151a2ef06bfe3"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-legitimacy.ts",
+      "bytes": 9254,
+      "sha256": "e83f9c2b6baf5e9f22ebec68a8cfb2c6c775428b5bddb6963ce425637b43a8c8"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-nav-integrity.ts",
+      "bytes": 9748,
+      "sha256": "3adf1e03325e98ee1faf3daf1583b18203bfe455cd54f26da06fe37455ff32ec"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-portfolio-exposure.ts",
+      "bytes": 2842,
+      "sha256": "1e8990ff28d7583100f05de53068c7330804851480a96ab38147ab0c33027f55"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-terms.ts",
+      "bytes": 1988,
+      "sha256": "8807fc7bd1533f611af2e750f911387ce222a320312cc6872fdabc9c7b05ef25"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.ts",
+      "bytes": 35301,
+      "sha256": "06fe0f8053291b7b4ce13d63134551e6efff100d67dbdf4751095a6a2bfd883c"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-yield-realized.ts",
+      "bytes": 8397,
+      "sha256": "c07588eb859a64c00518dda7e549e481b09f443ff12bc36161060d78ab41f8af"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-yield-register.ts",
+      "bytes": 18988,
+      "sha256": "67b9c814a5266f50bfee7a3e47bf1d5be818162e866cec9c3160489b67a5478a"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-admission-drift.test.ts",
+      "bytes": 7064,
+      "sha256": "62edea3e9204d15619d923f92ec581b6e58bb83a85de9ba36a0b2c40aaa4f0df"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-benchmark-rates.test.ts",
+      "bytes": 8827,
+      "sha256": "f5a186a05059d30058418c7775a8e29075bdff64c591cf5bd6c1cff9b73029c2"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-counter-leg.test.ts",
+      "bytes": 15187,
+      "sha256": "03fb6b57213ae72303dd1292d32720b10973e968cb9a47b9df121c1d521016bf"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-issuer-aliases.test.ts",
+      "bytes": 11000,
+      "sha256": "204d63bdd80a14511ef0ec1d33a998f4aa2d68cfed7832c6620c9c6cc5e54057"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-issuer-review-cycles.test.ts",
+      "bytes": 8581,
+      "sha256": "00cc5dd74c2b0cc5129cbd1ecd90d369950acb267f990d89112369bd0c17b878"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-legitimacy.test.ts",
+      "bytes": 10244,
+      "sha256": "27aa5a3ff08f83008b34e836b324339cb532757fcc7df3b7a0cebbc422d8f7e0"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-nav-integrity.test.ts",
+      "bytes": 8659,
+      "sha256": "62cb6156419e4581f66a668ca1f8b428d57db8059b740f7b4eebacab15976714"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-portfolio-exposure.test.ts",
+      "bytes": 3425,
+      "sha256": "ab0c41289bfbf9aaab4bd739d806b680ff2f09ef6e1d776a674ac57536612037"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-terms.test.ts",
+      "bytes": 3479,
+      "sha256": "48090935506465b37dc2134122b59b6041e3783515b2c5c03d1022bf4464a892"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.test.ts",
+      "bytes": 22092,
+      "sha256": "ab39de733dc885c893fb9b654224f3984eb2920ab755140c3b259e34a2dceee9"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-yield-realized.test.ts",
+      "bytes": 6186,
+      "sha256": "adbdca0ace5293ff8d4e0e119b62c95cbbd5a9c80f528c965be08cea4e9f5568"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-yield-register.test.ts",
+      "bytes": 8844,
+      "sha256": "f069048d70d2bb12b0157e5a5c5196ca7abe793cee9a62cf19521770e1c9300a"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/blockscout.ts",
+      "bytes": 12632,
+      "sha256": "05968c5057e0fda9342c3754472d416be00044e05253489ced9d06507a1e507e"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/blockscout.test.ts",
+      "bytes": 8256,
+      "sha256": "2aeb047dbd07c2ac4c081f29dd03261bad44e3a2f3b39c0c20c2f94c4df72839"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar-agent.ts",
+      "bytes": 5996,
+      "sha256": "315851b3d9c95cdf6c3ddb8d47aa39e739b5e1b31375ba61cec463a3637bac56"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar-agent.test.ts",
+      "bytes": 3673,
+      "sha256": "cb6c0be2f5d35f4699649105cee4d2b23a4d9727ae015d61cbdf1604ab62d75d"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar.ts",
+      "bytes": 21092,
+      "sha256": "82354fae73ce694421b29adc9dd0b1d858d430088e9eb1514d211d318bfbb153"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/edgar.test.ts",
+      "bytes": 11396,
+      "sha256": "1ef46394a086d2355943dadf437ef612dbfa0d3b72698ab7312beee7ee651612"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/gleif.ts",
+      "bytes": 9616,
+      "sha256": "af385135ee8eeb0e53e9dc69b7d73853ca1378ded23b55ed7fda7b7abfe853ae"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/gleif.test.ts",
+      "bytes": 5414,
+      "sha256": "06a6fc89756f199e77db98696ed8f6e7a26a4135612c0a86974156a29623474a"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/http.ts",
+      "bytes": 12129,
+      "sha256": "95aa5208f0203fa3df75df2cfe202177aea5ddab7b200d3f810f44e7d4d87d6a"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/http.test.ts",
+      "bytes": 5547,
+      "sha256": "a4451a1d3deeaa9a3d77799e5ac5b1ec20b7c7f79a01d46ab8296dda082f1cde"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/ofac.ts",
+      "bytes": 8707,
+      "sha256": "3c3f644b227771565d25e4a50573534bbb98d3ee5b89aa3f1c45942afd41328e"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/ofac.test.ts",
+      "bytes": 5117,
+      "sha256": "40871c990790168f6d9d2e40aad456f95a5679d002cc60ab4ecbf1cc118f835e"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/sourcify.ts",
+      "bytes": 7367,
+      "sha256": "311ce7de08dfec381a9594aa4f370b34b03fcd2f9b963e752bc6efce55f2399c"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/sourcify.test.ts",
+      "bytes": 4268,
+      "sha256": "85e2f0d31897ed4edd16d21cdb679737a039a6d215e89e55e773696316208765"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/rwa-sources/test-support.ts",
+      "bytes": 2069,
+      "sha256": "d0fd1779fb2f2b8b19c4106b60bdd8b4ce23b91b2a589c8e5d041ea62c18b9f0"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/chainlink-nav.ts",
+      "bytes": 14505,
+      "sha256": "d8b5c169f0cfc9b3532f6c05c3c5fbffdd6655a095f1c94ed64e293b1fe5b9b6"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/chainlink-nav.test.ts",
+      "bytes": 8416,
+      "sha256": "7c0298558d036f5e00d14ea71a82ed7733f1c2efcb7d61e74cdc3f9e71570189"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/sec-nmfp-yield.ts",
+      "bytes": 10204,
+      "sha256": "789f542a0a94e622bbfbe3086bfe0631ee3584c95857a46b8df4570351df6d7d"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/sec-nmfp-yield.test.ts",
+      "bytes": 7512,
+      "sha256": "eb574916e6c9ff4aa4fb9a217747befe6901aac6d93f93a067917f1eb66bd891"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-jobs.ts",
+      "bytes": 38052,
+      "sha256": "271d34090d453ac88f545d766fb62ac4207cb1690099bba4b1c2b57da54bd116"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/bounded-request.ts",
+      "bytes": 1570,
+      "sha256": "1962e8834dcf96925f37375e8c062e6a564e8d5ed443a60b278cc57d936556d7"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/market-source-versions.ts",
+      "bytes": 11145,
+      "sha256": "d92289ba4eaa349bdf5972c92c9ec0ea3c3681752aae34b1ad58de466dd4e53d"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/market-source-reference.ts",
+      "bytes": 1106,
+      "sha256": "c34ce59551a6d11be7f2de8113982ec0873e12fd18c4d65f8f3440f1491fa6c2"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/investigation-normalize.ts",
+      "bytes": 11584,
+      "sha256": "88a5debb9e55bae957b448b977d5cb3772194e214fc6164b0d29a39622104977"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/investigation-evidence.ts",
+      "bytes": 14873,
+      "sha256": "6d0fb2443b4f88d011c5e1cdb8d2d387d5b1cf5631486e0e4bd1b98d2fe0b477"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/stress-scenario-contract.ts",
+      "bytes": 3766,
+      "sha256": "3ad4506cd8607e7349c6d0a8437180df6788e91920c7f182aa810c71d2c590fb"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/cmc-dex-evidence.ts",
+      "bytes": 7345,
+      "sha256": "92a07f7adc63f826dfff7d00b29a7436fe5a3994ec4aa796e117d34a143b613b"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/market-figure-scope.ts",
+      "bytes": 11708,
+      "sha256": "f953c0ea5a5a1236d8cff2acfb7f1cd4c98bedacb7738766ec2d662728e4a48f"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/market-read-quality.ts",
+      "bytes": 8238,
+      "sha256": "d4a0add97cfe70caf972a36d442a0e59e7d36705ad154f65fd056c687a6adccc"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/representation-review.ts",
+      "bytes": 3239,
+      "sha256": "017eec2ff22d4eb190f1cd9dd0f84252f4e9b97ac5882c6022678645e136812c"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-capabilities.ts",
+      "bytes": 40684,
+      "sha256": "4791e61f17ca08155245790a07db4610f545cb25c8c128ac7a09339b2e2dd8a1"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-demand-policy.ts",
+      "bytes": 2251,
+      "sha256": "92116011a76c68bd1f8042f047f4ca7ed1483beac2c2bcaede2a996c982581a1"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-dex-platforms.ts",
+      "bytes": 5813,
+      "sha256": "a6eecd4e1f1a4a5707e599b35b79a7c591f4bbf82822e3389372655420653ec2"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-dex.ts",
+      "bytes": 27706,
+      "sha256": "95bf610cde613f8cef97226a34f972dbf248c32de9baa30c244f46f36c00ee2c"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-evidence-shape.ts",
+      "bytes": 11049,
+      "sha256": "7c403c368cf902a9356eeff96ccf9a6a5347caa728e046db91f9c2a1a4d48bcb"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-live-focus.ts",
+      "bytes": 17477,
+      "sha256": "12b2777900b16714e73d34726fcadb83da9493ef8629c22af64076533bf47677"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-operating-settings.ts",
+      "bytes": 4453,
+      "sha256": "2a00d57f603650f55d23da9d07984322400149411020b7e7b15ea5b581983087"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-price.ts",
+      "bytes": 2347,
+      "sha256": "1150550d06050d85def87fcf5b0266b272f52e98380ff2680427c9e86c4bc4dc"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-quote-groups.ts",
+      "bytes": 4024,
+      "sha256": "8a3cc0e27a18e5b6ed3a21658862b72e91fc138e21f15b670b434c28e6167bf3"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-refresh-planner.ts",
+      "bytes": 6893,
+      "sha256": "a750c09021a28ad9425420a61d2827d0cbb1126a169b4293dc96a9dc7c39780d"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-transport.ts",
+      "bytes": 26295,
+      "sha256": "180e537936b8a697a457fd7a2f5d2e7077fb456cbe144c7b199464c5b3fc0974"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/coinmarketcap-provider.ts",
+      "bytes": 10688,
+      "sha256": "f60c92addd047d46bb99eb360844ab44999bc8d1caaadcf51d467acfe1f74c4c"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/issuer-identities.ts",
+      "bytes": 1528,
+      "sha256": "67432ad31dbed9e0957865a4ce1778d03678761bf6d94667c1b87319dfde9aec"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/types.ts",
+      "bytes": 4967,
+      "sha256": "5d37b997b056b934196082c3a0e56f7f3e7702e4d86b5c5b1841bfb729b6ab44"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-cache-read-failure.test.ts",
+      "bytes": 1213,
+      "sha256": "f7d604760cb7bbe81da847cd1a950b6b33a31ea1bcc1794415796434f349a40b"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-catalog.test.ts",
+      "bytes": 2662,
+      "sha256": "520a429a5c69b28fc3fb7bd6ab500356a79e813d6cfd16f2fec70ac79dd5aa0a"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-connected-dex.test.ts",
+      "bytes": 22115,
+      "sha256": "eb237ae6904bc877f9888002565a8820d585a7f6f77cda3538d09654802d4c4b"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-demand-policy.test.ts",
+      "bytes": 5010,
+      "sha256": "a2cd015c56bddba0711d7295a50bda9080a6df1118da5ff0a9044136b8f67d95"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-dex-platforms.test.ts",
+      "bytes": 4506,
+      "sha256": "27f8d0ad18340c23126007ca7173519880f6ae0520936211234f8b207fce1fee"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-evidence-shape.test.ts",
+      "bytes": 7416,
+      "sha256": "fc31b3c60032edabf1266b76b449bd1abdd030763242a1b99e3cf222305b829f"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-live-focus.test.ts",
+      "bytes": 16910,
+      "sha256": "86f5f368f885bb0ddf3e2366744c6f819d234863979ae3a6abf976f2765d3d84"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-operating-settings.test.ts",
+      "bytes": 6448,
+      "sha256": "de962d72596e16661091c68444a22fc11a66949fb639dca67ce544b1c6426a96"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-price.test.ts",
+      "bytes": 3342,
+      "sha256": "c3758749b18ab4bc503babc9794dcc3797311433ed410e936e4eefbde9962c6c"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-quote-groups.test.ts",
+      "bytes": 3199,
+      "sha256": "5763adf2668aa1d6b079d27266136e149ed3ca6914e6b7e3fb760f0902997984"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-recording-policy.test.ts",
+      "bytes": 3374,
+      "sha256": "5794db27917ebb21c8bfd9327765b5ef137cc5a78b7ec6882fc52685bdd71b0b"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/market-assets/cmc-refresh-planner.test.ts",
+      "bytes": 8149,
+      "sha256": "887ca8a1ff4ba43ad46ac8a61d61e45ef4ac11749ee15569b0fc1b57327cd0c1"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/chains.ts",
+      "bytes": 33794,
+      "sha256": "71b7267fe42016e298a9566c462ad6858e4dc537ebe7411b1c2c1fe189fb58af"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/provider-budget.ts",
+      "bytes": 8044,
+      "sha256": "af1ba7a39b05976b7e5e9089accf9633e751d870bccf963cdd319ef1622f7cf8"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/memecoin/degen-gate.ts",
+      "bytes": 16115,
+      "sha256": "e0aad3a9fe51babad217323285bf1874393399a169d1c2e79692e89a5e16cb37"
+    },
+    {
+      "file": "production-source/supabase/migrations/20260920150000_intel_rwa_wrapper_spread.sql",
+      "bytes": 29359,
+      "sha256": "b957f229db7143a42e1fc2d06b6c45db4c421919d3018a65994ff15c7f8e4cab"
+    },
+    {
+      "file": "production-source/supabase/migrations/20260920151000_intel_rwa_depth.sql",
+      "bytes": 26602,
+      "sha256": "ed4f12af870051c4e98bc8250431305fe16484f3ffa730389fdc1dd642709b1d"
+    },
+    {
+      "file": "production-source/supabase/migrations/20260920152000_intel_rwa_underlying_registrants.sql",
+      "bytes": 28773,
+      "sha256": "029a35aa7eeea20c6a96486674abcf9394719e8c3e660895c85e47c2995199b7"
+    }
+  ]
+}
