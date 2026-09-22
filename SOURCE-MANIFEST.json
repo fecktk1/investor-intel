@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-09-22T17:53:42.045Z",
+  "createdAt": "2026-09-22T18:19:05.355Z",
   "sourceFiles": [
     {
       "source": "examples/investor-intel-hackathon/adapters/ChartWatchlistAdd.jsx",
@@ -767,8 +767,8 @@
     },
     {
       "file": ".gitignore",
-      "bytes": 50,
-      "sha256": "cf9537927a9344ae058b0ae0416ed229ef2a6e0189c597accee33422cadd66d3"
+      "bytes": 69,
+      "sha256": "f5a6d5cc0dfd4f381b96d48c6a9395066315dcafeea49776e608bb3b8082f95e"
     },
     {
       "file": ".env.example",
@@ -777,8 +777,8 @@
     },
     {
       "file": "README.md",
-      "bytes": 23800,
-      "sha256": "7f6355d867c043a6043917219637e18696f75fc7d9ebaf63df673d18cbdba597"
+      "bytes": 10065,
+      "sha256": "53f8dcea52c23788e0d5aacdec82d12bfb3265e0039cc05a8b0764ccb91bf22a"
     },
     {
       "file": "index.html",
@@ -874,6 +874,16 @@
       "file": "docs/real-api-call.md",
       "bytes": 5272,
       "sha256": "2526d1f93ea410edae4e4e71ac9c327be77bcd5cb8b572c8b4cc191e0453d60a"
+    },
+    {
+      "file": "docs/build-timeline.md",
+      "bytes": 1930,
+      "sha256": "5ad25bea35d6d1f230f872ffbc5a1c3ecade55b8e2c58d4a0ce604ea46c8f0e2"
+    },
+    {
+      "file": "docs/demo-guide.md",
+      "bytes": 14606,
+      "sha256": "12d46d2df17cb4b7caf450ea9915fd08df1c3c0a128a656b8b423a15f098ccf8"
     },
     {
       "file": "product/src/intel/components/ChartWatchlistAdd.jsx",
