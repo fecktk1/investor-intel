@@ -1,5 +1,5 @@
 import React from 'react'
-import { ChartFrame, ChartTable, markProps, useChartText, defaultValueFormat } from './frame'
+import { ChartFrame, ChartLegend, ChartTable, markProps, useChartText, defaultValueFormat } from './frame'
 import { TONES, axisText, gridStroke, useReducedMotion } from './theme'
 
 // Two measurements against each other, on log axes by default because the
@@ -22,6 +22,10 @@ const BOX = {
   wide: { W: 760, H: 340, PAD: { top: 20, right: 20, bottom: 52, left: 80 } },
 }
 const RADIUS = 3.6
+// Even the 760 box is magnified when a section is much wider than it: at a
+// 1,300 pixel content column its 11px type drew near 19px. Past this width the
+// figure stops growing, so its labels stay at the size of the copy around it.
+const WIDE_MAX = '60rem'
 
 const finite = (v) => {
   const n = Number(v)
@@ -82,6 +86,7 @@ function buildScale(values, { log, domain }) {
 export default function Scatter({
   title, description, points = [], xLabel, yLabel, quadrants = null, log = true,
   formatX, formatY, state = 'ready', reason, onSelect, wide = false, yDomain = null,
+  logX = log, logY = log, legend = null,
 }) {
   const t = useChartText()
   const reduced = useReducedMotion()
@@ -97,8 +102,8 @@ export default function Scatter({
   const qy = quadrants ? finite(quadrants.y) : null
   const labels = Array.isArray(quadrants?.labels) ? quadrants.labels : []
 
-  const xScale = buildScale([...usable.map((p) => p.x), ...(qx == null ? [] : [qx])], { log })
-  const yScale = buildScale([...usable.map((p) => p.y), ...(qy == null ? [] : [qy])], { log, domain: yDomain })
+  const xScale = buildScale([...usable.map((p) => p.x), ...(qx == null ? [] : [qx])], { log: logX })
+  const yScale = buildScale([...usable.map((p) => p.y), ...(qy == null ? [] : [qy])], { log: logY, domain: yDomain })
   const px = (v) => X0 + xScale.project(v) * PLOT_W
   const py = (v) => Y1 - yScale.project(v) * PLOT_H
 
@@ -113,7 +118,10 @@ export default function Scatter({
   return (
     <ChartFrame
       t={t} title={title} description={description} state={resolved} reason={reason}
-      plot={{ width: W, height: H }}
+      plot={{ width: W, height: H, ...(wide ? { maxWidth: WIDE_MAX } : {}) }}
+      legend={Array.isArray(legend) && legend.length
+        ? <ChartLegend t={t} items={legend.map((item) => ({ key: item.key, label: item.label, color: TONES[item.tone] || TONES.accent }))} />
+        : null}
       table={
         <ChartTable
           t={t} caption={title}
@@ -122,7 +130,7 @@ export default function Scatter({
         />
       }
     >
-      <svg viewBox={`0 0 ${W} ${H}`} role="img"
+      <svg viewBox={`0 0 ${W} ${H}`} role="img" style={wide ? { maxWidth: WIDE_MAX } : undefined}
         aria-label={`${title}. ${usable.length} ${t('charts.observations', { defaultValue: 'observations' })}. ${xLabel || ''} / ${yLabel || ''}`}>
         {/* axes */}
         <line x1={X0} y1={Y1} x2={X1} y2={Y1} stroke={gridStroke} />
@@ -154,7 +162,7 @@ export default function Scatter({
           <circle
             key={p.key}
             {...markProps({ label: `${p.label ?? ''} ${fmtX(p.x)} / ${fmtY(p.y)}`, onActivate: () => onSelect?.(p), reduced })}
-            cx={p.cx} cy={p.cy} r={RADIUS} fill={TONES.accent} fillOpacity={0.75} stroke="none"
+            cx={p.cx} cy={p.cy} r={RADIUS} fill={TONES[p.tone] || TONES.accent} fillOpacity={0.75} stroke="none"
           >
             <title>{`${p.label ?? ''} · ${fmtX(p.x)} · ${fmtY(p.y)}`}</title>
           </circle>

@@ -10,7 +10,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/capture-api'
 import { useColumnSort, sortRows } from '../lib/useColumnSort'
-import { formatUsd, formatCompact, formatPrice } from '../lib/market-format'
+import { formatUsd, formatPrice } from '../lib/market-format'
 import { downloadTableCsv } from '../lib/table-csv'
 import { WRAPPER_CSV_COLUMNS, wrapperCsvRows } from '../lib/rwa-wrapper-csv'
 
@@ -143,6 +143,15 @@ export function premiumBand(values, minHalfWidth = 100) {
 export function ratioLabel(value) {
   const n = num(value)
   return n == null ? null : n.toLocaleString(undefined, { minimumFractionDigits: 3, maximumFractionDigits: 3 })
+}
+
+/** A volume on the log axis and in the chart's table twin: compact, with no
+ * forced decimals, so the powers-of-ten gridlines read $10M and $1B rather than
+ * $10.0M and $1.00B. */
+const VOLUME_TICK = new Intl.NumberFormat(undefined, { style: 'currency', currency: 'USD', notation: 'compact', maximumFractionDigits: 1 })
+export const volumeTick = value => {
+  const n = num(value)
+  return n == null ? '—' : VOLUME_TICK.format(n)
 }
 
 /** A capture or observation instant as a readable UTC minute. */
@@ -320,8 +329,11 @@ export default function RwaWrapperSpread({ showHeading = true }) {
   const chartPoints = useMemo(() => points.map(point => ({
     key: point.key,
     label: `${point.assetSymbol || point.assetName || ''} · ${point.symbol || point.name || point.cryptoId}`,
-    x: (num(point.x) ?? 0) / 1e6,
+    x: num(point.x) ?? 0,
     y: num(point.y) ?? 0,
+    // Colour carries the one distinction the corner labels used to spell out:
+    // does this wrapper count toward its asset's anchor or not.
+    tone: point.inAnchor === true ? 'accent' : 'muted',
   })), [points])
   const band = useMemo(() => premiumBand(chartPoints.map(point => point.y)), [chartPoints])
 
@@ -462,37 +474,37 @@ export default function RwaWrapperSpread({ showHeading = true }) {
               </p>
 
               {/* One dot per wrapper: how deep it trades against how far it sits
-                  from its asset's anchor. Both axes are linear because the
-                  premium axis is signed and a log scale cannot carry a discount;
-                  volume is therefore shown in millions so the axis stays
-                  readable. The horizontal divider at zero IS the anchor.
+                  from its asset's anchor. The premium axis is linear because it
+                  is signed and a log scale cannot carry a discount. Volume is
+                  never negative and spans five orders of magnitude, so it is
+                  logarithmic: on a linear axis nearly every wrapper sat in a
+                  sliver at zero and the floor line could not be seen. The
+                  horizontal divider at zero IS the anchor.
                   `wide`, because this figure spans the whole page: the 440 box
                   would be magnified to fill it and its labels with it. */}
               <Scatter
                 wide
                 title={t('rwa_wrappers.chart_title', { defaultValue: 'Premium against depth, one dot per wrapper' })}
-                description={t('rwa_wrappers.chart_sub', {
+                description={`${t('rwa_wrappers.chart_sub', {
                   floor: formatUsd(floor),
                   low: widthLabel(band.low, bps),
                   high: widthLabel(band.high, bps),
                   defaultValue: 'Each dot is one wrapper of one asset. The horizontal line is its asset\'s anchor; above it the wrapper is dearer than the anchor, below it cheaper. The vertical line is the {{floor}} volume floor: dots left of it are shown but do not anchor anything. The premium axis is bounded at {{low}} and {{high}}, the padded 5th to 95th percentile of the plotted premiums, so one broken wrapper cannot flatten every other one onto the anchor line.',
-                })}
+                })} ${t('rwa_wrappers.chart_log_note', { defaultValue: 'Volume is on a log scale: each gridline is ten times the one before. A wrapper with no reported volume sits on the left edge.' })}`}
                 points={chartPoints}
-                log={false}
+                logX
+                logY={false}
                 yDomain={[band.low, band.high]}
-                xLabel={t('rwa_wrappers.chart_x', { defaultValue: 'Reported 24h volume (USD millions)' })}
+                xLabel={t('rwa_wrappers.chart_x_log', { defaultValue: 'Reported 24h volume (USD, log scale)' })}
                 yLabel={t('rwa_wrappers.chart_y', { unit: bps, defaultValue: 'Premium to anchor ({{unit}})' })}
-                quadrants={{
-                  x: floor / 1e6,
-                  y: 0,
-                  labels: [
-                    t('rwa_wrappers.q_dear_thin', { defaultValue: 'Dearer, too thin to anchor' }),
-                    t('rwa_wrappers.q_dear_deep', { defaultValue: 'Dearer, anchors the reference' }),
-                    t('rwa_wrappers.q_cheap_thin', { defaultValue: 'Cheaper, too thin to anchor' }),
-                    t('rwa_wrappers.q_cheap_deep', { defaultValue: 'Cheaper, anchors the reference' }),
-                  ],
-                }}
-                formatX={value => formatCompact(num(value))}
+                /* The dividers stay; their meaning moved into the key below, so
+                   no label is drawn on top of the dots it describes. */
+                quadrants={{ x: floor, y: 0 }}
+                legend={[
+                  { key: 'anchor', tone: 'accent', label: t('rwa_wrappers.legend_anchor', { defaultValue: 'Anchors the reference: its volume clears the floor' }) },
+                  { key: 'thin', tone: 'muted', label: t('rwa_wrappers.legend_thin', { defaultValue: 'Too thin to anchor: shown, left out of the anchor' }) },
+                ]}
+                formatX={volumeTick}
                 formatY={value => (num(value) == null ? '—' : Math.round(num(value)).toLocaleString())}
                 state={points.length ? 'ready' : 'error'}
                 kind="no_data"

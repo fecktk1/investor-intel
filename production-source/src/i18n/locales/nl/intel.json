@@ -4308,7 +4308,6 @@
     "chart_sub": "Elk punt is één wrapper van één activum. De horizontale lijn is het anker van dat activum; erboven is de wrapper duurder dan het anker, eronder goedkoper. De verticale lijn is de volumedrempel van {{floor}}: punten links daarvan worden getoond maar ankeren niets. De premie-as is begrensd op {{low}} en {{high}}, het opgevulde 5e tot 95e percentiel van de getekende premies, zodat één kapotte wrapper niet alle andere op de ankerlijn plat drukt.",
     "chart_outside": "Wrappers waarvan de premie buiten dat bereik valt en die op de rand van de grafiek zijn getekend: {{count}}. Elk staat met zijn eigen premie in de tabel hieronder.",
     "chart_title": "Premie tegen diepte, één punt per wrapper",
-    "chart_x": "Gerapporteerd 24-uursvolume (miljoen USD)",
     "chart_y": "Premie tot het anker ({{unit}})",
     "col_anchor": "Anker",
     "col_asset": "Onderliggend activum",
@@ -4339,10 +4338,6 @@
     "page_title": "Premie en spreiding van wrappers",
     "partial": "Een deel van deze uitlezing heeft niet geantwoord ({{reason}}). Wat wel is geladen wordt getoond, en niets is vervangen door een nul.",
     "provenance": "Wrapperprijzen, volumes en uitgevers komen van {{quotes}}. De eigen gerapporteerde waarde van elk activum komt van {{list}}. Beide zijn gelezen in de vastlegging van {{at}}; de premie, het anker en de spreiding zijn onze berekening over die twee uitlezingen.",
-    "q_cheap_deep": "Goedkoper, ankert de referentie",
-    "q_cheap_thin": "Goedkoper, te dun om te ankeren",
-    "q_dear_deep": "Duurder, ankert de referentie",
-    "q_dear_thin": "Duurder, te dun om te ankeren",
     "reason_accrual_name_mismatch": "Deze wrapper staat onder een andere naam als opbouwend vastgelegd, dus de uitzondering is niet toegepast en het verschil wordt als premie gerapporteerd.",
     "reason_accrues_in_price": "Deze wrapper bouwt zijn rendement in de tokenprijs op, dus het verschil met het anker is een opbouw en geen premie.",
     "reason_asset_name_mismatch": "De aanbieder rapporteert nu een andere naam voor dit activum, dus de vastgelegde intrinsieke waarde is er niet op toegepast.",
@@ -4398,7 +4393,11 @@
     "unit_normalised_troy_ounce": "Geprijsd per gram, herrekend per troy ounce",
     "unit_not_assessed": "Eenheid niet beoordeeld",
     "unit_not_established": "Eenheid niet vastgesteld",
-    "weighted": "Volumegewogen {{value}}"
+    "weighted": "Volumegewogen {{value}}",
+    "chart_x_log": "Gerapporteerd 24-uursvolume (USD, logaritmische schaal)",
+    "chart_log_note": "Het volume staat op een logaritmische schaal: elke rasterlijn is tien keer de vorige. Een wrapper zonder gerapporteerd volume staat aan de linkerrand.",
+    "legend_anchor": "Ankert de referentie: het volume ligt boven de drempel",
+    "legend_thin": "Te dun om te ankeren: getoond, maar buiten het anker gelaten"
   },
   "table_csv": {
     "download": "CSV downloaden",

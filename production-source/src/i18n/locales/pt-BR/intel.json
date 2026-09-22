@@ -4308,7 +4308,6 @@
     "chart_sub": "Cada ponto é um invólucro de um ativo. A linha horizontal é a âncora desse ativo; acima dela o invólucro está mais caro que a âncora, abaixo mais barato. A linha vertical é o piso de volume de {{floor}}: pontos à esquerda aparecem, mas não ancoram nada. O eixo de prêmio é limitado entre {{low}} e {{high}}, o 5º ao 95º percentil dos prêmios plotados com folga, para que um único invólucro quebrado não achate todos os outros sobre a linha da âncora.",
     "chart_outside": "Invólucros cujo prêmio fica além dessa faixa, desenhados na borda do gráfico: {{count}}. Cada um está na tabela abaixo, com o seu próprio prêmio.",
     "chart_title": "Prêmio contra profundidade, um ponto por invólucro",
-    "chart_x": "Volume declarado em 24 h (milhões de USD)",
     "chart_y": "Prêmio em relação à âncora ({{unit}})",
     "col_anchor": "Âncora",
     "col_asset": "Ativo subjacente",
@@ -4339,10 +4338,6 @@
     "page_title": "Prêmio e dispersão dos invólucros",
     "partial": "Parte desta leitura não respondeu ({{reason}}). O que carregou é mostrado e nada foi substituído por zero.",
     "provenance": "Preços, volumes e emissores dos invólucros vêm de {{quotes}}. O valor declarado de cada ativo vem de {{list}}. Ambos foram lidos na captura de {{at}}; o prêmio, a âncora e a dispersão são o nosso cálculo sobre essas duas leituras.",
-    "q_cheap_deep": "Mais barato, ancora a referência",
-    "q_cheap_thin": "Mais barato, fino demais para ancorar",
-    "q_dear_deep": "Mais caro, ancora a referência",
-    "q_dear_thin": "Mais caro, fino demais para ancorar",
     "reason_accrual_name_mismatch": "Este invólucro está registrado como acumulador com outro nome, portanto a exceção não foi aplicada e sua diferença é informada como prêmio.",
     "reason_accrues_in_price": "Este invólucro acumula o rendimento dentro do preço do token, portanto sua diferença em relação à âncora é uma acumulação e não um prêmio.",
     "reason_asset_name_mismatch": "O provedor agora informa outro nome para este ativo, portanto o valor patrimonial líquido registrado não foi aplicado a ele.",
@@ -4398,7 +4393,11 @@
     "unit_normalised_troy_ounce": "Cotado por grama, reexpresso por onça troy",
     "unit_not_assessed": "Unidade não avaliada",
     "unit_not_established": "Unidade não estabelecida",
-    "weighted": "Ponderado por volume {{value}}"
+    "weighted": "Ponderado por volume {{value}}",
+    "chart_x_log": "Volume declarado em 24 h (USD, escala logarítmica)",
+    "chart_log_note": "O volume está em escala logarítmica: cada linha da grade vale dez vezes a anterior. Um invólucro sem volume declarado fica na borda esquerda.",
+    "legend_anchor": "Ancora a referência: o volume supera o piso",
+    "legend_thin": "Fino demais para ancorar: aparece, mas fica fora da âncora"
   },
   "table_csv": {
     "download": "Baixar CSV",

@@ -4308,7 +4308,6 @@
     "chart_sub": "Each dot is one wrapper of one asset. The horizontal line is its asset's anchor; above it the wrapper is dearer than the anchor, below it cheaper. The vertical line is the {{floor}} volume floor: dots left of it are shown but do not anchor anything. The premium axis is bounded at {{low}} and {{high}}, the padded 5th to 95th percentile of the plotted premiums, so one broken wrapper cannot flatten every other one onto the anchor line.",
     "chart_outside": "Wrappers whose premium sits beyond that range, drawn on the edge of the chart: {{count}}. Each one is in the table below, with its own premium.",
     "chart_title": "Premium against depth, one dot per wrapper",
-    "chart_x": "Reported 24h volume (USD millions)",
     "chart_y": "Premium to anchor ({{unit}})",
     "col_anchor": "Anchor",
     "col_asset": "Underlying asset",
@@ -4339,10 +4338,6 @@
     "page_title": "Wrapper premium and dispersion",
     "partial": "Part of this read did not answer ({{reason}}). What did load is shown, and nothing was replaced with a zero.",
     "provenance": "Wrapper prices, volumes and issuers come from {{quotes}}. Each asset's own reported value comes from {{list}}. Both were read in the capture of {{at}}; the premium, the anchor and the dispersion are our calculation over those two reads.",
-    "q_cheap_deep": "Cheaper, anchors the reference",
-    "q_cheap_thin": "Cheaper, too thin to anchor",
-    "q_dear_deep": "Dearer, anchors the reference",
-    "q_dear_thin": "Dearer, too thin to anchor",
     "reason_accrual_name_mismatch": "This wrapper is recorded as accruing under a different name, so the accrual exemption was not applied and its gap is reported as a premium.",
     "reason_accrues_in_price": "This wrapper accrues its yield inside the token price, so its gap to the anchor is an accrual and not a premium.",
     "reason_asset_name_mismatch": "The provider now reports a different name for this asset, so the recorded net asset value was not applied to it.",
@@ -4398,7 +4393,11 @@
     "unit_normalised_troy_ounce": "Priced per gram, restated per troy ounce",
     "unit_not_assessed": "Unit not assessed",
     "unit_not_established": "Unit not established",
-    "weighted": "Volume weighted {{value}}"
+    "weighted": "Volume weighted {{value}}",
+    "chart_x_log": "Reported 24h volume (USD, log scale)",
+    "chart_log_note": "Volume is on a log scale: each gridline is ten times the one before. A wrapper with no reported volume sits on the left edge.",
+    "legend_anchor": "Anchors the reference: its volume clears the floor",
+    "legend_thin": "Too thin to anchor: shown, left out of the anchor"
   },
   "table_csv": {
     "download": "Download CSV",
