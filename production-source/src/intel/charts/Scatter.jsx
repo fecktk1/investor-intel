@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { ChartFrame, ChartLegend, ChartTable, markProps, useChartText, defaultValueFormat } from './frame'
 import { TONES, axisText, gridStroke, useReducedMotion } from './theme'
 
@@ -21,6 +21,34 @@ const BOX = {
   column: { W: 440, H: 300, PAD: { top: 18, right: 18, bottom: 48, left: 66 } },
   wide: { W: 760, H: 340, PAD: { top: 20, right: 20, bottom: 52, left: 80 } },
 }
+// A THIRD FOOTPRINT, for a figure narrower than its box: a phone shrinks the
+// 760 box to about 340 pixels and its 11px type with it, to about 5px. Below
+// the box width the chart draws into a box exactly as wide as it is shown, so
+// nothing is scaled and the type stays 11px. Taller than wide boxes' ratio, so
+// the dots keep some room once the axis labels have taken theirs.
+const NARROW_MIN = 280
+function narrowBox(width) {
+  const W = Math.max(NARROW_MIN, Math.floor(width))
+  return { W, H: Math.round(W * 0.8), PAD: { top: 14, right: 14, bottom: 46, left: 52 } }
+}
+
+/** The width the figure is shown at, or null before it has been measured. */
+function useShownWidth() {
+  const ref = useRef(null)
+  const [width, setWidth] = useState(null)
+  useEffect(() => {
+    const node = ref.current
+    if (!node || typeof ResizeObserver !== 'function') return undefined
+    const observer = new ResizeObserver((entries) => {
+      const next = entries[0]?.contentRect?.width
+      if (next > 0) setWidth((prev) => (prev != null && Math.abs(prev - next) < 1 ? prev : next))
+    })
+    observer.observe(node)
+    return () => observer.disconnect()
+  }, [])
+  return [ref, width]
+}
+
 const RADIUS = 3.6
 // Even the 760 box is magnified when a section is much wider than it: at a
 // 1,300 pixel content column its 11px type drew near 19px. Past this width the
@@ -93,7 +121,10 @@ export default function Scatter({
   const fmtX = formatX || defaultValueFormat
   const fmtY = formatY || defaultValueFormat
 
-  const { W, H, PAD } = wide ? BOX.wide : BOX.column
+  const [shownRef, shownWidth] = useShownWidth()
+  const base = wide ? BOX.wide : BOX.column
+  const narrow = shownWidth != null && shownWidth < base.W
+  const { W, H, PAD } = narrow ? narrowBox(shownWidth) : base
   const X0 = PAD.left, X1 = W - PAD.right, Y0 = PAD.top, Y1 = H - PAD.bottom
   const PLOT_W = X1 - X0, PLOT_H = Y1 - Y0
 
@@ -130,6 +161,7 @@ export default function Scatter({
         />
       }
     >
+      <div ref={shownRef} className="intel-chart-kit-scatter" data-narrow={narrow ? 'true' : undefined}>
       <svg viewBox={`0 0 ${W} ${H}`} role="img" style={wide ? { maxWidth: WIDE_MAX } : undefined}
         aria-label={`${title}. ${usable.length} ${t('charts.observations', { defaultValue: 'observations' })}. ${xLabel || ''} / ${yLabel || ''}`}>
         {/* axes */}
@@ -168,6 +200,7 @@ export default function Scatter({
           </circle>
         ))}
       </svg>
+      </div>
     </ChartFrame>
   )
 }
