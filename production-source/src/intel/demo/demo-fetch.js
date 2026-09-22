@@ -26,6 +26,7 @@
 import {
   DEMO_REST_TABLES, DEMO_SHARED_RPCS, demoRestKey, demoRestRefusal, demoRpcKey, demoSnapshotKey,
 } from '../../../supabase/functions/_shared/intel/demo-snapshot-key.ts'
+import { EntityResolveRefusal, normalizeEntity } from '../../../supabase/functions/_shared/entity-resolver.ts'
 import {
   DEMO_ORG, DEMO_ORG_ID, DEMO_PROFILE, DEMO_TIER, DEMO_USER, DEMO_USER_ID, demoMembershipRow,
 } from './demo-identity.js'
@@ -140,6 +141,15 @@ export function researchMissBody(capability) {
 
 const postgrestError = (status, code, message) => respond({ code, message, details: null, hint: null }, status)
 
+// `alias:table(*)` embeds in a select, as the pages write them for the rows the
+// visitor creates (a watchlist item and its entity). The foreign key is
+// `<alias>_id`, which is how every such embed in the product is named.
+function embedsOf(select) {
+  const embeds = []
+  for (const match of String(select || '').matchAll(/([a-z0-9_]+):([a-z0-9_]+)\(\*\)/g)) embeds.push({ alias: match[1], table: match[2] })
+  return embeds
+}
+
 /**
  * Build the demo fetch.
  *   supabaseUrl  the backend origin every intercepted URL starts with
@@ -160,6 +170,7 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
 
     // Identity-shaped function reads every signed-in page makes.
     if (name === 'help-assistant' && body?.action === 'status') return respond({ tutorials_enabled: false, assistant_enabled: false })
+    if (name === 'intel-resolve') return resolveInMemory(body)
     miss({ kind: 'function', name, body })
     if (name === 'intel-research') return respond(researchMissBody(body?.capability))
     return respond(missBody())
@@ -177,6 +188,41 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
       ? store.update('intel_workspace_preferences', row, params)
       : store.insert('intel_workspace_preferences', row, new URLSearchParams())
     return respond(saved)
+  }
+
+  // Tracking something (a watchlist item, a wallet, a holding) first names it
+  // as an `entities` row. The demo names it with the same pure normalizer the
+  // endpoint uses and keeps the row in memory; no provider or database is asked,
+  // so what the visitor can then SEE about it is still only what the snapshot holds.
+  function resolveInMemory(body) {
+    let entity
+    try {
+      entity = normalizeEntity({
+        kind: body?.kind || 'asset', chain: body?.chain, value: body?.value, assetType: body?.assetType,
+        issuer: body?.issuer, currency: body?.currency, symbol: body?.symbol, displaySymbol: body?.displaySymbol,
+      })
+    } catch (error) {
+      if (error instanceof EntityResolveRefusal) return respond({ error: error.details.code, refusal: error.details }, 400)
+      return respond({ error: error?.message || 'resolve_failed' }, 400)
+    }
+    const params = new URLSearchParams({ canonical_ref_key: `eq.${entity.canonical_ref_key}` })
+    const existing = store.select('entities', params).rows[0]
+    if (existing) return respond({ entity: existing })
+    const [row] = store.insert('entities', { ...entity, org_id: DEMO_ORG_ID, provider_ids: {}, provider_metadata: {} }, new URLSearchParams())
+    return respond({ entity: row })
+  }
+
+  function withEmbeds(rows, select) {
+    const embeds = embedsOf(select)
+    if (!embeds.length) return rows
+    return rows.map((row) => {
+      const out = { ...row }
+      for (const { alias, table } of embeds) {
+        const key = row?.[`${alias}_id`]
+        out[alias] = key == null ? null : store.select(table, new URLSearchParams({ id: `eq.${key}` })).rows[0] || null
+      }
+      return out
+    })
   }
 
   async function snapshotEntry(key) {
@@ -225,7 +271,8 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     if (method === 'GET' || method === 'HEAD') {
       const identity = identityRows(table)
       const shared = identity ? null : await sharedTableRows(table, url)
-      const result = identity ? { rows: identity, total: identity.length, start: 0 } : shared || store.select(table, url.searchParams)
+      const own = identity || shared ? null : store.select(table, url.searchParams)
+      const result = identity ? { rows: identity, total: identity.length, start: 0 } : shared || { ...own, rows: withEmbeds(own.rows, url.searchParams.get('select')) }
       if (!identity && !result.total) miss({ kind: 'rest', table, query: url.search })
       if (method === 'HEAD') return new Response(null, { status: 200, headers: { 'Content-Range': `*/${result.total}` } })
       return shape(result.rows, result)
@@ -238,7 +285,7 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     else if (method === 'PATCH') written = store.update(table, payload, url.searchParams)
     else if (method === 'DELETE') written = store.remove(table, url.searchParams)
     else return postgrestError(405, 'PGRST000', 'Method not allowed')
-    if (representation) return shape(written)
+    if (representation) return shape(withEmbeds(written, url.searchParams.get('select')))
     return new Response(null, { status: method === 'POST' ? 201 : 204 })
   }
 
