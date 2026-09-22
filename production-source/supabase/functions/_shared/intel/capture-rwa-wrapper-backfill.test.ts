@@ -207,23 +207,37 @@ Deno.test('an accruing wrapper carries an accrual gap and never a premium', asyn
   assert(usdy.every((r) => r.wrapper_state === 'accrues_in_price' && r.premium_bps === null && r.accrual_gap_bps > 1400))
 })
 
-Deno.test('a failed call writes nothing for the asset; the answered wrappers stay pending and are refetched', async () => {
+Deno.test('a wrapper that keeps failing is retried in the same run; its answered siblings are fetched once and written', async () => {
   const db = fakeDb(gold)
   const failing = fakeRequest((p) => (p.id === '4705' ? { payload: null, reason: 'provider_unavailable' } : goldHandler(p)))
-  const result = await captureRwaWrapperBackfill(db, ctxFor, NOW, 'startup', { request: failing.request, policy: POLICY, sourcePolicy: allow })
-  eq(result.rows, 0)
+  const result = await captureRwaWrapperBackfill(db, ctxFor, NOW, 'startup', { request: failing.request, policy: POLICY, sourcePolicy: allow, sleep: async () => {} })
+  // Three first calls, then two in-run retries of the failing wrapper only.
+  eq(failing.calls.filter((c) => c.params.id === '4705').length, 3)
+  eq(failing.calls.filter((c) => c.params.id !== '4705').length, 2, 'each answered sibling is fetched exactly once')
   eq(result.failed, 1)
-  eq(db.store[BACKFILL_TABLE], undefined)
+  eq(result.complete, 2)
+  eq(db.store[BACKFILL_TABLE].length, 10, 'the asset is rebuilt from the two wrappers that answered')
   const byId = Object.fromEntries(db.store[BACKFILL_STATE_TABLE].map((r) => [r.crypto_id, r]))
-  eq([byId['4705'].state, byId['4705'].attempts, byId['4705'].credits_spent], ['failed', 1, 0])
-  eq([byId['5176'].state, byId['5176'].credits_spent], ['pending', 1])
+  eq([byId['4705'].state, byId['4705'].attempts, byId['4705'].credits_spent], ['failed', 3, 0])
+  eq([byId['5176'].state, byId['5176'].credits_spent], ['complete', 1])
+  // Nothing is left pending, so a later run spends nothing on this asset.
+  const later = fakeRequest(goldHandler)
+  const second = await captureRwaWrapperBackfill(db, ctxFor, NOW, 'startup', { request: later.request, policy: POLICY, sourcePolicy: allow, sleep: async () => {} })
+  eq(later.calls.length, 0)
+  eq(second.skipped, 'queue_empty')
+})
 
-  const retry = fakeRequest(goldHandler)
-  const second = await captureRwaWrapperBackfill(db, ctxFor, NOW, 'startup', { request: retry.request, policy: POLICY, sourcePolicy: allow })
-  eq(retry.calls.length, 3)
-  eq(second.complete, 3)
+Deno.test('a wrapper that fails once and then answers completes the whole asset in one run', async () => {
+  const db = fakeDb(gold)
+  let first = true
+  const flaky = fakeRequest((p) => (p.id === '4705' && first ? (first = false, { payload: null, reason: 'provider_unavailable' }) : goldHandler(p)))
+  const result = await captureRwaWrapperBackfill(db, ctxFor, NOW, 'startup', { request: flaky.request, policy: POLICY, sourcePolicy: allow, sleep: async () => {} })
+  eq(flaky.calls.length, 4)
+  eq(result.complete, 3)
+  eq(result.failed, 0)
   eq(db.store[BACKFILL_TABLE].length, 15)
-  eq(second.creditsSpentToDate, 5)
+  const byId = Object.fromEntries(db.store[BACKFILL_STATE_TABLE].map((r) => [r.crypto_id, r]))
+  eq([byId['4705'].state, byId['4705'].attempts], ['complete', 2])
 })
 
 Deno.test('the standing ceiling stops a run before an asset it cannot finish', async () => {

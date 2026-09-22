@@ -101,6 +101,24 @@ describe('demoFetch', () => {
     expect(net.calls.every((c) => c.href.includes('/storage/v1/object/public/intel-demo/'))).toBe(true)
   })
 
+  it('tracking an item names it in memory, through the real watchlist calls, and the item reads back with its entity', async () => {
+    const { client, net } = demoClient({})
+    const { addWatchlistItem, listWatchlist, ResolveRefused } = await import('../watchlist-api')
+    const item = await addWatchlistItem(client, DEMO_ORG_ID, DEMO_USER_ID, { chain: 'solana', value: 'So11111111111111111111111111111111111111112' })
+    expect(item.entity).toMatchObject({ entity_kind: 'asset', canonical_ref_key: 'solana:mainnet/token:So11111111111111111111111111111111111111112' })
+    const narrative = await addWatchlistItem(client, DEMO_ORG_ID, DEMO_USER_ID, { kind: 'narrative', value: 'AI agents', itemType: 'narrative' })
+    expect(narrative.entity.canonical_ref_key).toBe('narrative:ai-agents')
+    const listed = await listWatchlist(client, DEMO_ORG_ID)
+    expect(listed.map((row) => row.entity?.canonical_ref_key).sort()).toEqual([narrative.entity.canonical_ref_key, item.entity.canonical_ref_key].sort())
+    // Naming the same thing twice reuses the row, as the endpoint does.
+    const again = await client.functions.invoke('intel-resolve', { body: { orgId: DEMO_ORG_ID, kind: 'narrative', value: 'AI agents' } })
+    expect(again.data.entity.id).toBe(narrative.entity.id)
+    // A malformed address is refused with the endpoint's machine code.
+    const refused = await addWatchlistItem(client, DEMO_ORG_ID, DEMO_USER_ID, { chain: 'solana', value: '0x1234' }).catch((e) => e)
+    expect(refused).toBeInstanceOf(ResolveRefused)
+    expect(net.calls.every((c) => c.href.includes('/storage/v1/object/public/intel-demo/'))).toBe(true)
+  })
+
   it('personal surfaces start empty and the visitor is synthetic', async () => {
     const { client } = demoClient({})
     for (const table of ['watchlists', 'investor_portfolios', 'intel_theses', 'intel_alert_rules', 'saved_research', 'intel_research_threads', 'intel_trades', 'intel_telegram_chats', 'support_tickets', 'intel_workspace_preferences']) {
