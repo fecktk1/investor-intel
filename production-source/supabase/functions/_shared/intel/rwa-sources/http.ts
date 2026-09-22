@@ -1,7 +1,7 @@
 // Investor Intel: the single keyless transport for every FREE PRIMARY source
 // behind the RWA issuer legitimacy graph.
 //
-// WHY this module exists. A rival answer to "can I legally invest in this?"
+// WHY this module exists. A common answer to "can I legally invest in this?"
 // reads a HAND-CURATED registry. A curated registry is wrong the day it ships:
 // see rwa-issuer-aliases.ts for the dated, reproduced proof that one fund was
 // renamed and had its admission terms changed underneath its own token. Every

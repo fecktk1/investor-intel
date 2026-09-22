@@ -1,10 +1,32 @@
-import React from 'react'
+import React,{useEffect,useRef,useState} from 'react'
 import {useTranslation} from 'react-i18next'
 import {receiptFreshness,providerLabel,receiptCost} from '../lib/source-receipt'
+import {cmcReproduceCommand} from '../../../supabase/functions/_shared/market-assets/cmc-reproduce.ts'
 import ReceiptCostLine from './ReceiptCostLine'
 const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString():null
 const FRESHNESS_DEFAULTS={fresh:'Fresh: a provider call answered this read',cached:'Cached: inside its refresh limit',stale:'Stale: past its refresh limit',unavailable:'Unavailable: nothing usable answered this read'}
 const CALL_DEFAULTS={live:'Live provider call',cache:'Shared cache','negative-cache':'Shared failure record',error:'Failed call'}
+const selectText=node=>{try{const sel=window.getSelection?.();if(!node||!sel||typeof document.createRange!=='function')return;const range=document.createRange();range.selectNodeContents(node);sel.removeAllRanges();sel.addRange(range)}catch{/* the command stays on screen either way */}}
+/** "Reproduce this call": the exact request a LIVE keyed read made, as curl for the
+ * reader's own key. The key is only ever the literal $CMC_API_KEY (cmc-reproduce.ts).
+ * "Copied" is announced beside the button, never a relabel; a browser without the
+ * clipboard API gets the command selected for a keyboard copy instead. */
+function ReproduceCallRow({command}){
+ const {t}=useTranslation('intel',{useSuspense:false})
+ const [status,setStatus]=useState(null)
+ const code=useRef(null),timer=useRef(null)
+ useEffect(()=>()=>{if(timer.current)clearTimeout(timer.current)},[])
+ const copy=async()=>{
+  if(timer.current)clearTimeout(timer.current)
+  try{if(!navigator?.clipboard?.writeText)throw new Error('clipboard_unavailable');await navigator.clipboard.writeText(command);setStatus('copied');timer.current=setTimeout(()=>setStatus(null),2000)}
+  catch{selectText(code.current);setStatus('manual')}
+ }
+ return <><dt>{t('receipt_reproduce.label',{defaultValue:'Reproduce this call'})}</dt>
+  <dd><code ref={code} className="break-all" data-testid="receipt-reproduce-command">{command}</code>
+   <div><button type="button" className="btn btn--quiet btn--sm" onClick={copy}>{t('receipt_reproduce.copy',{defaultValue:'Copy command'})}</button>
+    <span role="status" aria-live="polite">{status==='copied'?` ${t('receipt_reproduce.copied',{defaultValue:'Copied'})}`:status==='manual'?` ${t('receipt_reproduce.copy_manual',{defaultValue:'Clipboard access is unavailable. The command is selected: copy it with your keyboard.'})}`:''}</span></div>
+   <p className="intel-analysis-caption">{t('receipt_reproduce.caption',{defaultValue:'Runs with your own CoinMarketCap key from the CMC_API_KEY environment variable and is charged to your account, not ours. The key is never part of this command.'})}</p></dd></>
+}
 /** What actually answered one read. provider_call_logs and the response cache
  * are service-role only, so this rides in the response body or a reader cannot
  * see it at all. Same <details><summary> idiom as AlertSourceReceipt.
@@ -42,6 +64,9 @@ export default function SourceCallReceipt({receipt,scope,scopeKey,observedAt}){
  // what a figure cost without opening anything. The drawer below still carries the
  // full accounting (credits charged, HTTP status, parameters, clocks).
  const cost=receiptCost(receipt)
+ // Only a live keyed read of a registered CoinMarketCap endpoint has a call to
+ // reproduce; every other receipt returns null and draws no row.
+ const reproduce=cmcReproduceCommand(receipt)
  return <details className="intel-source-call-receipt" data-freshness={freshness} data-served={cost?.served||undefined}><summary>{t('receipt.summary',{defaultValue:'Source call receipt'})}
   {cost?<> · <ReceiptCostLine receipt={receipt} /></>:null}</summary>
   <dl className="intel-event-facts">
@@ -61,6 +86,7 @@ export default function SourceCallReceipt({receipt,scope,scopeKey,observedAt}){
    {receipt.capturedAt&&receipt.capturedAt!==receipt.fetchedAt&&<><dt>{t('receipt_state.captured',{defaultValue:'Captured'})}</dt><dd><time dateTime={receipt.capturedAt}>{time(receipt.capturedAt)}</time></dd></>}
    {receipt.fetchedAt&&<><dt>{t('research.fetched',{defaultValue:'Retrieved'})}</dt><dd><time dateTime={receipt.fetchedAt}>{time(receipt.fetchedAt)}</time></dd></>}
    {observedAt&&<><dt>{t('research.observed',{defaultValue:'Observed'})}</dt><dd><time dateTime={observedAt}>{time(observedAt)}</time></dd></>}
+   {reproduce&&<ReproduceCallRow command={reproduce}/>}
   </dl>
   {scopeText&&<p className="intel-analysis-caption">{scopeText}</p>}
  </details>

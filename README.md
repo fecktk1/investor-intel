@@ -6,16 +6,28 @@ Crypto tools show a price, but not where it came from, whether other data agrees
 
 | | |
 |---|---|
+| Live demo, no account | https://thecontentforge.io/intel/demo (the real app on a daily snapshot; nothing you do is saved) |
 | Live product | https://thecontentforge.io/intel (free account, no card: https://thecontentforge.io/intel/signup?plan=free) |
 | RWA workspace | https://thecontentforge.io/intel/rwa and https://thecontentforge.io/intel/rwa/wrappers |
 | Demo video | https://www.youtube.com/watch?v=DUn6vZ0KKQg |
 | DoraHacks BUIDL | https://dorahacks.io/buidl/49075 |
 
+## What it does for tokenised real-world assets
+
+- **Which wrapper to hold.** For every asset with several wrapper tokens: the cheapest to its anchor, the closest to it, and the most traded, with the wrappers left out and why. The anchor is a fresh published NAV where one exists, otherwise the volume-weighted median of the liquid wrappers; a wrapper that sets that median is flagged rather than presented as "closest".
+- **Premium over time.** Each wrapper's premium or discount from every six-hourly capture, plus up to 90 days before that rebuilt from daily OHLCV closes through the same unit, accrual and liquidity rules, labelled as reconstructed, with weekends and exchange holidays shaded.
+- **Exit capacity.** How many days a position takes to sell at a chosen share of daily volume, computed twice: through the on-chain pools whose other leg can be valued, and across all venues CoinMarketCap reports. Missing data is a stated reason, never zero days.
+- **Listed is not tradeable.** A daily census of every tokenised asset in the RWA map: which have a wrapper that actually trades, which are priced but not traded, which are listed only, and what changed since the day before. On 2026-09-22, 526 of 791 had no wrapper with reported trading.
+- **Who holds the value.** Issuer concentration (HHI, effective number of issuers, top-five share) and the chains wrappers are deployed on, with value attributed to a chain only for single-chain tokens.
+- **Issuers from public registers.** Token to legal entity only through dated evidence (GLEIF, SEC EDGAR, OFAC), never by name similarity; the underlying company of a tokenised stock with its latest filings; advertised yield beside NAV-implied yield.
+- **Every number shows its source.** A receipt beside each figure (endpoint, parameters, live call or cache, HTTP status, credits charged, cache age), a `curl` line that reproduces a live call with your own key, and CSV export of each table (provider figures are left blank unless the data licence allows export).
+- **Bring your own agent.** A hosted MCP server with 28 grounded read tools covering all of the above, with scoped, revocable tokens and human-approved writes.
+
 ## What is in this repository
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | A read-only copy of the production modules behind the live RWA lane and the CMC transport: wrapper premiums, on-chain depth, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts. Kept under its original paths. | `deno test --allow-read --allow-env production-source/supabase` (398 tests, no key, no network calls to CMC) |
+| `production-source/` | A read-only copy of the production modules behind the live RWA lane and the CMC transport: wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts. Kept under its original paths. | `deno test --allow-read --allow-env production-source/supabase` (473 tests, no key, no network calls to CMC) |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm install`, `npm test`, `npm run dev` (see below) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |

@@ -66,7 +66,7 @@
 // figure and is the whole of the method.
 
 import { CMC_DEX_NETWORKS } from '../market-assets/cmc-dex.ts'
-import { DEPTH_TABLE, DEPLOYMENT_TABLE, RWA_DEPTH_CAPTURE_SCHEDULE } from './capture-rwa-depth.ts'
+import { DEPTH_TABLE, DEPLOYMENT_TABLE, RWA_DEPTH_CAPTURE_SCHEDULE, WRAPPER_TOKEN_TABLE } from './capture-rwa-depth.ts'
 import {
   COUNTED_SCOPE, EXIT_LIQUIDITY_SCOPE, POOL_CLASSIFICATION, UNCLASSIFIED_SCOPE, UNRECOGNISED_SCOPE,
   classifiedTotals, classifyStoredPools, poolsClassifiable, quoteAllowlist, quoteKey,
@@ -407,6 +407,65 @@ function classifyContext(byToken: Map<string, ReturnType<typeof deploymentRow>[]
   return { quotes, rwaAddresses, subjectsFor }
 }
 
+/** Wrapper-token rows one read may pull for the all-venue volume join. The
+ * wrapper lane writes one row per (asset, token) every six hours, about 300 a
+ * capture on 2026-09-20; filtered to the board's own tokens and to the last
+ * `PROVIDER_VOLUME_WINDOW_HOURS`, this is far above what a read can reach, and
+ * the read is newest-first so hitting it loses the OLDEST captures. */
+const PROVIDER_VOLUME_CAP = 2_000
+/** How old a wrapper capture may be and still stand beside a depth row. Two
+ * days is eight six-hourly captures: a token the wrapper lane stopped naming is
+ * reported as missing rather than paired with a week-old figure. */
+const PROVIDER_VOLUME_WINDOW_HOURS = 48
+const PROVIDER_ID = /^[1-9][0-9]{0,11}$/
+
+/** Why a row has no all-venue volume beside it. */
+export const PROVIDER_VOLUME_REASONS = ['no_provider_id', 'not_in_recent_wrapper_capture', 'wrapper_read_failed'] as const
+
+/**
+ * CoinMarketCap's own 24-hour volume for each token, from the wrapper lane's
+ * newest capture (`/v5/real-world-assets/quotes/latest`, `tokens[].volume_24h`).
+ *
+ * This is ALL-VENUE turnover, centralised exchanges included, and it is the
+ * second scenario the exit simulator shows beside the on-chain recognised-pool
+ * volume. It is a join over a table we already hold: zero credits, one bounded
+ * read. A failed read never breaks the depth view: every row keeps its depth
+ * figures and carries null volume with `providerVolumeReason` saying why.
+ */
+// deno-lint-ignore no-explicit-any
+export async function attachProviderVolume<T extends { cryptoId: string | null }>(db: any, rows: T[], now: Date | number) {
+  const ids = [...new Set(rows.map((row) => row.cryptoId).filter((id): id is string => !!id && PROVIDER_ID.test(id)))].slice(0, 400)
+  const found = new Map<string, { volume: number | null; capturedAt: string | null }>()
+  let reason: string | null = null
+  if (ids.length) {
+    const since = new Date(at(now) - PROVIDER_VOLUME_WINDOW_HOURS * 3_600_000).toISOString()
+    const page = await readRows(() => db.from(WRAPPER_TOKEN_TABLE).select('crypto_id,volume_24h,captured_at')
+      .eq('provider', 'coinmarketcap').in('crypto_id', ids).gte('captured_at', since)
+      .order('captured_at', { ascending: false }).limit(PROVIDER_VOLUME_CAP))
+    reason = page.reason
+    // Newest capture wins. One token can sit under more than one asset in the
+    // same capture; the figure is the token's own, so the first seen is kept.
+    for (const entry of page.rows) {
+      const id = str(entry?.crypto_id, 20)
+      if (!id || found.has(id)) continue
+      found.set(id, { volume: num(entry?.volume_24h), capturedAt: str(entry?.captured_at, 40) })
+    }
+  }
+  const joined = rows.map((row) => {
+    const hit = row.cryptoId ? found.get(row.cryptoId) : undefined
+    const rowReason = hit ? null
+      : !row.cryptoId || !PROVIDER_ID.test(row.cryptoId) ? 'no_provider_id'
+      : reason ? 'wrapper_read_failed' : 'not_in_recent_wrapper_capture'
+    return {
+      ...row,
+      providerVolume24hUsd: hit?.volume ?? null,
+      providerVolumeCapturedAt: hit?.capturedAt ?? null,
+      providerVolumeReason: rowReason,
+    }
+  })
+  return { rows: joined, reason }
+}
+
 /** Rank: readable depth first, deepest first; then everything we could not read,
  * by the tokenised value of the asset it wraps, so a large wrapper with no pool
  * is near the top of its own group rather than lost at the bottom of the board. */
@@ -448,13 +507,14 @@ export async function readRwaDepth(db: any, _params: Record<string, unknown> = {
       || (b.underlyingValueUsd ?? -1) - (a.underlyingValueUsd ?? -1)
       || String(a.tokenKey).localeCompare(String(b.tokenKey)))
     .slice(0, DEPTH_ROW_MAX)
+  const volume = await attachProviderVolume(db, rows, now)
   const stamps = depth.rows.map((row) => row.capturedAt).filter((v): v is string => !!v).sort()
   const sum = (field: 'countedLiquidityUsd' | 'unrecognisedLiquidityUsd' | 'totalLiquidityUsd'): number | null => {
     const values = split.map((row) => row[field]).filter((value): value is number => value != null)
     return values.length ? values.reduce((total, value) => total + value, 0) : null
   }
   return {
-    view: 'rwa_depth', rows,
+    view: 'rwa_depth', rows: volume.rows,
     // Measured over every token captured in the window, before the row cap, so
     // the summary describes the capture rather than the visible table.
     cohort: {
@@ -478,6 +538,9 @@ export async function readRwaDepth(db: any, _params: Record<string, unknown> = {
     countedScope: COUNTED_SCOPE, unrecognisedScope: UNRECOGNISED_SCOPE, exitLiquidityScope: EXIT_LIQUIDITY_SCOPE,
     scope: rows[0]?.scope || DEPTH_FALLBACK_SCOPE,
     attribution: { label: 'CoinMarketCap', endpoints: DEPTH_ENDPOINTS },
+    // The all-venue volume join. Its failure is reported here and per row, and
+    // is deliberately NOT folded into `reason`: the depth read itself answered.
+    providerVolume: { reason: volume.reason, windowHours: PROVIDER_VOLUME_WINDOW_HOURS },
     asOf: stamps.at(-1) ?? null,
     coverage: { from: stamps[0] ?? null, to: stamps.at(-1) ?? null, count: depth.scanned, truncated: depth.scanned >= DEPTH_CAP },
     reason: depth.reason || deployments.reason,
@@ -511,12 +574,14 @@ export async function readRwaTokenDepth(db: any, params: Record<string, unknown>
   const token = withCounterLegSplit(row, {
     quotes: ctx.quotes, rwaAddresses: ctx.rwaAddresses, subjectAddresses: ctx.subjectsFor(row.tokenKey as string),
   })
+  const volume = await attachProviderVolume(db, [token], now)
   return {
     view: 'rwa_token_depth', captured: true,
     token: {
-      ...token, ...contractList(deployments.byToken.get(row.tokenKey as string) || []),
+      ...volume.rows[0], ...contractList(deployments.byToken.get(row.tokenKey as string) || []),
       onlyUnrecognised: onlyUnrecognised(token),
     },
+    providerVolume: { reason: volume.reason, windowHours: PROVIDER_VOLUME_WINDOW_HOURS },
     readChains: [...READ_CHAINS], schedule: RWA_DEPTH_CAPTURE_SCHEDULE,
     exitabilityMethod: EXITABILITY_METHOD, scope: row.scope,
     countedScope: COUNTED_SCOPE, unrecognisedScope: UNRECOGNISED_SCOPE, exitLiquidityScope: EXIT_LIQUIDITY_SCOPE,
