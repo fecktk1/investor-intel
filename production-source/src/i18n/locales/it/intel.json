@@ -4308,7 +4308,6 @@
     "chart_sub": "Ogni punto è un involucro di un attivo. La linea orizzontale è l’ancora di quell’attivo; sopra l’involucro è più caro dell’ancora, sotto più economico. La linea verticale è la soglia di volume di {{floor}}: i punti a sinistra sono mostrati ma non ancorano nulla. L’asse del premio è limitato tra {{low}} e {{high}}, il 5° e il 95° percentile dei premi tracciati con un margine, così un solo involucro guasto non appiattisce tutti gli altri sulla linea dell’ancora.",
     "chart_outside": "Involucri il cui premio si trova oltre questo intervallo, disegnati sul bordo del grafico: {{count}}. Ognuno è nella tabella qui sotto, con il proprio premio.",
     "chart_title": "Premio rispetto alla profondità, un punto per involucro",
-    "chart_x": "Volume dichiarato a 24 h (milioni di USD)",
     "chart_y": "Premio rispetto all’ancora ({{unit}})",
     "col_anchor": "Ancora",
     "col_asset": "Attivo sottostante",
@@ -4339,10 +4338,6 @@
     "page_title": "Premio e dispersione degli involucri",
     "partial": "Parte di questa lettura non ha risposto ({{reason}}). Viene mostrato quello che è stato caricato e nulla è stato sostituito con uno zero.",
     "provenance": "Prezzi, volumi ed emittenti degli involucri provengono da {{quotes}}. Il valore dichiarato di ciascun attivo proviene da {{list}}. Entrambi sono stati letti nella cattura di {{at}}; premio, ancora e dispersione sono un nostro calcolo su quelle due letture.",
-    "q_cheap_deep": "Più economico, ancora il riferimento",
-    "q_cheap_thin": "Più economico, troppo sottile per ancorare",
-    "q_dear_deep": "Più caro, ancora il riferimento",
-    "q_dear_thin": "Più caro, troppo sottile per ancorare",
     "reason_accrual_name_mismatch": "Questo involucro è registrato come ad accumulo con un nome diverso, quindi l’eccezione non è stata applicata e il suo scarto è dichiarato come premio.",
     "reason_accrues_in_price": "Questo involucro accumula il rendimento nel prezzo del token, quindi il suo scarto dall’ancora è un accumulo e non un premio.",
     "reason_asset_name_mismatch": "Il fornitore dichiara ora un nome diverso per questo attivo, quindi il valore patrimoniale netto registrato non gli è stato applicato.",
@@ -4398,7 +4393,11 @@
     "unit_normalised_troy_ounce": "Quotato al grammo, riespresso all’oncia troy",
     "unit_not_assessed": "Unità non valutata",
     "unit_not_established": "Unità non stabilita",
-    "weighted": "Ponderato per volume {{value}}"
+    "weighted": "Ponderato per volume {{value}}",
+    "chart_x_log": "Volume dichiarato a 24 h (USD, scala logaritmica)",
+    "chart_log_note": "Il volume è in scala logaritmica: ogni linea della griglia vale dieci volte la precedente. Un involucro senza volume dichiarato si trova sul bordo sinistro.",
+    "legend_anchor": "Ancora il riferimento: il suo volume supera la soglia",
+    "legend_thin": "Troppo sottile per ancorare: mostrato, ma escluso dall’ancora"
   },
   "table_csv": {
     "download": "Scarica CSV",

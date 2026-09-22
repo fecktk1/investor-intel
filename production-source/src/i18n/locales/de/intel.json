@@ -4308,7 +4308,6 @@
     "chart_sub": "Jeder Punkt ist eine Hülle eines Vermögenswerts. Die waagerechte Linie ist der Anker dieses Vermögenswerts; darüber ist die Hülle teurer als der Anker, darunter günstiger. Die senkrechte Linie ist die Volumenuntergrenze von {{floor}}: Punkte links davon werden gezeigt, ankern aber nichts. Die Prämienachse ist auf {{low}} bis {{high}} begrenzt, das aufgefüllte 5. bis 95. Perzentil der gezeichneten Prämien, damit eine einzige kaputte Hülle nicht alle anderen auf die Ankerlinie drückt.",
     "chart_outside": "Hüllen, deren Prämie außerhalb dieses Bereichs liegt und die am Rand des Diagramms gezeichnet sind: {{count}}. Jede davon steht mit ihrer eigenen Prämie in der Tabelle darunter.",
     "chart_title": "Aufschlag gegen Handelstiefe, ein Punkt je Hülle",
-    "chart_x": "Gemeldetes 24-Stunden-Volumen (Mio. USD)",
     "chart_y": "Aufschlag zum Anker ({{unit}})",
     "col_anchor": "Anker",
     "col_asset": "Zugrunde liegender Vermögenswert",
@@ -4339,10 +4338,6 @@
     "page_title": "Hüllen-Auf- und Abschlag sowie Streuung",
     "partial": "Ein Teil dieses Lesevorgangs hat nicht geantwortet ({{reason}}). Was geladen wurde, wird gezeigt, und nichts wurde durch eine Null ersetzt.",
     "provenance": "Hüllenpreise, Volumina und Emittenten kommen von {{quotes}}. Der gemeldete Wert des Vermögenswerts selbst kommt von {{list}}. Beide wurden in der Erfassung von {{at}} gelesen; Aufschlag, Anker und Streuung sind unsere Berechnung über diese beiden Lesevorgänge.",
-    "q_cheap_deep": "Günstiger, ankert die Referenz",
-    "q_cheap_thin": "Günstiger, zu dünn zum Ankern",
-    "q_dear_deep": "Teurer, ankert die Referenz",
-    "q_dear_thin": "Teurer, zu dünn zum Ankern",
     "reason_accrual_name_mismatch": "Diese Hülle ist unter einem anderen Namen als ansammelnd eingetragen, daher wurde die Ausnahme nicht angewendet und ihre Differenz wird als Aufschlag gemeldet.",
     "reason_accrues_in_price": "Diese Hülle sammelt ihre Rendite im Token-Preis an, daher ist ihre Differenz zum Anker eine Ansammlung und kein Aufschlag.",
     "reason_asset_name_mismatch": "Der Anbieter meldet für diesen Vermögenswert inzwischen einen anderen Namen, daher wurde der eingetragene Nettoinventarwert nicht darauf angewendet.",
@@ -4398,7 +4393,11 @@
     "unit_normalised_troy_ounce": "Je Gramm bepreist, auf Feinunze umgerechnet",
     "unit_not_assessed": "Einheit nicht geprüft",
     "unit_not_established": "Einheit nicht festgestellt",
-    "weighted": "Volumengewichtet {{value}}"
+    "weighted": "Volumengewichtet {{value}}",
+    "chart_x_log": "Gemeldetes 24-Stunden-Volumen (USD, logarithmisch)",
+    "chart_log_note": "Das Volumen ist logarithmisch dargestellt: Jede Gitterlinie ist das Zehnfache der vorigen. Eine Hülle ohne gemeldetes Volumen sitzt am linken Rand.",
+    "legend_anchor": "Ankert die Referenz: Ihr Volumen liegt über der Untergrenze",
+    "legend_thin": "Zu dünn zum Ankern: gezeigt, aber nicht Teil des Ankers"
   },
   "table_csv": {
     "download": "CSV herunterladen",

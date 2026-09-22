@@ -4308,7 +4308,6 @@
     "chart_sub": "Chaque point est une enveloppe d’un actif. La ligne horizontale est l’ancre de cet actif ; au-dessus l’enveloppe est plus chère que l’ancre, en dessous moins chère. La ligne verticale est le seuil de volume de {{floor}} : les points à sa gauche sont affichés mais n’ancrent rien. L’axe des primes est borné à {{low}} et {{high}}, le 5e au 95e centile des primes tracées avec une marge, pour qu’une seule enveloppe défaillante n’écrase pas toutes les autres sur la ligne d’ancre.",
     "chart_outside": "Enveloppes dont la prime se situe au-delà de cette plage, dessinées au bord du graphique : {{count}}. Chacune figure dans le tableau ci-dessous, avec sa propre prime.",
     "chart_title": "Prime face à la profondeur, un point par enveloppe",
-    "chart_x": "Volume déclaré sur 24 h (millions d’USD)",
     "chart_y": "Prime face à l’ancre ({{unit}})",
     "col_anchor": "Ancre",
     "col_asset": "Actif sous-jacent",
@@ -4339,10 +4338,6 @@
     "page_title": "Prime et dispersion des enveloppes",
     "partial": "Une partie de cette lecture n’a pas répondu ({{reason}}). Ce qui a été chargé est affiché, et rien n’a été remplacé par un zéro.",
     "provenance": "Les prix, volumes et émetteurs des enveloppes viennent de {{quotes}}. La valeur déclarée de chaque actif vient de {{list}}. Les deux ont été lus dans la capture de {{at}} ; la prime, l’ancre et la dispersion sont notre calcul sur ces deux lectures.",
-    "q_cheap_deep": "Moins chère, ancre la référence",
-    "q_cheap_thin": "Moins chère, trop étroite pour ancrer",
-    "q_dear_deep": "Plus chère, ancre la référence",
-    "q_dear_thin": "Plus chère, trop étroite pour ancrer",
     "reason_accrual_name_mismatch": "Cette enveloppe est enregistrée comme accumulante sous un autre nom : l’exception n’a pas été appliquée et son écart est communiqué comme une prime.",
     "reason_accrues_in_price": "Cette enveloppe accumule son rendement dans le prix du jeton : son écart à l’ancre est une accumulation et non une prime.",
     "reason_asset_name_mismatch": "Le fournisseur communique désormais un autre nom pour cet actif : la valeur liquidative enregistrée ne lui a pas été appliquée.",
@@ -4398,7 +4393,11 @@
     "unit_normalised_troy_ounce": "Cotée au gramme, convertie à l’once troy",
     "unit_not_assessed": "Unité non évaluée",
     "unit_not_established": "Unité non établie",
-    "weighted": "Pondéré par le volume {{value}}"
+    "weighted": "Pondéré par le volume {{value}}",
+    "chart_x_log": "Volume déclaré sur 24 h (USD, échelle logarithmique)",
+    "chart_log_note": "Le volume est en échelle logarithmique : chaque ligne de la grille vaut dix fois la précédente. Une enveloppe sans volume déclaré se place sur le bord gauche.",
+    "legend_anchor": "Ancre la référence : son volume dépasse le seuil",
+    "legend_thin": "Trop étroite pour ancrer : affichée, mais exclue de l’ancre"
   },
   "table_csv": {
     "download": "Télécharger le CSV",

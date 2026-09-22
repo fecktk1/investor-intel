@@ -4308,7 +4308,6 @@
     "chart_sub": "Cada punto es un envoltorio de un activo. La línea horizontal es el ancla de ese activo; por encima el envoltorio es más caro que el ancla, por debajo más barato. La línea vertical es el umbral de volumen de {{floor}}: los puntos a su izquierda se muestran pero no anclan nada. El eje de prima está acotado entre {{low}} y {{high}}, el percentil 5 a 95 de las primas trazadas con un margen, para que un solo envoltorio roto no aplaste a todos los demás sobre la línea del ancla.",
     "chart_outside": "Envoltorios cuya prima queda fuera de ese rango, dibujados en el borde del gráfico: {{count}}. Cada uno está en la tabla de abajo, con su propia prima.",
     "chart_title": "Prima frente a profundidad, un punto por envoltorio",
-    "chart_x": "Volumen declarado de 24 h (millones de USD)",
     "chart_y": "Prima frente al ancla ({{unit}})",
     "col_anchor": "Ancla",
     "col_asset": "Activo subyacente",
@@ -4339,10 +4338,6 @@
     "page_title": "Prima y dispersión de los envoltorios",
     "partial": "Parte de esta lectura no respondió ({{reason}}). Se muestra lo que sí cargó y nada se sustituyó por un cero.",
     "provenance": "Los precios, volúmenes y emisores de los envoltorios vienen de {{quotes}}. El valor declarado de cada activo viene de {{list}}. Ambos se leyeron en la captura de {{at}}; la prima, el ancla y la dispersión son nuestro cálculo sobre esas dos lecturas.",
-    "q_cheap_deep": "Más barato, ancla la referencia",
-    "q_cheap_thin": "Más barato, demasiado fino para anclar",
-    "q_dear_deep": "Más caro, ancla la referencia",
-    "q_dear_thin": "Más caro, demasiado fino para anclar",
     "reason_accrual_name_mismatch": "Este envoltorio está registrado como acumulativo con otro nombre, por lo que no se aplicó la excepción y su diferencia se informa como prima.",
     "reason_accrues_in_price": "Este envoltorio acumula su rendimiento dentro del precio del token, por lo que su diferencia frente al ancla es una acumulación y no una prima.",
     "reason_asset_name_mismatch": "El proveedor informa ahora otro nombre para este activo, por lo que el valor liquidativo registrado no se le aplicó.",
@@ -4398,7 +4393,11 @@
     "unit_normalised_troy_ounce": "Cotizado por gramo, reexpresado por onza troy",
     "unit_not_assessed": "Unidad no evaluada",
     "unit_not_established": "Unidad no establecida",
-    "weighted": "Ponderado por volumen {{value}}"
+    "weighted": "Ponderado por volumen {{value}}",
+    "chart_x_log": "Volumen declarado de 24 h (USD, escala logarítmica)",
+    "chart_log_note": "El volumen está en escala logarítmica: cada línea de la cuadrícula es diez veces la anterior. Un envoltorio sin volumen declarado queda en el borde izquierdo.",
+    "legend_anchor": "Ancla la referencia: su volumen supera el umbral",
+    "legend_thin": "Demasiado fino para anclar: se muestra, pero queda fuera del ancla"
   },
   "table_csv": {
     "download": "Descargar CSV",
