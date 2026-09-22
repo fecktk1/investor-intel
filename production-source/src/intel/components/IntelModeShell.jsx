@@ -2,7 +2,7 @@ import React, { useCallback, useEffect, useRef, useState } from 'react'
 import { NavLink, useNavigate, useLocation } from 'react-router'
 import { Helmet } from 'react-helmet-async'
 import { useTranslation } from 'react-i18next'
-import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Bug, Flame, ChevronDown, X } from 'lucide-react'
+import { Gauge, Menu, ArrowLeftRight, LogOut, Shield, Bug, Flame, ChevronDown, X, PanelTopClose, PanelTopOpen } from 'lucide-react'
 import { useAuth } from '../../lib/auth-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { useProfile } from '../../lib/profile-context'
@@ -39,7 +39,7 @@ export default function IntelModeShell({ children }) {
   const location = useLocation()
   const [open, setOpen] = useState(false)
   const [compact, setCompact] = useState(() => new URLSearchParams(location.search).get('compact') === '1')
-  const compactParams = new URLSearchParams(location.search); compactParams.set('compact', '1')
+  const [contextBarsOpen, setContextBarsOpen] = useState(true)
   const [reportOpen, setReportOpen] = useState(false)
   const [utilitiesOpen, setUtilitiesOpen] = useState(false)
   const [expandedGroup, setExpandedGroup] = useState(null)
@@ -47,6 +47,14 @@ export default function IntelModeShell({ children }) {
   const menuButtonRef = useRef(null)
   const searchAssets = useCallback((query, signal) => searchIntelAssets(supabase, org?.id, query, signal, t), [supabase, org?.id, t])
   const closeNavigation = useCallback(() => setOpen(false), [])
+  const setCompactMode = useCallback((enabled) => {
+    setCompact(enabled)
+    const next = new URLSearchParams(location.search)
+    if (enabled) next.set('compact', '1'); else next.delete('compact')
+    const search = next.toString()
+    navigate(`${location.pathname}${search ? `?${search}` : ''}`, { replace: true })
+  }, [location.pathname, location.search, navigate])
+  useEffect(() => { setCompact(new URLSearchParams(location.search).get('compact') === '1') }, [location.search])
   useEffect(() => { setUtilitiesOpen(false); setOpen(false) }, [org?.id, user?.id])
   useEffect(() => {
     if (!open) return
@@ -119,7 +127,7 @@ export default function IntelModeShell({ children }) {
         <div className="p-4 border-b border-[var(--intel-border-soft)]">
           <div className="flex items-center gap-3">
             <div className="intel-brand-mark">
-              <Gauge className="h-5 w-5" style={{ color: 'var(--forge-gold)' }} />
+              <img src={import.meta.env.BASE_URL + 'favicon-32x32.png'} alt="" className="h-6 w-6 object-contain" />
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5">
@@ -231,10 +239,13 @@ export default function IntelModeShell({ children }) {
             ...navGroups.flatMap(group => group.items.map(item => ({ to: item.to, label: t(item.labelKey, { defaultValue: item.defaultLabel }), group: t(group.sectionKey, { defaultValue: group.sectionDefault }), keywords: item.to }))),
             ...INTEL_UTILITY_NAV.map(item => ({ to: item.to, label: t(item.labelKey, { defaultValue: item.defaultLabel }), group: t('shell.account_utilities', { defaultValue: 'Settings and support' }) })),
           ]}/>
-          {compact ? <button className="intel-text-link intel-window-control" onClick={() => { setCompact(false); const next = new URLSearchParams(location.search); next.delete('compact'); navigate(`${location.pathname}?${next}`, {replace:true}) }}>Full workspace</button> : <a className="intel-text-link intel-window-control" aria-label="Open compact window" href={`${location.pathname}?${compactParams}`} target="_blank" rel="noopener">Compact window</a>}
+          <button className="intel-text-link intel-window-control inline-flex items-center gap-1.5" aria-expanded={contextBarsOpen} onClick={() => setContextBarsOpen(value => !value)}>
+            {contextBarsOpen ? <PanelTopClose className="h-4 w-4" /> : <PanelTopOpen className="h-4 w-4" />}
+            {contextBarsOpen ? t('shell.hide_top_bars', { defaultValue: 'Hide top bars' }) : t('shell.show_top_bars', { defaultValue: 'Show top bars' })}
+          </button>
+          <button className="intel-text-link intel-window-control" onClick={() => setCompactMode(!compact)}>{compact ? t('shell.full_workspace', { defaultValue: 'Full workspace' }) : t('shell.compact_workspace', { defaultValue: 'Compact workspace' })}</button>
         </header>
-        <IntelDisclaimer variant="bar" />
-        <PinnedResearch/>
+        {contextBarsOpen && <><IntelDisclaimer variant="bar"/><PinnedResearch/></>}
         <main id="intel-main" ref={scrollRef} className="flex-1 overflow-y-auto p-4 lg:p-6 xl:p-7">
           <div className="max-w-7xl mx-auto"><MarketDetailCacheProvider key={`${user?.id || ""}:${org?.id || ""}`}>{children}</MarketDetailCacheProvider><footer className="mt-6 pt-3 border-t border-[var(--border-default)] text-xs text-[var(--fg-4)]"><a href="https://coinmarketcap.com/" target="_blank" rel="noreferrer" className="underline underline-offset-4">Data provided by CoinMarketCap.com</a><span> · Additional sources identified alongside their data.</span></footer></div>
         </main>

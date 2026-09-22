@@ -288,15 +288,6 @@ export default function RegimeRibbon({ compact = false, onLoad = null }) {
 
       <div ref={host}>
         <Ribbon
-          title={t('regime.ribbon_title', { defaultValue: 'Fear and greed' })}
-          description={t('regime.ribbon_sub', { defaultValue: 'Each band is a run of captures that published the same fear and greed class. Colour comes from where that class sits on the fear-to-greed scale.' })}
-          domain={domain}
-          segments={segmentsOf(fearBands, FEAR_GREED_CLASSES, FEAR_GREED_TONES, FEAR_GREED_LABELS, 'fg', 'fearGreed')}
-          width={width || undefined} height={compact ? 14 : 20}
-          formatTime={day} formatValue={index}
-          state={state} reason={reason}
-        />
-        <Ribbon
           title={t('regime.alt_title', { defaultValue: 'Altcoin season' })}
           description={t('regime.alt_sub', { defaultValue: 'The same captures read on the bitcoin-to-altcoin scale.' })}
           domain={domain}
@@ -316,21 +307,21 @@ export default function RegimeRibbon({ compact = false, onLoad = null }) {
 
       <div style={ROW}>
         <RadialGauge
-          title={t('regime.fg_gauge_title', { defaultValue: 'Fear and greed now' })}
+          title={t('regime.fg_gauge_title', { defaultValue: 'Fear and Greed' })}
           description={clockCaption(latest)}
           value={num(latest?.fearGreed) ?? 0} min={0} max={100} zones={fearZones}
           formatValue={index} height={height}
           state={gaugeState(latest?.fearGreed)} reason={reason}
         />
         <RadialGauge
-          title={t('regime.alt_gauge_title', { defaultValue: 'Altcoin season now' })}
+          title={t('regime.alt_gauge_title', { defaultValue: 'Altcoin Season' })}
           description={clockCaption(latest)}
           value={num(latest?.altcoinSeason) ?? 0} min={0} max={100} zones={altZones}
           formatValue={index} height={height}
           state={gaugeState(latest?.altcoinSeason)} reason={reason}
         />
         <RadialGauge
-          title={t('regime.dom_gauge_title', { defaultValue: 'BTC dominance now' })}
+          title={t('regime.dom_gauge_title', { defaultValue: 'BTC Dominance' })}
           description={clockCaption(latest)}
           value={num(latest?.btcDominance) ?? 0} min={0} max={100} zones={[]}
           formatValue={share} height={height}

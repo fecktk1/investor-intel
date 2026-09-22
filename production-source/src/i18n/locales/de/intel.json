@@ -809,6 +809,10 @@
     "my_intel_sub": "Dein Recherche-Desk. Market Pulse, gefolgte Assets und gespeicherte Arbeit."
   },
   "shell": {
+    "compact_workspace": "Kompakter Arbeitsbereich",
+    "full_workspace": "Vollständiger Arbeitsbereich",
+    "hide_top_bars": "Obere Leisten ausblenden",
+    "show_top_bars": "Obere Leisten anzeigen",
     "switch_to_team": "Zu einem Team-Workspace wechseln",
     "sign_out": "Abmelden",
     "account_actions": "Konto & Hilfe",
@@ -1435,9 +1439,9 @@
     "alt_sub": "Dieselben Erfassungen, gelesen auf der Skala von Bitcoin zu Altcoins.",
     "dominance_title": "BTC-Dominanz",
     "dominance_sub": "Der erfasste Bitcoin-Anteil an der gesamten Marktkapitalisierung, über denselben Zeitraum und dieselbe Zeitachse wie die Bänder oben.",
-    "fg_gauge_title": "Angst und Gier jetzt",
-    "alt_gauge_title": "Altcoin-Saison jetzt",
-    "dom_gauge_title": "BTC-Dominanz jetzt",
+    "fg_gauge_title": "Angst und Gier",
+    "alt_gauge_title": "Altcoin-Saison",
+    "dom_gauge_title": "BTC-Dominanz",
     "observed_at": "Anbieterzeit: {{time}}",
     "captured_at": "Es wurde keine Anbieterzeit veröffentlicht; erfasst {{time}}",
     "no_clock": "Es wurde noch kein Beobachtungszeitpunkt aufgezeichnet.",
@@ -3593,7 +3597,7 @@
     "question": "Untersuchungsfrage",
     "question_hint": "Was hat sich geändert, und warum ist das wichtig?",
     "record": "Frage erfassen",
-    "resume": "Thread fortsetzen",
+    "resume": "Recherche fortsetzen",
     "retry_pinned": "Lesen erneut versuchen",
     "title": "Fortlaufende Untersuchung",
     "unpin": "Lösen"

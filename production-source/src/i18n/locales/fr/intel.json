@@ -809,6 +809,10 @@
     "my_intel_sub": "Votre bureau de recherche. Pouls du marché, actifs suivis et travaux enregistrés."
   },
   "shell": {
+    "compact_workspace": "Espace de travail compact",
+    "full_workspace": "Espace de travail complet",
+    "hide_top_bars": "Masquer les barres supérieures",
+    "show_top_bars": "Afficher les barres supérieures",
     "switch_to_team": "Passer à un espace d'équipe",
     "sign_out": "Se déconnecter",
     "account_actions": "Compte & aide",
@@ -1435,9 +1439,9 @@
     "alt_sub": "Les mêmes captures lues sur l’échelle allant du bitcoin aux altcoins.",
     "dominance_title": "Dominance BTC",
     "dominance_sub": "La part enregistrée du bitcoin dans la capitalisation totale du marché, sur la même période et le même axe temporel que les bandes ci-dessus.",
-    "fg_gauge_title": "Peur et avidité maintenant",
-    "alt_gauge_title": "Saison des altcoins maintenant",
-    "dom_gauge_title": "Dominance BTC maintenant",
+    "fg_gauge_title": "Peur et avidité",
+    "alt_gauge_title": "Saison des altcoins",
+    "dom_gauge_title": "Dominance BTC",
     "observed_at": "Horloge du fournisseur : {{time}}",
     "captured_at": "Aucune horloge du fournisseur n’a été publiée ; capturé {{time}}",
     "no_clock": "Aucune heure d’observation n’a encore été enregistrée.",
@@ -3593,7 +3597,7 @@
     "question": "Question de l’étude",
     "question_hint": "Qu’est-ce qui a changé, et pourquoi est-ce important ?",
     "record": "Enregistrer la question",
-    "resume": "Reprendre le fil",
+    "resume": "Poursuivre la recherche",
     "retry_pinned": "Relancer la lecture",
     "title": "Étude continue",
     "unpin": "Désépingler"

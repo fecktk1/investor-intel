@@ -809,6 +809,10 @@
     "my_intel_sub": "Je researchdesk. Marktpols, gevolgde activa en opgeslagen werk."
   },
   "shell": {
+    "compact_workspace": "Compacte werkruimte",
+    "full_workspace": "Volledige werkruimte",
+    "hide_top_bars": "Bovenste balken verbergen",
+    "show_top_bars": "Bovenste balken tonen",
     "switch_to_team": "Overschakelen naar een teamwerkruimte",
     "sign_out": "Uitloggen",
     "account_actions": "Account en hulp",
@@ -1435,9 +1439,9 @@
     "alt_sub": "Dezelfde vastleggingen, gelezen op de schaal van bitcoin naar altcoins.",
     "dominance_title": "BTC-dominantie",
     "dominance_sub": "Het geregistreerde aandeel van bitcoin in de totale marktkapitalisatie, over dezelfde periode en dezelfde tijdas als de banden hierboven.",
-    "fg_gauge_title": "Angst en hebzucht nu",
-    "alt_gauge_title": "Altcoinseizoen nu",
-    "dom_gauge_title": "BTC-dominantie nu",
+    "fg_gauge_title": "Angst en hebzucht",
+    "alt_gauge_title": "Altcoinseizoen",
+    "dom_gauge_title": "BTC-dominantie",
     "observed_at": "Klok van de aanbieder: {{time}}",
     "captured_at": "Er is geen klok van de aanbieder gepubliceerd; vastgelegd {{time}}",
     "no_clock": "Er is nog geen waarnemingsklok vastgelegd.",
@@ -3593,7 +3597,7 @@
     "question": "Onderzoeksvraag",
     "question_hint": "Wat is er veranderd en waarom doet het ertoe?",
     "record": "Vraag vastleggen",
-    "resume": "Draad hervatten",
+    "resume": "Onderzoek voortzetten",
     "retry_pinned": "Opnieuw proberen te lezen",
     "title": "Doorlopend onderzoek",
     "unpin": "Losmaken"

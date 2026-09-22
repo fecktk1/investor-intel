@@ -118,17 +118,17 @@ export default function RegimeDayPanel({ coverageFrom = null, logos = null }) {
 
       <div style={{ display: 'grid', gap: '1rem 2.5rem', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 14rem), 1fr))', alignItems: 'start' }}>
         <RadialGauge
-          title={t('regime.fg_gauge_title', { defaultValue: 'Fear and greed now' })}
+          title={t('regime.fg_gauge_title', { defaultValue: 'Fear and Greed' })}
           description={caption} value={num(regime?.fearGreed) ?? 0} min={0} max={100} zones={fearGreedZones(t)}
           formatValue={index} height={104} state={gaugeState(regime?.fearGreed)} reason={reason}
         />
         <RadialGauge
-          title={t('regime.alt_gauge_title', { defaultValue: 'Altcoin season now' })}
+          title={t('regime.alt_gauge_title', { defaultValue: 'Altcoin Season' })}
           description={caption} value={num(regime?.altcoinSeason) ?? 0} min={0} max={100} zones={altcoinZones(t)}
           formatValue={index} height={104} state={gaugeState(regime?.altcoinSeason)} reason={reason}
         />
         <RadialGauge
-          title={t('regime.dom_gauge_title', { defaultValue: 'BTC dominance now' })}
+          title={t('regime.dom_gauge_title', { defaultValue: 'BTC Dominance' })}
           description={caption} value={num(regime?.btcDominance) ?? 0} min={0} max={100}
           formatValue={share} height={104} state={gaugeState(regime?.btcDominance)} reason={reason}
         />

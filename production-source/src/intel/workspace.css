@@ -432,7 +432,7 @@
 .intel-draw-more-item:disabled { opacity:.35; cursor:default; }
 .intel-draw-more-item[aria-pressed="true"] { color:var(--accent); }
 .intel-draw-bar-hint { flex:1 1 100%; color:var(--accent); font-size:11px; padding-top:1px; }
-.intel-draw-layer { position:absolute; top:0; left:0; z-index:2; pointer-events:none; overflow:hidden; }
+.intel-draw-layer { position:absolute; top:0; left:0; z-index:2; pointer-events:none; overflow:visible; }
 .intel-draw-options { position:absolute; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:5px 8px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); color:var(--fg-3); font-size:11px; }
 .intel-draw-options label { display:flex; align-items:center; gap:5px; }
 /* A post card's row hangs from the card's bottom edge, outside the size the

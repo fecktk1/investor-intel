@@ -42,6 +42,6 @@ export default function PinnedResearch() {
         {!!id&&<button className="intel-text-link" onClick={()=>prefs.save({pinnedThreadId:null}).catch(error=>setState(s=>({...s,error:error.message})))}>{t('thread.unpin',{defaultValue:'Unpin'})}</button>}
       </div>
     </details>
-    {current&&<Link className="intel-text-link" to={threadResumeHref(current)}>{t('thread.resume',{defaultValue:'Resume thread'})}</Link>}
+    {current&&<Link className="intel-text-link" to={threadResumeHref(current)}>{t('thread.resume',{defaultValue:'Continue research'})}</Link>}
   </aside>
 }

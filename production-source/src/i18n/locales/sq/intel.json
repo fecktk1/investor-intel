@@ -809,6 +809,10 @@
     "my_intel_sub": "Paneli yt i hulumtimit. Pulsi i tregut, aktivet e ndjekura dhe puna e ruajtur."
   },
   "shell": {
+    "compact_workspace": "Hapësirë kompakte pune",
+    "full_workspace": "Hapësirë e plotë pune",
+    "hide_top_bars": "Fshih shiritat e sipërm",
+    "show_top_bars": "Shfaq shiritat e sipërm",
     "switch_to_team": "Kalo te hapësira e punës së ekipit",
     "sign_out": "Dil",
     "account_actions": "Llogaria dhe ndihma",
@@ -1435,9 +1439,9 @@
     "alt_sub": "Të njëjtat kapje, të lexuara në shkallën nga bitcoin-i te altcoin-et.",
     "dominance_title": "Dominimi i BTC",
     "dominance_sub": "Pjesa e regjistruar e bitcoin-it në kapitalizimin total të tregut, përgjatë së njëjtës periudhë dhe të njëjtit bosht kohor si brezat më sipër.",
-    "fg_gauge_title": "Frika dhe lakmia tani",
-    "alt_gauge_title": "Sezoni i altcoin-eve tani",
-    "dom_gauge_title": "Dominimi i BTC tani",
+    "fg_gauge_title": "Frika dhe lakmia",
+    "alt_gauge_title": "Sezoni i altcoin-eve",
+    "dom_gauge_title": "Dominimi i BTC",
     "observed_at": "Ora e ofruesit: {{time}}",
     "captured_at": "Nuk u publikua asnjë orë e ofruesit; kapur {{time}}",
     "no_clock": "Ende nuk është regjistruar asnjë orë vëzhgimi.",
@@ -3593,7 +3597,7 @@
     "question": "Pyetja e hetimit",
     "question_hint": "Çfarë ndryshoi dhe pse ka rëndësi?",
     "record": "Regjistro pyetjen",
-    "resume": "Rifillo fijen",
+    "resume": "Vazhdo kërkimin",
     "retry_pinned": "Provo leximin sërish",
     "title": "Hetim i vazhdueshëm",
     "unpin": "Hiq nga të fiksuarat"
