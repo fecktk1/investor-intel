@@ -9,6 +9,11 @@ import CopyAddress from './CopyAddress'
 import { readCaptureView, captureUnavailable } from '../lib/capture-api'
 import { formatCompact } from '../lib/market-format'
 import { assetHref, depthPoints, exitLiquidityText, pctLabel, readingText, unrecognisedText, usdLabel } from '../lib/rwa-depth-format'
+import { rowExitScenarios } from '../lib/rwa-exit-capacity'
+import { depthCsvColumns } from '../lib/rwa-depth-csv'
+import { downloadTableCsv } from '../lib/table-csv'
+import RwaExitInputs, { daysText, exitInputs, initialExitForm } from './RwaExitInputs'
+import DemoNotInSnapshot, { isDemoMissReason } from '../demo/DemoNotInSnapshot'
 
 // Where tokenised assets can actually be sold.
 //
@@ -60,6 +65,10 @@ export default function RwaDepth() {
   const { supabase } = useSupabase()
   const orgId = org?.id || null
   const [read, setRead] = useState({ status: 'loading', payload: null, reason: null })
+  // The exit simulator's inputs. Our calculation over the stored volumes; the
+  // read is never repeated when they change.
+  const [exitForm, setExitForm] = useState(initialExitForm)
+  const inputs = useMemo(() => exitInputs(exitForm), [exitForm])
 
   useEffect(() => {
     const controller = new AbortController()
@@ -78,6 +87,12 @@ export default function RwaDepth() {
   const readChains = (payload.readChains || []).join(', ')
   const captureTime = payload.schedule?.rwa_depth?.utc || '03:34'
   const asOf = payload.asOf && Number.isFinite(Date.parse(payload.asOf)) ? new Date(payload.asOf).toLocaleString() : null
+  // The licence switch travels on every capture read. Anything but an explicit
+  // true blanks the CoinMarketCap columns in the file.
+  const exportAllowed = payload.sourcePolicy?.exportAllowed === true
+  const downloadCsv = () => downloadTableCsv({
+    view: 'rwa_depth', asOf: payload.asOf || null, columns: depthCsvColumns(inputs), rows, exportAllowed,
+  })
 
   return (
     <section id="intel-rwa-depth" className="intel-rwa-depth space-y-6" aria-label={t('rwa_depth.title', { defaultValue: 'Where tokenised assets can actually be sold' })}>
@@ -93,7 +108,7 @@ export default function RwaDepth() {
       {read.status === 'loading' && <p role="status">{t('rwa_depth.loading', { defaultValue: 'Reading the captured pools…' })}</p>}
 
       {read.status === 'unavailable' && (
-        <p role="alert">{t('rwa_depth.unavailable', { reason: read.reason || 'unknown', defaultValue: 'The depth board could not be read ({{reason}}). Nothing is asserted about any token\'s liquidity.' })}</p>
+        isDemoMissReason(read.reason) ? <p role="status"><DemoNotInSnapshot /></p> : <p role="alert">{t('rwa_depth.unavailable', { reason: read.reason || 'unknown', defaultValue: 'The depth board could not be read ({{reason}}). Nothing is asserted about any token\'s liquidity.' })}</p>
       )}
 
       {read.status === 'ready' && (
@@ -185,8 +200,24 @@ export default function RwaDepth() {
                 state={points.length ? 'ready' : 'empty'}
               />
 
+              {/* The exit simulator. Days are OUR turnover calculation over two
+                  stored volumes; the formula under the table is its whole method. */}
+              <div className="space-y-2">
+                <div className="eyebrow">{t('rwa_exit.eyebrow', { defaultValue: 'Exit capacity' })}</div>
+                <RwaExitInputs form={exitForm} onChange={setExitForm} idPrefix="rwa-depth-exit" />
+              </div>
+
               <div className="overflow-x-auto">
                 <table className="w-full text-[12px]">
+                  <caption className="text-left pb-2">
+                    <span className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-1">
+                      <span className="text-[var(--fg-4)]">{t('rwa_depth_csv.caption', { count: rows.length, defaultValue: '{{count}} tokens, deepest sellable liquidity first' })}</span>
+                      <span className="flex flex-wrap items-baseline gap-x-3">
+                        <button type="button" className="intel-text-link" onClick={downloadCsv}>{t('rwa_depth_csv.download', { defaultValue: 'Download CSV' })}</button>
+                        {!exportAllowed && <span className="text-[var(--fg-4)]">{t('rwa_depth_csv.blanked', { defaultValue: 'CoinMarketCap figures are left blank in the file under the current data licence; our own figures are kept.' })}</span>}
+                      </span>
+                    </span>
+                  </caption>
                   <thead>
                     <tr>
                       <th scope="col" className={head}>{t('rwa_depth.col_token', { defaultValue: 'Token' })}</th>
@@ -197,6 +228,7 @@ export default function RwaDepth() {
                       <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_liquidity', { defaultValue: 'Sellable liquidity' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_deepest', { defaultValue: 'Deepest counted pool' })}</th>
                       <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_depth.col_concentration', { defaultValue: 'In the deepest' })}</th>
+                      <th scope="col" className={`${rule} intel-number font-normal py-2 pr-3`}>{t('rwa_exit.col_days', { defaultValue: 'Days to exit' })}</th>
                       <th scope="col" className={head}>{t('rwa_depth.col_reading', { defaultValue: 'Reading' })}</th>
                     </tr>
                   </thead>
@@ -204,6 +236,7 @@ export default function RwaDepth() {
                     {rows.map(row => {
                       const href = assetHref(row)
                       const name = row.symbol || row.tokenName || row.tokenKey
+                      const exit = rowExitScenarios(row, inputs)
                       return (
                         <tr key={row.tokenKey}>
                           <th scope="row" className={`${cell} text-left font-normal`}>
@@ -261,6 +294,16 @@ export default function RwaDepth() {
                             ) : '—'}
                           </td>
                           <td className={`${cell} intel-number`}>{pctLabel(row.concentrationPct)}</td>
+                          <td className={`${cell} intel-number`}>
+                            {/* Recognised on-chain pools first, because that is
+                                what this board is about; CoinMarketCap's
+                                all-venue volume beneath it as the second scenario. */}
+                            <span className="block">{t('rwa_exit.scenario_pools_short', { value: daysText(exit.recognised_pools, t), defaultValue: '{{value}} · recognised pools' })}</span>
+                            <span className="block text-[var(--fg-4)]">{t('rwa_exit.scenario_venues_short', { value: daysText(exit.all_venues, t, exit.all_venues.volumeReason), defaultValue: '{{value}} · all venues' })}</span>
+                            {exit.recognised_pools.positionPctOfPool != null && (
+                              <span className="block text-[var(--fg-4)]">{t('rwa_exit.pool_relative_short', { pct: pctLabel(exit.recognised_pools.positionPctOfPool), defaultValue: '{{pct}} of recognised pools\' size' })}</span>
+                            )}
+                          </td>
                           <td className={cell}>
                             {readingText(row, t)}
                             {unrecognisedText(row, t) && (
@@ -296,6 +339,20 @@ export default function RwaDepth() {
                   </tbody>
                 </table>
               </div>
+
+              {/* The simulator's whole method, with the inputs on screen. */}
+              <Scope>
+                {t('rwa_exit.formula', {
+                  position: usdLabel(inputs.positionUsd),
+                  participation: pctLabel(inputs.participationPct),
+                  haircut: pctLabel(inputs.haircutPct),
+                  defaultValue: 'Days to exit is our calculation: position ÷ (share of daily volume × 24-hour volume × (1 − stress haircut)), here {{position}}, {{participation}} and {{haircut}}. "Recognised pools" uses the 24-hour volume of the pools counted on this board; "all venues" uses CoinMarketCap\'s 24-hour volume for the token across every venue it tracks, centralised exchanges included, from the tokenised-asset quotes capture. It assumes a seller never trades more than that share of a day\'s volume, and it models no price impact.',
+                })}
+              </Scope>
+              <Scope>{t('rwa_exit.pool_method', { defaultValue: 'Size relative to recognised pools is the position ÷ the quote-side liquidity CoinMarketCap reported for the counted pools, or their counted liquidity where it reported none, after the same haircut. It compares a size with a pool; it is not a slippage estimate and not a quote.' })}</Scope>
+              {payload.providerVolume?.reason && (
+                <Scope>{t('rwa_exit.volume_join_failed', { reason: payload.providerVolume.reason, defaultValue: 'The all-venue volume could not be read ({{reason}}), so that scenario is unavailable on every row. The depth figures are unaffected.' })}</Scope>
+              )}
 
               {/* Provenance: the endpoints, the capture clock and the method
                   behind the figures we computed ourselves. */}

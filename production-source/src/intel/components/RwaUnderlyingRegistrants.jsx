@@ -8,6 +8,7 @@ import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable } from '../lib/capture-api'
 import { fmtNum } from '../lib/market-format'
+import DemoNotInSnapshot, { isDemoMissReason } from '../demo/DemoNotInSnapshot'
 
 // Underlying registrants: the LISTED COMPANY beneath a tokenised stock or fund.
 //
@@ -172,7 +173,7 @@ export default function RwaUnderlyingRegistrants() {
       {read.status === 'loading' && <p role="status">{t('rwa_underlying.loading', { defaultValue: 'Reading stored profiles and filer records…' })}</p>}
 
       {read.status === 'unavailable' && (
-        <p role="alert">{t('rwa_underlying.unavailable', { reason: read.reason || 'unknown', defaultValue: 'The underlying registrant board could not be read ({{reason}}). Nothing is asserted about any company.' })}</p>
+        isDemoMissReason(read.reason) ? <p role="status"><DemoNotInSnapshot /></p> : <p role="alert">{t('rwa_underlying.unavailable', { reason: read.reason || 'unknown', defaultValue: 'The underlying registrant board could not be read ({{reason}}). Nothing is asserted about any company.' })}</p>
       )}
 
       {read.status === 'ready' && (

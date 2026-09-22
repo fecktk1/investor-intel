@@ -1,6 +1,7 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { markMotion } from './theme'
+import { demoReasonNode } from '../demo/DemoNotInSnapshot'
 import './charts.css'
 
 export const useChartText = () => useTranslation('intel', { useSuspense: false }).t
@@ -95,7 +96,7 @@ export function ChartFrame({ t, title, description, state = 'ready', kind = 'err
         <div className="intel-chart-kit-plot" style={box} data-reserved={box ? 'true' : undefined}>
           <p className="intel-chart-kit-state" role="alert">
             {t('charts.unavailable', { defaultValue: 'This chart could not be built.' })}{' '}
-            {reason || t('charts.no_reason', { defaultValue: 'No reason was reported.' })}
+            {demoReasonNode(reason) || t('charts.no_reason', { defaultValue: 'No reason was reported.' })}
           </p>
         </div>
       ) : empty ? (

@@ -53,12 +53,15 @@ import {readNewListings} from './capture-listings-read.ts'
 import {readMemeGraduation} from './capture-meme-read.ts'
 import {readRwaIssuerLegitimacy} from './capture-rwa-issuer-read.ts'
 import {readRwaYield} from './capture-rwa-yield-read.ts'
+import {readRwaWrapperPicks} from './capture-rwa-wrappers-read.ts'
 import {suggestMarketAssets,SUGGEST_MAX_LIMIT,SUGGEST_MIN_LENGTH,SUGGEST_MAX_LENGTH} from './market-asset-suggest.ts'
 import {readCachedAssetQuote} from './cached-asset-quote.ts'
 import {readMetricAgreement} from './metric-agreement-read.ts'
 import {metricAgreementReceipt} from './metric-agreement.ts'
 import {rwaTermsProjection} from './rwa-terms.ts'
 import {COINGECKO_ATTRIBUTION} from './launchpad-registry.ts'
+import {SERIES_TOTAL_CAP,perGroupCap,trimSeries,trimNote,notes} from './mcp-size.ts'
+import {rwaCoverage,rwaUniverseChanges,rwaIssuerConcentration,rwaPremiumHistory,rwaExitCapacity,marketStructure,MARKET_FIGURE_NAMES,HISTORY_WRAPPER_CAP} from './mcp-readings.ts'
 
 // deno-lint-ignore no-explicit-any
 type Db=any
@@ -80,64 +83,9 @@ const STORE={
 const CMC=(family:string,store:string):SourceRef=>({provider:'coinmarketcap',endpoint_family:family,store})
 const OURS=(store:string):SourceRef=>({provider:'investor_intel',endpoint_family:null,store})
 
-/** How many points of a series one tool result may carry.
- *
- * WHY THIS EXISTS. Every tool ARGUMENT is bounded, but a series is not an
- * argument: the read modules cap themselves at what a chart on the web page needs
- * (400 regime points, 200 per RWA asset type across seven types), which is right
- * for a canvas and far too much for a conversation. Measured against production:
- * rwa_universe at days=30 returned 1400 points, 520 KB on the wire, roughly 130
- * thousand tokens of a member's context window for a shape that 60 points states
- * just as well. The trim is an even-stride downsample that keeps the first and
- * last observation, so the WINDOW the caller asked for is still the window they
- * get, and the note says how many points the series really had. */
-const SERIES_POINT_CAP=60
-
-/** How many points an answer carrying SEVERAL series may add up to.
- *
- * A per-series cap alone does not bound an ANSWER. rwa_universe returns one
- * series per asset type, so a 60-point cap became 7 x 60 = 420 points: measured
- * against production after the first fix, 180 KB, down from 520 KB but still the
- * largest thing this server can hand back, and growing every time a new asset
- * type starts being captured. A shared budget is what actually bounds it: an
- * eighth type makes each series shorter rather than making the answer bigger.
- *
- * The floor keeps a small number of types readable. With seven types this works
- * out at 25 points each, which over a 30 day window is about one a day. */
-const SERIES_TOTAL_CAP=180
-const SERIES_MIN_PER_GROUP=12
-
-/** The per-series allowance when an answer carries `groups` of them. */
-function perGroupCap(groups:number):number {
- if(groups<=1)return SERIES_POINT_CAP
- return Math.max(SERIES_MIN_PER_GROUP,Math.min(SERIES_POINT_CAP,Math.floor(SERIES_TOTAL_CAP/groups)))
-}
-
-/** Even-stride downsample, first and last observation always kept.
- *
- * Deliberately a copy of the shape capture-read.ts uses rather than a call into
- * it: this cap is about what a model should read, not about what a chart needs,
- * and the two should be free to differ without one changing the other. */
-function trimSeries<T>(rows:readonly T[],max=SERIES_POINT_CAP):T[] {
- if(rows.length<=max||max<2)return rows.slice(0,Math.max(0,max))
- const step=rows.length/max,out:T[]=[]
- for(let index=0;index<max;index++)out.push(rows[Math.min(rows.length-1,Math.floor(index*step))])
- out[out.length-1]=rows[rows.length-1]
- return out
-}
-
-/** Said in words, never left as a silently short series. */
-function trimNote(kept:number,total:number,what:string):string|null {
- return total>kept
-  ? `The ${what} had ${total} points over the window asked for; ${kept} evenly spaced points are returned, including the first and the last, so the window is unchanged and the answer stays readable.`
-  : null
-}
-
-/** Join notes without leaving a stray separator when one of them is absent. */
-const notes=(...parts:Array<string|null|undefined>):string|null => {
- const kept=parts.filter((part):part is string=>typeof part==='string'&&part.length>0)
- return kept.length?kept.join(' '):null
-}
+// Result size: SERIES_POINT_CAP, SERIES_TOTAL_CAP, perGroupCap, trimSeries,
+// trimNote and the last-resort fitToBudget live in mcp-size.ts, with the reasons.
+// Every tool here, old and new, is held to them.
 
 // ── Request-scoped context ──────────────────────────────────────────────────
 
@@ -539,6 +487,44 @@ async function rwaIssuerTerms(ctx:ToolContext,args:Record<string,unknown>):Promi
  })
 }
 
+/** Which wrapper to name for one tokenised asset, three ways: cheapest to its
+ * anchor, closest to its anchor, most traded. Read from the six-hourly wrapper
+ * capture the board uses, so an agent and the page name the same wrappers. */
+async function rwaBestWrapper(ctx:ToolContext,args:Record<string,unknown>):Promise<Record<string,unknown>> {
+ const rwaId=typeof args.rwa_id==='string'?args.rwa_id:null
+ const cryptoId=typeof args.crypto_id==='string'?args.crypto_id:null
+ const result=await readRwaWrapperPicks(ctx.db,{rwaId,cryptoId},ctx.now)
+ const asked=rwaId?`rwa id ${rwaId}`:cryptoId?`wrapper ${cryptoId}`:null
+ const note=result.state==='no_asset_selected'
+  ?'Name the asset with rwa_id (its CoinMarketCap RWA id) or crypto_id (any one of its wrapper tokens). rwa_universe lists the captured assets.'
+  :result.state==='not_captured'
+   ?reasonSentence(result.reason)??'No wrapper capture is stored yet. The capture runs every six hours; nothing refreshes on a read.'
+   :result.state==='not_in_capture'
+    ?`The newest wrapper capture holds no multi-wrapper asset matching ${asked}. The capture keeps assets with two or more wrappers, widest dispersion first, so this is missing coverage, not evidence that the asset has no wrappers.`
+    :null
+ return grounded({
+  tool:'rwa_best_wrapper',
+  as_of:result.asOf,
+  source:[
+   CMC('/v5/real-world-assets/quotes/latest','intel_rwa_wrapper_tokens'),
+   {provider:'investor_intel',endpoint_family:'wrapper premium lane',store:'intel_rwa_wrapper_assets'},
+  ],
+  calculated_by:'investor_intel',
+  inputs:['each wrapper\'s premium to the stated anchor and its reported 24h volume, from one stored six-hourly wrapper capture; cheapest and closest are chosen among wrappers that cleared the volume floor, most liquid among wrappers that carry a premium; ties go to higher volume, then lower id'],
+  tier:{tier:ctx.tier,surface:'capture_views',open:true},
+  coverage:result.coverage,
+  note,
+ },{
+  state:result.state,
+  rwa_id:rwaId,crypto_id:cryptoId,
+  asset:result.asset??null,
+  picks:result.picks??null,
+  rules:result.pickRules,
+  circular_meaning:'closest.circular true means that wrapper set the liquid-wrapper median it is measured against, so its distance of zero is by construction. Quote closest.closestOther as the nearest independent wrapper.',
+  not_advice:'Three readings of one capture, not a recommendation. A premium is not a tradable arbitrage, and volume is the provider\'s reported figure across every venue, not an exit capacity.',
+ })
+}
+
 // ── Handlers: forward-compatible RWA readings ───────────────────────────────
 
 function forwardTool(name:'rwa_wrapper_premiums'|'rwa_liquidity_depth'|'rwa_underlying_registrant',reading:keyof typeof FORWARD_TABLE_CONTRACT,what:string,source:SourceRef,inputs:string[]) {
@@ -870,6 +856,11 @@ async function dataBudget(ctx:ToolContext,_args:Record<string,unknown>):Promise<
   ['meme_graduations',STORE.meme,'captured_at'],
   ['rwa_universe',STORE.rwaUniverse,'captured_at'],
   ['rwa_yield_provenance','intel_rwa_nav_observations','captured_at'],
+  ['rwa_coverage','intel_rwa_coverage_assets','captured_at'],
+  ['rwa_premium_history','intel_rwa_wrapper_tokens','captured_at'],
+  ['rwa_exit_capacity','intel_rwa_depth_snapshots','captured_at'],
+  ['market_structure (unusual_moves)','intel_unusual_move_scores','captured_at'],
+  ['market_structure (categories)','intel_category_snapshots','captured_at'],
   ['asset_catalogue',STORE.catalogue,'as_of'],
  ] as Array<[string,string,string]>).map(async([reading,table,column])=>{
   try{
@@ -944,6 +935,28 @@ export const MCP_TOOLS:ToolSpec[]=[
   }),
   surface:'market_regime',label:'Market regime',
   handler:marketRegime,
+ },
+ {
+  name:'market_structure',
+  title:'Market structure figures',
+  description:'One tool for the precomputed market figures the Structure pages show: unusual_moves (each asset\'s move ranked against its own history), liquidations (needs provider_ids), attention (trending and gainer list membership, needs provider_id), breadth, categories, category_disagreement, exchange_reserves, venue_share, index_constituents (CMC20 and CMC100), rank_map, airdrops and network_stats. Name the figure; each takes only its own arguments and refuses the others by name: unusual_moves rows, day; liquidations provider_ids, hours (1 to 24); attention provider_id, hours (1 to 168); breadth nothing; categories days (1, 7 or 30), top (up to 30); category_disagreement min_members, rows; exchange_reserves days (7, 30 or 90), exchange_id, rows (up to 20); venue_share days (30, 90 or 365), kind; index_constituents days (up to 90), rows; rank_map top (up to 30), weeks (up to 26); airdrops status, days, rows; network_stats rows. Long lists and series are trimmed to stay readable and the note says so. The market regime is not here: market_regime covers it.',
+  schema:object({
+   figure:{type:'string',enum:MARKET_FIGURE_NAMES,description:'Which figure to read.'},
+   days:{type:'integer',minimum:1,maximum:365,description:'Window in days, where the figure takes one. Each figure accepts its own values: see the tool description.'},
+   hours:{type:'integer',minimum:1,maximum:168,description:'Window in hours, for liquidations (1 to 24) and attention (1 to 168).'},
+   top:{type:'integer',minimum:1,maximum:30,description:'How many categories (categories) or assets by rank (rank_map), at most 30.'},
+   weeks:{type:'integer',minimum:1,maximum:26,description:'How many weekly rank samples, for rank_map. At most 26.'},
+   rows:{type:'integer',minimum:1,maximum:50,description:'How many rows of the figure\'s main list to return. Each figure applies its own default when omitted, and exchange_reserves takes at most 20.'},
+   kind:{type:'string',enum:['spot','derivatives'],description:'For venue_share: spot volume or derivatives volume and open interest.'},
+   status:{type:'string',enum:['ongoing','upcoming','all'],description:'For airdrops.'},
+   min_members:{type:'integer',minimum:2,maximum:50,description:'For category_disagreement: the smallest category to include.'},
+   exchange_id:{type:'integer',minimum:1,maximum:1000000000,description:'For exchange_reserves: one exchange\'s CoinMarketCap id.'},
+   provider_id:{type:'string',minLength:1,maxLength:16,pattern:'^[1-9][0-9]{0,11}$',description:'For attention: the asset\'s CoinMarketCap id, digits only.'},
+   provider_ids:{type:'array',minItems:1,maxItems:10,items:{type:'string',minLength:1,maxLength:16,pattern:'^[1-9][0-9]{0,11}$'},description:'For liquidations: up to 10 CoinMarketCap ids, digits only.'},
+   day:{type:'string',minLength:10,maxLength:10,pattern:'^[0-9]{4}-[0-9]{2}-[0-9]{2}$',description:'For unusual_moves: a scored day as YYYY-MM-DD. Omit for the newest.'},
+  },['figure']),
+  surface:'capture_views',label:'Recorded captures',
+  handler:marketStructure,
  },
  {
   name:'new_listings',
@@ -1029,6 +1042,17 @@ export const MCP_TOOLS:ToolSpec[]=[
   handler:forwardTool('rwa_wrapper_premiums','wrapper_premiums','wrapper premiums',{provider:'investor_intel',endpoint_family:'wrapper premium lane'},['wrapper price and anchor price from the same six-hourly capture, differenced in basis points; gold wrappers priced per gram are restated per troy ounce first']),
  },
  {
+  name:'rwa_best_wrapper',
+  title:'Which wrapper to name',
+  description:'For one tokenized real-world asset with several wrapper tokens: the CHEAPEST wrapper to its anchor, the CLOSEST to its anchor (flagged circular when it set the liquid-wrapper median, with the nearest other wrapper beside it), and the MOST LIQUID by reported 24h volume, each with its premium in basis points. Cheapest and closest only consider wrappers that cleared the volume floor. Every wrapper eligible for none is listed under excluded with its state and reason. With no anchor, cheapest and closest are unavailable with the reason. Name the asset by rwa_id or by any one wrapper\'s crypto_id.',
+  schema:object({
+   rwa_id:{type:'string',minLength:1,maxLength:16,pattern:'^[1-9][0-9]{0,11}$',description:'The CoinMarketCap RWA id of the underlying asset, digits only.'},
+   crypto_id:{type:'string',minLength:1,maxLength:16,pattern:'^[1-9][0-9]{0,11}$',description:'The CoinMarketCap crypto id of any one wrapper token of the asset, digits only. Used when rwa_id is omitted.'},
+  }),
+  surface:'capture_views',label:'Recorded captures',
+  handler:rwaBestWrapper,
+ },
+ {
   name:'rwa_liquidity_depth',
   title:'Pools and exitability',
   description:'On-chain pool depth per tokenized-asset token: chains deployed, chains we can read, pool count, liquidity, 24h volume, holder count and a depth_state that says in words why a token has no pool reading (chain not covered, issuer redemption only, no deployment known). TWO SETS OF LIQUIDITY COLUMNS, do not mix them. recognised_liquidity_usd, recognised_pool_count, recognised_volume_24h_usd and deepest_recognised_* cover ONLY pools whose other leg is a major quote asset on that chain or another tokenized asset we captured, matched by contract address and never by symbol: quote these when asked where a token can actually be sold. total_liquidity_usd and deepest_pool_* are CoinMarketCap figures over EVERY pool found, and CoinMarketCap values both legs of a pool, so they include pools against tokens nobody can value (on 2026-09-20 XAUt deepest_pool_pair was XAUt / GOLDGR at 16.5M USD on 812 USD of daily volume). unrecognised_pool_count and unrecognised_liquidity_usd are what the difference is made of, and a token whose recognised_pool_count is 0 with a positive unrecognised_pool_count has pools but none anyone could sell into, which is not the same as having no pool. exit_liquidity_usd is the quote legs own reported sizes summed over the exit_liquidity_pools pools that reported one, so it is a floor and not a capacity. pool_classification null means the capture predates the leg addresses and every recognised_ column is null. This is not a slippage model. An empty result is missing coverage, NOT a token having no liquidity.',
@@ -1049,6 +1073,61 @@ export const MCP_TOOLS:ToolSpec[]=[
   }),
   surface:'capture_views',label:'Recorded captures',
   handler:forwardTool('rwa_underlying_registrant','underlying_registrant','underlying registrant facts',{provider:'sec',endpoint_family:'/submissions'},['SEC submissions records for the registrant behind the underlying']),
+ },
+ {
+  name:'rwa_coverage',
+  title:'How much of the RWA universe trades',
+  description:'The daily coverage headline: of the tokenized real-world assets CoinMarketCap lists, how many have a token with a price and reported 24h volume, how many have tokens that do not trade, how many report no token, and how many were not answered; the same per state and per asset type. Also the expected-ticker watch (BUIDL, BENJI, OUSG, USYC): present means a name-matched row exists in our catalogue, which can be a non-CoinMarketCap row, while in_rwa_universe is whether CoinMarketCap\'s RWA capture itself carries it.',
+  schema:object({}),
+  surface:'capture_views',label:'Recorded captures',
+  handler:rwaCoverage,
+ },
+ {
+  name:'rwa_universe_changes',
+  title:'What changed in the RWA universe',
+  description:'Dated events between consecutive daily coverage snapshots: listed, removed (only when the asset map itself stopped seeing the asset after a complete run), became_tradeable and shelved. comparable false means fewer than two snapshots exist, which is not the same as no changes.',
+  schema:object({
+   days:{type:'integer',minimum:1,maximum:30,default:7,description:'How many days of snapshots to read, 1 to 30.'},
+   kind:{type:'string',enum:['listed','removed','became_tradeable','shelved'],description:'Only this kind of event. Omit for all four.'},
+   limit:LIMIT_PROPERTY(100,50,'How many events to return, newest first, at most 100. The counts always cover every event.'),
+  }),
+  surface:'capture_views',label:'Recorded captures',
+  handler:rwaUniverseChanges,
+ },
+ {
+  name:'rwa_issuer_concentration',
+  title:'How concentrated RWA issuers are',
+  description:'Issuer concentration of tokenized real-world assets by market cap on the newest daily snapshot: HHI on the 0 to 10,000 scale, the effective number of issuers, the top five issuers\' share, and how many tokens were excluded for having no market cap or no issuer, overall and per asset type. Plus deployment counts per chain; market cap per chain is given only for single-chain tokens, because a multi-chain token\'s value cannot be split by chain.',
+  schema:object({
+   top_issuers:{type:'integer',minimum:1,maximum:10,default:5,description:'How many largest issuers to name overall, at most 10 (per type at most 5).'},
+  }),
+  surface:'capture_views',label:'Recorded captures',
+  handler:rwaIssuerConcentration,
+ },
+ {
+  name:'rwa_premium_history',
+  title:'Wrapper premiums over time',
+  description:`For one tokenized asset: the anchor and dispersion series and each wrapper's premium series in basis points, every point labelled capture (the six-hourly live capture) or ohlcv_reconstructed (daily closes, only before the first live capture), with the boundary between them and the market-closed calendar for the underlying. Downsampled to stay readable: at most ${HISTORY_WRAPPER_CAP} wrappers sharing one point budget, or one wrapper's 60-point series when crypto_id is given, each with a summary over its full series.`,
+  schema:object({
+   rwa_id:{type:'string',minLength:1,maxLength:16,pattern:'^[1-9][0-9]{0,11}$',description:'The CoinMarketCap RWA id of the underlying asset, digits only.'},
+   days:{type:'integer',enum:[30,90,180,365],default:90,description:'Window in days.'},
+   crypto_id:{type:'string',minLength:1,maxLength:16,pattern:'^[1-9][0-9]{0,11}$',description:'Optional: one wrapper\'s CoinMarketCap crypto id, to return only its series at full length.'},
+  },['rwa_id']),
+  surface:'capture_views',label:'Recorded captures',
+  handler:rwaPremiumHistory,
+ },
+ {
+  name:'rwa_exit_capacity',
+  title:'How long a position takes to sell',
+  description:'For one tokenized-asset token: how many days selling a position takes if the seller keeps to participation_pct of each day\'s volume, cut by haircut_pct, in two scenarios: the recognised on-chain pools\' volume, and CoinMarketCap\'s all-venue volume. Each scenario gives the per-day amount, the day count and the formula written out, or the reason it cannot be computed. Plus the position as a percent of the recognised pool size, which is a size comparison and not slippage. Reads the stored depth capture only.',
+  schema:object({
+   crypto_id:{type:'string',minLength:1,maxLength:16,pattern:'^[1-9][0-9]{0,11}$',description:'The token\'s CoinMarketCap crypto id, digits only.'},
+   position_usd:{type:'number',minimum:0.01,maximum:1e12,description:'The position to sell, in USD. More than zero.'},
+   participation_pct:{type:'number',minimum:0.1,maximum:100,default:10,description:'The share of each day\'s volume the seller takes, in percent.'},
+   haircut_pct:{type:'number',minimum:0,maximum:90,default:0,description:'A stress cut applied to volume and pool size, in percent.'},
+  },['crypto_id','position_usd']),
+  surface:'capture_views',label:'Recorded captures',
+  handler:rwaExitCapacity,
  },
  {
   name:'watchlist_read',
@@ -1346,7 +1425,7 @@ export const MCP_PROMPTS=[
  {
   name:'rwa_due_diligence',
   title:'Tokenized asset due diligence',
-  description:'Walks one tokenized real-world asset: universe position, issuer legal identity and admission history, advertised against realized yield, and issuer terms, refusing to fill gaps with guesses.',
+  description:'Walks one tokenized real-world asset: universe position and coverage, issuer legal identity, admission history and concentration, advertised against realized yield, issuer terms, wrapper premiums and their history, and exit capacity, refusing to fill gaps with guesses.',
   arguments:[{name:'subject',description:'The RWA subject key, written as rwa:coinmarketcap:<id>.',required:true}],
  },
 ]
@@ -1387,12 +1466,13 @@ export function getMcpPrompt(name:string,args:Record<string,unknown>):McpPromptR
     `Work through the tokenized asset ${subject} using Investor Intel only.`,
     '',
     'In this order:',
-    '1. rwa_universe for where its type sits: asset count, issuer count, market value, 24h volume.',
-    '2. rwa_issuer_legitimacy for the legal entity and how it was identified, the SEC Form D admission history and what has drifted in it, holder concentration and transfer restrictions.',
+    '1. rwa_universe for where its type sits: asset count, issuer count, market value, 24h volume. rwa_coverage for how much of the universe has a token that actually trades.',
+    '2. rwa_issuer_legitimacy for the legal entity and how it was identified, the SEC Form D admission history and what has drifted in it, holder concentration and transfer restrictions. rwa_issuer_concentration for how concentrated the issuers of its type are.',
     '3. rwa_yield_provenance for the advertised rate against the realized rate we computed from on-chain NAV rounds. The gap between them is the point.',
     '4. rwa_issuer_terms for who may redeem, minimums, exclusions and hours, each with its link.',
-    '5. rwa_wrapper_premiums and rwa_liquidity_depth for what a wrapper trades at against its anchor and whether there is anywhere to sell it.',
-    '6. rwa_underlying_registrant when there is a listed company underneath, using its ten-digit CIK.',
+    '5. rwa_wrapper_premiums and rwa_liquidity_depth for what a wrapper trades at against its anchor and whether there is anywhere to sell it. rwa_premium_history, with the id in the subject as rwa_id, for how those premiums moved, capture and reconstructed points kept apart.',
+    '6. rwa_best_wrapper for which wrapper is cheapest to the anchor, which is closest, and which trades most, and which wrappers were excluded and why. A closest wrapper flagged circular set the anchor itself. rwa_exit_capacity on a wrapper\'s crypto id for how many days a position takes to sell in both scenarios, with the reason when one cannot be computed.',
+    '7. rwa_underlying_registrant when there is a listed company underneath, using its ten-digit CIK.',
     '',
     'Rules: an empty result is missing coverage on our side, never evidence that the thing does not exist. A review date is not an expiry. Date and source every figure, and name the ones we calculated. This is not advice, an eligibility decision or a valuation.',
    ].join('\n')}}],

@@ -28,24 +28,21 @@ import {
   loadSchedulePolicy, captureRegime, captureIndexConstituents, captureRwaUniverse, captureRankDaily,
   backfillRankHistory, captureLiquidations, captureAttention, captureAirdrops, type CaptureDeps, type JobResult,
 } from '../_shared/intel/capture-jobs.ts'
-import { readCaptureView, CAPTURE_VIEWS } from '../_shared/intel/capture-read.ts'
+// The read half (view registry + response envelope) is shared with the public
+// demo's snapshot builder, so both answer a read with the identical body.
+import { captureReadEnvelope } from '../_shared/intel/capture-read-envelope.ts'
 // Stage 3 lanes live in their own modules and plug in through one shared
 // surface: ops run like the jobs above, views read like the views above.
 import { VENUE_CAPTURE_OPS } from '../_shared/intel/capture-venues.ts'
-import { VENUE_CAPTURE_VIEWS } from '../_shared/intel/capture-venues-read.ts'
 import { CATEGORY_CAPTURE_OPS } from '../_shared/intel/capture-categories.ts'
-import { CATEGORY_CAPTURE_VIEWS } from '../_shared/intel/capture-categories-read.ts'
 import { FX_CAPTURE_OPS } from '../_shared/intel/capture-fx.ts'
-import { FX_CAPTURE_VIEWS } from '../_shared/intel/capture-fx-read.ts'
 import { LISTING_CAPTURE_OPS } from '../_shared/intel/capture-listings.ts'
-import { LISTING_CAPTURE_VIEWS } from '../_shared/intel/capture-listings-read.ts'
 import { MEME_CAPTURE_OPS } from '../_shared/intel/capture-meme.ts'
-import { MEME_CAPTURE_VIEWS } from '../_shared/intel/capture-meme-read.ts'
 // Second source for the SAME two meme-graduation tables: real launchpads on
 // Solana, BNB Chain, Base and Robinhood Chain through the CoinGecko onchain API.
 // It spends no CoinMarketCap credit and answers to its own `coingecko`
 // provider_schedule_policy row, which it loads itself (loadSchedulePolicy below
-// only reads `coinmarketcap` rows). Its view is MEME_CAPTURE_VIEWS above: one
+// only reads `coinmarketcap` rows). Its view is MEME_CAPTURE_VIEWS (in the shared read envelope): one
 // page, one view, two sources.
 import { LAUNCHPAD_CAPTURE_OPS } from '../_shared/intel/capture-launchpads.ts'
 // THIRD source for the same two tables: SunPump on TRON, read off the chain
@@ -56,52 +53,52 @@ import { LAUNCHPAD_CAPTURE_OPS } from '../_shared/intel/capture-launchpads.ts'
 // view, three sources.
 import { SUNPUMP_CAPTURE_OPS } from '../_shared/intel/capture-sunpump.ts'
 import { CANDLE_CAPTURE_OPS } from '../_shared/intel/capture-candles.ts'
-import { CANDLE_CAPTURE_VIEWS } from '../_shared/intel/capture-candles-read.ts'
 // RWA yield provenance and NAV integrity. This lane calls no CoinMarketCap
 // endpoint: Chainlink NAV over a public RPC, Treasury, the New York Fed, the ECB
 // and SEC EDGAR are all keyless, so it reports zero credits and has no plan gate.
 import { RWA_YIELD_CAPTURE_OPS } from '../_shared/intel/capture-rwa-yield.ts'
-import { RWA_YIELD_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-yield-read.ts'
 // The RWA issuer legitimacy lane reads FREE PRIMARY SOURCES (GLEIF, SEC EDGAR,
 // OFAC, Sourcify and a block explorer) rather than CoinMarketCap, so it spends
 // no credits and answers to its own `primary-sources` policy rows.
 import { RWA_ISSUER_CAPTURE_OPS } from '../_shared/intel/capture-rwa-issuer.ts'
-import { RWA_ISSUER_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-issuer-read.ts'
 // The RWA UNDERLYING REGISTRANT lane answers a DIFFERENT legal question from the
 // issuer lane above: the CIK CoinMarketCap publishes on a tokenised stock is the
 // underlying listed company's filer number, never the token issuer's. Its map op
 // spends zero credits (rwaMap is a zero-cost capability), its profile op at most
 // twelve a run, and its EDGAR op none at all.
 import { RWA_UNDERLYING_CAPTURE_OPS } from '../_shared/intel/capture-rwa-underlyings.ts'
-import { RWA_UNDERLYING_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-underlyings-read.ts'
 // Tokenised-asset on-chain DEPTH: cross-chain deployment resolution plus pool
 // reads on the four chains CoinMarketCap publishes DEX data for on this plan.
 // This is the one CMC-metered RWA lane; its per-run ceiling is 87 credits at a
 // daily cadence and its `rwa_depth` policy row states it.
 import { RWA_DEPTH_CAPTURE_OPS } from '../_shared/intel/capture-rwa-depth.ts'
-import { RWA_DEPTH_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-depth-read.ts'
 // Wrapper premium, discount and dispersion for one underlying asset wrapped by
 // several tokens, plus the reconciliation between the RWA list endpoint's
 // asset-level value and the sum of what the quotes endpoint says that asset's own
 // tokens are worth. This lane DOES spend CoinMarketCap credits, bounded at 5 per
 // run and 20 a day; it answers to the `coinmarketcap` / `rwa_wrappers` policy row.
 import { RWA_WRAPPER_CAPTURE_OPS } from '../_shared/intel/capture-rwa-wrappers.ts'
-import { RWA_WRAPPER_CAPTURE_VIEWS } from '../_shared/intel/capture-rwa-wrappers-read.ts'
 // "Unusual for THIS asset": each asset's newest complete day scored against its
 // OWN trailing distribution. It calls no provider at all — it reads the stored
 // candle archive above plus the catalogue — so it reports zero credits and
 // answers to its own `local` provider_schedule_policy row, which it loads itself.
 import { UNUSUAL_CAPTURE_OPS } from '../_shared/intel/capture-unusual.ts'
-import { UNUSUAL_CAPTURE_VIEWS } from '../_shared/intel/capture-unusual-read.ts'
-// Source receipts for the capture views: what the newest capture run recorded
-// about its own provider calls. A database read only; no provider call.
-import { readCaptureReceipts } from '../_shared/intel/source-receipt.ts'
+// Premium history for the wrapper board. The view reads the six-hourly wrapper
+// captures already kept for 400 days, plus days before the first capture that an
+// operator-run backfill rebuilt from daily OHLCV (one credit per wrapper, once;
+// its policy row ships disabled and it refuses unless historical retention is on).
+import { RWA_WRAPPER_BACKFILL_OPS } from '../_shared/intel/capture-rwa-wrapper-backfill.ts'
+// Daily RWA universe coverage: every tokenised asset in the RWA map, read through
+// the quotes endpoint in batches of 100 (about 8 credits a day), classified as
+// tradeable, priced but not traded, or listed only, and diffed against the day
+// before. Its views also serve issuer concentration and the expected-ticker watch.
+// It answers to the `coinmarketcap` / `rwa_coverage` policy row.
+import { RWA_COVERAGE_OPS } from '../_shared/intel/capture-rwa-coverage.ts'
 
 // Both keyless RWA lanes are registered here. Dropping either spread silently
 // removes a whole capture lane while every test still passes, so both must
-// appear in both objects.
-const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...LAUNCHPAD_CAPTURE_OPS, ...SUNPUMP_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS, ...RWA_UNDERLYING_CAPTURE_OPS, ...RWA_DEPTH_CAPTURE_OPS, ...RWA_WRAPPER_CAPTURE_OPS, ...UNUSUAL_CAPTURE_OPS }
-const LANE_VIEWS = { ...VENUE_CAPTURE_VIEWS, ...CATEGORY_CAPTURE_VIEWS, ...FX_CAPTURE_VIEWS, ...LISTING_CAPTURE_VIEWS, ...MEME_CAPTURE_VIEWS, ...CANDLE_CAPTURE_VIEWS, ...RWA_YIELD_CAPTURE_VIEWS, ...RWA_ISSUER_CAPTURE_VIEWS, ...RWA_UNDERLYING_CAPTURE_VIEWS, ...RWA_DEPTH_CAPTURE_VIEWS, ...RWA_WRAPPER_CAPTURE_VIEWS, ...UNUSUAL_CAPTURE_VIEWS }
+// appear here and in LANE_VIEWS (_shared/intel/capture-read-envelope.ts).
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...LAUNCHPAD_CAPTURE_OPS, ...SUNPUMP_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS, ...RWA_UNDERLYING_CAPTURE_OPS, ...RWA_DEPTH_CAPTURE_OPS, ...RWA_WRAPPER_CAPTURE_OPS, ...RWA_COVERAGE_OPS, ...RWA_WRAPPER_BACKFILL_OPS, ...UNUSUAL_CAPTURE_OPS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 function json(body: unknown, status = 200) {
@@ -129,12 +126,11 @@ Deno.serve(async (req) => {
       const orgId = typeof body.orgId === 'string' ? body.orgId : null
       const actor = await requireIntelAccess(req, createClient, admin, orgId)
       if (!actor?.userId) return json({ error: 'unauthorized' }, 401)
-      const view = String(body.view || '')
-      if (view === 'capture_receipts') return json({ ...await readCaptureReceipts(admin, body, Date.now()), durationMs: Date.now() - startedAt })
-      const laneView = Object.hasOwn(LANE_VIEWS, view) ? LANE_VIEWS[view] : null
-      if (!laneView && !CAPTURE_VIEWS.includes(view as typeof CAPTURE_VIEWS[number])) return json({ error: 'unsupported_view', views: [...CAPTURE_VIEWS, ...Object.keys(LANE_VIEWS), 'capture_receipts'] }, 400)
-      const result = laneView ? await laneView(admin, body, Date.now()) : await readCaptureView(admin, view, body, Date.now())
-      return json({ ...result, durationMs: Date.now() - startedAt })
+      // View registry, sourcePolicy and the response envelope are shared with
+      // intel-demo-snapshot (_shared/intel/capture-read-envelope.ts), so the demo
+      // stores exactly what this read returns.
+      const read = await captureReadEnvelope(admin, body, { now: Date.now(), startedAt, env: (key) => Deno.env.get(key) })
+      return json(read.body, read.status)
     }
 
     if (!CAPTURE_OPS.includes(op as typeof CAPTURE_OPS[number])) return json({ error: 'unsupported_op', ops: [...CAPTURE_OPS, 'read'] }, 400)

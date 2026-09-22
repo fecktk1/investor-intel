@@ -12,6 +12,7 @@ import { fmtPrice, fmtVol, fmtPct } from '../lib/market-format'
 import TokenChart from '../components/TokenChart'
 import RwaRelationships from '../components/RwaRelationships'
 import RwaAssetProfile from '../components/RwaAssetProfile'
+import RwaCoverage from '../components/RwaCoverage'
 import TokenAvatar from '../components/TokenAvatar'
 import { useRwaAssetProfile } from '../lib/useRwaAssetProfile'
 import { useRwaAssetLogos } from '../lib/useRwaAssetLogos'
@@ -19,6 +20,7 @@ import MarketPairsEvidence from '../components/MarketPairsEvidence'
 import {MarketContextHistory} from '../components/MarketContextHistory'
 import ExchangeDisclosures from '../components/ExchangeDisclosures'
 import DexDiscoveryTable from '../components/DexDiscoveryTable'
+import { downloadTableCsv, RWA_LIST_CSV_COLUMNS } from '../lib/table-csv'
 import {isDexDiscovery,CMC_DEX_NETWORKS} from '../../../supabase/functions/_shared/market-assets/cmc-dex.ts'
 
 const VIEWS = {
@@ -73,7 +75,7 @@ export const rwaQuoteMissing = row => {
     .every(key => (row?.[key] ?? quote?.[key] ?? null) == null)
 }
 
-export function ResearchTable({ rows, capability, onOpen, t, logos = null }) {
+export function ResearchTable({ rows, capability, onOpen, t, logos = null, exportAllowed = false, asOf = null }) {
   const q = row => row.quote || {}
   const observed = row => { const time = row.last_updated || row.quote?.last_updated; return time ? new Date(time).toLocaleString() : '—' }
   const column = (key, label, read, numeric = true) => ({ key, label: t(`research.column_${key}`, { defaultValue: label }), read, numeric })
@@ -91,7 +93,11 @@ export function ResearchTable({ rows, capability, onOpen, t, logos = null }) {
   else if (capability.startsWith('rwa')) columns = [column('type', 'Asset type', r => String(r.asset_type || '—').replaceAll('_',' '), false), column('tokenized_price', 'Tokenized price (USD)', r => fmtPrice(r.average_tokenized_price ?? q(r).average_tokenized_price)), column('value', 'Tokenized value (USD)', r => fmtVol(r.tokenized_market_cap ?? q(r).tokenized_market_cap)), column('volume', '24h volume (USD)', r => fmtVol(r.tokenized_volume_24h ?? q(r).tokenized_volume_24h)), column('quote_observed', 'Quote observed', r => q(r).last_updated ? new Date(q(r).last_updated).toLocaleString() : 'No dated quote', false)]
   else if (['content','community','airdrops'].includes(capability)) columns = [column('status', 'Status', r => r.status || '—', false), column('observed', 'Observed', observed, false)]
   else columns = [column('price', 'Price (USD)', r => fmtPrice(q(r).price)), column('market_cap', 'Market cap (USD)', r => fmtVol(q(r).market_cap)), column('volume', '24h volume (USD)', r => fmtVol(q(r).volume_24h)), column('change', '24h change', r => fmtPct(q(r).percent_change_24h))]
-  return <div className="intel-table-scroll"><table><thead><tr><th scope="col">{t('research.name', { defaultValue: 'Name' })}</th>{columns.map(c => <th key={c.key} scope="col" className={c.numeric ? 'intel-number' : ''}>{c.label}</th>)}<th scope="col">{t('research.open', { defaultValue: 'Investigate' })}</th></tr></thead>
+  // The asset list offers this page as CSV, exactly the rows shown. CoinMarketCap
+  // money columns stay blank unless the caller passes the read's own export
+  // policy as exportAllowed === true (fail closed; intel-research carries none).
+  const csv = capability === 'rwaList' && rows.length ? <p className="text-xs text-[var(--fg-4)] pb-2"><button type="button" className="underline underline-offset-4" title={exportAllowed === true ? undefined : t('table_csv.cmc_columns_blank', { defaultValue: 'CoinMarketCap price, value and volume columns are left blank in the file because the source terms do not allow exporting them. Identifiers, counts, states and our own calculations are included.' })} onClick={() => downloadTableCsv({ view: 'rwa-assets', asOf, columns: RWA_LIST_CSV_COLUMNS, rows: rows.map(row => ({ ...row, source: 'coinmarketcap' })), exportAllowed })}>{t('table_csv.download_page', { count: rows.length, defaultValue: `Download this page (${rows.length} rows)` })}</button></p> : null
+  return <>{csv}<div className="intel-table-scroll"><table><thead><tr><th scope="col">{t('research.name', { defaultValue: 'Name' })}</th>{columns.map(c => <th key={c.key} scope="col" className={c.numeric ? 'intel-number' : ''}>{c.label}</th>)}<th scope="col">{t('research.open', { defaultValue: 'Investigate' })}</th></tr></thead>
     <tbody>{rows.map((row, index) => <tr key={`${rowId(row) || ''}:${index}`}>
       <th scope="row"><button type="button" className="flex items-center gap-2.5 text-left text-[var(--fg-1)]" onClick={() => onOpen(row)}>{logos && <TokenAvatar src={assetLogo(logos, row)} symbol={row.symbol} name={rowName(row)} size="sm"/>}<span><span className="block text-sm">{rowName(row)}</span><span className="block text-xs text-[var(--fg-4)]">{row.symbol || row.category || ''}</span></span></button></th>
       {columns.map(c => {
@@ -104,7 +110,7 @@ export function ResearchTable({ rows, capability, onOpen, t, logos = null }) {
         return <td key={c.key} className={c.numeric ? 'intel-number' : ''}>{c.read(row)}</td>
       })}
       <td><button className="underline underline-offset-4 text-xs" onClick={() => onOpen(row)}>{t('research.evidence', { defaultValue: 'Evidence' })}</button>{['listings','newListings','trending','gainers','mostVisited'].includes(capability) && marketRow(row) && <Link className="block text-xs underline underline-offset-4 mt-2" to={marketRow(row)}>{t('research.asset_workspace', { defaultValue: 'Asset workspace' })}</Link>}</td>
-    </tr>)}</tbody></table></div>
+    </tr>)}</tbody></table></div></>
 }
 
 function Investigation({ row, capability, onClose, t, logoUrl = null }) {
@@ -208,6 +214,10 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
         to, with the costly panel locked in its place rather than an error or a
         blank. The real-world asset workspace is the exception and carries its
         own free surface (see RESEARCH_WORKSPACE_SURFACE above). */}
+    {/* The coverage headline is a precomputed capture view, free on every plan
+        and outside the research gate below: how many tokenised assets have no
+        tradeable wrapper, and which expected funds CoinMarketCap does not carry. */}
+    {workspace === 'rwa' && <RwaCoverage />}
     <IntelSurfaceGate surface={surface} title={t(`access.surface_${surface}`, { defaultValue: surface === 'rwa_research' ? 'Real-world asset research' : 'On demand research' })}>
     <ResearchStatus query={query} showObserved={!["globalHistory","cmc100History","cmc20History"].includes(capability)}/>
     <SharedResearchRefresh query={query}/>

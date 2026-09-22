@@ -13,10 +13,10 @@
 import { createClient } from 'npm:@supabase/supabase-js@2'
 import { readNarrativeBrief } from '../_shared/intel/narrative-brief-read.ts'
 import { readNarrativeHistory } from '../_shared/intel/narrative-history-read.ts'
+import { narrativeFeedResponse } from '../_shared/intel/narrative-feed.ts'
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type' }
 function json(b: unknown, s = 200) { return new Response(JSON.stringify(b), { status: s, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }) }
-const num = (v: unknown) => (typeof v === 'number' && isFinite(v) ? v : 0)
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') return new Response('ok', { headers: corsHeaders })
@@ -56,22 +56,8 @@ Deno.serve(async (req) => {
     const limit = Math.max(1, Math.min(200, Number(body.limit) || 80))
     const { data: rows, error } = await u.rpc('narrative_feed', { p_org_id: orgId, p_limit: limit })
     if (error) return json({ error: error.message }, 400)
-    const list = rows || []
-
-    // summary-row counts by the 5 display statuses (computed here; narratives are few)
-    const summary = {
-      heating_up: 0, early: 0, crowded: 0, cooling: 0, dormant: 0,
-      bullish: 0, bearish: 0, high_risk: 0, followed: 0,
-    }
-    for (const r of list) {
-      const ds = String(r.display_status || '')
-      if (ds in summary) (summary as Record<string, number>)[ds]++
-      if (r.signal_class === 'bullish') summary.bullish++
-      if (r.signal_class === 'bearish') summary.bearish++
-      if (num(r.risk_score) >= 60) summary.high_risk++
-      if (r.is_followed) summary.followed++
-    }
-    return json({ narratives: list, summary, count: list.length })
+    // Summary counts are computed in _shared/intel/narrative-feed.ts, shared with the public demo.
+    return json(narrativeFeedResponse(rows))
   } catch (e) {
     return json({ error: String((e as Error)?.message || e) }, 500)
   }

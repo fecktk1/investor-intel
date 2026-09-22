@@ -43,7 +43,7 @@ function stubDb(fixture:Fixture) {
   }
   // deno-lint-ignore no-explicit-any
   const chain:any={
-   select:()=>chain,order:()=>chain,limit:()=>chain,gt:()=>chain,gte:()=>chain,lte:()=>chain,
+   select:()=>chain,order:()=>chain,limit:()=>chain,gt:()=>chain,gte:()=>chain,lte:()=>chain,lt:()=>chain,
    not:()=>chain,or:()=>chain,is:()=>chain,range:()=>Promise.resolve(rows()),
    eq:(column:string,value:unknown)=>{record.filters.push(['eq',column,value]);return chain},
    in:(column:string,value:unknown)=>{record.filters.push(['in',column,value]);return chain},
@@ -172,12 +172,16 @@ const FULL:Fixture={
  * state. Nothing in them is computed, so there are no inputs to name. */
 const PLAIN_RECORD_TOOLS=['whoami','write_status','watchlist_read','alerts_list']
 
-const READ_TOOLS=['whoami','search_assets','get_asset','market_regime','new_listings','meme_graduations','rwa_universe','rwa_issuer_legitimacy','rwa_yield_provenance','rwa_issuer_terms','rwa_wrapper_premiums','rwa_liquidity_depth','rwa_underlying_registrant','watchlist_read','alerts_list','write_status','data_budget']
+const READ_TOOLS=['whoami','search_assets','get_asset','market_regime','new_listings','meme_graduations','rwa_universe','rwa_issuer_legitimacy','rwa_yield_provenance','rwa_issuer_terms','rwa_wrapper_premiums','rwa_best_wrapper','rwa_liquidity_depth','rwa_underlying_registrant','rwa_coverage','rwa_universe_changes','rwa_issuer_concentration','rwa_premium_history','rwa_exit_capacity','market_structure','watchlist_read','alerts_list','write_status','data_budget']
 
 const ARGS:Record<string,Record<string,unknown>>={
  search_assets:{query:'BTC'},
  get_asset:{provider:'coinmarketcap',provider_id:'1'},
  rwa_issuer_terms:{subject:'rwa:coinmarketcap:4705',crypto_id:'4705'},
+ rwa_best_wrapper:{rwa_id:'1'},
+ rwa_premium_history:{rwa_id:'1'},
+ rwa_exit_capacity:{crypto_id:'4705',position_usd:100000},
+ market_structure:{figure:'breadth'},
  write_status:{proposal_id:PLAN_ID},
  write_run:{proposal_id:PLAN_ID},
  watchlist_add:{item_type:'token',label:'ETH'},
@@ -339,6 +343,42 @@ Deno.test('the three forward RWA tools say not_available_yet, which is not the s
  const present=await call(ctx({...FULL,missing:[],tables:{...FULL.tables,[FORWARD_TABLE_CONTRACT.liquidity_depth.table]:[]}}),'rwa_liquidity_depth',{})
  assertEquals((present.payload.data as Record<string,unknown>).state,'empty')
  assert(String(present.payload.note).includes('exists but is empty'))
+})
+
+Deno.test('rwa_best_wrapper names three wrappers from the stored capture and says why when it cannot',async()=>{
+ const ANCHOR=4369.87655050591
+ // The wrapper token table is the forward lane FULL marks absent; here it exists.
+ const wrappers:Fixture={...FULL,missing:FULL.missing!.filter(table=>table!==FORWARD_TABLE_CONTRACT.wrapper_premiums.table),tables:{...FULL.tables,
+  intel_rwa_wrapper_assets:[{provider:'coinmarketcap',rwa_id:'1',captured_at:CAPTURED,symbol:'GOLD',name:'Gold',asset_type:'commodity',wrapper_count:3,anchor_kind:'liquid_wrapper_median',anchor_price:ANCHOR,dispersion_bps:75.7,cheapest_crypto_id:'20245',cheapest_premium_bps:-75.7}],
+  intel_rwa_wrapper_tokens:[
+   {rwa_id:'1',crypto_id:'5176',captured_at:CAPTURED,symbol:'XAUT',price:ANCHOR,normalised_price:ANCHOR,premium_bps:0,volume_24h:70850040,wrapper_state:'liquid',unit_state:'consistent',in_anchor:true},
+   {rwa_id:'1',crypto_id:'4705',captured_at:CAPTURED,symbol:'PAXG',price:4372.1,normalised_price:4372.1,premium_bps:5.1,volume_24h:60100000,wrapper_state:'liquid',unit_state:'consistent',in_anchor:true},
+   {rwa_id:'1',crypto_id:'20245',captured_at:CAPTURED,symbol:'CGO',price:139.43,normalised_price:4336.79,premium_bps:-75.7,volume_24h:922206,wrapper_state:'liquid',unit_state:'normalised_troy_ounce',in_anchor:true},
+   {rwa_id:'1',crypto_id:'31411',captured_at:CAPTURED,symbol:'XAUTT',wrapper_state:'no_price',unit_state:'not_assessed',state_reason:'price_not_reported'},
+  ],
+ }}
+ const result=await call(ctx(wrappers),'rwa_best_wrapper',{crypto_id:'4705'})
+ assertEquals(result.outcome,'served')
+ assertEquals(result.payload.as_of,CAPTURED,'the answer dates itself with the capture')
+ assertEquals(result.payload.calculated_by,'investor_intel')
+ assertEquals((result.payload.tier as Record<string,unknown>).surface,'capture_views')
+ const data=result.payload.data as Record<string,any>
+ assertEquals(data.state,'ready')
+ assertEquals(data.picks.cheapest.cryptoId,'20245')
+ assertEquals(data.picks.closest.circular,true)
+ assertEquals(data.picks.closest.closestOther.cryptoId,'4705')
+ assertEquals(data.picks.mostLiquid.cryptoId,'5176')
+ assertEquals(data.picks.excluded.map((row:any)=>row.reason),['price_not_reported'])
+ assert(String(data.not_advice).includes('not a recommendation'))
+ // An asset the capture does not hold is missing coverage, said in words.
+ const missing=await call(ctx(wrappers),'rwa_best_wrapper',{rwa_id:'999'})
+ assertEquals((missing.payload.data as Record<string,unknown>).state,'not_in_capture')
+ assert(String(missing.payload.note).includes('missing coverage'))
+ // No asset named is a served answer that says how to name one.
+ const none=await call(ctx(wrappers),'rwa_best_wrapper',{})
+ assert(String(none.payload.note).includes('rwa_id'))
+ // A malformed id never reaches the database.
+ assertEquals((await call(ctx(wrappers),'rwa_best_wrapper',{rwa_id:'1 or 1=1'})).reasonCode,'invalid_arguments')
 })
 
 Deno.test('rwa_issuer_terms reads stored review facts and never reports a review date as a deadline',async()=>{
@@ -716,7 +756,7 @@ Deno.test('every listed prompt renders, with a named blank rather than a dead en
  // behalf, so every tool either prompt names has to exist.
  const names=new Set(MCP_TOOLS.map(tool=>tool.name))
  const dd=getMcpPrompt('rwa_due_diligence',{subject:'rwa:coinmarketcap:1'})!.messages[0].content.text
- for(const tool of ['rwa_universe','rwa_issuer_legitimacy','rwa_yield_provenance','rwa_issuer_terms','rwa_wrapper_premiums','rwa_liquidity_depth','rwa_underlying_registrant']){
+ for(const tool of ['rwa_universe','rwa_issuer_legitimacy','rwa_yield_provenance','rwa_issuer_terms','rwa_wrapper_premiums','rwa_best_wrapper','rwa_liquidity_depth','rwa_underlying_registrant','rwa_coverage','rwa_issuer_concentration','rwa_premium_history','rwa_exit_capacity']){
   assert(names.has(tool)&&dd.includes(tool),`the due diligence prompt must use ${tool}`)
  }
  for(const tool of ['search_assets','get_asset','market_regime']){

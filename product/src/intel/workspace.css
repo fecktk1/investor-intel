@@ -432,7 +432,7 @@
 .intel-draw-more-item:disabled { opacity:.35; cursor:default; }
 .intel-draw-more-item[aria-pressed="true"] { color:var(--accent); }
 .intel-draw-bar-hint { flex:1 1 100%; color:var(--accent); font-size:11px; padding-top:1px; }
-.intel-draw-layer { position:absolute; top:0; left:0; z-index:2; pointer-events:none; overflow:hidden; }
+.intel-draw-layer { position:absolute; top:0; left:0; z-index:2; pointer-events:none; overflow:visible; }
 .intel-draw-options { position:absolute; display:flex; align-items:center; flex-wrap:wrap; gap:6px 12px; padding:5px 8px; pointer-events:auto; background:var(--bg-1); border:1px solid var(--border-default); color:var(--fg-3); font-size:11px; }
 .intel-draw-options label { display:flex; align-items:center; gap:5px; }
 /* A post card's row hangs from the card's bottom edge, outside the size the
@@ -726,6 +726,24 @@
 .intel-screen-editor-fields { display:flex; flex-wrap:wrap; gap:8px; padding:10px 0; }
 .intel-market-filter-toolbar { display:flex; gap:12px; align-items:flex-start; flex-wrap:wrap; }
 .intel-market-filter-toolbar>input { flex:1; min-width:180px; }
+/* Markets search typeahead: the field keeps the toolbar's width, and its matches
+   drop below it on a hairline rail. No card, no chips, no shadow. */
+.intel-market-typeahead { position:relative; flex:1; min-width:180px; }
+.intel-market-typeahead>input { width:100%; }
+.intel-market-typeahead-list { position:absolute; z-index:20; left:0; right:0; top:100%; margin-top:2px; max-height:min(52vh,340px); overflow-y:auto; overscroll-behavior:contain; background:var(--bg-1); border-top:1px solid var(--accent); border-bottom:1px solid var(--border-default); }
+.intel-market-typeahead-option { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 12px; align-items:baseline; padding:8px 10px; cursor:pointer; border-bottom:1px solid var(--border-default); }
+.intel-market-typeahead-option:last-child { border-bottom:0; }
+.intel-market-typeahead-option[aria-selected=true] { background:var(--bg-2); }
+.intel-market-typeahead-name { grid-column:1; font-size:.8rem; color:var(--fg-1); overflow-wrap:anywhere; }
+.intel-market-typeahead-meta { grid-column:1; font-size:.7rem; color:var(--fg-4); overflow-wrap:anywhere; }
+.intel-market-typeahead-cap { grid-column:2; grid-row:1 / span 2; font-family:'Geist Mono',monospace; font-size:.75rem; color:var(--fg-3); white-space:nowrap; }
+.intel-market-typeahead-state { padding:8px 10px; font-size:.75rem; color:var(--fg-4); }
+.intel-market-typeahead-option:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+/* The asset-page chooser: a plain ranked list on hairlines, never a card grid. */
+.intel-asset-choice { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:2px 12px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--border-default); }
+.intel-asset-choice>strong { grid-column:1; font-weight:500; }
+.intel-asset-choice>span { grid-column:1; font-size:.75rem; color:var(--fg-4); }
+.intel-asset-choice>em { grid-column:2; grid-row:1 / span 2; font-style:normal; font-family:'Geist Mono',monospace; font-size:.8rem; color:var(--fg-3); white-space:nowrap; }
 .intel-market-filter-options { font-size:.8rem; }
 .intel-market-filter-options>summary { cursor:pointer; min-height:40px; padding:10px 0; }
 .intel-market-filter-options[open] { flex-basis:100%; }
@@ -986,3 +1004,16 @@
  .intel-compare-heading>button { justify-self:start; }
  .intel-macro-page .intel-hero-read .intel-source-strip { grid-template-columns:repeat(2,minmax(0,1fr)); }
 }
+
+/* Wrapper premium board (/intel/rwa/wrappers). Eight columns, three of them long
+   labels. The workspace pins every table header to one line, which on this board
+   pushes the last columns past the right edge on a narrow desktop and clips the
+   figures under them. Here the HEADER is allowed to wrap onto a second line
+   instead, and the cells run a little tighter, so the essential columns fit a
+   1200px viewport; under the stated width the standard scroll container hands
+   the rest to the reader rather than cutting it off. */
+.intel-rwa-wrapper-table { min-width:58rem; }
+.intel-root .intel-rwa-wrapper-table thead th { white-space:normal; }
+.intel-root .intel-rwa-wrapper-table :is(th,td) { padding-inline:.45rem; }
+.intel-root .intel-rwa-wrapper-table :is(th,td):first-child { padding-left:0; }
+.intel-root .intel-rwa-wrapper-table :is(th,td):last-child { padding-right:0; }

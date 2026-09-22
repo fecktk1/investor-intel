@@ -7,6 +7,7 @@ import ResponsiveChartTools from './ResponsiveChartTools'
 import ChartWatchlistAdd from './ChartWatchlistAdd'
 import EvidenceMarkerContext from './EvidenceMarkerContext'
 import JournalMarkerReceipt from './JournalMarkerReceipt'
+import ChartCandleProvenance from './ChartCandleProvenance'
 import {useChartAlertHistory} from '../lib/useChartAlertHistory'
 import {workingDraftStore} from '../lib/chart-working-state'
 import deferredPanel from './deferred-panel'
@@ -134,7 +135,7 @@ export function MarkerDetails({ events, onClose, t, onMouseEnter, onMouseLeave, 
   </section>
 }
 
-function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', candlesRange = null, assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, assetName = null, assetSymbol = null, requestKey = '', initialLayout = null, workingRevision = 0, readOnly = false, replayCursor = undefined, onReplayChange }) {
+function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLevels: inputKeyLevels = [], maxDrawdown: inputDrawdown = null, showDensityToggles = false, loadCandles = null, defaultRange = '7D', candlesRange = null, assetKey = '', onRangeChange, historyLoading: suppliedHistoryLoading = false, historyError: suppliedHistoryError = null, historyHasMore: suppliedHistoryHasMore = false, onLoadMoreHistory: loadSuppliedHistory, timeWindow = null, priceCoverage = null, cursorTime = null, focusMarkerId = null, focusMarkerRequest = null, onCursorChange, onEventSelect, height = 340, workstation = true, rangeExtra = null, persistence = null, assetName = null, assetSymbol = null, requestKey = '', initialLayout = null, workingRevision = 0, readOnly = false, replayCursor = undefined, onReplayChange, candleProvenance = false }) {
   const { t } = useTranslation('intel')
   const conditions=useChartAlertHistory(readOnly?null:persistence,timeWindow?.from,timeWindow?.to,assetKey)
   const inputMarkers=useMemo(()=>[...providedMarkers,...conditions.markers],[providedMarkers,conditions.markers])
@@ -157,7 +158,10 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   const [series, setSeries] = useState(seededRange === defaultRange ? candles || [] : [])
   const [tfLoading, setTfLoading] = useState(false)
   const [chartError, setChartError] = useState(null)
-  const [coverage, setCoverage] = useState(seededRange === defaultRange ? priceCoverage : null)
+  // Every coverage snapshot carries the period it was read for, so what the chart
+  // says about its candles (coverage, receipts) is always about the candles drawn.
+  const seededCoverage = () => (priceCoverage ? { ...priceCoverage, range: seededRange } : priceCoverage)
+  const [coverage, setCoverage] = useState(seededRange === defaultRange ? seededCoverage() : null)
   const [refreshTick,setRefreshTick]=useState(0)
   const [selection, setSelection] = useState(null)
   const [allHistory, setAllHistory] = useState(false)
@@ -209,9 +213,9 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
   const loaderRef = useRef(loadCandles)
   loaderRef.current = loadCandles
 
-  useEffect(() => { cacheRef.current = {}; setSeries(seededRange === defaultRange ? candles || [] : []); setCoverage(seededRange === defaultRange ? priceCoverage : null); setChartError(null); setRange(defaultRange); setSelection(null); pinRef.current = false; openedFocus.current = null; setAllHistory(false) }, [assetKey, defaultRange]) // eslint-disable-line
+  useEffect(() => { cacheRef.current = {}; setSeries(seededRange === defaultRange ? candles || [] : []); setCoverage(seededRange === defaultRange ? seededCoverage() : null); setChartError(null); setRange(defaultRange); setSelection(null); pinRef.current = false; openedFocus.current = null; setAllHistory(false) }, [assetKey, defaultRange]) // eslint-disable-line
   // The page's candles carry no lookback, so they seed only the lookback-free entry.
-  useEffect(() => { if (candles) { cacheRef.current[`${seededRange}:0`] = { candles, ...priceCoverage, checkedAt:Date.now() }; if (range === seededRange && lookback === 0) { setSeries(candles); setCoverage(priceCoverage) } } }, [candles, seededRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
+  useEffect(() => { if (candles) { cacheRef.current[`${seededRange}:0`] = { candles, ...priceCoverage, checkedAt:Date.now(), range: seededRange }; if (range === seededRange && lookback === 0) { setSeries(candles); setCoverage(seededCoverage()) } } }, [candles, seededRange, priceCoverage?.coverage, priceCoverage?.state, priceCoverage?.provenance?.fetchedAt]) // eslint-disable-line
   useEffect(() => { if(previousRequestKey.current!==requestKey){cacheRef.current = {};previousRequestKey.current=requestKey} }, [requestKey])
   useEffect(()=>{
     if(!loadCandles||readOnly||replayAt!=null)return
@@ -227,7 +231,7 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
     const key=`${range}:${lookback}`,cached=cacheRef.current[key]
     if (cached && Date.now()-cached.checkedAt<60000) { setSeries(cached.candles); setCoverage(cached); setTfLoading(false); return }
     setTfLoading(!cached); if(!cached)setCoverage(null)
-    Promise.resolve(loaderRef.current(range,{lookbackBars:lookback})).then(c => { if (alive) { const snapshot = {...(Array.isArray(c) ? { candles: c } : { ...c, candles: c?.candles || [] }),checkedAt:Date.now()}; cacheRef.current[key] = snapshot; setSeries(snapshot.candles); setCoverage(snapshot) } })
+    Promise.resolve(loaderRef.current(range,{lookbackBars:lookback})).then(c => { if (alive) { const snapshot = {...(Array.isArray(c) ? { candles: c } : { ...c, candles: c?.candles || [] }),checkedAt:Date.now(),range}; cacheRef.current[key] = snapshot; setSeries(snapshot.candles); setCoverage(snapshot) } })
       .catch(() => { if (alive) { const lastGood=cached&&Date.now()-cached.checkedAt<=15*60000;setSeries(lastGood?cached.candles:[]);setCoverage(lastGood?{...cached,state:'stale'}:null);setChartError(lastGood?'Price history could not be refreshed. Showing the last loaded observations.':'Price history is temporarily unavailable. Choose another period or reload to retry.') } })
       .finally(() => { if (alive) setTfLoading(false) })
     return () => { alive = false }
@@ -297,6 +301,7 @@ function TokenChartBody({ candles, loading, markers: providedMarkers = [], keyLe
       {coverage.coverage}{coverage.state === 'stale' ? ' · Delayed data' : ['unavailable', 'unsupported', 'refreshing'].includes(coverage.state) ? ' · Price source unavailable for this period' : ''}
       {coverage.provenance?.fetchedAt && <> · Retrieved <time dateTime={coverage.provenance.fetchedAt}>{date(coverage.provenance.fetchedAt)}</time></>}
     </p></details>}
+    {candleProvenance && coverage && <ChartCandleProvenance snapshot={coverage} />}
     <div ref={plotRef} className={`intel-chart-plot${!data.length&&!tfLoading&&!loading?" intel-chart-plot-empty":""}`} style={{minHeight:!data.length&&!tfLoading&&!loading?80:height}}>
       {useWorkstation ? <WorkstationBoundary key={assetKey} onFailure={()=>setRendererFailed(true)}><Suspense fallback={<p role="status">Loading chart controls…</p>}><PriceWorkstation bars={workstationBars} viewKey={`${range}:${requestKey}`} timeWindow={timeWindow ? {from:timeWindow.from,to:replay?Math.min(timeWindow.to,replayAt):timeWindow.to}:null} readOnly={readOnly} assetName={assetName} assetSymbol={assetSymbol} seriesCapture={coverage?.capture} replay={replay} knownOnly={knownOnly} chartSource={replay&&coverage?.chartSource?{...coverage.chartSource,observedAt:workstationBars.at(-1)?.t??null}:coverage?.chartSource} height={height} cursorTime={replay?replayAt:cursorTime} onCursorChange={replay?setReplayTime:onCursorChange} persistence={persistence} initialState={workspaceDraft.current} onReplayRestore={state=>{setKnownOnly(state?.knownOnly??false);setReplayTime(state?.at??null)}} onWorkspaceChange={state=>{workspaceDraft.current=state;if(!replay)draftStore.current.set(state)}} visibility={Object.fromEntries(layers.map(([group])=>[group,!hiddenGroups.has(group)]))} onVisibilityChange={state=>setHiddenGroups(new Set(Object.entries(state).filter(([,visible])=>!visible).map(([group])=>group)))} onFailure={()=>setRendererFailed(true)} onViewportChange={v=>setViewport(previous=>previous?.from===v.from&&previous?.to===v.to&&previous?.width===v.width?previous:v)} clusters={clusters} renderMarker={renderMarker} keyLevels={keyLevels} drawdown={drawdownFrom!=null&&drawdownTo!=null?{fromT:drawdownFrom,toT:drawdownTo}:null}/></Suspense></WorkstationBoundary> : data.length > 0 ? <WorkstationBoundary fallback={<p role="alert">The price plot could not load. Recorded activity remains available below. Reload to retry.</p>}><Suspense fallback={<p role="status">Loading price plot…</p>}><TokenChartFallback data={data} height={height} onCursorChange={onCursorChange} chartId={chartId} color={color} first={first} last={last} fmtT={fmtT} fmt={fmt} date={date} t={t} drawdownFrom={drawdownFrom} drawdownTo={drawdownTo} keyLevels={keyLevels} cursorTime={cursorTime} clusters={clusters} priceAt={priceAt} open={open} leave={leave} colors={COLORS}/></Suspense></WorkstationBoundary> : <div className="intel-chart-empty">{t('chart.price_period_unavailable', { defaultValue: 'Price observations are unavailable for this period. Recorded activity remains on its own timeline.' })}</div>}
       {selection?.length>0 && <MarkerDetails events={visibleSelection || []} onClose={closeDetail} t={t} onSelect={event=>{if(event){pinRef.current=true;onCursorChange?.(event.t);onEventSelect?.([event])}}} onMouseEnter={() => clearTimeout(hoverTimer.current)} onMouseLeave={leave}/>}

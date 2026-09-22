@@ -8,6 +8,7 @@ import { useSupabase } from '../../lib/useSupabase'
 import { Sunburst, Sparkline } from '../charts'
 import { readCaptureView, captureUnavailable } from '../lib/capture-api'
 import { formatUsd, formatCompact, formatPct, fmtNum } from '../lib/market-format'
+import { downloadTableCsv, exportAllowedFrom, UNIVERSE_TYPE_CSV_COLUMNS } from '../lib/table-csv'
 
 // RWA universe (CMC plan proposal 5). Inner ring: tokenized asset types by total
 // market value. Outer ring: the assets that carry each type.
@@ -145,6 +146,7 @@ export default function RwaUniverse() {
   const total = latest?.all ? num(latest.all.totalMarketValueUsd) : null
 
   const legend = rwaLegend(latest)
+  const exportAllowed = exportAllowedFrom(read.payload)
 
   // The issuer column is gone and the token column stands in its place. The list
   // endpoint publishes no issuer field of any kind, so that column could only ever
@@ -189,6 +191,24 @@ export default function RwaUniverse() {
                 {total == null
                   ? t('structure.rwa_table_caption', { defaultValue: 'Latest capture per tokenized asset type.' })
                   : t('structure.rwa_table_caption_total', { total: formatUsd(total), defaultValue: 'Latest capture per tokenized asset type. Reported total: {{total}}.' })}
+                {' '}
+                {/* A text link, not a button pill. CoinMarketCap money columns
+                    are blank in the file unless the read's source policy allows
+                    export; table-csv enforces that, fail closed. */}
+                <button
+                  type="button"
+                  className="underline underline-offset-4"
+                  title={exportAllowed ? undefined : t('table_csv.cmc_columns_blank', { defaultValue: 'CoinMarketCap price, value and volume columns are left blank in the file because the source terms do not allow exporting them. Identifiers, counts, states and our own calculations are included.' })}
+                  onClick={() => downloadTableCsv({
+                    view: 'rwa-universe',
+                    asOf: read.payload?.asOf ?? null,
+                    columns: UNIVERSE_TYPE_CSV_COLUMNS,
+                    rows: types.map(type => ({ type, typeLabel: label(type), ...(latest[type] || {}), source: 'coinmarketcap' })),
+                    exportAllowed,
+                  })}
+                >
+                  {t('table_csv.download', { defaultValue: 'Download CSV' })}
+                </button>
               </caption>
               <thead>
                 <BoardTableHeader columns={columns} numeric={[1, 2, 3, 4, 5]} />

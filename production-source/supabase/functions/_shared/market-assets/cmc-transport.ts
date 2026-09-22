@@ -1,6 +1,6 @@
 import { logProviderCall } from '../provider-budget.ts'
 import type { MarketAssetsContext } from './types.ts'
-import { CMC_CAPABILITIES, CMC_DEX_SCHEMA_VALIDATED, CMC_EMPTY_DATA_CAPABILITIES, CMC_FEATURE_CAPS, cmcParams, cmcObservedAt, cmcRequestBody, estimateCmcCredits, planAllows } from './cmc-capabilities.ts'
+import { CMC_CAPABILITIES, CMC_DEX_SCHEMA_VALIDATED, CMC_EMPTY_DATA_CAPABILITIES, CMC_FEATURE_CAPS, cmcAddsConvert, cmcParams, cmcObservedAt, cmcRequestBody, estimateCmcCredits, planAllows } from './cmc-capabilities.ts'
 import { normalizeCmcInvestigation } from '../intel/investigation-normalize.ts'
 import {retainMarketSourceVersions} from '../intel/market-source-versions.ts'
 import {readBoundedText,RequestBodyError} from '../intel/bounded-request.ts'
@@ -224,7 +224,8 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
         const query=new URLSearchParams(params)
           // Maps, block statistics and price-conversion either reject convert or
           // carry the caller's own reviewed conversion target; never overwrite it.
-          if(!name.startsWith('dex')&&!['map','metadata','exchangeInfo','exchangeAssets','exchangeMap','fiatMap','blockchainStats','priceConversion','categories','rwaMap','rwaInfo','issuers','issuer','fearGreed','fearGreedHistory','altcoinSeason','altcoinSeasonHistory','cmc100','cmc20','cmc100History','cmc20History','content','community'].includes(name)) query.set('convert','USD')
+          // The exemption list lives in cmc-capabilities.ts (CMC_CONVERT_EXEMPT).
+          if(cmcAddsConvert(name)) query.set('convert','USD')
         // Only the reviewed registry can select POST. Canonical scalar params
         // are shared-cache keys; never accept arbitrary URLs or request bodies.
         const post=spec.method==='POST'
