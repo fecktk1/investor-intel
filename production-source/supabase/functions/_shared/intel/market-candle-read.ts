@@ -66,6 +66,11 @@ export interface CandleLadderDeps {
   kline?: (range: string, interval: string, lookback: number) => Promise<RungAnswer>
   coingecko?: (lookback: number) => Promise<RungAnswer>
   archive?: (assetKey: string, interval: string, from: number, to: number) => Promise<{ bars: Bar[]; reason: string | null; truncated: boolean; incomplete?: number }>
+  /** The LAST rung: candles built from prices we already store
+   * (stored-candles.ts). Asked only when no live rung and no archive produced a
+   * candle, and it never calls a provider. It takes the request's own interval
+   * ('auto' included), because it picks its width from the stored spacing. */
+  stored?: (range: string, interval: string, lookback: number) => Promise<RungAnswer | null>
 }
 
 export interface LadderIdentity {
@@ -176,6 +181,28 @@ export async function loadMarketCandles(identity: LadderIdentity, range = '7D', 
         candles = merged.candles
         archived = merged.archived
         archiveTo = merged.archiveTo
+      }
+    }
+  }
+
+  // ── Stored prices, when nothing live answered ──
+  // A sub-hour range on an asset with no verified exchange listing, a tokenised
+  // real-world asset token, a refused or exhausted request: the chart is drawn
+  // from prices already stored, labelled as such, at no provider cost.
+  if (!candles.length && deps.stored) {
+    const stored = await deps.stored(range, interval, lookback).catch(() => null)
+    if (stored?.candles?.length) {
+      const why = [...new Set(reasons)]
+      return {
+        ...stored,
+        candles: stored.candles,
+        coverage: [
+          stored.coverage ? String(stored.coverage) : null,
+          tried.length
+            ? `No live candle source answered first (${tried.map(sourceLabel).join(', ')}${why.length ? `: ${why.join(', ')}` : ''}).`
+            : 'No live candle source covers this asset.',
+        ].filter(Boolean).join(' '),
+        ladder: { ...((stored.ladder as Record<string, unknown>) || {}), range, sourcesTried: [...tried, 'stored'], sourcesUnavailable: why },
       }
     }
   }

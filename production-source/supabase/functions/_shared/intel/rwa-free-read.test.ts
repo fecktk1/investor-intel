@@ -1,6 +1,6 @@
 import { assert, assertEquals } from 'jsr:@std/assert@1'
 import {
-  claimFreeRwaRead, freeRwaCreditEstimate, freeRwaRead, researchSurfaceFor,
+  claimFreeRwaRead, freeRwaCreditEstimate, freeRwaRead, freeRwaReadFresh, researchSurfaceFor,
   RWA_FREE_CAPABILITIES, useFreeRwaLane,
 } from './rwa-free-read.ts'
 import { INTEL_SURFACES, requireIntelSurface } from './intel-surface-access.ts'
@@ -311,4 +311,89 @@ Deno.test('only a free member takes the bounded lane', () => {
     assertEquals(useFreeRwaLane(capability, false), false, `${capability} is not an RWA read and never joins the lane`)
     assertEquals(useFreeRwaLane(capability, true), false)
   }
+})
+
+// ── 5. The public lookup's refresh-aware read (freeRwaReadFresh) ──────────────
+//
+// Used only by intel-rwa-lookup (and so by the demo). A copy past its window is
+// not simply served: a batched copy inside its window answers first, then one
+// refresh through the same gates as a miss, and only then the newest old copy,
+// still saying why.
+
+const snapAt = (state: string, fetchedAt: string, extra: Record<string, unknown> = {}) =>
+  ({ state, reason: null, payload: { data: [] }, data: { rows: [{ rwa_id: 1 }], total: 1, hasMore: false }, provenance: { fetchedAt }, receipt: { origin: state === 'fresh' ? 'live' : 'cache', fetchedAt }, ...extra })
+const OLD = '2026-09-24T07:00:00.000Z', NEWER = '2026-09-24T09:20:00.000Z', NOW_ISO = '2026-09-24T10:00:00.000Z'
+const grant = (allowed = true, reason: string | null = null) => {
+  const log = { n: 0 }
+  return { log, claim: () => { log.n++; return Promise.resolve({ allowed, reason: allowed ? null : reason, cap: 200, used: 1 }) } }
+}
+
+Deno.test('fresh read: a copy inside its window answers with no alternate, no claim and no call', async () => {
+  const plans: string[] = []
+  let alt = 0
+  const g = grant()
+  const out = await freeRwaReadFresh((p) => { plans.push(p); return Promise.resolve(snapAt('cached', NEWER)) }, g.claim, true, { alternate: () => { alt++; return Promise.resolve(null) } })
+  assertEquals(plans, ['shared-cache']); assertEquals(alt, 0); assertEquals(g.log.n, 0)
+  assertEquals(out.freeShared, { lane: 'rwa_research', served: 'shared-cache' })
+})
+
+Deno.test('fresh read: past its window, the batched copy inside its window answers for nothing', async () => {
+  const plans: string[] = []
+  const g = grant()
+  const out = await freeRwaReadFresh((p) => { plans.push(p); return Promise.resolve(snapAt('stale', OLD)) }, g.claim, true,
+    { alternate: () => Promise.resolve(snapAt('cached', NEWER, { warmBatch: { size: 57 } })) })
+  assertEquals(plans, ['shared-cache']); assertEquals(g.log.n, 0)
+  assertEquals(out.provenance.fetchedAt, NEWER); assertEquals(out.warmBatch, { size: 57 })
+})
+
+Deno.test('fresh read: past its window with no batched copy, one refresh through the claim', async () => {
+  const plans: string[] = []
+  const g = grant()
+  const out = await freeRwaReadFresh((p) => { plans.push(p); return Promise.resolve(p === 'shared-live' ? snapAt('fresh', NOW_ISO) : snapAt('stale', OLD)) }, g.claim)
+  assertEquals(plans, ['shared-cache', 'shared-live']); assertEquals(g.log.n, 1)
+  assertEquals(out.state, 'fresh'); assertEquals(out.freeShared.served, 'shared-live')
+})
+
+Deno.test('fresh read: a refused claim keeps the NEWEST old copy and says why; nothing is called', async () => {
+  const plans: string[] = []
+  const g = grant(false, 'free_rwa_ip_hourly_limit')
+  const out = await freeRwaReadFresh((p) => { plans.push(p); return Promise.resolve(snapAt('stale', OLD)) }, g.claim, true,
+    { alternate: () => Promise.resolve(snapAt('stale', NEWER, { warmBatch: { size: 57 } })) })
+  assertEquals(plans, ['shared-cache'])
+  assertEquals(out.state, 'stale', 'still stale, and says so')
+  assertEquals(out.provenance.fetchedAt, NEWER, 'the newer of the two old copies')
+  assertEquals(out.freeShared, { lane: 'rwa_research', served: 'shared-cache', reason: 'free_rwa_ip_hourly_limit' })
+})
+
+Deno.test('fresh read: a recorded plan refusal is honoured: no claim, no call, the old copy with that reason', async () => {
+  const plans: string[] = []
+  const g = grant()
+  const out = await freeRwaReadFresh((p) => { plans.push(p); return Promise.resolve(snapAt('stale', OLD)) }, g.claim, true, { liveBlocked: 'insufficient_entitlement' })
+  assertEquals(plans, ['shared-cache']); assertEquals(g.log.n, 0)
+  assertEquals(out.freeShared.reason, 'insufficient_entitlement')
+  // A miss under the same refusal is the lane's unavailable body with the reason, never a call.
+  const miss = await freeRwaReadFresh(() => Promise.resolve(nothing), g.claim, true, { liveBlocked: 'insufficient_entitlement' })
+  assertEquals(g.log.n, 0); assertEquals(miss.freeShared, { lane: 'rwa_research', served: 'retained', reason: 'insufficient_entitlement' })
+})
+
+Deno.test('fresh read: a refresh the provider refuses hands back the old copy with the refusal', async () => {
+  const g = grant()
+  const out = await freeRwaReadFresh((p) => Promise.resolve(p === 'shared-live' ? { ...snapAt('stale', OLD), reason: 'insufficient_entitlement' } : snapAt('stale', OLD)), g.claim)
+  assertEquals(g.log.n, 1)
+  assertEquals(out.state, 'stale'); assertEquals(out.freeShared.reason, 'insufficient_entitlement')
+})
+
+Deno.test('fresh read: a background poll and an unsupported capability never claim', async () => {
+  const g = grant()
+  const bg = await freeRwaReadFresh(() => Promise.resolve(snapAt('stale', OLD)), g.claim, false)
+  assertEquals(bg.freeShared.reason, 'free_rwa_background_read'); assertEquals(bg.state, 'stale')
+  const unsupported = { state: 'unsupported', reason: 'insufficient_entitlement', data: { rows: [] }, provenance: { fetchedAt: null } }
+  const un = await freeRwaReadFresh(() => Promise.resolve(unsupported), g.claim)
+  assertEquals(un.freeShared.served, 'retained'); assertEquals(g.log.n, 0)
+})
+
+Deno.test('fresh read: the paid and free intel-research path (freeRwaRead) is unchanged: a stale copy still answers without a claim', async () => {
+  const g = grant()
+  const out = await freeRwaRead(() => Promise.resolve(snapAt('stale', OLD)), g.claim)
+  assertEquals(g.log.n, 0); assertEquals(out.freeShared, { lane: 'rwa_research', served: 'shared-cache' })
 })

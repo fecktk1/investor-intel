@@ -9,7 +9,7 @@
 // to a dry run.
 
 import { assert, assertEquals } from 'https://deno.land/std@0.224.0/assert/mod.ts'
-import { applyDataBudget, readDataBudget } from './index.ts'
+import { applyDataBudget, readDataBudget, CAPTURE_TABLES } from './index.ts'
 import { planTargets, CMC_SCHEDULE_FEATURES } from '../_shared/intel/schedule-policy.ts'
 
 const NOW = new Date('2026-10-01T09:00:00Z')
@@ -163,7 +163,7 @@ Deno.test('read: every feature carries its cadence, plan gate, reason and credit
   assertEquals(byName('logo_verify').creditsPerRun, 0)
 })
 
-Deno.test('read: jobs, cache reuse, demand and the ten capture tables come through unchanged', async () => {
+Deno.test('read: jobs, cache reuse, demand and every capture table come through unchanged', async () => {
   const db = healthyDb()
   const body = await readDataBudget(db, NOW) as Record<string, any>
   assertEquals(body.jobs, SNAPSHOT.jobs)
@@ -171,7 +171,9 @@ Deno.test('read: jobs, cache reuse, demand and the ten capture tables come throu
   assertEquals(body.demandDaily, SNAPSHOT.demandDaily)
   assertEquals(db.rpcCalls[0].name, 'intel_data_budget_snapshot')
   assertEquals(db.rpcCalls[0].args, { p_call_days: 7, p_demand_days: 30, p_top: 15, p_provider: 'coinmarketcap' })
-  assertEquals(body.capture.length, 10)
+  // Every table in CAPTURE_TABLES, in order. A fixed count went stale when the
+  // three keyless RWA yield-provenance tables joined the list.
+  assertEquals(body.capture.map((c: any) => c.table), CAPTURE_TABLES.map(([table]) => table))
   assertEquals(body.capture[0], { table: 'intel_regime_snapshots', rows: 12345, newest: '2026-10-01T08:00:00Z', newestColumn: 'captured_at' })
   assertEquals(body.capture.find((c: any) => c.table === 'intel_airdrop_snapshots').newest, '2026-10-01T03:00:00Z')
   assertEquals(body.degraded, [])

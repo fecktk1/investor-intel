@@ -36,6 +36,7 @@ import {MAX_LOOKBACK_BARS} from '../_shared/intel/chart-analysis.ts'
 import {autoInterval,CANDLE_RANGE_MS} from '../_shared/intel/candle-ladder.ts'
 import {loadExchangeCandles} from '../_shared/intel/exchange-candles.ts'
 import {archiveSeries} from '../_shared/intel/candle-archive.ts'
+import {loadStoredCandles,storedIdentity} from '../_shared/intel/stored-candles.ts'
 import {chartSeriesResponse} from '../_shared/intel/chart-series-contract.ts'
 import {makeChartCaptureProof} from '../_shared/intel/chart-capture-proof.ts'
 import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance,curatedNewsWithEnvelopes} from '../_shared/intel/market-provenance.ts'
@@ -238,6 +239,10 @@ async function assetCandles(admin: any, canonical: any, verified: boolean, timef
     kline: (range, width, lb) => contractCandleLadder(admin, canonical, range, width, context, undefined, Date.now(), lb),
     coingecko: (lb) => coingeckoCandles(admin, canonical, timeframe, lb),
     archive: (assetKey, width, from, to) => archiveSeries(admin, assetKey, width, from, to),
+    // The last rung: prices we already store, when no live source answered (a
+    // sub-hour range with no verified exchange listing, an RWA wrapper token, a
+    // refused or exhausted request). Shared stored data; no provider call.
+    stored: (range, width, lb) => loadStoredCandles(admin, storedIdentity(canonical), range, width, Date.now(), lb),
   }, lookback)
 }
 

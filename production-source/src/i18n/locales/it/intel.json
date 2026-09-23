@@ -199,6 +199,7 @@
     "select": "Seleziona",
     "selected": "selezionati per il confronto",
     "sharedSnapshot": "Istantanea di mercato condivisa",
+    "sharedSnapshotAsOf": "aggiornato al {{date}}",
     "storage_failed": "L’archiviazione del browser non è disponibile. Tieni aperta questa schermata per mantenere la tua selezione.",
     "suggest_count": "{{total}} asset corrispondenti. Usa le frecce su e giù per sceglierne uno, poi Invio per aprirlo.",
     "suggest_failed": "I suggerimenti di asset non sono disponibili. Quello che scrivi continua a filtrare questa schermata.",
@@ -1278,7 +1279,33 @@
     "working": {
       "saving": "Salvataggio",
       "saved": "Salvato"
-    }
+    },
+    "width_1M": "1 minuto",
+    "width_5M": "5 minuti",
+    "width_15M": "15 minuti",
+    "width_30M": "30 minuti",
+    "width_1H": "1 ora",
+    "width_4H": "4 ore",
+    "width_1D": "1 giorno",
+    "width_1W": "1 settimana",
+    "spacing_minutes": "{{count}} min",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} g",
+    "stored_quotes": "Ogni candela copre {{width}} ed è costruita da quotazioni {{provider}} salvate, circa una ogni {{spacing}} ({{count}} in questo grafico).",
+    "stored_quotes_few": "Ogni candela copre {{width}} ed è costruita da quotazioni {{provider}} salvate ({{count}} in questo grafico).",
+    "stored_high_low": "Massimi e minimi sono quelli delle quotazioni salvate, non di ogni scambio.",
+    "stored_singles": "Candele costruite da un solo prezzo salvato, disegnate piatte: {{count}} su {{total}}.",
+    "stored_daily_archive": "Candele giornaliere dall’archivio salvato ({{providers}}): {{count}}.",
+    "stored_daily_backfill": "Chiusure giornaliere dal recupero OHLCV di CoinMarketCap: {{count}}.",
+    "stored_daily_quotes": "Giorni costruiti da quotazioni {{provider}} salvate: {{count}}.",
+    "stored_weekly": "Ogni candela è una settimana completa di quei giorni.",
+    "stored_line": "Alcuni giorni hanno solo una chiusura, quindi il grafico disegna una linea delle chiusure.",
+    "stored_daily_further": "I prezzi intraday salvati iniziano tardi in questo periodo, quindi viene disegnato da righe giornaliere che risalgono più indietro.",
+    "stored_ceiling": "Candele da {{requested}} sarebbero troppe per questo periodo, quindi qui ogni candela copre {{width}}.",
+    "stored_coarser": "Candele da {{requested}} conterrebbero meno di un prezzo salvato ciascuna, quindi qui ogni candela copre {{width}}.",
+    "stored_reach": "I prezzi salvati iniziano il {{date}}, all’interno di questo periodo.",
+    "stored_gaps": "Un periodo senza nulla di salvato resta vuoto. Letto da dati salvati; nessun fornitore è stato interpellato.",
+    "single_price": "Per questo periodo è registrato un solo prezzo: {{price}} il {{time}}. Un grafico ne richiede almeno due."
   },
   "charts": {
     "state_unavailable_on_plan": "Non acquisito con il piano di questo workspace.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "Bassa",
     "volatility_sub": "Deviazione standard annualizzata dei rendimenti logaritmici su {{windowDays}} giorni, da {{samples}} rendimenti all’intervallo proprio di questa serie.",
     "volatility_sub_empty": "Deviazione standard annualizzata dei rendimenti logaritmici sulla finestra caricata.",
-    "volatility_title": "Volatilità realizzata a 30 giorni"
+    "volatility_title": "Volatilità realizzata a 30 giorni",
+    "range_stored": "dati salvati",
+    "demo_prompt": "Nella demo lo storico dei prezzi proviene solo da dati salvati. Nessun fornitore viene interpellato, quindi non si spende nulla. Scegli un intervallo qui sopra.",
+    "demo_note": "Letto solo da dati salvati. Nessun fornitore è stato interpellato, quindi non sono stati spesi crediti.",
+    "source_stored_quotes": "quotazioni {{provider}} salvate",
+    "source_stored_daily": "prezzi giornalieri salvati"
   },
   "asset_facts": {
     "age_sentence": "Quotato {{dateAdded}} · lanciato {{dateLaunched}} · {{ageDays}} giorni presso il fornitore · coorte {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Notizie registrate da fonti seguite e globali, raggruppate e ordinate secondo regole. Un ordinamento non è un giudizio sull’accuratezza.",
     "signals_stored": "Segnali generati da fonti memorizzate e ordinati per te alla lettura di questa vista. Un segnale è uno spunto di ricerca, non una raccomandazione.",
     "execution_quote": "Una quotazione di routing al suo orario, più il contesto del pool on chain. Non è un’esecuzione ricevuta da qualcuno e non è un consiglio di operare.",
-    "exchange_signal": "Una classificazione sui ticker degli exchange centralizzati coperti al loro orario riportato. Non è il prezzo di una singola piattaforma e non è una raccomandazione."
+    "exchange_signal": "Una classificazione sui ticker degli exchange centralizzati coperti al loro orario riportato. Non è il prezzo di una singola piattaforma e non è una raccomandazione.",
+    "stored_quote_candles": "Candele costruite dalle quotazioni dei fornitori che abbiamo salvato, raggruppate per periodo. Massimi e minimi sono quelli delle quotazioni salvate, non di ogni scambio, e un periodo senza nulla di salvato resta vuoto.",
+    "stored_daily_prices": "Prezzi giornalieri dal nostro archivio, dalle nostre acquisizioni e dal recupero salvati. Per questo grafico non è stato interpellato alcun fornitore, e un giorno senza nulla di salvato resta vuoto."
   },
   "receipt_state": {
     "provider": "Fornitore",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Premio rispetto all’ancora",
     "served_live": "Chiamata in tempo reale a CoinMarketCap per questa ricerca",
     "served_cache": "Cache condivisa (età: {{age}}), nessuna chiamata effettuata",
+    "batch_note": "Questo dato proviene da un’unica lettura condivisa e programmata di {{size}} asset, la richiesta mostrata sopra; questa ricerca non ha effettuato chiamate.",
     "served_retained": "Copia conservata (età: {{age}}): la lettura in tempo reale non ha risposto",
     "served_capture": "Cattura registrata (età: {{age}}), nessuna chiamata effettuata per questa ricerca",
     "served_unavailable": "Nessuna risposta",

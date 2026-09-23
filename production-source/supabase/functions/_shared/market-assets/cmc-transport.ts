@@ -156,7 +156,11 @@ export async function reserveCmcStream(db:any,maxMessages:number) {
 const NEGATIVE_TTL_MS=60_000,ENTITLEMENT_TTL_MS=6*3_600_000
 function errorKind(status:number,code:unknown):string {
   if(status===401) return 'credential_unavailable'
-  if(status===403 || Number(code)===1006) return 'insufficient_entitlement'
+  // 402 is CoinMarketCap's plan refusal (1003 plan requires payment, 1004 plan
+  // payment expired): the key's plan does not include this request. It is the
+  // same fact as a 403/1006 and is held just as long, so a key that has lost a
+  // plan is not re-asked every minute for an answer already given.
+  if(status===403 || status===402 || [1003,1004,1006].includes(Number(code))) return 'insufficient_entitlement'
   if(status===429) return [1009,1010].includes(Number(code))?'quota_exhausted':'rate_limited'
   if(status===400) return 'provider_request_rejected'
   return 'provider_unavailable'

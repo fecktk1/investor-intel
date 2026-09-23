@@ -1,0 +1,28 @@
+{
+  "nodeModulesDir": "none",
+  "lock": false,
+  "scopes": {
+    "../production-source/": {
+      "../production-source/supabase/functions/_shared/birdeye-client.ts": "./stand-ins/_shared/birdeye-client.ts",
+      "../production-source/supabase/functions/_shared/core-intel/hashing.ts": "./stand-ins/_shared/core-intel/hashing.ts",
+      "../production-source/supabase/functions/_shared/core-intel/materiality.ts": "./stand-ins/_shared/core-intel/materiality.ts",
+      "../production-source/supabase/functions/_shared/defi-public-browse.ts": "./stand-ins/_shared/defi-public-browse.ts",
+      "../production-source/supabase/functions/_shared/entity-resolver.ts": "./stand-ins/_shared/entity-resolver.ts",
+      "../production-source/supabase/functions/_shared/exchange-market/http.ts": "./stand-ins/_shared/exchange-market/http.ts",
+      "../production-source/supabase/functions/_shared/exchange-market/provider-registry.ts": "./stand-ins/_shared/exchange-market/provider-registry.ts",
+      "../production-source/supabase/functions/_shared/intel-providers.ts": "./stand-ins/_shared/intel-providers.ts",
+      "../production-source/supabase/functions/_shared/intel-signals.ts": "./stand-ins/_shared/intel-signals.ts",
+      "../production-source/supabase/functions/_shared/intelligence-core.ts": "./stand-ins/_shared/intelligence-core.ts",
+      "../production-source/supabase/functions/_shared/investor-portfolio/canonical.ts": "./stand-ins/_shared/investor-portfolio/canonical.ts",
+      "../production-source/supabase/functions/_shared/investor-portfolio/holdings.ts": "./stand-ins/_shared/investor-portfolio/holdings.ts",
+      "../production-source/supabase/functions/_shared/investor-portfolio/risk.ts": "./stand-ins/_shared/investor-portfolio/risk.ts",
+      "../production-source/supabase/functions/_shared/memecoin/degen-query.ts": "./stand-ins/_shared/memecoin/degen-query.ts",
+      "../production-source/supabase/functions/_shared/memecoin/degen-read.ts": "./stand-ins/_shared/memecoin/degen-read.ts",
+      "../production-source/supabase/functions/_shared/memecoin/dexscreener.ts": "./stand-ins/_shared/memecoin/dexscreener.ts",
+      "../production-source/supabase/functions/_shared/memecoin/geckoterminal.ts": "./stand-ins/_shared/memecoin/geckoterminal.ts",
+      "../production-source/supabase/functions/_shared/mobula-client.ts": "./stand-ins/_shared/mobula-client.ts",
+      "../production-source/supabase/functions/_shared/org-authz.ts": "./stand-ins/_shared/org-authz.ts",
+      "../production-source/supabase/functions/_shared/rate-limit.ts": "./stand-ins/_shared/rate-limit.ts"
+    }
+  }
+}

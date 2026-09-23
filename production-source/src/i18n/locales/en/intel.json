@@ -199,6 +199,7 @@
     "select": "Select",
     "selected": "selected for comparison",
     "sharedSnapshot": "Shared market snapshot",
+    "sharedSnapshotAsOf": "as of {{date}}",
     "storage_failed": "Browser storage is unavailable. Keep this screen open to retain your selection.",
     "suggest_count": "{{total}} matching assets. Use the up and down arrows to choose one, then Enter to open it.",
     "suggest_failed": "Asset suggestions are unavailable. Typing still filters this screen.",
@@ -2106,7 +2107,33 @@
     "working": {
       "saving": "Saving",
       "saved": "Saved"
-    }
+    },
+    "width_1M": "1 minute",
+    "width_5M": "5 minutes",
+    "width_15M": "15 minutes",
+    "width_30M": "30 minutes",
+    "width_1H": "1 hour",
+    "width_4H": "4 hours",
+    "width_1D": "1 day",
+    "width_1W": "1 week",
+    "spacing_minutes": "{{count}} min",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} d",
+    "stored_quotes": "Each candle covers {{width}} and is built from stored {{provider}} quotes, about one every {{spacing}} ({{count}} in this chart).",
+    "stored_quotes_few": "Each candle covers {{width}} and is built from stored {{provider}} quotes ({{count}} in this chart).",
+    "stored_high_low": "Highs and lows are those of the stored quotes, not of every trade.",
+    "stored_singles": "Candles built from a single stored price are drawn flat: {{count}} of {{total}}.",
+    "stored_daily_archive": "Daily candles from the stored archive ({{providers}}): {{count}}.",
+    "stored_daily_backfill": "Daily closes from the CoinMarketCap OHLCV backfill: {{count}}.",
+    "stored_daily_quotes": "Days built from stored {{provider}} quotes: {{count}}.",
+    "stored_weekly": "Each candle is one complete week of those days.",
+    "stored_line": "Some days hold a close only, so the chart draws a line of closes.",
+    "stored_daily_further": "Stored intraday prices begin late in this period, so it is drawn from daily rows that reach further back.",
+    "stored_ceiling": "Candles of {{requested}} would be too many for this period, so each candle here covers {{width}}.",
+    "stored_coarser": "Candles of {{requested}} would hold less than one stored price each, so each candle here covers {{width}}.",
+    "stored_reach": "Stored prices begin {{date}}, inside this period.",
+    "stored_gaps": "A period with nothing stored is left empty. Read from stored data; no provider was asked.",
+    "single_price": "Only one price is recorded for this period: {{price}} on {{time}}. A chart needs at least two."
   },
   "charts": {
     "state_unavailable_on_plan": "Not captured on this workspace’s plan.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "Low",
     "volatility_sub": "Annualised standard deviation of log returns over {{windowDays}} days, from {{samples}} returns at this series’ own interval.",
     "volatility_sub_empty": "Annualised standard deviation of log returns over the loaded window.",
-    "volatility_title": "30-day realised volatility"
+    "volatility_title": "30-day realised volatility",
+    "range_stored": "stored data",
+    "demo_prompt": "In the demo, price history comes from stored data only. No provider is asked, so nothing is spent. Choose a range above.",
+    "demo_note": "Read from stored data only. No provider was asked, so no credits were spent.",
+    "source_stored_quotes": "stored {{provider}} quotes",
+    "source_stored_daily": "stored daily prices"
   },
   "asset_facts": {
     "age_sentence": "Listed {{dateAdded}} · launched {{dateLaunched}} · {{ageDays}} days on the provider · cohort {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Stories recorded from followed and global sources, clustered and ranked by rules. A ranking is not a judgement of accuracy.",
     "signals_stored": "Signals generated from stored sources and ranked for you when this view was read. A signal is a research prompt, not a recommendation.",
     "execution_quote": "One routing quote at its quoted time, plus on-chain pool context. Not a fill anyone received and not advice to trade.",
-    "exchange_signal": "A classification over covered centralized exchange tickers at their reported time. Not a price on any one venue and not a recommendation."
+    "exchange_signal": "A classification over covered centralized exchange tickers at their reported time. Not a price on any one venue and not a recommendation.",
+    "stored_quote_candles": "Candles built from provider quotes we stored, grouped by period. Highs and lows are those of the stored quotes, not of every trade, and a period with nothing stored is left empty.",
+    "stored_daily_prices": "Daily prices from our stored archive, captures and backfill. No provider was asked for this chart, and a day with nothing stored is left empty."
   },
   "receipt_state": {
     "provider": "Provider",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Premium against the anchor",
     "served_live": "Live call to CoinMarketCap for this lookup",
     "served_cache": "Shared cache, {{age}} old, no call made",
+    "batch_note": "This figure comes from one scheduled shared read of {{size}} assets, the request shown above; this lookup made no call.",
     "served_retained": "Kept copy, {{age}} old: the live read did not answer",
     "served_capture": "Recorded capture, {{age}} old, no call made for this lookup",
     "served_unavailable": "Nothing answered",

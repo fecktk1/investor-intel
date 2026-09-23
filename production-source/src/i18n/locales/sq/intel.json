@@ -199,6 +199,7 @@
     "select": "Zgjidh",
     "selected": "të zgjedhura për krahasim",
     "sharedSnapshot": "Gjendje e përbashkët e tregut",
+    "sharedSnapshotAsOf": "gjendja më {{date}}",
     "storage_failed": "Hapësira e ruajtjes së shfletuesit nuk është e disponueshme. Mbaje këtë ekran të hapur për të ruajtur përzgjedhjen tënde.",
     "suggest_count": "{{total}} aktive që përputhen. Përdor shigjetat lart e poshtë për të zgjedhur një dhe shtyp Enter për ta hapur.",
     "suggest_failed": "Sugjerimet e aktiveve nuk janë të disponueshme. Ajo që shkruan vazhdon ta filtrojë këtë ekran.",
@@ -1278,7 +1279,33 @@
     "working": {
       "saving": "Po ruhet",
       "saved": "U ruajt"
-    }
+    },
+    "width_1M": "1 minutë",
+    "width_5M": "5 minuta",
+    "width_15M": "15 minuta",
+    "width_30M": "30 minuta",
+    "width_1H": "1 orë",
+    "width_4H": "4 orë",
+    "width_1D": "1 ditë",
+    "width_1W": "1 javë",
+    "spacing_minutes": "{{count}} min",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} d",
+    "stored_quotes": "Çdo qiri mbulon {{width}} dhe ndërtohet nga kuotime të ruajtura të {{provider}}, rreth një çdo {{spacing}} ({{count}} në këtë grafik).",
+    "stored_quotes_few": "Çdo qiri mbulon {{width}} dhe ndërtohet nga kuotime të ruajtura të {{provider}} ({{count}} në këtë grafik).",
+    "stored_high_low": "Majat dhe minimumet janë ato të kuotimeve të ruajtura, jo të çdo tregtimi.",
+    "stored_singles": "Qirinj të ndërtuar nga një çmim i vetëm i ruajtur, të vizatuar të sheshtë: {{count}} nga {{total}}.",
+    "stored_daily_archive": "Qirinj ditorë nga arkivi i ruajtur ({{providers}}): {{count}}.",
+    "stored_daily_backfill": "Mbyllje ditore nga plotësimi retroaktiv OHLCV i CoinMarketCap: {{count}}.",
+    "stored_daily_quotes": "Ditë të ndërtuara nga kuotime të ruajtura të {{provider}}: {{count}}.",
+    "stored_weekly": "Çdo qiri është një javë e plotë e atyre ditëve.",
+    "stored_line": "Disa ditë kanë vetëm një mbyllje, prandaj grafiku vizaton një vijë mbylljesh.",
+    "stored_daily_further": "Çmimet brenda ditës të ruajtura fillojnë vonë në këtë periudhë, prandaj ajo vizatohet nga rreshta ditorë që shkojnë më prapa.",
+    "stored_ceiling": "Qirinj prej {{requested}} do të ishin shumë për këtë periudhë, prandaj këtu çdo qiri mbulon {{width}}.",
+    "stored_coarser": "Qirinj prej {{requested}} do të kishin secili më pak se një çmim të ruajtur, prandaj këtu çdo qiri mbulon {{width}}.",
+    "stored_reach": "Çmimet e ruajtura fillojnë më {{date}}, brenda kësaj periudhe.",
+    "stored_gaps": "Një periudhë pa asgjë të ruajtur mbetet bosh. Lexuar nga të dhëna të ruajtura; asnjë ofrues nuk u pyet.",
+    "single_price": "Për këtë periudhë është regjistruar vetëm një çmim: {{price}} më {{time}}. Një grafik ka nevojë për të paktën dy."
   },
   "charts": {
     "state_unavailable_on_plan": "Nuk kapet në planin e kësaj hapësire pune.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "I ulët",
     "volatility_sub": "Devijimi standard në bazë vjetore i kthimeve logaritmike përgjatë {{windowDays}} ditëve, nga {{samples}} kthime në intervalin e vetë kësaj serie.",
     "volatility_sub_empty": "Devijimi standard në bazë vjetore i kthimeve logaritmike përgjatë dritares së ngarkuar.",
-    "volatility_title": "Volatiliteti i realizuar 30-ditor"
+    "volatility_title": "Volatiliteti i realizuar 30-ditor",
+    "range_stored": "të dhëna të ruajtura",
+    "demo_prompt": "Në demo, historiku i çmimeve vjen vetëm nga të dhëna të ruajtura. Asnjë ofrues nuk pyetet, prandaj nuk shpenzohet asgjë. Zgjidh një interval më sipër.",
+    "demo_note": "Lexuar vetëm nga të dhëna të ruajtura. Asnjë ofrues nuk u pyet, prandaj nuk u shpenzuan kredite.",
+    "source_stored_quotes": "kuotime të ruajtura të {{provider}}",
+    "source_stored_daily": "çmime ditore të ruajtura"
   },
   "asset_facts": {
     "age_sentence": "Listuar {{dateAdded}} · lansuar {{dateLaunched}} · {{ageDays}} ditë te ofruesi · brezi {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Lajme të regjistruara nga burime të ndjekura dhe globale, të grupuara dhe të renditura sipas rregullave. Një renditje nuk është gjykim për saktësinë.",
     "signals_stored": "Sinjale të krijuara nga burime të ruajtura dhe të renditura për ty gjatë leximit të kësaj pamjeje. Një sinjal është pikënisje për hulumtim, jo rekomandim.",
     "execution_quote": "Një kuotim rrugëtimi në kohën e kuotimit, plus kontekstin e pool-it on chain. Nuk është një ekzekutim që e ka marrë ndokush dhe nuk është këshillë tregtimi.",
-    "exchange_signal": "Një klasifikim mbi tiketat e bursave të centralizuara të mbuluara në kohën e raportuar. Nuk është çmimi në një bursë të vetme dhe nuk është rekomandim."
+    "exchange_signal": "Një klasifikim mbi tiketat e bursave të centralizuara të mbuluara në kohën e raportuar. Nuk është çmimi në një bursë të vetme dhe nuk është rekomandim.",
+    "stored_quote_candles": "Qirinj të ndërtuar nga kuotimet e ofruesve që kemi ruajtur, të grupuar sipas periudhës. Majat dhe minimumet janë ato të kuotimeve të ruajtura, jo të çdo tregtimi, dhe një periudhë pa asgjë të ruajtur mbetet bosh.",
+    "stored_daily_prices": "Çmime ditore nga arkivi, kapjet dhe plotësimi retroaktiv që kemi ruajtur. Për këtë grafik nuk u pyet asnjë ofrues, dhe një ditë pa asgjë të ruajtur mbetet bosh."
   },
   "receipt_state": {
     "provider": "Ofruesi",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Primi ndaj spirancës",
     "served_live": "Thirrje live te CoinMarketCap për këtë kërkim",
     "served_cache": "Cache i përbashkët (mosha: {{age}}), pa thirrje",
+    "batch_note": "Kjo shifër vjen nga një lexim i vetëm i përbashkët dhe i planifikuar i {{size}} aseteve, kërkesa e treguar më lart; ky kërkim nuk bëri asnjë thirrje.",
     "served_retained": "Kopje e ruajtur (mosha: {{age}}): leximi live nuk u përgjigj",
     "served_capture": "Kapje e regjistruar (mosha: {{age}}), pa thirrje për këtë kërkim",
     "served_unavailable": "Asgjë nuk u përgjigj",

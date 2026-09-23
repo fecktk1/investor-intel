@@ -28,7 +28,12 @@
 //         endpoint), for the tokenised asset lookup ({ q }, always live) and a
 //         SNAPSHOT MISS of one of the six real-world asset research reads of
 //         /intel/rwa (DEMO_FORWARDED_RESEARCH), which that endpoint answers
-//         exactly as intel-research answers a free member;
+//         exactly as intel-research answers a free member. The same read is
+//         also forwarded when the snapshot DOES hold it but its copy is past its
+//         refresh window (researchCopyPastWindow): the snapshot is built once a
+//         day, so its copies age through the day, while the endpoint serves the
+//         shared copy the warm lane keeps inside its window. The newer of the two
+//         answers; an unreachable or older answer leaves the snapshot copy;
 //       - DEMO_READ_FUNCTION (intel-demo-read), for a SNAPSHOT MISS of a
 //         visitor's own search and the asset it opens (demoReadFor below): the
 //         Markets search and typeahead, the workspace search, and the asset
@@ -67,6 +72,27 @@ export const DEMO_PUBLIC_FUNCTIONS = Object.freeze([DEMO_LIVE_FUNCTION, DEMO_REA
  * real-world asset lane (supabase/functions/_shared/intel/rwa-free-read.ts). */
 export const DEMO_FORWARDED_RESEARCH = RWA_FREE_CAPABILITIES
 export const DEMO_MISS_TEXT = "Not in today's demo snapshot. Create a free account to look it up."
+
+const USABLE_STATES = ['fresh', 'cached', 'stale']
+const fetchedMs = (body) => {
+  const t = Date.parse(String(body?.provenance?.fetchedAt ?? body?.receipt?.fetchedAt ?? ''))
+  return Number.isFinite(t) ? t : -Infinity
+}
+
+/** Is this snapshot copy of an RWA research read past its refresh window now?
+ * The provider copy's own expiry decides (provenance.expiresAt), else its fetch
+ * time plus the receipt's TTL. A copy that stored no usable answer counts as
+ * past it; an unsupported read, or one whose window cannot be established, is
+ * never second-guessed. */
+export function researchCopyPastWindow(body, now = Date.now()) {
+  if (!body || typeof body !== 'object') return false
+  if (body.state === 'unavailable' || body.state === 'refreshing') return true
+  if (!USABLE_STATES.includes(body.state)) return false
+  const expires = Date.parse(String(body.provenance?.expiresAt ?? ''))
+  if (Number.isFinite(expires)) return expires <= now
+  const fetched = fetchedMs(body), ttl = Number(body.receipt?.ttlSeconds)
+  return Number.isFinite(fetched) && Number.isFinite(ttl) && ttl > 0 && fetched + ttl * 1000 <= now
+}
 
 /** The Investor Intel surfaces (intel_surface_tiers). Starter reaches all of them. */
 export const DEMO_SURFACES = {
@@ -324,6 +350,29 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     } catch { return null }
   }
 
+  // An RWA research read, rebuilt from the allowed fields alone.
+  const researchBody = (body) => {
+    const forwarded = { capability: body.capability }
+    if (body.params != null) forwarded.params = body.params
+    if (body.readMode != null) forwarded.readMode = body.readMode
+    return forwarded
+  }
+  // The shared copy for a snapshot copy past its window, or null to keep the
+  // snapshot copy: when the endpoint cannot be reached, answers no usable body,
+  // or answers one older than the copy already held.
+  async function fresherResearch(name, body, stored) {
+    if (name !== 'intel-research' || typeof forwardPublic !== 'function' || !DEMO_FORWARDED_RESEARCH.has(body?.capability)) return null
+    if (!researchCopyPastWindow(stored, now())) return null
+    let response
+    try { response = await forwardPublic(researchBody(body), DEMO_LIVE_FUNCTION) } catch { return null }
+    if (!response || !response.ok) return null
+    let answer
+    try { answer = await response.clone().json() } catch { return null }
+    if (!USABLE_STATES.includes(answer?.state)) return null
+    if (USABLE_STATES.includes(stored?.state) && fetchedMs(answer) < fetchedMs(stored)) return null
+    return response
+  }
+
   async function functions(name, input, init) {
     const text = await readBody(input, init)
     const body = parseJson(text)
@@ -337,7 +386,11 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     const key = demoSnapshotKey(name, body)
     let entry = null
     try { entry = reader ? await reader.entry(key) : null } catch { entry = null }
-    if (entry && entry.body !== undefined) return respond(entry.body, Number(entry.status) || 200)
+    if (entry && entry.body !== undefined) {
+      const fresher = await fresherResearch(name, body, entry.body)
+      if (fresher) return fresher
+      return respond(entry.body, Number(entry.status) || 200)
+    }
 
     // Identity-shaped function reads every signed-in page makes.
     if (name === 'help-assistant' && body?.action === 'status') return respond({ tutorials_enabled: false, assistant_enabled: false })
@@ -350,10 +403,7 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     // endpoint answers it as a free member gets it. Only capability, params and
     // readMode cross; orgId and the visitor's token do not.
     if (name === 'intel-research' && typeof forwardPublic === 'function' && DEMO_FORWARDED_RESEARCH.has(body?.capability)) {
-      const forwarded = { capability: body.capability }
-      if (body.params != null) forwarded.params = body.params
-      if (body.readMode != null) forwarded.readMode = body.readMode
-      try { return await forwardPublic(forwarded, DEMO_LIVE_FUNCTION) } catch { return respond(researchMissBody(body.capability)) }
+      try { return await forwardPublic(researchBody(body), DEMO_LIVE_FUNCTION) } catch { return respond(researchMissBody(body.capability)) }
     }
     // A visitor's own search, or the asset it opened: the public read endpoint
     // answers it for a tracked asset and refuses anything else, calmly.

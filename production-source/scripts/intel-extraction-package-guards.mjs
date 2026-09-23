@@ -24,6 +24,8 @@ export const PUBLIC_DOCS = Object.freeze([
   'docs/real-api-call.md',
   'docs/build-timeline.md',
   'docs/demo-guide.md',
+  // The full X post, because public embeds cut long posts short and hide its BUIDL link.
+  'docs/x-post-2026-09-22.png',
 ])
 
 /** Private working documents. Never packaged, whatever path they appear under.

@@ -175,3 +175,86 @@ export async function freeRwaRead(
   const live = await read('shared-live')
   return lane(live, { served: freeRwaSnapshotUsable(live) ? 'shared-live' : 'retained', reason: freeRwaSnapshotUsable(live) ? null : live.reason ?? null })
 }
+
+// ─── The public lookup's variant: refresh a copy past its window ─────────────
+//
+// freeRwaRead above treats a 'stale' shared copy (past its TTL, still inside
+// stale_until) as an answer, so a copy read once at 08:00 is served as-is until
+// 14:00. That is right for intel-research's free members, whose own path is
+// unchanged. The PUBLIC lookup (intel-rwa-lookup, which the demo also uses) wants
+// the figure inside its refresh window instead, still without per-visitor calls:
+//
+//   1. The shared copy inside its window answers, for nothing.
+//   2. Otherwise a SECOND shared copy of the same figure answers, for nothing,
+//      when it is inside its window: the scheduled warm lane's one batched read
+//      of every asset on the judge path (capture-rwa-quote-warm.ts). Its own
+//      receipt names that batched request, so nothing is passed off as a call
+//      that was not made.
+//   3. Otherwise ONE live refresh, through exactly the gates a miss already
+//      passes: the per-IP hourly allowance, then the 200 credit daily free
+//      budget. The transport's reservation lease makes concurrent readers of
+//      one key share that call, and a refreshed key is inside its window for the
+//      next hour, so this is at most one call per key per hour platform-wide.
+//   4. When the refresh is refused or fails, the NEWEST usable copy answers,
+//      with the reason, so a stale figure still says it is stale and why.
+//
+// `liveBlocked` short-cuts 3: a plan refusal the warm lane recorded is not asked
+// again by every visitor (the transport holds the same refusal six hours).
+
+/** Inside its refresh window: a live answer, or a cache row before expires_at. */
+export function freeRwaInWindow(snapshot: ResearchSnapshot | null): boolean {
+  return !!snapshot && (snapshot.state === 'fresh' || snapshot.state === 'cached')
+}
+
+const fetchedMs = (s: ResearchSnapshot | null): number => {
+  const t = Date.parse(String(s?.provenance?.fetchedAt ?? s?.receipt?.fetchedAt ?? ''))
+  return Number.isFinite(t) ? t : -Infinity
+}
+
+/** The newest usable copy among several, first one winning a tie. */
+export function newestUsable(...list: (ResearchSnapshot | null)[]): ResearchSnapshot | null {
+  let best: ResearchSnapshot | null = null
+  for (const s of list) if (freeRwaSnapshotUsable(s) && (!best || fetchedMs(s) > fetchedMs(best))) best = s
+  return best
+}
+
+export interface FreshReadOptions {
+  /** A second shared copy of the same figure, cache only (the warm batch). */
+  alternate?: (() => Promise<ResearchSnapshot | null>) | null
+  /** A provider refusal already known (a recorded plan refusal): no claim, no call. */
+  liveBlocked?: string | null
+}
+
+export async function freeRwaReadFresh(
+  read: SnapshotReader,
+  claim: () => Promise<FreeRwaClaim>,
+  allowLive = true,
+  opts: FreshReadOptions = {},
+): Promise<ResearchSnapshot> {
+  const lane = (snapshot: ResearchSnapshot, extra: Record<string, unknown>) => ({
+    ...snapshot,
+    freeShared: { lane: 'rwa_research', ...extra },
+    refreshPolicy: { enabled: false, cacheReadSeconds: null, providerRefreshSeconds: null },
+  })
+  const shared = await read('shared-cache')
+  if (freeRwaInWindow(shared)) return lane(shared, { served: 'shared-cache' })
+  let alt: ResearchSnapshot | null = null
+  if (opts.alternate) { try { alt = await opts.alternate() } catch { alt = null } }
+  if (freeRwaInWindow(alt)) return lane(alt!, { served: 'shared-cache' })
+  const kept = newestUsable(shared, alt)
+  // Nothing refreshed it: the newest copy with the reason, or the lane's own
+  // unavailable body with the reason when there is no copy at all.
+  const keep = (reason: string | null) => kept ? lane(kept, { served: 'shared-cache', reason }) : lane(shared, { served: 'retained', reason })
+  if (!allowLive) return keep('free_rwa_background_read')
+  if (shared.state === 'unsupported') return lane(shared, { served: 'retained', reason: shared.reason ?? 'unsupported_capability' })
+  if (opts.liveBlocked) return keep(opts.liveBlocked)
+  const granted = await claim()
+  if (!granted.allowed) return keep(granted.reason)
+  const live = await read('shared-live')
+  if (freeRwaInWindow(live)) return lane(live, { served: live.state === 'fresh' ? 'shared-live' : 'shared-cache' })
+  // The refresh did not land (a refusal, an outage, a lease another isolate is
+  // still holding): the transport hands back the copy it had, with the reason.
+  const reason = live.reason ?? 'live_read_unavailable'
+  const best = newestUsable(live, kept)
+  return best ? lane(best, { served: 'shared-cache', reason }) : lane(live, { served: 'retained', reason })
+}

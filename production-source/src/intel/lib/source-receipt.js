@@ -187,6 +187,14 @@ const CHART_SCOPE_SENTENCES = {
   exchange_ohlcv: 'Candles from one covered centralized exchange pair. Reported by that venue and not the price on any other venue.',
   coingecko_ohlc: 'CoinGecko observations at the provider spacing. Volume is not included and the spacing is not a candle width.',
   cmc_ohlcv: 'CoinMarketCap completed OHLCV periods for this asset. Asset-level market data, not the price of any one pool or venue.',
+  stored_quote_candles: 'Candles built from provider quotes we stored, grouped by period. Highs and lows are those of the stored quotes, not of every trade, and a period with nothing stored is left empty.',
+  stored_daily_prices: 'Daily prices from our stored archive, captures and backfill. No provider was asked for this chart, and a day with nothing stored is left empty.',
+}
+// A series built from stored prices names its own scope (storedChartScope in
+// market-provenance.ts, the same rule).
+const storedChartScope = snapshot => {
+  const mode = snapshot?.storedSeries?.mode
+  return mode === 'quotes' ? 'stored_quote_candles' : mode === 'daily' || mode === 'weekly' ? 'stored_daily_prices' : null
 }
 const PRICE_SCOPE = 'Provider-aggregated USD quote at its reported time. Not an executable price and not the quote of any one venue.'
 
@@ -221,7 +229,7 @@ export function chartSnapshotProvenance(snapshot, now = Date.now()) {
   const state = String(snapshot.sourceState ?? snapshot.chartState ?? '')
   const freshness = receipts.length ? worstFreshness(receipts.map(r => receiptFreshness(r, now)))
     : state === 'stale' ? 'stale' : state === 'unavailable' || !(snapshot.candles?.length) ? 'unavailable' : null
-  const scopeKey = CHART_SCOPE[source] ?? (source.includes('exchange') || CHART_EXCHANGES.includes(source) ? 'exchange_ohlcv' : null)
+  const scopeKey = storedChartScope(snapshot) ?? CHART_SCOPE[source] ?? (source.includes('exchange') || CHART_EXCHANGES.includes(source) ? 'exchange_ohlcv' : null)
   return {
     receipts,
     envelope: {

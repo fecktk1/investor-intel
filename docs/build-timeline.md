@@ -4,6 +4,11 @@ This repository carries the real development history of Investor Intel. Run `git
 
 Submissions opened on 2026-09-09. The first commit of the hackathon CoinMarketCap integration (the capability registry and the governed transport) is dated 2026-09-14. To see it, run `git log --reverse -- production-source/supabase/functions/_shared/market-assets/cmc-capabilities.ts`.
 
+**Why that first commit is large (299 files).** It records work done during the event, but committed afterwards:
+- **When the work was done.** The Investor Intel overhaul began on 2026-09-09 at 14:06 UTC, after submissions opened at 00:00 UTC, and ran to 2026-09-12. During it, the new backend was built and deployed to production from working copies.
+- **What the commit is.** The 2026-09-14 commit puts that deployed backend into version control in one go. Its message says so: "Source of the 46 Edge Functions deployed during the overhaul".
+- **What existed before the event.** The 106 commits before 2026-09-09 are Investor Intel as it was before the event. Their only CoinMarketCap code is the narrow v1 listings and global-metrics adapter (`coinmarketcap-provider.ts`, June 2026) and the v2 price helpers.
+
 | Date | Commits | What landed |
 |---|---|---|
 | 2026-05-08 to 2026-09-08 | 106 | Investor Intel before the event: wallet intelligence, then from June the narrative radar and signals. Its only CoinMarketCap use was a narrow v1 listings and global-metrics adapter and v2 price helpers. |
@@ -35,5 +40,6 @@ The history was published on 2026-09-23. Until then, this repository held only f
 - **What changed.** Author addresses were mapped to the owner's GitHub no-reply address, and one code comment's wording was changed in its historical versions (the current code already had the new wording). Dates, messages and all other content are as they were.
 - **Commit hashes.** They differ from the private repository's, because filtering rewrites them.
 - **Secret scan.** Before publication, every line added in the history was scanned for secret-shaped text, and none was found.
+- **Test count in the merge message.** The merge commit's message gives 475 standalone tests, the count on 2026-09-23. Later commits raised it; the README gives the current count.
 
 `SOURCE-MANIFEST.json` lists every file at the top of the tree, with its path in the private repository and its SHA-256.

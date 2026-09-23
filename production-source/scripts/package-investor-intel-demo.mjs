@@ -6,6 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { PUBLIC_DOCS, assertPublishable, deniedPackagePaths } from './intel-extraction-package-guards.mjs'
+import { planPublishedTestRun, RUNNABLE_TESTS, EXCLUDED_TESTS } from './intel-extraction-test-run.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),example=path.join(root,'examples/investor-intel-hackathon')
 // Explicit fail-closed boundaries keep private app providers out of the standalone package.
 const adapters={
@@ -38,7 +39,7 @@ const adapters={
 // Discovery validates this explicit list; it never authorizes new copies.
 const chartSources=[...Object.keys(adapters),
   ...['TokenChart','TokenChartFallback','JournalMarkerReceipt','ChartReplayControls','ResponsiveChartTools','EvidenceMarkerContext','PriceWorkstation','ChartDrawings','ChartLayoutLibrary','ChartAssetNavigator','TokenAvatar','ChartSnapshotSave','ChartAlertEditor','ChartStructurePanel','ChartOutcomePanel','InvestigationTable','ChartReadPanel','ChartPatternPanel','ChartTimeframePanel','deferred-panel','deferred-tool','ChartDrawingEditor','ChartDrawingSurface','ChartDrawingToolbar','ChartDrawingOptions','ChartDrawingMorePanel','ChartIndicatorDialog','ChartIndicatorMenu','ChartIndicatorPanel','ChartLayoutLaunch','ChartWatermark','ChartCandleProvenance','FigureProvenance','SourceCallReceipt','ReceiptCostLine'].map(name=>`src/intel/components/${name}.jsx`),
-  ...['chart-history','chart-event-changes','useChartAlertHistory','chart-workspace-api','chart-replay','chart-renderer-data','useChartStudies','chart-study.worker','chart-drawings','chains','useChartStructure','chart-structure.worker','chart-drawing-snap','chart-drawing-tools','chart-size','chart-watermark','chart-indicators','source-receipt'].map(name=>`src/intel/lib/${name}.js`),
+  ...['chart-history','chart-event-changes','useChartAlertHistory','chart-workspace-api','chart-replay','chart-renderer-data','useChartStudies','chart-study.worker','chart-drawings','chains','useChartStructure','chart-structure.worker','chart-drawing-snap','chart-drawing-tools','chart-size','chart-watermark','chart-indicators','source-receipt','stored-series-caption','chart-source-label'].map(name=>`src/intel/lib/${name}.js`),
   ...['chart-workspace-contract','chart-analysis','chart-outcome-contract','chart-drawing-geometry','chart-outcome','chart-read','chart-levels','chart-structure','chart-patterns','chart-timeframes'].map(name=>`supabase/functions/_shared/intel/${name}.ts`),
   'src/intel/vendor/lightweight-charts-5.2.0/renderer.mjs',
   // The receipt's reproduce line builds its curl from the capability registry.
@@ -101,17 +102,28 @@ for(const file of chartSources){
 // Intel). It lands in production-source/ under its original paths, beside the
 // standalone subset above. It is NOT closed under imports: modules that reach
 // the parent platform (authentication, the Supabase client, shared helpers) are
-// there to read. Only the standalone subset's tests run, and they are listed in
-// production-source/standalone-tests.txt. Tracked files only; the private
+// there to read. Its tests still run where they can: see the published test run
+// below. Tracked files only; the private
 // working documents and environment files never enter, and every file passes
 // the full-source secret scan before anything is written.
-const FULL_SOURCE_SCRIPTS=['scripts/package-investor-intel-demo.mjs','scripts/intel-extraction-package-guards.mjs','scripts/test-intel-extraction-package.mjs']
+const FULL_SOURCE_SCRIPTS=['scripts/package-investor-intel-demo.mjs','scripts/intel-extraction-package-guards.mjs','scripts/intel-extraction-test-run.mjs','scripts/test-intel-extraction-package.mjs']
 const isFullSource=file=>file.startsWith('src/intel/')||file.startsWith('supabase/functions/_shared/intel/')||file.startsWith('supabase/functions/_shared/market-assets/')||/^supabase\/functions\/intel-[^/]+\//.test(file)||/^supabase\/migrations\/([^/]*_)?intel[_.][^/]*$/.test(file)||/^supabase\/migrations\/[^/]*investor[^/]*$/.test(file)||/^src\/i18n\/locales\/[^/]+\/intel\.json$/.test(file)||FULL_SOURCE_SCRIPTS.includes(file)
 const tracked=spawnSync('git',['ls-files','-z'],{cwd:root,encoding:'utf8',maxBuffer:256*1024*1024,windowsHide:true})
 if(tracked.status!==0)throw Error(`git ls-files failed: ${tracked.stderr}`)
-const fullSources=tracked.stdout.split('\0').filter(Boolean).filter(isFullSource)
+const trackedFiles=tracked.stdout.split('\0').filter(Boolean)
+const fullSources=trackedFiles.filter(isFullSource)
   .filter(file=>!productionSet.has(file)&&!/(^|\/)\.env(\.(?!example$)[^/]*)?$/.test(file)&&deniedPackagePaths([file]).length===0)
+// The standalone subset's tests need nothing outside it, so they run with no
+// configuration at all; the list stays for the command that shows that.
 const standaloneTests=productionSources.filter(file=>file.endsWith('.test.ts')).map(file=>`production-source/${file}`)
+// The published test run: every Deno test in production-source/ whose modules
+// load inside this package, where a parent-platform import may resolve to a
+// reviewed TEST STAND-IN (test-support/), and the rest listed with the reason in
+// production-source/excluded-tests.md. scripts/intel-extraction-test-run.mjs
+// decides which and checks the stand-ins; see its header.
+const testRun=planPublishedTestRun({root,example,publishedSource:[...productionSources,...fullSources],tracked:trackedFiles,isIntelSource:isFullSource})
+const leftRun=standaloneTests.filter(file=>!testRun.runnable.includes(file))
+if(leftRun.length)throw Error(`A standalone test left the published run: ${leftRun.join(', ')}`)
 const shared=[...chartSources.map(file=>[adapters[file]||file,`product/${file}`]),
   ...['LICENSE','NOTICE'].map(file=>[`src/intel/vendor/lightweight-charts-5.2.0/${file}`,`product/src/intel/vendor/lightweight-charts-5.2.0/${file}`]),
   ['src/intel/workspace.css','product/src/intel/workspace.css'],
@@ -137,8 +149,10 @@ for(const [source,dest] of shared){const target=path.join(example,dest);mkdirSyn
 const PACKAGE_SOURCE_OVERRIDES=Object.freeze({'.gitignore':'public.gitignore'})
 const exampleSource=file=>path.join(example,PACKAGE_SOURCE_OVERRIDES[file]||file)
 writeFileSync(path.join(example,'production-source/standalone-tests.txt'),standaloneTests.join('\n')+'\n')
+writeFileSync(path.join(example,RUNNABLE_TESTS),testRun.runnable.join('\n')+'\n')
+writeFileSync(path.join(example,EXCLUDED_TESTS),testRun.markdown)
 const fullSourceFiles=new Set(fullSources.map(file=>`production-source/${file}`))
-const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest),'production-source/standalone-tests.txt']
+const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest),'production-source/standalone-tests.txt',RUNNABLE_TESTS,EXCLUDED_TESTS,...testRun.testSupportFiles]
 // Fail closed before anything is written: the private-document denylist and the
 // secret-shape scan run over every file this package would contain.
 assertPublishable(files.map(file=>({file,text:readFileSync(exampleSource(file),'utf8'),fullSource:fullSourceFiles.has(file)})))

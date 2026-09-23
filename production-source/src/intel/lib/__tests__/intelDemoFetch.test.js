@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClient } from '@supabase/supabase-js'
-import { createDemoFetch, DEMO_MISS_CODE, demoAccountAccess } from '../../demo/demo-fetch'
+import { createDemoFetch, DEMO_MISS_CODE, demoAccountAccess, researchCopyPastWindow } from '../../demo/demo-fetch'
 import { createDemoStore } from '../../demo/demo-store'
 import { createSnapshotReader, publicObjectUrl } from '../../demo/demo-snapshot'
 import { DEMO_ORG_ID, DEMO_USER_ID } from '../../demo/demo-identity'
@@ -251,6 +251,70 @@ describe('demoFetch and the public RWA endpoint', () => {
     expect(forwarded).toEqual([{ q: 'NVDA' }])
     const { client: plain } = demoClient({})
     expect((await plain.functions.invoke('intel-rwa-lookup', { body: { q: 'NVDA' } })).data.code).toBe(DEMO_MISS_CODE)
+  })
+})
+
+describe('demoFetch and a snapshot copy past its refresh window', () => {
+  const NOW = Date.parse('2026-09-23T15:00:00.000Z')
+  const quoteBody = (fetchedAt, state = 'cached') => ({
+    version: 1, capability: 'rwaQuotes', state, data: { rows: [{ rwa_id: 1, symbol: 'GOLD' }], total: 1, hasMore: false },
+    provenance: { provider: 'coinmarketcap', fetchedAt, expiresAt: new Date(Date.parse(fetchedAt) + 3600_000).toISOString() },
+    receipt: { origin: 'cache', fetchedAt, ttlSeconds: 3600, cacheAgeSeconds: 483 },
+    freeShared: { lane: 'rwa_research', served: 'shared-cache' },
+  })
+  const key = demoSnapshotKey('intel-research', { capability: 'rwaQuotes', params: { rwa_id: 1 } })
+  function client(stored, answer) {
+    const net = bucket({ [key]: stored })
+    const reader = createSnapshotReader({ supabaseUrl: URL_BASE, fetchImpl: net.network })
+    const forwarded = []
+    const forwardPublic = vi.fn(async (body, fn) => {
+      forwarded.push({ fn, body })
+      if (answer instanceof Error) throw answer
+      return new Response(JSON.stringify(answer), { status: answer?.status === 503 ? 503 : 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    const demoFetch = createDemoFetch({ supabaseUrl: URL_BASE, reader, store: createDemoStore(), forwardPublic, now: () => NOW })
+    const c = createClient(URL_BASE, 'anon-key', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: demoFetch } })
+    const read = async () => (await c.functions.invoke('intel-research', { body: { orgId: DEMO_ORG_ID, capability: 'rwaQuotes', params: { rwa_id: 1 } } })).data
+    return { read, forwarded }
+  }
+
+  it('the window is the copy\'s own expiry, else fetch time plus TTL; a failed copy counts as past it; unsupported never', () => {
+    expect(researchCopyPastWindow(quoteBody('2026-09-23T14:30:00.000Z'), NOW)).toBe(false)
+    expect(researchCopyPastWindow(quoteBody('2026-09-23T00:30:00.000Z'), NOW)).toBe(true)
+    expect(researchCopyPastWindow({ state: 'cached', receipt: { fetchedAt: '2026-09-23T13:00:00.000Z', ttlSeconds: 3600 } }, NOW)).toBe(true)
+    expect(researchCopyPastWindow({ state: 'cached', receipt: { fetchedAt: '2026-09-23T13:00:00.000Z', ttlSeconds: 86400 } }, NOW)).toBe(false)
+    expect(researchCopyPastWindow({ state: 'cached', data: { rows: [] } }, NOW)).toBe(false)
+    expect(researchCopyPastWindow({ state: 'unavailable' }, NOW)).toBe(true)
+    expect(researchCopyPastWindow({ state: 'unsupported', reason: 'insufficient_entitlement' }, NOW)).toBe(false)
+  })
+
+  it('a copy past its window is forwarded as capability and params alone, and the newer shared copy answers', async () => {
+    const shared = quoteBody('2026-09-23T14:52:00.000Z')
+    const { read, forwarded } = client(quoteBody('2026-09-23T00:30:18.981Z'), shared)
+    const data = await read()
+    expect(data.provenance.fetchedAt).toBe('2026-09-23T14:52:00.000Z')
+    expect(forwarded).toEqual([{ fn: 'intel-rwa-lookup', body: { capability: 'rwaQuotes', params: { rwa_id: 1 } } }])
+  })
+
+  it('a copy inside its window is served from the snapshot and nothing is forwarded', async () => {
+    const { read, forwarded } = client(quoteBody('2026-09-23T14:40:00.000Z'), quoteBody('2026-09-23T14:59:00.000Z'))
+    expect((await read()).provenance.fetchedAt).toBe('2026-09-23T14:40:00.000Z')
+    expect(forwarded).toEqual([])
+  })
+
+  it('an unreachable endpoint, an unusable answer or an older copy leaves the snapshot copy, still dated', async () => {
+    const stored = quoteBody('2026-09-23T09:00:00.000Z')
+    for (const answer of [new Error('offline'), { status: 503, error: 'research_unavailable' }, { state: 'unavailable', reason: 'insufficient_entitlement' }, quoteBody('2026-09-23T08:00:00.000Z', 'stale')]) {
+      const { read, forwarded } = client(stored, answer)
+      expect((await read()).provenance.fetchedAt).toBe('2026-09-23T09:00:00.000Z')
+      expect(forwarded).toHaveLength(1)
+    }
+  })
+
+  it('a stale shared copy newer than the snapshot copy still answers, and keeps saying it is stale', async () => {
+    const { read } = client(quoteBody('2026-09-23T09:00:00.000Z'), quoteBody('2026-09-23T12:00:00.000Z', 'stale'))
+    const data = await read()
+    expect([data.state, data.provenance.fetchedAt]).toEqual(['stale', '2026-09-23T12:00:00.000Z'])
   })
 })
 

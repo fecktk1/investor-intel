@@ -81,6 +81,10 @@ const loadResolver = async () => {
 // view (canonical market-cap universe + CEX/DEX enrichment) and a separate
 // multi-chain Degen memecoin terminal. All data is read from cached tables via
 // edge functions — never a live provider call on render.
+/** The Markets snapshot's as-of time: date, minutes and the viewer's time zone,
+ * so "as of" can never be read in the wrong zone. */
+export const SNAPSHOT_AS_OF_FORMAT = Object.freeze({ year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
+
 export default function MarketsPage() {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
@@ -287,6 +291,13 @@ export default function MarketsPage() {
   }, [form, supabase, t, goToAsset, navigate])
 
   const snap = marketsData?.snapshot || {}
+  // When the shared market snapshot shown was captured: its catalogue receipt's
+  // clock, else the newest row time the screen reported (the same value).
+  const snapshotAsOf = useMemo(() => {
+    const at = marketsData?.receipt?.capturedAt ?? marketsData?.receipt?.fetchedAt ?? marketsData?.snapshot?.lastUpdated ?? marketsData?.lastUpdated
+    const ms = Date.parse(String(at ?? ''))
+    return Number.isFinite(ms) ? new Date(ms).toLocaleString(undefined, SNAPSHOT_AS_OF_FORMAT) : null
+  }, [marketsData])
   const rows = marketsData?.rows || []
   const degraded = (marketsData?.providerStatus || []).some((p) => p.degraded)
   const spreads = marketsData?.crossExchangeSpreads || []
@@ -340,7 +351,10 @@ export default function MarketsPage() {
             {marketError && <p role="alert" className="text-sm text-[var(--fg-3)]">{t('markets.refreshFailed', {error: marketError, defaultValue: 'The market snapshot could not be refreshed: {{error}}'})} {marketsData && t('markets.lastSnapshot', {defaultValue:'Showing the last loaded snapshot.'})}</p>}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-[var(--fg-4)]">
               <button type="button" className="btn btn--ghost btn--sm" disabled={marketsLoading} onClick={refreshMarkets}>{t('common.refresh', {defaultValue:'Refresh'})}</button>
-              {marketsData?.catalog && <span>{marketsData.catalog.provider==='coinmarketcap'?'CoinMarketCap':'CoinGecko'} · {t('markets.sharedSnapshot', {defaultValue:'Shared market snapshot'})}{marketsData.catalog.fallback ? ' · '+t('markets.catalogueFallback', {defaultValue:'CMC catalogue is not current; showing CoinGecko'}) : ''}</span>}
+              {/* The as-of time is the capture time of the stored snapshot these rows
+                  come from (the catalogue receipt's clock), so a snapshot read hours
+                  later still says when it was taken. Plain text, like the rest of the line. */}
+              {marketsData?.catalog && <span data-testid="markets-snapshot-line">{marketsData.catalog.provider==='coinmarketcap'?'CoinMarketCap':'CoinGecko'} · {t('markets.sharedSnapshot', {defaultValue:'Shared market snapshot'})}{snapshotAsOf ? ' · '+t('markets.sharedSnapshotAsOf', {date: snapshotAsOf, defaultValue:'as of {{date}}'}) : ''}{marketsData.catalog.fallback ? ' · '+t('markets.catalogueFallback', {defaultValue:'CMC catalogue is not current; showing CoinGecko'}) : ''}</span>}
             </div>
             {/* search · sort · category · watchlist — one row, search flexes to fill */}
             <div className="intel-market-filter-toolbar">

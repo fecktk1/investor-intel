@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-09-23T11:45:16.951Z",
+  "createdAt": "2026-09-23T17:38:52.145Z",
   "sourceFiles": [
     {
       "source": "examples/investor-intel-hackathon/adapters/ChartWatchlistAdd.jsx",
@@ -240,6 +240,14 @@
     {
       "source": "src/intel/lib/source-receipt.js",
       "extracted": "product/src/intel/lib/source-receipt.js"
+    },
+    {
+      "source": "src/intel/lib/stored-series-caption.js",
+      "extracted": "product/src/intel/lib/stored-series-caption.js"
+    },
+    {
+      "source": "src/intel/lib/chart-source-label.js",
+      "extracted": "product/src/intel/lib/chart-source-label.js"
     },
     {
       "source": "supabase/functions/_shared/intel/chart-workspace-contract.ts",
@@ -864,6 +872,10 @@
     {
       "source": "scripts/intel-extraction-package-guards.mjs",
       "extracted": "production-source/scripts/intel-extraction-package-guards.mjs"
+    },
+    {
+      "source": "scripts/intel-extraction-test-run.mjs",
+      "extracted": "production-source/scripts/intel-extraction-test-run.mjs"
     },
     {
       "source": "scripts/package-investor-intel-demo.mjs",
@@ -2514,6 +2526,10 @@
       "extracted": "production-source/src/intel/lib/stored-portfolio-research.js"
     },
     {
+      "source": "src/intel/lib/stored-series-caption.js",
+      "extracted": "production-source/src/intel/lib/stored-series-caption.js"
+    },
+    {
       "source": "src/intel/lib/table-csv.js",
       "extracted": "production-source/src/intel/lib/table-csv.js"
     },
@@ -3312,6 +3328,14 @@
     {
       "source": "supabase/functions/_shared/intel/capture-read.test.ts",
       "extracted": "production-source/supabase/functions/_shared/intel/capture-read.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-quote-warm.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-quote-warm.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/capture-rwa-quote-warm.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/capture-rwa-quote-warm.ts"
     },
     {
       "source": "supabase/functions/_shared/intel/capture-rwa-schedule.test.ts",
@@ -4496,6 +4520,14 @@
     {
       "source": "supabase/functions/_shared/intel/source-receipt.ts",
       "extracted": "production-source/supabase/functions/_shared/intel/source-receipt.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/stored-candles.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/stored-candles.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/stored-candles.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/stored-candles.ts"
     },
     {
       "source": "supabase/functions/_shared/intel/stress-scenario-service.ts",
@@ -5770,6 +5802,14 @@
       "extracted": "production-source/supabase/migrations/20260923120100_intel_demo_tracked_assets.sql"
     },
     {
+      "source": "supabase/migrations/20260923140000_intel_stored_price_series.sql",
+      "extracted": "production-source/supabase/migrations/20260923140000_intel_stored_price_series.sql"
+    },
+    {
+      "source": "supabase/migrations/20260923160000_intel_rwa_quote_warm.sql",
+      "extracted": "production-source/supabase/migrations/20260923160000_intel_rwa_quote_warm.sql"
+    },
+    {
       "source": "supabase/migrations/206_intel_activate_subscription.sql",
       "extracted": "production-source/supabase/migrations/206_intel_activate_subscription.sql"
     },
@@ -5896,8 +5936,8 @@
     },
     {
       "file": ".github/workflows/test.yml",
-      "bytes": 1855,
-      "sha256": "193304c9a3ca1b771a6801ea0c3bf32a0ef3c2feb9aec97015704580de5129ab"
+      "bytes": 2591,
+      "sha256": "c808d024385a7e30523dcc5c1dd06ebc6f49d73a5241e1a0be7310d0b9a97301"
     },
     {
       "file": ".env.example",
@@ -5906,8 +5946,8 @@
     },
     {
       "file": "README.md",
-      "bytes": 17733,
-      "sha256": "0fe62b4a7fc549299aa303918aac90a2dc5de938004e56505d39c6349e601ec6"
+      "bytes": 19240,
+      "sha256": "038b34337ea8ddfb1c4f0f8e7c8fd3d7d1329b6cb94f7d5c237be3e47a8b832b"
     },
     {
       "file": "index.html",
@@ -6002,17 +6042,22 @@
     {
       "file": "docs/real-api-call.md",
       "bytes": 5288,
-      "sha256": "a4c878a9de63bf4b3fd69237b67843a4d4e80ca5e2d82a8084bc00ed869c2a42"
+      "sha256": "4cdb952949f49cae13dd4af0eea5675db9d776f03008014578a6981ce6b78613"
     },
     {
       "file": "docs/build-timeline.md",
-      "bytes": 3959,
-      "sha256": "db3cc63e53646d8265594c0aaf6f7cb2e9836d513b5fc9237eefbe7fe96defe0"
+      "bytes": 4952,
+      "sha256": "5ba4c6ad4c647e9ba20aad301d5b2e7a159930902f3cc39f2b58c3f2b516599c"
     },
     {
       "file": "docs/demo-guide.md",
-      "bytes": 14640,
-      "sha256": "7ba4a7570ed471300ac74082ac112bee8b2715e2caa20b6fdc37eecb6868da1f"
+      "bytes": 14689,
+      "sha256": "d5fed53427b17146e6149f51fce8bdd1adc39468915ec37b732fac2988b224e9"
+    },
+    {
+      "file": "docs/x-post-2026-09-22.png",
+      "bytes": 75781,
+      "sha256": "17675b78f4d005d453673300b9b9d9757d61f127c640abdedf72d411a655343b"
     },
     {
       "file": "product/src/intel/components/ChartWatchlistAdd.jsx",
@@ -6051,8 +6096,8 @@
     },
     {
       "file": "product/src/intel/components/TokenChart.jsx",
-      "bytes": 38834,
-      "sha256": "d4c03c1bd66591237198410a769fc4541a06861c3fc239a0b1299aa0170913da"
+      "bytes": 42288,
+      "sha256": "dbc724a2c3e601eccebaef160c4f2e94de5f9211fcc20edc82d2c12d4e3aabef"
     },
     {
       "file": "product/src/intel/components/TokenChartFallback.jsx",
@@ -6311,8 +6356,18 @@
     },
     {
       "file": "product/src/intel/lib/source-receipt.js",
-      "bytes": 15069,
-      "sha256": "97f59bea008f6b4d86669e2db52daf32f15c44196bd9cbea5e0691e3ba3f9ae7"
+      "bytes": 15803,
+      "sha256": "3cf55d8bc7694cd7e1849759b91774d70d2e9db7849eeb14f852be5b8d70ba2c"
+    },
+    {
+      "file": "product/src/intel/lib/stored-series-caption.js",
+      "bytes": 5084,
+      "sha256": "77e1cedb0411791ebcb77bb58e3bf87af1f4462e4de644ca91fc254f735073ae"
+    },
+    {
+      "file": "product/src/intel/lib/chart-source-label.js",
+      "bytes": 1592,
+      "sha256": "9221c3edffd46a19443e3143e537d8aaf42f46ec70726059ee7b14695ecf61da"
     },
     {
       "file": "product/supabase/functions/_shared/intel/chart-workspace-contract.ts",
@@ -6501,8 +6556,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-rwa-depth.test.ts",
-      "bytes": 35198,
-      "sha256": "be7218df29c26b544001946d96bba2f279530e358213b2cdfa5eff5422bf61bc"
+      "bytes": 35464,
+      "sha256": "2d12c5ed2d06c477e038437aaaf1dc69f44291d3b5e5d42d8329456e4f04839c"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-rwa-issuer-read.test.ts",
@@ -6896,8 +6951,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/market-figure-scope.ts",
-      "bytes": 11708,
-      "sha256": "f953c0ea5a5a1236d8cff2acfb7f1cd4c98bedacb7738766ec2d662728e4a48f"
+      "bytes": 12081,
+      "sha256": "49b0cf4cb40e2289e109244d4888b6629519b6204c226904374d6e200c471bd1"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/market-read-quality.ts",
@@ -6961,8 +7016,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/market-assets/cmc-transport.ts",
-      "bytes": 29497,
-      "sha256": "1d319b1124ae6e5dd5956552e7b74c29f3418f15a4d063b9e9a2674f8c9ebf77"
+      "bytes": 29840,
+      "sha256": "3510b1474a717929b0de7fdfef969d721bc96432bcc38be4adc4f3e3e6f2c882"
     },
     {
       "file": "production-source/supabase/functions/_shared/market-assets/coinmarketcap-provider.ts",
@@ -7091,68 +7146,74 @@
     },
     {
       "file": "production-source/scripts/intel-extraction-package-guards.mjs",
-      "bytes": 8867,
-      "sha256": "ded2bbfd79c7a6749f45691cd76806257709b91f9e084c02082b36ab1f4b2acc",
+      "bytes": 8989,
+      "sha256": "7d28294be4f792ba9b86920b8af942eb575dccca539adc064bab144787739a5d",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/scripts/intel-extraction-test-run.mjs",
+      "bytes": 16221,
+      "sha256": "5be7d924cabedb86c397baeb7500fd6d0a706491c1e86d78c55dffe9fedf8623",
       "role": "full-source"
     },
     {
       "file": "production-source/scripts/package-investor-intel-demo.mjs",
-      "bytes": 16900,
-      "sha256": "36b98becadbabd56e40d314e1874674fd28782b402d6af35b67af9fcbe320134",
+      "bytes": 18146,
+      "sha256": "cd15b65e054e0bedac8409c77873f656574a15cfebd391cfc2fcb40a05cfcdd5",
       "role": "full-source"
     },
     {
       "file": "production-source/scripts/test-intel-extraction-package.mjs",
-      "bytes": 9664,
-      "sha256": "7520892fbf9116a81a976ffe60c7359e3f8ea805e5353b7c3a386df97a97dc02",
+      "bytes": 12887,
+      "sha256": "58a29d7f4464ae0ecd7ca1946b5247a53c8a4ecd349c53ad70719b82a7316687",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/de/intel.json",
-      "bytes": 323537,
-      "sha256": "1bcbc65d465c5792c4cf73d6fc95879e2032a1b466b0f015f272cc44bf1cd00d",
+      "bytes": 326811,
+      "sha256": "c047a5c2d573af774e133f43e99bb0ae6b20274a5152ea5cb779de1c87adf2b0",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/en/intel.json",
-      "bytes": 286681,
-      "sha256": "719893b5ffa4960be6bbfb9850dc0164abcaca4c00d4631ce8a60ee4dc7f383a",
+      "bytes": 289582,
+      "sha256": "26ea1e90119384abc1e87225a50ea909f2a80f4bbe00be400ada55f9f19496cc",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/es/intel.json",
-      "bytes": 322453,
-      "sha256": "3459191e5cb84e0369c4a3e228c6d765f44c4edf396dffae83fb2acee3bcca77",
+      "bytes": 325751,
+      "sha256": "8d98da700d0b78ec7f25777a1aa7194b2dbd87679001a4478bf9f2e5c50a636a",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/fr/intel.json",
-      "bytes": 335672,
-      "sha256": "35c071f4eba58027f82e36d7676aa2ba3475e1975efd9720e2bebaa8d35b8f06",
+      "bytes": 339318,
+      "sha256": "b3040c4d9819694f4ae015f10baabe878dbcdafad8bbd02cba5a74615dbf34b0",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/it/intel.json",
-      "bytes": 326283,
-      "sha256": "9bfbe2387fcb3395708e500a01f9cf41bdb27298d1448b187cf84f270eb270a3",
+      "bytes": 329591,
+      "sha256": "4671a79ef5e2b2df756495773746fb302f5d8a4147d6a274178babc0a9356642",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/nl/intel.json",
-      "bytes": 317300,
-      "sha256": "fb91bcff31694b305cbb8b5c7bcc37ac4515f04788289cccefadfee01bd17adc",
+      "bytes": 320550,
+      "sha256": "41662c3ad58e5926243969533e332c24ebe075007d493e287e184e4ac635e863",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/pt-BR/intel.json",
-      "bytes": 318956,
-      "sha256": "b9bd1f1c67b94e63318c71652e8dc91027422202469e28787693721e63ee0c81",
+      "bytes": 322322,
+      "sha256": "aef184e13689874e51fcb810a08581bf8a405a030748d4798fc8019f0039a9b6",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/sq/intel.json",
-      "bytes": 323713,
-      "sha256": "00ae4a45064ab5a1a2a33268fd8caf789cb324241b7d662376da710f1785dcf4",
+      "bytes": 327090,
+      "sha256": "7852a882181eebc55fab4e4b17f10a7a0cc7252fafd1f7c192e75f86dc4b078f",
       "role": "full-source"
     },
     {
@@ -7361,8 +7422,8 @@
     },
     {
       "file": "production-source/src/intel/components/AssetHistoryFigure.jsx",
-      "bytes": 16720,
-      "sha256": "875f5a82b873ca865c6cb49312b1b36ddc92a407d5a5506f1c8a44b55815de20",
+      "bytes": 17754,
+      "sha256": "9b1af19eff403de4fc2bc693bf877f035690def0a374056f110a39c85f87a49b",
       "role": "full-source"
     },
     {
@@ -8459,8 +8520,8 @@
     },
     {
       "file": "production-source/src/intel/components/RwaLookup.jsx",
-      "bytes": 17685,
-      "sha256": "f9da38447429501dbbe5cb8d90a0896fe50afd7976b7d2dd875effbdc431732d",
+      "bytes": 18492,
+      "sha256": "50db9a656ef1d60c7738a3db411e9d0ff51e7ceda990cde4d9c8a12a5c1b11af",
       "role": "full-source"
     },
     {
@@ -8609,8 +8670,8 @@
     },
     {
       "file": "production-source/src/intel/components/TokenChart.jsx",
-      "bytes": 38834,
-      "sha256": "d4c03c1bd66591237198410a769fc4541a06861c3fc239a0b1299aa0170913da",
+      "bytes": 42288,
+      "sha256": "dbc724a2c3e601eccebaef160c4f2e94de5f9211fcc20edc82d2c12d4e3aabef",
       "role": "full-source"
     },
     {
@@ -8939,8 +9000,8 @@
     },
     {
       "file": "production-source/src/intel/demo/demo-fetch.js",
-      "bytes": 30036,
-      "sha256": "7f23f1dfd29c7e63ed73fbec1f7c237d42debd8a65fbe43bae1e39782c11e496",
+      "bytes": 32731,
+      "sha256": "508998ce45c0d541d3bd8eaaa779c556c0113274216eceaf37c07e1d4d03e4fa",
       "role": "full-source"
     },
     {
@@ -8993,14 +9054,14 @@
     },
     {
       "file": "production-source/src/intel/lib/__tests__/intelDemoFetch.test.js",
-      "bytes": 25285,
-      "sha256": "e5db65cc4584c98e4775617225f4a7f03240171f84ff932027d23f7691dca9d0",
+      "bytes": 29643,
+      "sha256": "74b0018689103891202290f581bb1032b190d6766a7f378e8c11ade342ea33c4",
       "role": "full-source"
     },
     {
       "file": "production-source/src/intel/lib/__tests__/intelDemoMarkets.test.jsx",
-      "bytes": 12682,
-      "sha256": "1ba453e8e4a88857350cb1a9b042f8e14741f6c53712fdcb6ed1406d55b6dd84",
+      "bytes": 14278,
+      "sha256": "eb3dab59f5b133e3405df6faa14731e6ad9f45f4c9750c301aee53ea3a9d9e2a",
       "role": "full-source"
     },
     {
@@ -9179,8 +9240,8 @@
     },
     {
       "file": "production-source/src/intel/lib/chart-source-label.js",
-      "bytes": 1033,
-      "sha256": "be213f90321f96da86def7261318c7c916d00e6249931188f8d77eebf579a370",
+      "bytes": 1592,
+      "sha256": "9221c3edffd46a19443e3143e537d8aaf42f46ec70726059ee7b14695ecf61da",
       "role": "full-source"
     },
     {
@@ -9551,8 +9612,8 @@
     },
     {
       "file": "production-source/src/intel/lib/source-receipt.js",
-      "bytes": 15069,
-      "sha256": "97f59bea008f6b4d86669e2db52daf32f15c44196bd9cbea5e0691e3ba3f9ae7",
+      "bytes": 15803,
+      "sha256": "3cf55d8bc7694cd7e1849759b91774d70d2e9db7849eeb14f852be5b8d70ba2c",
       "role": "full-source"
     },
     {
@@ -9565,6 +9626,12 @@
       "file": "production-source/src/intel/lib/stored-portfolio-research.js",
       "bytes": 2856,
       "sha256": "9e67ab5a735bdd481c0a6fe8137a5c2026fc52dce2b9e0d6789b1486cc25573d",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/src/intel/lib/stored-series-caption.js",
+      "bytes": 5084,
+      "sha256": "77e1cedb0411791ebcb77bb58e3bf87af1f4462e4de644ca91fc254f735073ae",
       "role": "full-source"
     },
     {
@@ -9953,8 +10020,8 @@
     },
     {
       "file": "production-source/src/intel/pages/MarketAssetPage.jsx",
-      "bytes": 44149,
-      "sha256": "f30f8243c504eee426c585db8564bb32ed58514c94e0a8741cf638d3708b0963",
+      "bytes": 44297,
+      "sha256": "a1c947c2c8324347c3e2a057ff72a4c2b1d240a1e3d55be80cb23e23730dab41",
       "role": "full-source"
     },
     {
@@ -9977,8 +10044,8 @@
     },
     {
       "file": "production-source/src/intel/pages/MarketsPage.jsx",
-      "bytes": 56141,
-      "sha256": "bac12e9ed63d78b435ab313a83a4fb1f42fbb6ff0d635ca93c22ab0ae534e7b3",
+      "bytes": 57369,
+      "sha256": "a168a20c6cdcf929422ee9087deb593744ba4be1b31a52f7236a2634cb7f8a37",
       "role": "full-source"
     },
     {
@@ -10745,8 +10812,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-meme.test.ts",
-      "bytes": 26146,
-      "sha256": "f4a071cd912025f602505df4e1aff947feb306512b8e8cea8feefa098fa15bd7",
+      "bytes": 26418,
+      "sha256": "06311fcbb0534c411755bbf0d190f97c73987c66b57a981d7fa178d3d25690fb",
       "role": "full-source"
     },
     {
@@ -10765,6 +10832,18 @@
       "file": "production-source/supabase/functions/_shared/intel/capture-read.test.ts",
       "bytes": 19994,
       "sha256": "adbf47f83398023a59fd226289e5c51e08fba687abeab83083149d31fcaf30c8",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-quote-warm.test.ts",
+      "bytes": 18241,
+      "sha256": "74f8e6ad79abf57652ef98b20084a9f57a2fc2a46feb32db3348b9cb7d8ec16b",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/capture-rwa-quote-warm.ts",
+      "bytes": 21152,
+      "sha256": "04453a05cca0138610ad500eec89e8c62e9fa13904b153346250fa08c67b8cf4",
       "role": "full-source"
     },
     {
@@ -11021,8 +11100,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/chart-series-contract.ts",
-      "bytes": 1709,
-      "sha256": "68118f52b943612a9753157111a0a23e6b96e737817bcc54470f057a91056b69",
+      "bytes": 2031,
+      "sha256": "c572b8993523b084709bdb1c3232d4bedb674de31d7fbdbd07e78e4d9d564783",
       "role": "full-source"
     },
     {
@@ -11315,8 +11394,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/demo-market-read.ts",
-      "bytes": 29600,
-      "sha256": "7d7de0ce4e47942c3b6196f57464eb6d9ee261c26df17e1fa077490edfece35c",
+      "bytes": 32240,
+      "sha256": "c2ef89258f97c0f78109a38f1cd7587145a37037db3500c61ae2b7ffcb67d057",
       "role": "full-source"
     },
     {
@@ -11813,8 +11892,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/market-candle-read.ts",
-      "bytes": 12182,
-      "sha256": "16c006e7f4bb719c87438cccbd6122ac3eaa0883440ab9fba95ad576f17295f0",
+      "bytes": 13632,
+      "sha256": "ba8ffabdb8f16334bf21a559da0bbb52e52eeb037140ee98d350a423dbaa564f",
       "role": "full-source"
     },
     {
@@ -11867,8 +11946,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/market-provenance.ts",
-      "bytes": 11064,
-      "sha256": "70aca311c41a118164856159e98d98129f5e0fb453410c572f908685826893c3",
+      "bytes": 11501,
+      "sha256": "6df648c0f720bea9c9ebbefe3b449039f58e39f6c5db96a26ec37bc2e2582632",
       "role": "full-source"
     },
     {
@@ -11879,8 +11958,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/markets-handler-auth.test.ts",
-      "bytes": 22658,
-      "sha256": "a9810b4702be4b7325026a331292c4d6d84ce11c7c4cc812d8654765729b090b",
+      "bytes": 22930,
+      "sha256": "a6696672fefe1a2ebb61b9e3e7c71ad508786e367a0628b897317312ad4777b5",
       "role": "full-source"
     },
     {
@@ -12317,8 +12396,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/research-service.ts",
-      "bytes": 6314,
-      "sha256": "9c65a9b928adad186d4d091ec8ce5dc2e429de4aef143c59e186a500b5e10326",
+      "bytes": 6778,
+      "sha256": "9130d2111ebffa8fe469efefeeca81682d6690dedb9888af8718357f6a7e20cb",
       "role": "full-source"
     },
     {
@@ -12467,14 +12546,14 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-free-read.test.ts",
-      "bytes": 17607,
-      "sha256": "a25a9ea3d1c210bc3837545c43d2ee938894dea7fa8341b6f74c95bd690f2b09",
+      "bytes": 23205,
+      "sha256": "1bb3fcf9ea64b4a1255f2ca9bbf965d84c7ba923590a8ec9dc5c7c23bab24457",
       "role": "full-source"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-free-read.ts",
-      "bytes": 10088,
-      "sha256": "930e23d2b2007a4404c734ed9f74a1773ba6ff4fc7414adab1ce58282c543fd0",
+      "bytes": 14735,
+      "sha256": "b073606b3b601ecd44a7c7e4edda7e56d41d149e573b9d90e8c70780bfd33043",
       "role": "full-source"
     },
     {
@@ -12485,14 +12564,14 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-lookup.test.ts",
-      "bytes": 26794,
-      "sha256": "c6a50623fa97cbe1beb670df676237670ec4f09d75d09fe13a61b853a926c325",
+      "bytes": 36583,
+      "sha256": "dee8b7e7038769658bbe568c9bc89615337f8129fe09a2ea44844b96329025a6",
       "role": "full-source"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-lookup.ts",
-      "bytes": 31967,
-      "sha256": "7780b45143c65bb890fe71d66907e13b8df08533cff0120460e54d639549a106",
+      "bytes": 37155,
+      "sha256": "bf14c75ae067bbc5516a5fb10aea5480363fbd2133fd1343d4317f1342b975e1",
       "role": "full-source"
     },
     {
@@ -12541,6 +12620,18 @@
       "file": "production-source/supabase/functions/_shared/intel/source-receipt.ts",
       "bytes": 18387,
       "sha256": "ce3a687ad5590f6bc5e5703a98f5b5d3a88404a264ced343a057fbfe72fe32c4",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/stored-candles.test.ts",
+      "bytes": 12322,
+      "sha256": "ace77a21f98338b8509c5cafb52129483b5121d072922a3c4a42cbd998c8dbbf",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/stored-candles.ts",
+      "bytes": 25535,
+      "sha256": "b129ff3c9960fad3c4ad6f9e70bbefff215856fef07e3a4acd8ba59ebe6082a8",
       "role": "full-source"
     },
     {
@@ -12749,8 +12840,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/market-assets/cmc.test.ts",
-      "bytes": 48159,
-      "sha256": "75943c4060a35de264f98f2e3ba2b844f930436b4402870585ac98f349626446",
+      "bytes": 49359,
+      "sha256": "3aa03beef301a2b4dc046a5d17378ebcdce6c8a474349afbc15dda67fe81e66f",
       "role": "full-source"
     },
     {
@@ -12857,8 +12948,8 @@
     },
     {
       "file": "production-source/supabase/functions/intel-capture/index.ts",
-      "bytes": 14666,
-      "sha256": "b47c7ee8927d97f203dcfb86f517d7b37c8aa6dfec6fb5d023c0e4782682b0fa",
+      "bytes": 15164,
+      "sha256": "7e0b7796ae1a7b93b66237e527b18807839028b2961579802f0edaaca215c14e",
       "role": "full-source"
     },
     {
@@ -12899,8 +12990,8 @@
     },
     {
       "file": "production-source/supabase/functions/intel-data-budget/index.test.ts",
-      "bytes": 15598,
-      "sha256": "2f2fec2df1567a99240fe27a37e28fe924691ba0b857ffca6c7fa3d29be7c360",
+      "bytes": 15809,
+      "sha256": "02403f31df3983e07055250c588ab077d17e9f8f20506e3eb2f0df1d1e5d5af0",
       "role": "full-source"
     },
     {
@@ -13007,8 +13098,8 @@
     },
     {
       "file": "production-source/supabase/functions/intel-markets/index.ts",
-      "bytes": 35781,
-      "sha256": "82e19ebe64b9f5a319c4346c250a12566eaaccde4fefa33ef66b79bb4ba1e661",
+      "bytes": 36218,
+      "sha256": "e5892e0d4395d4948c0dd4e6c2c1d00042bf6159ce6388f71080eaf2bec8c5c5",
       "role": "full-source"
     },
     {
@@ -13115,8 +13206,8 @@
     },
     {
       "file": "production-source/supabase/functions/intel-rwa-lookup/index.ts",
-      "bytes": 2178,
-      "sha256": "9fac5caa2143e4683a11184caf45ad7715d1f0664e12e0c49aab7a7f4d9b302c",
+      "bytes": 3258,
+      "sha256": "e8888a794b5e62036b11049d681a38b1533e189ba2df457cae3e4bf0e87c72df",
       "role": "full-source"
     },
     {
@@ -14452,6 +14543,18 @@
       "role": "full-source"
     },
     {
+      "file": "production-source/supabase/migrations/20260923140000_intel_stored_price_series.sql",
+      "bytes": 20002,
+      "sha256": "32c8fc30a9615bddc5fbb6257be20d91ceb2433542575797b2f25f8f0478fc53",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/migrations/20260923160000_intel_rwa_quote_warm.sql",
+      "bytes": 9470,
+      "sha256": "ff44d9f9e41fb5b3c4373fc4238788517749c61650ddb3f905738fdb75e4651e",
+      "role": "full-source"
+    },
+    {
       "file": "production-source/supabase/migrations/206_intel_activate_subscription.sql",
       "bytes": 12760,
       "sha256": "a09ba20e3742cdd8e966e362b61ad019c8c3f2ae71c266484b25d2f1b319cef4",
@@ -14617,6 +14720,131 @@
       "file": "production-source/standalone-tests.txt",
       "bytes": 4037,
       "sha256": "62aa749d2cbc437a4847d38794c493868b352e1de8325ac6e0b5fa3f208fc85d"
+    },
+    {
+      "file": "production-source/runnable-tests.txt",
+      "bytes": 18570,
+      "sha256": "c60d452ad129b2bb38997f2b527a9ff734cf67c3afb49ed0fa36a30e822eebc2"
+    },
+    {
+      "file": "production-source/excluded-tests.md",
+      "bytes": 9907,
+      "sha256": "a31f03191d01e7f6d1400f37f47025eed77a9dd9a6422dcfce148b2a85590b6f"
+    },
+    {
+      "file": "test-support/deno.json",
+      "bytes": 2615,
+      "sha256": "aaa697d26d99e68a032e5ff0b440891e4aa5baf4a0d7c8b2484d4491ddf875eb"
+    },
+    {
+      "file": "test-support/excluded-tests.json",
+      "bytes": 5087,
+      "sha256": "7d4df768c4238169d9c9d3247cf4ece6ba19bff094e832fa343c5e36802698a2"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/birdeye-client.ts",
+      "bytes": 758,
+      "sha256": "8284022855673d47b902af7e7ec71647dd285fd1945b0c3e8b89241c250b4b1b"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/core-intel/hashing.ts",
+      "bytes": 748,
+      "sha256": "399ef7dcf5f297c4131a995f7f76de35b63738ba28cac7e4af53dc4a6166b0c7"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/core-intel/materiality.ts",
+      "bytes": 689,
+      "sha256": "9af8e0514e30b910282a13ef2fb70e314206d8a23b564268cd4292f1f923a547"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/defi-public-browse.ts",
+      "bytes": 703,
+      "sha256": "f82204463fe1c877ee05267aaab78896e7fc183a622b3bea384b8d4c2e80b952"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/entity-resolver.ts",
+      "bytes": 654,
+      "sha256": "dded4a789a3c3e16e717a41dccec1607258c4105a0450c374dfd36f850a768b8"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/exchange-market/http.ts",
+      "bytes": 662,
+      "sha256": "7905600eba766f53f5085392fdda00370930911033ba9b0d291ae7fc16482aa2"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/exchange-market/provider-registry.ts",
+      "bytes": 695,
+      "sha256": "b855c570218f2c74fd7eba2921a656433115b601b48b3c90c070cecd253f7a55"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/intel-providers.ts",
+      "bytes": 789,
+      "sha256": "e202ec59f4cb60e0690821dbc5127d88fc33e7d36989ddc90b885bf9ddc66acb"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/intel-signals.ts",
+      "bytes": 860,
+      "sha256": "088486fc231509242beda5b877a127b428613bdcb0b28d9551e2e9cdb234b837"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/intelligence-core.ts",
+      "bytes": 727,
+      "sha256": "5ed0a01d4acbe4b370768a56af3e5bdd06cfd2460354738ac9d2a6d759be182a"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/investor-portfolio/canonical.ts",
+      "bytes": 733,
+      "sha256": "8c17c677b33db9a0939d7c5b137c783f9afb269ec88f6dde8f4e64f1f915f78d"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/investor-portfolio/holdings.ts",
+      "bytes": 684,
+      "sha256": "9b83ea9af03a7aa17db399b66ec7d7f33f66341f67ee6af9c48af7544c6c1469"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/investor-portfolio/risk.ts",
+      "bytes": 687,
+      "sha256": "1dcf53a891b4809046d1ca87fa53fc428f8a366651aa31e5d063403c6b22b4bc"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/memecoin/degen-query.ts",
+      "bytes": 800,
+      "sha256": "29673607138cd144d56a3a82e844df821696386647d3cf3ffd38142136f960c2"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/memecoin/degen-read.ts",
+      "bytes": 1192,
+      "sha256": "83a64c0e9eebe8a404bea8bd772fd8e3ff75b9f88a2b5aa0dc142ee16de893c4"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/memecoin/dexscreener.ts",
+      "bytes": 769,
+      "sha256": "b4b4fcc820629970ea6e17124687ca5ce4d9bb02956f336b417073e58a6ff64a"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/memecoin/geckoterminal.ts",
+      "bytes": 878,
+      "sha256": "7360fb621b3400f6426f2ff6f163ca1c9fdd3631167b5d1adee4da2b1e624435"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/mobula-client.ts",
+      "bytes": 660,
+      "sha256": "dabe50e45d7585e8e9eefd11b3c81a87654ce6b265f1ff98f11742404cc06458"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/org-authz.ts",
+      "bytes": 1469,
+      "sha256": "f0fe9bb5238a6f716ca8e30729fadc79c2c9ab7b3b590407dcf7ba2f9fd039f0"
+    },
+    {
+      "file": "test-support/stand-ins/_shared/rate-limit.ts",
+      "bytes": 670,
+      "sha256": "49c96d90efe7288fe89483883f37e41d1f78ba94ef3215cf7b8cd1093a04db1e"
+    },
+    {
+      "file": "test-support/stand-ins/unavailable.ts",
+      "bytes": 2428,
+      "sha256": "5e42366c30f0f257caa8f9f6d9d0ea3f79db4b3c6c7e1ed0ebf64d4c244eb12b"
     }
   ]
 }

@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import assert from 'node:assert/strict'
 import { PUBLIC_DOCS, PRIVATE_DOCS, DRAFT_MARKER, deniedPackagePaths, isBinaryPackagePath, findSecretShapes, findFullSourceSecretShapes } from './intel-extraction-package-guards.mjs'
+import { STAND_IN_HEADER, TEST_CONFIG, RUNNABLE_TESTS, EXCLUDED_TESTS } from './intel-extraction-test-run.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const require=createRequire(import.meta.url)
 function run(args,cwd=root){const result=spawnSync(process.execPath,args,{cwd,windowsHide:true,encoding:'utf8',timeout:120000});if(result.error||result.status!==0)throw Error(result.error?.message||result.stderr||result.stdout);return result.stdout}
@@ -92,13 +93,46 @@ for(const dir of productRoots){
 assert.ok(packaged.some(file=>file==='production-source/supabase/functions/_shared/market-assets/cmc-transport.ts'))
 assert.ok(packaged.some(file=>file==='production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.ts'))
 for(const file of packaged.filter(file=>!isBinaryPackagePath(file)))assert.ok(!readFileSync(path.join(target,file),'utf8').includes(DRAFT_MARKER),`drafting marker in ${file}`)
-// Only the standalone subset runs: the full source beside it imports the parent
-// platform and is there to read. The list is the one the public CI runs.
-const standaloneTests=readFileSync(path.join(target,'production-source/standalone-tests.txt'),'utf8').split(/\r?\n/).filter(Boolean)
+// The published test run. runnable-tests.txt is the list the public CI runs;
+// every other Deno test in production-source/ is listed, with its reason, in
+// excluded-tests.md, so no test goes unaccounted for.
+const listed=file=>readFileSync(path.join(target,file),'utf8').split(/\r?\n/).filter(Boolean)
+const standaloneTests=listed('production-source/standalone-tests.txt')
+const runnableTests=listed(RUNNABLE_TESTS)
+const excludedTests=[...readFileSync(path.join(target,EXCLUDED_TESTS),'utf8').matchAll(/^\| `(production-source\/[^`]+\.test\.ts)` \|/gm)].map(match=>match[1])
+const denoTests=packaged.filter(file=>file.startsWith('production-source/')&&file.endsWith('.test.ts'))
 assert.ok(standaloneTests.length>0&&standaloneTests.every(file=>packaged.includes(file)),'standalone-tests.txt lists a file the package lacks')
-const deno=spawnSync('deno',['test','--allow-read','--allow-env','--no-check','-q',...standaloneTests],{cwd:target,windowsHide:true,encoding:'utf8',timeout:600000,shell:process.platform==='win32'})
-if(deno.error||deno.status!==0)throw Error(`production-source tests failed: ${deno.error?.message||(deno.stdout+deno.stderr).slice(-2000)}`)
-console.log((deno.stdout+deno.stderr).trim().split(/\r?\n/).pop())
+assert.ok(runnableTests.length>0&&runnableTests.every(file=>packaged.includes(file)),'runnable-tests.txt lists a file the package lacks')
+assert.ok(standaloneTests.every(file=>runnableTests.includes(file)),'a standalone test is missing from the published run')
+assert.deepEqual([...runnableTests,...excludedTests].sort(),[...denoTests].sort(),'every production-source Deno test is either run or listed with its reason, once')
+// Stand-ins are labelled, live only under test-support/stand-ins/, and are mapped
+// by the test configuration alone; none sits at, or shadows, a published path.
+const testConfig=JSON.parse(readFileSync(path.join(target,TEST_CONFIG),'utf8'))
+assert.deepEqual(Object.keys(testConfig).sort(),['lock','nodeModulesDir','scopes'],'the test configuration holds only the npm mode, the lock switch and the stand-in scope')
+assert.deepEqual(Object.keys(testConfig.scopes),['../production-source/'],'stand-ins apply to imports from production-source/ only')
+const standInFiles=packaged.filter(file=>file.startsWith('test-support/stand-ins/'))
+assert.ok(standInFiles.length>0,'the stand-ins are missing from the package')
+for(const file of standInFiles)assert.ok(readFileSync(path.join(target,file),'utf8').startsWith(STAND_IN_HEADER),`stand-in without the TEST STAND-IN header: ${file}`)
+for(const [from,to] of Object.entries(testConfig.scopes['../production-source/'])){
+  assert.ok(standInFiles.includes(`test-support/${to.replace(/^\.\//,'')}`),`the test configuration maps to something that is not a packaged stand-in: ${to}`)
+  assert.ok(from.startsWith('../production-source/')&&!packaged.includes(from.slice(3)),`a stand-in shadows a published module: ${from}`)
+}
+// The runs, as the public CI runs them. The standalone subset first, with no
+// configuration at all, which shows it needs nothing outside itself. Then the
+// published run: its dependencies fetched once, and the tests run from the cache
+// only, without network permission. Any stand-in a test reaches fails the run;
+// the output is checked for one as well.
+const denoRun=(args,label)=>{
+  const result=spawnSync('deno',args,{cwd:target,windowsHide:true,encoding:'utf8',timeout:900000,maxBuffer:64*1024*1024})
+  const output=`${result.stdout||''}${result.stderr||''}`.replace(/\x1b\[[0-9;]*m/g,'')
+  if(result.error||result.status!==0)throw Error(`${label} failed: ${result.error?.message||output.slice(-3000)}`)
+  return output
+}
+console.log(`standalone subset: ${denoRun(['test','--allow-read','--allow-env','--no-check','-q',...standaloneTests],'standalone production-source tests').trim().split(/\r?\n/).pop()}`)
+denoRun(['cache','--config',TEST_CONFIG,...runnableTests],'fetching the test dependencies')
+const published=denoRun(['test','--config',TEST_CONFIG,'--cached-only','--allow-read','--allow-env','--no-check','-q',...runnableTests],'published production-source tests')
+assert.ok(!published.includes('TEST STAND-IN reached'),'a published test reached a stand-in')
+console.log(`published run (${runnableTests.length} files, ${excludedTests.length} listed in ${EXCLUDED_TESTS}): ${published.trim().split(/\r?\n/).pop()}`)
 const vite=path.join(path.dirname(require.resolve('vite/package.json')),'bin/vite.js')
 console.log(run(['--test',...manifest.files.filter(f=>f.file.startsWith('tests/')&&f.file.endsWith('.test.mjs')).map(f=>f.file)],target))
 console.log(run([vite,'build',target,'--config',path.join(target,'vite.config.mjs')],target))

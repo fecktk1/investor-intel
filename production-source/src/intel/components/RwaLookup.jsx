@@ -58,6 +58,13 @@ export function reasonText(t, code) {
   return t(`rwa_lookup.reason_${code}`, { defaultValue: REASON_DEFAULTS[code] || t('rwa_lookup.reason_other', { code, defaultValue: 'The live read did not answer ({{code}}).' }) })
 }
 
+/** Why a figure is what it is: the reason, and for a copy past its refresh
+ * window also why this lookup did not refresh it (the server's refreshReason). */
+export function whyText(t, receipt) {
+  const parts = [reasonText(t, receipt?.reason), receipt?.refreshReason && receipt.refreshReason !== receipt.reason ? reasonText(t, receipt.refreshReason) : null].filter(Boolean)
+  return parts.length ? parts.join(' ') : null
+}
+
 const time = (v) => (v && Number.isFinite(Date.parse(v)) ? new Date(v).toLocaleString() : null)
 const bps = (v) => { const n = num(v); return n == null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(1)} bps` }
 
@@ -78,7 +85,9 @@ function FigureReceipt({ name, figure }) {
       <dl className="intel-event-facts">
         <dt>{t('rwa_lookup.endpoint', { defaultValue: 'Endpoint' })}</dt><dd className="break-all">{r.endpoint || absent}</dd>
         <dt>{t('rwa_lookup.parameters', { defaultValue: 'Parameters' })}</dt><dd className="break-all">{params.length ? params.map(([k, v]) => `${k}=${v}`).join(' · ') : t('common.none', { defaultValue: 'None' })}</dd>
-        <dt>{t('rwa_lookup.answered_by', { defaultValue: 'Answered by' })}</dt><dd data-served={r.served}>{servedText(t, r)}</dd>
+        <dt>{t('rwa_lookup.answered_by', { defaultValue: 'Answered by' })}</dt><dd data-served={r.served}>{servedText(t, r)}
+          {/* The scheduled warm read: one call for many assets, named in the parameters above. */}
+          {Number(r.batchSize) > 1 && <p className="intel-analysis-caption" data-testid="rwa-lookup-batch">{t('rwa_lookup.batch_note', { size: r.batchSize, defaultValue: 'This figure comes from one scheduled shared read of {{size}} assets, the request shown above; this lookup made no call.' })}</p>}</dd>
         <dt>{t('rwa_lookup.captured_at', { defaultValue: 'Captured at' })}</dt><dd>{time(r.capturedAt) || absent}</dd>
         <dt>{t('rwa_lookup.http_status', { defaultValue: 'HTTP status' })}</dt><dd>{r.httpStatus == null ? absent : String(r.httpStatus)}</dd>
         {/* A reported 0 is a real charge of zero and reads as 0. */}
@@ -87,7 +96,7 @@ function FigureReceipt({ name, figure }) {
           ? t('rwa_lookup.credits_cache_origin', { count: r.originCreditCount, defaultValue: 'none for this lookup; the original call reported {{count}} credit' })
           : t('rwa_lookup.credits_cache', { defaultValue: 'none for this lookup; the original charge is not kept with a cached copy' })) : absent) : String(r.creditCount)}</dd>
         {r.caller && <><dt>{t('rwa_lookup.capture_lane', { defaultValue: 'Capture lane' })}</dt><dd>{r.caller}</dd></>}
-        {r.reason && <><dt>{t('rwa_lookup.why', { defaultValue: 'Why' })}</dt><dd>{reasonText(t, r.reason)}</dd></>}
+        {r.reason && <><dt>{t('rwa_lookup.why', { defaultValue: 'Why' })}</dt><dd>{whyText(t, r)}</dd></>}
         {r.curl && <>
           <dt>{r.curlMeaning === 'this_call' ? t('rwa_lookup.curl_this_call', { defaultValue: 'Reproduce this call' }) : t('rwa_lookup.curl_same_request', { defaultValue: 'Check it yourself' })}</dt>
           <dd><code className="break-all" data-testid="rwa-lookup-curl">{r.curl}</code>
@@ -133,7 +142,7 @@ function Answer({ answer, onPick }) {
           <dt>{t('rwa_lookup.volume', { defaultValue: '24h tokenised volume (USD)' })}</dt><dd>{q.tokenizedVolume24h == null ? t('rwa_lookup.not_reported', { defaultValue: 'not reported' }) : fmtVol(q.tokenizedVolume24h)}</dd>
           <dt>{t('rwa_lookup.observed', { defaultValue: 'Quote observed' })}</dt><dd>{time(q.lastUpdated) || t('rwa_lookup.not_reported', { defaultValue: 'not reported' })}</dd>
           <dt>{t('rwa_lookup.answered_by', { defaultValue: 'Answered by' })}</dt><dd data-served={f.quote.receipt?.served}>{servedText(t, f.quote.receipt)}</dd>
-          {f.quote.receipt?.reason && <><dt>{t('rwa_lookup.why', { defaultValue: 'Why' })}</dt><dd>{reasonText(t, f.quote.receipt.reason)}</dd></>}
+          {f.quote.receipt?.reason && <><dt>{t('rwa_lookup.why', { defaultValue: 'Why' })}</dt><dd>{whyText(t, f.quote.receipt)}</dd></>}
         </dl>
       ) : (
         <p role="status" className="text-[13px]">{t('rwa_lookup.no_quote', { reason: reasonText(t, answer.reason) || '', defaultValue: 'No quote could be served for this asset. {{reason}}' })}</p>

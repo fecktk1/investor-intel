@@ -430,3 +430,131 @@ Deno.test('handler: research bodies route to the free lane; orgId is refused; no
   assertEquals((await handleLookup(post({ capability: 'quotes', params: { id: 1 } }), h)).status, 400)
   assertEquals((await handleLookup(post({ capability: 'rwaList', q: 'NVDA' }), h)).status, 400)
 })
+
+// ─── Kept inside its window: the warm batch, refresh on read, a recorded refusal ─
+
+const GOLD_ASSET = { rwa_id: 1, name: 'Gold', slug: 'gold', symbol: 'GOLD', quotes: [{ symbol: 'USD', last_updated: '2026-10-05T11:49:00.000Z', average_tokenized_price: 3760.1, tokenized_market_cap: 3.1e9, tokenized_volume_24h: 2.2e8 }], tokens: [] }
+const SGOV_ASSET = { rwa_id: 242, name: 'iShares 0-3 Month Treasury Bond ETF', slug: 'sgov', symbol: 'SGOV', quotes: [{ symbol: 'USD', last_updated: '2026-10-05T11:49:00.000Z', average_tokenized_price: 100.5 }], tokens: [] }
+const BATCH_IDS = '1,2,242'
+const BATCH_BODY = { status: { error_code: 0, credit_count: 1 }, data: { rwa_assets: [GOLD_ASSET, NVDA_BODY.data.rwa_assets[0], SGOV_ASSET] } }
+const batchHit = (fetchedAt = '2026-10-05T11:50:00.000Z') => ({
+  state: 'cached', reason: null, payload: BATCH_BODY,
+  receipt: { origin: 'cache', httpStatus: 200, creditCount: null, fetchedAt, parameters: { rwa_id: BATCH_IDS }, proof: { creditCount: 1 } },
+  provenance: { fetchedAt, expiresAt: '2026-10-05T12:50:00.000Z' },
+})
+const staleHit = (fetchedAt = '2026-10-05T08:00:00.000Z') => ({ ...cacheHit(fetchedAt), state: 'stale' })
+const WARM = { batchIds: BATCH_IDS, batchSize: 3, stopReason: null, nextDueAt: '2026-10-05T12:50:00.000Z', finishedAt: '2026-10-05T11:50:01.000Z' }
+
+Deno.test('warm batch: a copy past its window is answered by the batched read inside its window, and the receipt names that request', async () => {
+  const db = fakeDb(tables())
+  const { d, calls, claims } = deps(db, { 'shared-cache': staleHit, 'shared-live': liveOk })
+  const batchReads: string[] = []
+  const out = await lookupRwa({ ...d, warm: async () => WARM, readBatch: async (ids: string) => { batchReads.push(ids); return batchHit() } }, parseLookupQuery('NVDA'), true)
+  assertEquals(calls, ['shared-cache'], 'no live pass'); assertEquals(claims(), 0, 'no claim')
+  assertEquals(batchReads, [BATCH_IDS])
+  const r = out.figures!.quote!.receipt
+  assertEquals([r.served, r.ageSeconds, r.reason, r.batchSize, r.rawTruncated, r.originCreditCount], ['cache', 600, null, 3, true, 1])
+  assertEquals(r.params, { rwa_id: BATCH_IDS }, 'the request that actually answered')
+  assert(r.curl!.includes('rwa_id=1%2C2%2C242') || r.curl!.includes('rwa_id=1,2,242'), r.curl!)
+  // The figure is THIS asset's part of the batched response, nothing else.
+  assertEquals(out.figures!.quote!.value?.averageTokenizedPrice, 228.42)
+  const raw = r.raw as { data: { rwa_assets: Row[] } }
+  assertEquals(raw.data.rwa_assets.map((a) => a.rwa_id), [2])
+  // The kept copy is this asset alone.
+  const kept = db.rpcLog.find((c) => c.name === 'intel_rwa_lookup_remember')!
+  assertEquals(kept.args.p_payload.data.rwa_assets.map((a: Row) => a.rwa_id), [2])
+})
+
+Deno.test('warm batch: an asset not in the batch, or a batch past its window, is not taken from it', async () => {
+  const { d, calls } = deps(fakeDb(tables()), { 'shared-cache': staleHit, 'shared-live': liveOk })
+  let reads = 0
+  const other = await lookupRwa({ ...d, warm: async () => ({ ...WARM, batchIds: '1,242' }), readBatch: async () => { reads++; return batchHit() } }, parseLookupQuery('NVDA'), true)
+  assertEquals(reads, 0); assertEquals(other.figures!.quote!.receipt.served, 'live')
+  const old = await lookupRwa({ ...d, warm: async () => WARM, readBatch: async () => ({ ...batchHit('2026-10-05T10:40:00.000Z'), state: 'stale' }) }, parseLookupQuery('NVDA'), true)
+  assertEquals(old.figures!.quote!.receipt.served, 'live', 'a stale batch does not stop the refresh')
+  assertEquals(calls.filter((p) => p === 'shared-live').length, 2)
+})
+
+Deno.test('refresh on read: a copy past its window is refreshed once through the claim; the receipt is this call', async () => {
+  const { d, calls, claims } = deps(fakeDb(tables()), { 'shared-cache': staleHit, 'shared-live': liveOk })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), true)
+  assertEquals(calls, ['shared-cache', 'shared-live']); assertEquals(claims(), 1)
+  const r = out.figures!.quote!.receipt
+  assertEquals([r.served, r.ageSeconds, r.reason, r.curlMeaning], ['live', 0, null, 'this_call'])
+})
+
+Deno.test('a copy past its window that is not refreshed keeps saying so, and says why', async () => {
+  const { d, calls, claims } = deps(fakeDb(tables()), { 'shared-cache': staleHit, 'shared-live': liveOk })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), async () => false)
+  assertEquals(calls, ['shared-cache']); assertEquals(claims(), 0)
+  const r = out.figures!.quote!.receipt
+  assertEquals([r.served, r.ageSeconds, r.reason, r.refreshReason], ['cache', 4 * 3600, 'shared_cache_past_refresh', IP_LIVE_LIMIT_REASON])
+  // A spent day is the same honest pair.
+  const spent = deps(fakeDb(tables()), { 'shared-cache': staleHit, 'shared-live': liveOk }, false)
+  const s = (await lookupRwa(spent.d, parseLookupQuery('NVDA'), true)).figures!.quote!.receipt
+  assertEquals([s.reason, s.refreshReason], ['shared_cache_past_refresh', 'free_rwa_budget_exhausted'])
+})
+
+Deno.test('after a recorded plan refusal: no claim and no call; the old copy, or the last good one, says the plan refused', async () => {
+  const refusal = { ...WARM, stopReason: 'insufficient_entitlement', nextDueAt: '2026-10-05T17:00:00.000Z' }
+  const { d, calls, claims } = deps(fakeDb(tables()), { 'shared-cache': staleHit, 'shared-live': liveOk })
+  const out = await lookupRwa({ ...d, warm: async () => refusal, readBatch: async () => ({ ...batchHit('2026-10-05T07:00:00.000Z'), state: 'stale' }) }, parseLookupQuery('NVDA'), true)
+  assertEquals(calls, ['shared-cache']); assertEquals(claims(), 0)
+  const r = out.figures!.quote!.receipt
+  assertEquals([r.served, r.reason, r.refreshReason], ['cache', 'shared_cache_past_refresh', 'insufficient_entitlement'])
+  assertEquals(r.params, { rwa_id: '2' }, 'the newer of the two old copies, which is this asset alone')
+  // Nothing in the cache at all: the last good copy, dated, with the same reason.
+  const t = tables()
+  t.intel_rwa_lookup_last_good = [{ rwa_id: 2, payload: { data: { rwa_assets: [NVDA_BODY.data.rwa_assets[0]] } }, fetched_at: '2026-09-30T23:00:00.000Z', http_status: 200, credit_count: 1, served_as: 'live' }]
+  const miss = deps(fakeDb(t), { 'shared-live': liveOk })
+  const kept = await lookupRwa({ ...miss.d, warm: async () => refusal }, parseLookupQuery('NVDA'), true)
+  assertEquals(miss.claims(), 0)
+  assertEquals([kept.figures!.quote!.receipt.served, kept.figures!.quote!.receipt.reason], ['retained', 'insufficient_entitlement'])
+  // A refusal whose backoff has run out is asked again.
+  const expired = deps(fakeDb(tables()), { 'shared-cache': staleHit, 'shared-live': liveOk })
+  await lookupRwa({ ...expired.d, warm: async () => ({ ...refusal, nextDueAt: '2026-10-05T11:00:00.000Z' }) }, parseLookupQuery('NVDA'), true)
+  assertEquals(expired.claims(), 1)
+})
+
+Deno.test('an unreadable warm state is no warm state, never a failed lookup', async () => {
+  const { d } = deps(fakeDb(tables()), { 'shared-cache': cacheHit })
+  const out = await lookupRwa({ ...d, warm: async () => { throw new Error('down') } }, parseLookupQuery('NVDA'), true)
+  assertEquals(out.state, 'found'); assertEquals(out.figures!.quote!.receipt.served, 'cache')
+})
+
+const QUOTES_RESEARCH = (fetchedAt: string, state: string, params: Record<string, string>, rows: Row[]) => ({
+  version: 1, capability: 'rwaQuotes', state, reason: null,
+  data: { rows, total: rows.length, hasMore: false },
+  provenance: { provider: 'coinmarketcap', fetchedAt },
+  receipt: { capability: 'rwaQuotes', origin: 'cache', httpStatus: 200, creditCount: null, fetchedAt, parameters: params },
+})
+
+Deno.test('research: a single-asset quote past its window is answered by the warm batch, rows narrowed, the batched request on the receipt', async () => {
+  const db = fakeDb(tables())
+  const calls: { plan: FreeRwaPlan; params: Record<string, string> }[] = []
+  let claims = 0
+  const d = {
+    db, now: () => NOW, researchParams, warm: async () => WARM,
+    readResearch: (_c: string, params: Record<string, string>) => async (plan: FreeRwaPlan) => {
+      calls.push({ plan, params })
+      return QUOTES_RESEARCH('2026-10-05T08:00:00.000Z', 'stale', params, [{ rwa_id: 1 }])
+    },
+    readBatchResearch: async (ids: string) => {
+      calls.push({ plan: 'shared-cache', params: { rwa_id: ids } })
+      return QUOTES_RESEARCH('2026-10-05T11:50:00.000Z', 'cached', { rwa_id: ids }, [{ rwa_id: 1 }, { rwa_id: 2 }, { rwa_id: 242 }])
+    },
+    claimResearch: async () => { claims++; return { allowed: true, reason: null, cap: 200, used: 1 } },
+  }
+  const out = await researchRwa(d, parseResearchRequest({ capability: 'rwaQuotes', params: { rwa_id: 1 } }, researchParams), true) as Row
+  assertEquals(claims, 0)
+  assertEquals(calls.map((c) => [c.plan, c.params.rwa_id]), [['shared-cache', '1'], ['shared-cache', BATCH_IDS]])
+  assertEquals(out.state, 'cached')
+  assertEquals(out.data.rows.map((r: Row) => r.rwa_id), [1]); assertEquals(out.data.total, 1)
+  assertEquals(out.receipt.parameters, { rwa_id: BATCH_IDS })
+  assertEquals(out.warmBatch, { size: 3, rwaId: '1' })
+  // Any other capability never consults the batch; a list page past its window is refreshed once.
+  const list = researchDeps(fakeDb(tables()), { 'shared-cache': () => ({ ...LIST_BODY('2026-10-05T10:00:00.000Z'), state: 'stale' }), 'shared-live': () => LIST_BODY('2026-10-05T12:00:00.000Z', 'live') })
+  const page = await researchRwa({ ...list.d, warm: async () => WARM }, parseResearchRequest({ capability: 'rwaList', params: { start: 1, limit: 25 } }, researchParams), true) as Row
+  assertEquals(list.calls.map((c) => c.plan), ['shared-cache', 'shared-live']); assertEquals(list.claims(), 1)
+  assertEquals(page.freeShared.served, 'shared-live')
+})

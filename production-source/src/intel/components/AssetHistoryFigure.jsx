@@ -8,6 +8,7 @@ import { readAssetHistory } from '../lib/markets-api'
 import { formatPct, formatPrice, formatUsd } from '../lib/market-format'
 import IntelLockedSurface from './IntelLockedSurface'
 import { useIntelSurfaceLock } from '../context/IntelAccess'
+import { isIntelDemoActive } from '../demo/demo-mode'
 
 // Price history for one asset, read only when a reader asks for it, and the risk
 // measures derived from exactly the points that were loaded.
@@ -87,6 +88,9 @@ export default function AssetHistoryFigure({ sourceProvider, providerId, symbol 
   const [result, setResult] = useState(null)
   const [loading, setLoading] = useState(false)
   const lock = useIntelSurfaceLock('market_history')
+  // The public demo reads stored data only (intel-demo-read): no range asks a
+  // provider there, so no range shows a credit cost.
+  const demo = isIntelDemoActive()
 
   const selected = RANGE_KEYS.includes(params.range) ? params.range : null
   const plan = HISTORY_RANGES.find(range => range.key === (requested || selected)) || HISTORY_RANGES[1]
@@ -131,7 +135,11 @@ export default function AssetHistoryFigure({ sourceProvider, providerId, symbol 
       t('asset_history.caption_interval', { defaultValue: 'Interval: {{interval}}', interval: t(`asset_history.interval_${interval}`, { defaultValue: INTERVAL_LABELS[interval] || interval || '—' }) }),
       t('asset_history.caption_observed', { defaultValue: 'Newest point: {{observedAt}}', observedAt: history.observedAt ? new Date(history.observedAt).toLocaleString() : '—' }),
       t('asset_history.caption_state', { defaultValue: 'State: {{state}}', state: t(`asset_history.state_${history.state}`, { defaultValue: STATE_LABELS[history.state] || history.state }) }),
-      t('asset_history.caption_source', { defaultValue: 'Source: {{source}}', source: history.source || '—' }),
+      t('asset_history.caption_source', { defaultValue: 'Source: {{source}}', source: history.sourceKey === 'stored_quotes'
+        ? t('asset_history.source_stored_quotes', { provider: history.sourceProvider || '', defaultValue: 'stored {{provider}} quotes' })
+        : history.sourceKey === 'stored_daily'
+          ? t('asset_history.source_stored_daily', { defaultValue: 'stored daily prices' })
+          : history.source || '—' }),
     ].join(' · ')
     : t('asset_history.figure_sub', { defaultValue: 'Price over the chosen window, with reported volume as the faint band along the bottom. The shaded span is the deepest decline inside this window.' })
 
@@ -167,9 +175,11 @@ export default function AssetHistoryFigure({ sourceProvider, providerId, symbol 
           >
             {t(`asset_history.range_${range.key}`, { defaultValue: RANGE_LABELS[range.key] })}
             {' · '}
-            {range.credits === 1
-              ? t('asset_history.range_cost_one', { defaultValue: '1 credit' })
-              : t('asset_history.range_cost', { defaultValue: '{{credits}} credits', credits: range.credits })}
+            {demo
+              ? t('asset_history.range_stored', { defaultValue: 'stored data' })
+              : range.credits === 1
+                ? t('asset_history.range_cost_one', { defaultValue: '1 credit' })
+                : t('asset_history.range_cost', { defaultValue: '{{credits}} credits', credits: range.credits })}
           </button>
         ))}
       </div>
@@ -177,9 +187,13 @@ export default function AssetHistoryFigure({ sourceProvider, providerId, symbol 
       <p className="intel-analysis-caption" role="status">
         {loading
           ? t('asset_history.loading', { defaultValue: 'Reading price history…' })
-          : requested
-            ? t('asset_history.budget_note', { defaultValue: 'Each range is sampled once and then shared. The cost beside a range is what a live refresh of that range spends from the shared provider budget; a cached window costs nothing.' })
-            : t('asset_history.prompt', { defaultValue: 'Price history is read only when you ask for it. Choose a range above. The cost beside each one is what a live refresh of that range spends from the shared provider budget.' })}
+          : demo
+            ? requested
+              ? t('asset_history.demo_note', { defaultValue: 'Read from stored data only. No provider was asked, so no credits were spent.' })
+              : t('asset_history.demo_prompt', { defaultValue: 'In the demo, price history comes from stored data only. No provider is asked, so nothing is spent. Choose a range above.' })
+            : requested
+              ? t('asset_history.budget_note', { defaultValue: 'Each range is sampled once and then shared. The cost beside a range is what a live refresh of that range spends from the shared provider budget; a cached window costs nothing.' })
+              : t('asset_history.prompt', { defaultValue: 'Price history is read only when you ask for it. Choose a range above. The cost beside each one is what a live refresh of that range spends from the shared provider budget.' })}
       </p>
 
       {requested && result ? (

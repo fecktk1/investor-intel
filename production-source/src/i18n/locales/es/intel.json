@@ -199,6 +199,7 @@
     "select": "Seleccionar",
     "selected": "en la selección para comparar",
     "sharedSnapshot": "Instantánea compartida del mercado",
+    "sharedSnapshotAsOf": "a fecha de {{date}}",
     "storage_failed": "El almacenamiento del navegador no está disponible. Mantén esta pantalla abierta para conservar tu selección.",
     "suggest_count": "{{total}} activos coincidentes. Usa las flechas arriba y abajo para elegir uno y pulsa Intro para abrirlo.",
     "suggest_failed": "Las sugerencias de activos no están disponibles. Lo que escribes sigue filtrando esta pantalla.",
@@ -1278,7 +1279,33 @@
     "working": {
       "saving": "Guardando",
       "saved": "Guardado"
-    }
+    },
+    "width_1M": "1 minuto",
+    "width_5M": "5 minutos",
+    "width_15M": "15 minutos",
+    "width_30M": "30 minutos",
+    "width_1H": "1 hora",
+    "width_4H": "4 horas",
+    "width_1D": "1 día",
+    "width_1W": "1 semana",
+    "spacing_minutes": "{{count}} min",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} d",
+    "stored_quotes": "Cada vela cubre {{width}} y se construye con cotizaciones guardadas de {{provider}}, aproximadamente una cada {{spacing}} ({{count}} en este gráfico).",
+    "stored_quotes_few": "Cada vela cubre {{width}} y se construye con cotizaciones guardadas de {{provider}} ({{count}} en este gráfico).",
+    "stored_high_low": "Los máximos y mínimos son los de las cotizaciones guardadas, no los de cada operación.",
+    "stored_singles": "Velas construidas con un solo precio guardado, dibujadas planas: {{count}} de {{total}}.",
+    "stored_daily_archive": "Velas diarias del archivo guardado ({{providers}}): {{count}}.",
+    "stored_daily_backfill": "Cierres diarios del relleno OHLCV de CoinMarketCap: {{count}}.",
+    "stored_daily_quotes": "Días construidos con cotizaciones guardadas de {{provider}}: {{count}}.",
+    "stored_weekly": "Cada vela es una semana completa de esos días.",
+    "stored_line": "Algunos días solo tienen un cierre, así que el gráfico dibuja una línea de cierres.",
+    "stored_daily_further": "Los precios intradía guardados empiezan tarde en este período, así que se dibuja con filas diarias que llegan más atrás.",
+    "stored_ceiling": "Velas de {{requested}} serían demasiadas para este período, así que aquí cada vela cubre {{width}}.",
+    "stored_coarser": "Velas de {{requested}} contendrían menos de un precio guardado cada una, así que aquí cada vela cubre {{width}}.",
+    "stored_reach": "Los precios guardados empiezan el {{date}}, dentro de este período.",
+    "stored_gaps": "Un período sin nada guardado queda vacío. Leído de datos guardados; no se consultó a ningún proveedor.",
+    "single_price": "Solo hay un precio registrado para este período: {{price}} el {{time}}. Un gráfico necesita al menos dos."
   },
   "charts": {
     "state_unavailable_on_plan": "No se captura en el plan de este workspace.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "Baja",
     "volatility_sub": "Desviación típica anualizada de los rendimientos logarítmicos a lo largo de {{windowDays}} días, a partir de {{samples}} rendimientos en el propio intervalo de esta serie.",
     "volatility_sub_empty": "Desviación típica anualizada de los rendimientos logarítmicos a lo largo de la ventana cargada.",
-    "volatility_title": "Volatilidad realizada a 30 días"
+    "volatility_title": "Volatilidad realizada a 30 días",
+    "range_stored": "datos guardados",
+    "demo_prompt": "En la demo, el historial de precios procede solo de datos guardados. No se consulta a ningún proveedor, así que no se gasta nada. Elige un rango arriba.",
+    "demo_note": "Leído solo de datos guardados. No se consultó a ningún proveedor, así que no se gastaron créditos.",
+    "source_stored_quotes": "cotizaciones guardadas de {{provider}}",
+    "source_stored_daily": "precios diarios guardados"
   },
   "asset_facts": {
     "age_sentence": "Listado {{dateAdded}} · lanzado {{dateLaunched}} · {{ageDays}} días en el proveedor · cohorte {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Noticias registradas de fuentes seguidas y globales, agrupadas y ordenadas por reglas. Un orden no es un juicio sobre su exactitud.",
     "signals_stored": "Señales generadas a partir de fuentes almacenadas y ordenadas para ti al leer esta vista. Una señal es un punto de partida para investigar, no una recomendación.",
     "execution_quote": "Una cotización de ruta a su hora de cotización, más contexto del pool en cadena. No es una ejecución que nadie recibió ni un consejo para operar.",
-    "exchange_signal": "Una clasificación sobre los tickers de los exchanges centralizados cubiertos a su hora reportada. No es el precio de ninguna plataforma concreta ni una recomendación."
+    "exchange_signal": "Una clasificación sobre los tickers de los exchanges centralizados cubiertos a su hora reportada. No es el precio de ninguna plataforma concreta ni una recomendación.",
+    "stored_quote_candles": "Velas construidas con cotizaciones de proveedores que guardamos, agrupadas por período. Los máximos y mínimos son los de las cotizaciones guardadas, no los de cada operación, y un período sin nada guardado queda vacío.",
+    "stored_daily_prices": "Precios diarios de nuestro archivo, nuestras capturas y el relleno guardados. No se consultó a ningún proveedor para este gráfico, y un día sin nada guardado queda vacío."
   },
   "receipt_state": {
     "provider": "Proveedor",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Prima frente al ancla",
     "served_live": "Llamada en vivo a CoinMarketCap para esta consulta",
     "served_cache": "Caché compartida (antigüedad: {{age}}), sin llamada",
+    "batch_note": "Esta cifra procede de una única lectura compartida y programada de {{size}} activos, la solicitud que se muestra arriba; esta consulta no hizo ninguna llamada.",
     "served_retained": "Copia guardada (antigüedad: {{age}}): la lectura en vivo no respondió",
     "served_capture": "Captura registrada (antigüedad: {{age}}), sin llamada para esta consulta",
     "served_unavailable": "Nada respondió",

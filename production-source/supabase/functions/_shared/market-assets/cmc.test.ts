@@ -227,6 +227,22 @@ Deno.test('a refusal that is not JSON keeps its HTTP meaning, and an entitlement
   globalThis.fetch=async()=>new Response('not json',{status:200})
   const broken=fakeDb();assert.equal((await requestCmc('quotes',{id:4},{supabase:broken})).reason,'malformed_response')
 }))
+Deno.test('a 402 plan refusal (1003/1004) is an entitlement refusal, held six hours like a 403',()=>withEnvironment(async()=>{
+  // After an event plan lapses, CoinMarketCap answers the RWA endpoints 402.
+  // That is the plan saying no, not an outage, so it must not be re-asked a
+  // minute later by every reader and every lane.
+  for(const [code,id] of [[1003,11],[1004,12]] as const){
+    let calls=0;globalThis.fetch=async()=>{calls++;return Response.json({status:{error_code:code,error_message:'plan',credit_count:0}},{status:402})}
+    const db=fakeDb()
+    assert.equal((await requestCmc('quotes',{id},{supabase:db})).reason,'insufficient_entitlement');assert.equal(calls,1)
+    assert.equal(db.state.cache.negative_cache,true);assert.equal(db.state.cache.status_code,402)
+    const held=Date.parse(db.state.cache.expires_at)-Date.now()
+    assert.ok(held>5.9*3600000&&held<=6*3600000,'a plan refusal is held six hours')
+  }
+  // A 402 with a body that is not JSON still keeps its meaning.
+  globalThis.fetch=async()=>new Response('Payment Required',{status:402})
+  const bare=fakeDb();assert.equal((await requestCmc('quotes',{id:13},{supabase:bare})).reason,'insufficient_entitlement')
+}))
 Deno.test('Hackathon profile automatically returns to verified baseline after expiry',()=>withEnvironment(async()=>{
   Deno.env.set('CMC_ACCESS_PROFILE','hackathon');Deno.env.set('CMC_VERIFIED_HACKATHON_PLAN','startup')
   assert.equal(cmcPlan(Date.parse('2026-09-20T00:00:00Z')),'startup')

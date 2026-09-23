@@ -199,6 +199,7 @@
     "select": "Sélectionner",
     "selected": "sélectionné pour la comparaison",
     "sharedSnapshot": "Instantané de marché partagé",
+    "sharedSnapshotAsOf": "au {{date}}",
     "storage_failed": "Le stockage du navigateur est indisponible. Gardez cet écran ouvert pour conserver votre sélection.",
     "suggest_count": "{{total}} actifs correspondants. Utilisez les flèches haut et bas pour en choisir un, puis Entrée pour l’ouvrir.",
     "suggest_failed": "Les suggestions d’actifs sont indisponibles. Votre saisie continue de filtrer cet écran.",
@@ -1278,7 +1279,33 @@
     "working": {
       "saving": "Enregistrement",
       "saved": "Enregistré"
-    }
+    },
+    "width_1M": "1 minute",
+    "width_5M": "5 minutes",
+    "width_15M": "15 minutes",
+    "width_30M": "30 minutes",
+    "width_1H": "1 heure",
+    "width_4H": "4 heures",
+    "width_1D": "1 jour",
+    "width_1W": "1 semaine",
+    "spacing_minutes": "{{count}} min",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} j",
+    "stored_quotes": "Chaque bougie couvre {{width}} et est construite à partir de cotations {{provider}} enregistrées, environ une toutes les {{spacing}} ({{count}} dans ce graphique).",
+    "stored_quotes_few": "Chaque bougie couvre {{width}} et est construite à partir de cotations {{provider}} enregistrées ({{count}} dans ce graphique).",
+    "stored_high_low": "Les plus hauts et les plus bas sont ceux des cotations enregistrées, pas ceux de chaque transaction.",
+    "stored_singles": "Bougies construites à partir d’un seul prix enregistré, tracées à plat : {{count}} sur {{total}}.",
+    "stored_daily_archive": "Bougies journalières issues de l’archive enregistrée ({{providers}}) : {{count}}.",
+    "stored_daily_backfill": "Clôtures journalières issues du rattrapage OHLCV de CoinMarketCap : {{count}}.",
+    "stored_daily_quotes": "Jours construits à partir de cotations {{provider}} enregistrées : {{count}}.",
+    "stored_weekly": "Chaque bougie correspond à une semaine complète de ces jours.",
+    "stored_line": "Certains jours n’ont qu’une clôture, le graphique trace donc une ligne des clôtures.",
+    "stored_daily_further": "Les prix intrajournaliers enregistrés commencent tard dans cette période, elle est donc tracée à partir de lignes journalières qui remontent plus loin.",
+    "stored_ceiling": "Des bougies de {{requested}} seraient trop nombreuses pour cette période, chaque bougie couvre donc ici {{width}}.",
+    "stored_coarser": "Des bougies de {{requested}} contiendraient chacune moins d’un prix enregistré, chaque bougie couvre donc ici {{width}}.",
+    "stored_reach": "Les prix enregistrés commencent le {{date}}, au cours de cette période.",
+    "stored_gaps": "Une période sans donnée enregistrée reste vide. Lu à partir de données enregistrées ; aucun fournisseur n’a été interrogé.",
+    "single_price": "Un seul prix est enregistré pour cette période : {{price}} le {{time}}. Un graphique en demande au moins deux."
   },
   "charts": {
     "state_unavailable_on_plan": "Non capturé avec l’offre de cet espace de travail.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "Basse",
     "volatility_sub": "Écart-type annualisé des rendements logarithmiques sur {{windowDays}} jours, à partir de {{samples}} rendements à l’intervalle propre de cette série.",
     "volatility_sub_empty": "Écart-type annualisé des rendements logarithmiques sur la fenêtre chargée.",
-    "volatility_title": "Volatilité réalisée sur 30 jours"
+    "volatility_title": "Volatilité réalisée sur 30 jours",
+    "range_stored": "données enregistrées",
+    "demo_prompt": "Dans la démo, l’historique des prix provient uniquement de données enregistrées. Aucun fournisseur n’est interrogé, rien n’est donc dépensé. Choisissez une plage ci-dessus.",
+    "demo_note": "Lu uniquement à partir de données enregistrées. Aucun fournisseur n’a été interrogé, aucun crédit n’a donc été dépensé.",
+    "source_stored_quotes": "cotations {{provider}} enregistrées",
+    "source_stored_daily": "prix journaliers enregistrés"
   },
   "asset_facts": {
     "age_sentence": "Listé {{dateAdded}} · lancé {{dateLaunched}} · {{ageDays}} jours chez le fournisseur · cohorte {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Articles enregistrés depuis les sources suivies et globales, regroupés et classés selon des règles. Un classement n’est pas un jugement d’exactitude.",
     "signals_stored": "Signaux générés à partir de sources stockées et classés pour vous à la lecture de cette vue. Un signal est une piste de recherche, pas une recommandation.",
     "execution_quote": "Une cotation de routage à son heure de cotation, plus le contexte du pool en chaîne. Pas une exécution reçue par quiconque et pas un conseil de trading.",
-    "exchange_signal": "Une classification sur les tickers des plateformes centralisées couvertes à leur heure indiquée. Pas le prix d’une plateforme donnée et pas une recommandation."
+    "exchange_signal": "Une classification sur les tickers des plateformes centralisées couvertes à leur heure indiquée. Pas le prix d’une plateforme donnée et pas une recommandation.",
+    "stored_quote_candles": "Bougies construites à partir des cotations de fournisseurs que nous avons enregistrées, regroupées par période. Les plus hauts et les plus bas sont ceux des cotations enregistrées, pas ceux de chaque transaction, et une période sans donnée enregistrée reste vide.",
+    "stored_daily_prices": "Prix journaliers issus de notre archive, de nos captures et du rattrapage enregistrés. Aucun fournisseur n’a été interrogé pour ce graphique, et un jour sans donnée enregistrée reste vide."
   },
   "receipt_state": {
     "provider": "Fournisseur",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Prime face à l’ancre",
     "served_live": "Appel en direct à CoinMarketCap pour cette recherche",
     "served_cache": "Cache partagé (âge : {{age}}), aucun appel effectué",
+    "batch_note": "Ce chiffre provient d’une seule lecture partagée et planifiée de {{size}} actifs, la requête affichée ci-dessus ; cette recherche n’a effectué aucun appel.",
     "served_retained": "Copie conservée (âge : {{age}}) : la lecture en direct n’a pas répondu",
     "served_capture": "Capture enregistrée (âge : {{age}}), aucun appel effectué pour cette recherche",
     "served_unavailable": "Rien n’a répondu",

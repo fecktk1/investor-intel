@@ -1,0 +1,14 @@
+// TEST STAND-IN: not the production module; used only so the published Investor Intel tests can run without the private platform.
+//
+// Stands in for: supabase/functions/_shared/memecoin/geckoterminal.ts
+// What that is:  The platform's GeckoTerminal HTTP client. It is not published.
+//
+// Every export throws when used (test-support/stand-ins/unavailable.ts), so a
+// passing test never reached it. The names are the ones that published Intel
+// modules import from the real module, and nothing else.
+
+import { unavailable } from '../../unavailable.ts'
+
+export const getTokenInfo = unavailable('supabase/functions/_shared/memecoin/geckoterminal.ts getTokenInfo')
+export const getOhlcv = unavailable('supabase/functions/_shared/memecoin/geckoterminal.ts getOhlcv')
+export const getTokenPools = unavailable('supabase/functions/_shared/memecoin/geckoterminal.ts getTokenPools')

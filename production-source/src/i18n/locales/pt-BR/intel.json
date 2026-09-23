@@ -199,6 +199,7 @@
     "select": "Selecionar",
     "selected": "selecionado(s) para comparação",
     "sharedSnapshot": "Snapshot de mercado compartilhado",
+    "sharedSnapshotAsOf": "dados de {{date}}",
     "storage_failed": "O armazenamento do navegador está indisponível. Mantenha esta tela aberta para preservar sua seleção.",
     "suggest_count": "{{total}} ativos correspondentes. Use as setas para cima e para baixo para escolher um e pressione Enter para abri-lo.",
     "suggest_failed": "As sugestões de ativos estão indisponíveis. O que você digita continua filtrando esta tela.",
@@ -1278,7 +1279,33 @@
     "working": {
       "saving": "Salvando",
       "saved": "Salvo"
-    }
+    },
+    "width_1M": "1 minuto",
+    "width_5M": "5 minutos",
+    "width_15M": "15 minutos",
+    "width_30M": "30 minutos",
+    "width_1H": "1 hora",
+    "width_4H": "4 horas",
+    "width_1D": "1 dia",
+    "width_1W": "1 semana",
+    "spacing_minutes": "{{count}} min",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} d",
+    "stored_quotes": "Cada candle cobre {{width}} e é montado a partir de cotações armazenadas da {{provider}}, cerca de uma a cada {{spacing}} ({{count}} neste gráfico).",
+    "stored_quotes_few": "Cada candle cobre {{width}} e é montado a partir de cotações armazenadas da {{provider}} ({{count}} neste gráfico).",
+    "stored_high_low": "Máximas e mínimas são as das cotações armazenadas, não as de cada negociação.",
+    "stored_singles": "Candles montados a partir de um único preço armazenado, desenhados planos: {{count}} de {{total}}.",
+    "stored_daily_archive": "Candles diários do arquivo armazenado ({{providers}}): {{count}}.",
+    "stored_daily_backfill": "Fechamentos diários do preenchimento retroativo OHLCV da CoinMarketCap: {{count}}.",
+    "stored_daily_quotes": "Dias montados a partir de cotações armazenadas da {{provider}}: {{count}}.",
+    "stored_weekly": "Cada candle é uma semana completa desses dias.",
+    "stored_line": "Alguns dias têm apenas um fechamento, então o gráfico desenha uma linha de fechamentos.",
+    "stored_daily_further": "Os preços intradiários armazenados começam tarde neste período, então ele é desenhado com linhas diárias que vão mais longe no passado.",
+    "stored_ceiling": "Candles de {{requested}} seriam numerosos demais para este período, então aqui cada candle cobre {{width}}.",
+    "stored_coarser": "Candles de {{requested}} teriam menos de um preço armazenado cada, então aqui cada candle cobre {{width}}.",
+    "stored_reach": "Os preços armazenados começam em {{date}}, dentro deste período.",
+    "stored_gaps": "Um período sem nada armazenado fica vazio. Lido de dados armazenados; nenhum provedor foi consultado.",
+    "single_price": "Apenas um preço está registrado para este período: {{price}} em {{time}}. Um gráfico precisa de pelo menos dois."
   },
   "charts": {
     "state_unavailable_on_plan": "Não é capturado no plano deste workspace.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "Baixa",
     "volatility_sub": "Desvio padrão anualizado dos retornos logarítmicos ao longo de {{windowDays}} dias, a partir de {{samples}} retornos no intervalo próprio desta série.",
     "volatility_sub_empty": "Desvio padrão anualizado dos retornos logarítmicos ao longo da janela carregada.",
-    "volatility_title": "Volatilidade realizada de 30 dias"
+    "volatility_title": "Volatilidade realizada de 30 dias",
+    "range_stored": "dados armazenados",
+    "demo_prompt": "Na demo, o histórico de preços vem apenas de dados armazenados. Nenhum provedor é consultado, então nada é gasto. Escolha um intervalo acima.",
+    "demo_note": "Lido apenas de dados armazenados. Nenhum provedor foi consultado, então nenhum crédito foi gasto.",
+    "source_stored_quotes": "cotações armazenadas da {{provider}}",
+    "source_stored_daily": "preços diários armazenados"
   },
   "asset_facts": {
     "age_sentence": "Listado {{dateAdded}} · lançado {{dateLaunched}} · {{ageDays}} dias no provedor · safra {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Notícias registradas de fontes seguidas e globais, agrupadas e ordenadas por regras. Uma ordenação não é um julgamento de precisão.",
     "signals_stored": "Sinais gerados a partir de fontes armazenadas e ordenados para você na leitura desta visualização. Um sinal é um ponto de partida para pesquisa, não uma recomendação.",
     "execution_quote": "Uma cotação de rota no horário em que foi cotada, mais o contexto do pool na rede. Não é uma execução que alguém recebeu nem conselho para operar.",
-    "exchange_signal": "Uma classificação sobre os tickers das corretoras centralizadas cobertas no horário informado. Não é o preço de nenhuma corretora específica nem uma recomendação."
+    "exchange_signal": "Uma classificação sobre os tickers das corretoras centralizadas cobertas no horário informado. Não é o preço de nenhuma corretora específica nem uma recomendação.",
+    "stored_quote_candles": "Candles montados a partir de cotações de provedores que armazenamos, agrupados por período. Máximas e mínimas são as das cotações armazenadas, não as de cada negociação, e um período sem nada armazenado fica vazio.",
+    "stored_daily_prices": "Preços diários do nosso arquivo, das nossas capturas e do preenchimento retroativo armazenados. Nenhum provedor foi consultado para este gráfico, e um dia sem nada armazenado fica vazio."
   },
   "receipt_state": {
     "provider": "Provedor",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Prêmio em relação à âncora",
     "served_live": "Chamada ao vivo à CoinMarketCap para esta consulta",
     "served_cache": "Cache compartilhado (idade: {{age}}), nenhuma chamada feita",
+    "batch_note": "Este número vem de uma única leitura compartilhada e agendada de {{size}} ativos, a solicitação mostrada acima; esta consulta não fez nenhuma chamada.",
     "served_retained": "Cópia guardada (idade: {{age}}): a leitura ao vivo não respondeu",
     "served_capture": "Captura registrada (idade: {{age}}), nenhuma chamada feita para esta consulta",
     "served_unavailable": "Nada respondeu",

@@ -18,6 +18,13 @@
 //     nothing usable AND intel_free_rwa_read_claim grants it from the daily
 //     platform-wide budget in cmc_free_rwa_policy. The function adds a per-IP
 //     hourly cap on top, so one visitor cannot spend the day's budget.
+//   * KEPT INSIDE ITS WINDOW (freeRwaReadFresh). A shared copy past its one-hour
+//     window is not simply served: the scheduled warm lane's ONE batched quotes
+//     read of every judge-path asset answers first when it is inside its window
+//     (capture-rwa-quote-warm.ts), with a receipt that names that batched
+//     request; otherwise the copy is refreshed once, through the same per-IP and
+//     daily gates as a miss. Only when that is refused does the old copy answer,
+//     still saying it is past its window and why it was not refreshed.
 //
 // WHAT IT NEVER DOES. It never reads the caller's token, never writes demand,
 // never calls AI, and never returns "no data" for an asset we know: when a live
@@ -30,7 +37,8 @@
 import { isDerivativeReference } from './rwa-wrapper-spread.ts'
 import { CMC_CAPABILITIES } from '../market-assets/cmc-capabilities.ts'
 import { cmcReproduceCommand } from '../market-assets/cmc-reproduce.ts'
-import { freeRwaRead, freeRwaSnapshotUsable, RWA_FREE_CAPABILITIES as FREE_CAPS, type FreeRwaClaim, type FreeRwaPlan, type ResearchSnapshot } from './rwa-free-read.ts'
+import { freeRwaReadFresh, freeRwaSnapshotUsable, RWA_FREE_CAPABILITIES as FREE_CAPS, type FreeRwaClaim, type FreeRwaPlan, type ResearchSnapshot } from './rwa-free-read.ts'
+import { warmPlanRefusal, type WarmState } from './capture-rwa-quote-warm.ts'
 
 export const LOOKUP_VERSION = 1
 export const ATTRIBUTION = 'Data provided by CoinMarketCap.com'
@@ -94,6 +102,13 @@ export interface FigureReceipt {
    * proof). creditCount stays this lookup's own charge, which a cache hit never
    * has. Null when the stored response reported none. */
   originCreditCount?: number | null
+  /** The figure came from the warm lane's one batched read of this many assets;
+   * `params` then IS that batched request, and the raw excerpt is this asset's
+   * part of its response. Absent for a read of this asset alone. */
+  batchSize?: number | null
+  /** A copy past its window: why this lookup did not refresh it (the per-IP
+   * allowance, the daily budget, a plan refusal, a failed call). */
+  refreshReason?: string | null
   reason: string | null
 }
 
@@ -144,17 +159,22 @@ export function reproduceLine(capability: string, params: Record<string, string>
 function receipt(input: {
   capability: string; params: Record<string, string>; served: Served; capturedAt: unknown; now: number
   httpStatus?: unknown; creditCount?: unknown; raw?: unknown; reason?: string | null; caller?: string | null; originCreditCount?: unknown
+  batchSize?: number | null; refreshReason?: string | null
 }): FigureReceipt {
   const capturedAt = iso(input.capturedAt)
   const excerpt = input.raw === undefined ? { raw: null, rawTruncated: false } : rawExcerpt(input.raw)
   const curl = reproduceLine(input.capability, input.params)
+  const batched = input.batchSize != null && input.batchSize > 1
   return {
     capability: input.capability, endpoint: CMC_CAPABILITIES[input.capability]?.path ?? null, params: input.params,
     served: input.served, capturedAt, ageSeconds: age(capturedAt, input.now),
     httpStatus: num(input.httpStatus), creditCount: num(input.creditCount),
     curl, curlMeaning: curl ? (input.served === 'live' ? 'this_call' : 'same_request') : null,
-    ...excerpt, ...(input.caller !== undefined ? { caller: input.caller } : {}),
-    ...(input.originCreditCount !== undefined ? { originCreditCount: num(input.originCreditCount) } : {}), reason: input.reason ?? null,
+    // A batched read's excerpt is this asset's part of a larger response.
+    ...excerpt, ...(batched ? { rawTruncated: true, batchSize: input.batchSize } : {}),
+    ...(input.caller !== undefined ? { caller: input.caller } : {}),
+    ...(input.originCreditCount !== undefined ? { originCreditCount: num(input.originCreditCount) } : {}),
+    ...(input.refreshReason ? { refreshReason: input.refreshReason } : {}), reason: input.reason ?? null,
   }
 }
 
@@ -227,12 +247,13 @@ export async function captureCall(db: Db, caller: string, endpoint: string, at: 
 /** One rwaQuotes read in the free lane's shape (the transport result). */
 export type QuoteReader = (plan: FreeRwaPlan) => Promise<ResearchSnapshot>
 
-/** The first asset of an rwaQuotes body, and its USD quote. */
-export function quoteAsset(payload: unknown): { asset: Record<string, unknown>; quote: Record<string, unknown> | null } | null {
+/** One asset of an rwaQuotes body, and its USD quote: the asset with this
+ * rwa_id when one is named (a batched body carries many), else the first. */
+export function quoteAsset(payload: unknown, rwaId?: string | null): { asset: Record<string, unknown>; quote: Record<string, unknown> | null } | null {
   // deno-lint-ignore no-explicit-any
   const data = (payload as any)?.data
   const list = Array.isArray(data?.rwa_assets) ? data.rwa_assets : Array.isArray(data) ? data : null
-  const asset = list?.[0]
+  const asset = rwaId ? list?.find((a: Record<string, unknown>) => a && String(a.rwa_id) === String(rwaId)) : list?.[0]
   if (!asset || typeof asset !== 'object') return null
   const quotes = Array.isArray(asset.quotes) ? asset.quotes : []
   return { asset, quote: quotes.find((q: Record<string, unknown>) => q?.symbol === 'USD') ?? quotes[0] ?? null }
@@ -240,8 +261,8 @@ export function quoteAsset(payload: unknown): { asset: Record<string, unknown>; 
 
 /** The part of an rwaQuotes body worth keeping as the last good answer: the
  * asset, its quotes and up to WRAPPER_ROWS tokens. Prose never. */
-export function quoteKeep(payload: unknown): Record<string, unknown> | null {
-  const found = quoteAsset(payload)
+export function quoteKeep(payload: unknown, rwaId?: string | null): Record<string, unknown> | null {
+  const found = quoteAsset(payload, rwaId)
   if (!found) return null
   const { asset } = found
   const tokens = Array.isArray(asset.tokens) ? asset.tokens.slice(0, WRAPPER_ROWS) : []
@@ -257,7 +278,7 @@ async function lastGood(db: Db, rwaId: string) {
 /** Keep this answer as the asset's last good copy. Best effort: the RPC only
  * ever moves a row forward in time, and a failure changes nothing visible. */
 async function remember(db: Db, rwaId: string, payload: unknown, fetchedAt: string | null, httpStatus: number | null, creditCount: number | null, served: string) {
-  const keep = quoteKeep(payload)
+  const keep = quoteKeep(payload, rwaId)
   if (!keep || !fetchedAt) return
   try { await db.rpc('intel_rwa_lookup_remember', { p_rwa_id: Number(rwaId), p_payload: keep, p_fetched_at: fetchedAt, p_http_status: httpStatus, p_credit_count: creditCount, p_served_as: served }) } catch { /* best effort */ }
 }
@@ -271,7 +292,21 @@ export interface LookupDeps {
   readQuote: (rwaId: string) => QuoteReader
   /** Claim one live read from the daily free budget. */
   claim: (rwaId: string) => Promise<FreeRwaClaim>
+  /** The warm lane's newest finished run (loadWarmState). Optional: without it
+   * there is no batched copy to consult and no recorded refusal to honour. */
+  warm?: () => Promise<WarmState | null>
+  /** The warm lane's batched rwaQuotes entry, cache only (never a call). */
+  readBatch?: (ids: string) => Promise<ResearchSnapshot>
 }
+
+/** The warm state, never a failure: an unreadable run log is simply none. */
+async function warmState(deps: { warm?: () => Promise<WarmState | null> }): Promise<WarmState | null> {
+  if (!deps.warm) return null
+  try { return await deps.warm() } catch { return null }
+}
+/** The batched entry's id list when it carries this asset, else null. */
+const batchFor = (warm: WarmState | null, rwaId: string): string | null =>
+  warm?.batchIds && warm.batchIds.split(',').includes(rwaId) ? warm.batchIds : null
 
 const quoteFigure = (q: Record<string, unknown> | null) => q ? {
   averageTokenizedPrice: num(q.average_tokenized_price), tokenizedMarketCap: num(q.tokenized_market_cap),
@@ -327,22 +362,34 @@ export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate
     receipt: receipt({ capability: identityCapability, params, served: 'capture', capturedAt: identityClock, now, httpStatus: identityCall?.status, creditCount: identityCall?.credits, raw: { ...p, logo_url: undefined }, caller: 'intel-capture-rwa-asset-profiles', reason: identityCall ? null : 'call_log_not_retained' }),
   }
 
-  // The quote: shared cache, then the bounded live miss, then our last good
-  // copy, then the stored captures. Each step says which it was.
-  const snap = await freeRwaRead(deps.readQuote(rwaId), gatedClaim(live, () => deps.claim(rwaId)), live !== false)
+  // The quote: this asset's shared copy inside its window, then the warm lane's
+  // batched copy inside its window, then one bounded live refresh, then the
+  // newest copy with the reason; then our last good copy, then the stored
+  // captures. Each step says which it was.
+  const warm = await warmState(deps)
+  const batchIds = deps.readBatch ? batchFor(warm, rwaId) : null
+  const alternate = batchIds ? async () => {
+    const r = await deps.readBatch!(batchIds)
+    return r && quoteAsset(r.payload, rwaId) ? { ...r, warmBatch: { ids: batchIds, size: batchIds.split(',').length } } : null
+  } : null
+  const snap = await freeRwaReadFresh(deps.readQuote(rwaId), gatedClaim(live, () => deps.claim(rwaId)), live !== false, { alternate, liveBlocked: warmPlanRefusal(warm, now) })
   const laneReason: string | null = snap?.freeShared?.reason ?? snap?.reason ?? null
   let quote: { value: ReturnType<typeof quoteFigure>; receipt: FigureReceipt } | null = null
   let tokensSource: { tokens: Record<string, unknown>[]; receipt: FigureReceipt } | null = null
-  const usable = freeRwaSnapshotUsable(snap) && quoteAsset(snap.payload)
+  const usable = freeRwaSnapshotUsable(snap) && quoteAsset(snap.payload, rwaId)
   if (usable) {
     const r = snap.receipt || {}
     const served: Served = r.origin === 'live' ? 'live' : 'cache'
-    const found = quoteAsset(snap.payload)!
+    const found = quoteAsset(snap.payload, rwaId)!
+    const batch = snap.warmBatch && typeof snap.warmBatch === 'object' && typeof snap.warmBatch.ids === 'string' ? snap.warmBatch as { ids: string; size: number } : null
+    const stale = served === 'cache' && snap.state === 'stale'
     // The provider's own status block leads the raw excerpt (timestamp,
     // error_code, credit_count), and a cache hit names the original call's charge.
     const status = snap.payload && typeof snap.payload === 'object' ? (snap.payload as { status?: unknown }).status : undefined
-    const rc = receipt({ capability: 'rwaQuotes', params, served, capturedAt: r.fetchedAt ?? snap.provenance?.fetchedAt, now, httpStatus: r.httpStatus, creditCount: r.creditCount,
-      raw: { ...(status && typeof status === 'object' ? { status } : {}), ...quoteKeep(snap.payload) }, reason: served === 'cache' && snap.state === 'stale' ? 'shared_cache_past_refresh' : null,
+    const rc = receipt({ capability: 'rwaQuotes', params: batch ? { rwa_id: batch.ids } : params, served, capturedAt: r.fetchedAt ?? snap.provenance?.fetchedAt, now, httpStatus: r.httpStatus, creditCount: r.creditCount,
+      raw: { ...(status && typeof status === 'object' ? { status } : {}), ...quoteKeep(snap.payload, rwaId) },
+      // Past its window still says so, and says why this lookup did not refresh it.
+      reason: stale ? 'shared_cache_past_refresh' : null, refreshReason: stale ? laneReason : null, batchSize: batch?.size ?? null,
       ...(served === 'cache' ? { originCreditCount: r.proof?.creditCount ?? null } : {}) })
     quote = { value: quoteFigure(found.quote), receipt: rc }
     tokensSource = { tokens: Array.isArray(found.asset.tokens) ? found.asset.tokens : [], receipt: rc }
@@ -448,6 +495,23 @@ export interface ResearchDeps {
   claimResearch: (capability: string, params: Record<string, string>) => Promise<FreeRwaClaim>
   /** research-service.ts researchParams: the same validation intel-research applies. */
   researchParams: (capability: string, input: unknown) => Record<string, string>
+  /** The warm lane's newest finished run (loadWarmState). Optional. */
+  warm?: () => Promise<WarmState | null>
+  /** The warm lane's batched rwaQuotes entry as a research body, shared cache
+   * only: researchSnapshot(db, 'rwaQuotes', { rwa_id: ids }, ..., 'shared-cache',
+   * { repairRelationships: false }). Optional: without it no batch is consulted. */
+  readBatchResearch?: (ids: string) => Promise<ResearchSnapshot>
+}
+
+/** One asset's part of the warm lane's batched rwaQuotes research body: the same
+ * body intel-research builds, its rows narrowed to the asset asked for. The
+ * receipt, provenance and source reference are the batched read's own, so the
+ * drawer names the request that actually answered it. Null when unusable. */
+export function batchResearchBody(body: ResearchSnapshot | null, rwaId: string, size: number): ResearchSnapshot | null {
+  if (!body || !freeRwaSnapshotUsable(body)) return null
+  const rows = Array.isArray(body.data?.rows) ? body.data.rows.filter((r: Record<string, unknown>) => String(r?.rwa_id) === rwaId) : []
+  if (!rows.length) return null
+  return { ...body, data: { ...body.data, rows, total: rows.length, hasMore: false }, warmBatch: { size, rwaId } }
 }
 
 export class ResearchRequestError extends Error {}
@@ -471,7 +535,13 @@ const MAX_KEPT_BODY = 200_000
 export async function researchRwa(deps: ResearchDeps, req: { capability: string; params: Record<string, string>; paramsKey: string; cacheOnly: boolean }, live: LiveGate) {
   const now = (deps.now ?? Date.now)()
   const { db, capability, params } = { db: deps.db, ...req }
-  const snap = await freeRwaRead(deps.readResearch(capability, params), gatedClaim(live, () => deps.claimResearch(capability, params)), live !== false && !req.cacheOnly)
+  // A single-asset quote can also be answered by the warm lane's batched entry.
+  const warm = await warmState(deps)
+  const single = capability === 'rwaQuotes' && /^[1-9][0-9]{0,11}$/.test(params.rwa_id ?? '') ? params.rwa_id : null
+  const batchIds = single && deps.readBatchResearch ? batchFor(warm, single) : null
+  const alternate = batchIds ? async () => batchResearchBody(await deps.readBatchResearch!(batchIds), single!, batchIds.split(',').length) : null
+  const snap = await freeRwaReadFresh(deps.readResearch(capability, params), gatedClaim(live, () => deps.claimResearch(capability, params)), live !== false && !req.cacheOnly,
+    { alternate, liveBlocked: warmPlanRefusal(warm, now) })
   if (freeRwaSnapshotUsable(snap)) {
     const fetchedAt = iso(snap?.provenance?.fetchedAt) ?? iso(snap?.receipt?.fetchedAt)
     const text = JSON.stringify(snap)

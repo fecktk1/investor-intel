@@ -430,7 +430,10 @@ Deno.test('a CoinGecko or TronGrid row in this hour does not make the CoinMarket
   // :41 the CoinMarketCap lane at :37 skipped with `within_cadence` and never
   // asked the provider again. Verified in production that day: 116 CoinGecko
   // rows and 3 TronGrid rows at one capture hour, and 0 CoinMarketCap rows.
-  const now = new Date()
+  // A fixed clock five minutes into an hour. With the real clock, the own-lane row
+  // stamped at the top of the hour fell outside the 0.9 × 3600 s cadence grace
+  // whenever the test ran in minutes :54 to :59, and the last assertion failed.
+  const now = new Date('2026-09-23T12:05:00.000Z')
   const thisHour = new Date(Math.floor(now.getTime() / 3_600_000) * 3_600_000).toISOString()
   const db = fakeDb({
     intel_meme_stage_snapshots: [

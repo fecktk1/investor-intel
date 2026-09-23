@@ -7,7 +7,11 @@ import {
   WRAPPER_ASSET_TABLE, WRAPPER_TOKEN_TABLE,
 } from './capture-rwa-depth.ts'
 
-const NOW = new Date(Math.floor((Date.now() - 7 * 86_400_000) / 3_600_000) * 3_600_000)
+// A fixed run clock, earlier than the 2026-09-16 alias reviews (14:30 and 20:47
+// UTC), because these fixtures assume no alias-asserted token contract is in
+// force yet. The previous clock ("seven days ago") crossed those reviews on
+// 2026-09-23 and six tests started failing without any code change.
+const NOW = new Date('2026-09-16T11:00:00.000Z')
 const DAY = NOW.toISOString().slice(0, 10)
 const EVM = '0x' + 'A'.repeat(40)
 const EVM2 = '0x' + 'B'.repeat(40)

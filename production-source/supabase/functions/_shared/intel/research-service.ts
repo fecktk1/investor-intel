@@ -36,7 +36,12 @@ export function researchParams(capability:string,input:unknown) {
  * ./rwa-free-read.ts for the whole rule and why it is shaped this way. */
 export type FreeSharedPlan='shared-cache'|'shared-live'
 
-export async function researchSnapshot(db:any,capability:string,params:Record<string,string>,userId:string|null,orgId?:string,page:{start:number;limit:number;assetId?:string}={start:1,limit:25},cacheOnly=false,freeShared:FreeSharedPlan|null=null) {
+/** `opts.repairRelationships` false skips the relationship-index repair below
+ * for a read that only REREADS a shared entry whose own refresh already ran that
+ * repair in the transport: the warm lane's batched rwaQuotes entry, whose
+ * dozens of assets would also exceed intel_record_market_source_versions'
+ * 100-row batch and fail the read. Every existing caller keeps the default. */
+export async function researchSnapshot(db:any,capability:string,params:Record<string,string>,userId:string|null,orgId?:string,page:{start:number;limit:number;assetId?:string}={start:1,limit:25},cacheOnly=false,freeShared:FreeSharedPlan|null=null,opts:{repairRelationships?:boolean}={}) {
   if(capability==='catalog') {const plan=cmcPlan(Date.now(),await loadCmcOperatingSettings(db));return {version:1,capability,state:'fresh',data:{rows:Object.entries(CMC_CAPABILITIES).map(([id,c])=>({id,endpoint:c.path,minimumPlan:c.tier,available:planAllows(plan,c.tier),ttlSeconds:c.ttl})),total:Object.keys(CMC_CAPABILITIES).length,hasMore:false},reason:null}}
   const settings=await loadCmcOperatingSettings(db),connected=connectedDemandEnabled(settings,key=>{try{return Deno.env.get(key)}catch{return undefined}})
   // The free lane is its own read context, not a variant of the paid one. Both
@@ -52,7 +57,7 @@ export async function researchSnapshot(db:any,capability:string,params:Record<st
   const result=await requestCmc(capability,params,ctx)
   // Repair the metadata-only relationship index from the same cached response;
   // no extra provider call and no private book data enter this shared record.
-  if(capability==='rwaQuotes'&&result.payload&&result.provenance.fetchedAt&&result.provenance.expiresAt){
+  if(capability==='rwaQuotes'&&opts.repairRelationships!==false&&result.payload&&result.provenance.fetchedAt&&result.provenance.expiresAt){
     const policy=cmcPolicyEnvironment(await loadCmcOperatingSettings(db),key=>Deno.env.get(key))
     const normalized=await normalizeCmcInvestigation(capability,result.payload,params,result.provenance.fetchedAt,result.provenance.expiresAt,new Date(Date.parse(result.provenance.fetchedAt)+CMC_CAPABILITIES[capability].stale*1000).toISOString(),policy)
     await retainMarketSourceVersions(db,normalized.sourceRows)

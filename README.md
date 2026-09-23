@@ -46,7 +46,7 @@ A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-pr
 const quotes = await deps.request('rwaQuotes', { rwa_id: candidates.join(',') }, ctx).catch(() => null)
 ```
 
-`deps.request` is `requestCmc`. After the registry, plan, cache and credit-reservation checks, the request goes out in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts` lines 271 to 272:
+`deps.request` is `requestCmc`. After the registry, plan, cache and credit-reservation checks, the request goes out in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts` lines 275 to 276:
 
 ```ts
 const res=await fetch(`${BASE}${spec.path}${post?'':`?${query}`}`,{method:post?'POST':'GET',headers:{'X-CMC_PRO_API_KEY':key,Accept:'application/json',...(post?{'Content-Type':'application/json'}:{})},
@@ -87,12 +87,19 @@ One call returns every wrapper of the asset with its issuer. Against CMC's own `
 
 ## Check it yourself
 
-Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call: `npm ci`, `npm test` (26 demo tests in fixture mode), `npm run build`, and the standalone production-source Deno tests (483 tests, listed in `production-source/standalone-tests.txt`) without network permission. The same commands work locally with Node.js 24 and Deno 2:
+Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call:
+- `npm ci`, then `npm test` (26 demo tests in fixture mode), then `npm run build`;
+- **2,185 Deno tests from 238 of the 279 test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission.
+
+The other 41 files (406 tests) are listed with the reason each can't run here in `production-source/excluded-tests.md`. Most import a module of the private parent platform. For the ones that only need such a module to load, `test-support/deno.json` maps it to a TEST STAND-IN in `test-support/stand-ins/`. A stand-in has no behaviour: every export throws, and any use fails the run.
+
+The same commands work locally with Node.js 24 and Deno 2:
 
 ```bash
 npm ci
 npm test
-deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)
+deno cache --config test-support/deno.json $(cat production-source/runnable-tests.txt)
+deno test --config test-support/deno.json --cached-only --allow-read --allow-env --no-check $(cat production-source/runnable-tests.txt)
 ```
 
 `--no-check` runs the tests without a TypeScript type-check pass, the same way the private repository runs these modules' tests.
@@ -106,14 +113,15 @@ deno test --allow-read --allow-env --no-check $(cat production-source/standalone
 | RWA workspace | https://thecontentforge.io/intel/rwa and https://thecontentforge.io/intel/rwa/wrappers (inside a demo session or with a free account) |
 | Demo video | https://www.youtube.com/watch?v=DUn6vZ0KKQg |
 | DoraHacks BUIDL | https://dorahacks.io/buidl/49075 |
+| X post | https://x.com/TheContentForge/status/2102454418931118198 (#BuildwithCMC, the BUIDL link and the video; public embeds cut long posts short, so [`docs/x-post-2026-09-22.png`](docs/x-post-2026-09-22.png) shows the whole post) |
 
-Also in the product: CSV export of each table (provider figures are left blank unless the data licence allows export), and a hosted MCP server with 28 grounded read tools covering all of the above, with scoped, revocable tokens and human-approved writes.
+Also in the product: CSV export of each table (provider figures are left blank unless the data licence allows export), and a hosted MCP server with 28 tools covering all of the above. 24 of them are grounded read tools. The other 4 write, each needing a scoped, revocable token: adding to a watchlist, saving a research note, and proposing a price alert that a person must approve before `write_run` makes it. The demo video shows 21 tools because it was recorded before 7 were added on 2026-09-22.
 
 ## What is in this repository
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Inside it, a standalone subset runs on its own: the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts). | `deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)` (483 tests, no key, no network permission) |
+| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,185 tests from `production-source/runnable-tests.txt`, no key, no network permission. `test-support/` holds the config and the stand-ins those commands use. |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm ci`, `npm test`, `npm run dev` (see Quick start) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |
@@ -121,7 +129,12 @@ Also in the product: CSV export of each table (provider figures are left blank u
 
 `production-source/` holds all of Investor Intel: the React frontend (`src/intel`), every Intel Edge Function, the shared Intel and market-asset modules, the Intel migrations and the Intel translations. Its git history is the real history of those paths in the private repository, from the first commit on 2026-05-08 (see [`docs/build-timeline.md`](docs/build-timeline.md) for how it was published).
 
-The standalone subset listed in `production-source/standalone-tests.txt` imports only other modules in that subset, which is why its tests run on their own. The rest of Investor Intel imports the parent platform (authentication, the Supabase client and shared helpers), which is not included, so it is there to read rather than to run. The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
+Some Investor Intel modules import the private parent platform (authentication, the Supabase client and shared provider helpers), which is not in this repository.
+- **Tests that still run.** Where a test only needs such a module to load, it runs here against a stand-in that has no behaviour.
+- **Tests that don't.** Where it needs the module to work, it is listed in `production-source/excluded-tests.md` with the reason.
+- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 483 tests behind the RWA lane and the CMC transport.
+
+The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
 
 ## What the API made possible, and where it got in the way
 
@@ -169,10 +182,11 @@ Open http://127.0.0.1:5187. The demo has three modes, set in a local `.env` (cop
 | **Live, with your own key** | `CMC_MODE=live`, `CMC_API_KEY=<your key>` and, for a hackathon Startup key, `CMC_VERIFIED_PLAN=startup` | **Real RWA listings, profiles, quotes and issuers** from `/v5/real-world-assets/*`, plus live quotes, OHLCV (Startup) and derivatives. The server spends at most 20 credits a month by default (`CMC_DEMO_CREDIT_LIMIT`) and never sends the key to the browser. |
 | Keyless | `CMC_MODE=keyless` | CoinMarketCap's anonymous public API, no key at all. It does not cover the RWA family, and the shared pool refuses bursts (HTTP 429). Caveat, verbatim: keyless commercial terms are unstated; keep it to the demo until reviewed. |
 
-The standalone production modules have their own tests (Deno 2):
+The production modules have their own tests (Deno 2). This runs the same 2,185 tests as CI:
 
 ```bash
-deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)
+deno cache --config test-support/deno.json $(cat production-source/runnable-tests.txt)
+deno test --config test-support/deno.json --cached-only --allow-read --allow-env --no-check $(cat production-source/runnable-tests.txt)
 ```
 
 ## More detail

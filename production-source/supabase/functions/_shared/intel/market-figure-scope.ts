@@ -89,6 +89,8 @@ const SOURCE_SCOPE:Record<string,string>={
  coingecko_price:'CoinGecko aggregated USD quote at its reported time. Not an executable price and not the quote of any one venue.',
  coingecko_ohlc:'CoinGecko observations at the provider spacing. Volume is not included and the spacing is not a candle width.',
  cmc_ohlcv:'CoinMarketCap completed OHLCV periods for this asset. Asset-level market data, not the price of any one pool or venue.',
+ stored_quote_candles:'Candles built from provider quotes we stored, grouped by period. Highs and lows are those of the stored quotes, not of every trade, and a period with nothing stored is left empty.',
+ stored_daily_prices:'Daily prices from our stored archive, captures and backfill. No provider was asked for this chart, and a day with nothing stored is left empty.',
  market_catalogue:'Stored market catalogue figures at their last refresh. Rankings, filters and counts describe that stored snapshot, not the market at this moment.',
  capture_record:'A recorded capture of provider figures at the stated capture time. Reading it made no new provider call and it is not a reading of the market now.',
  news_curated:'Stories selected and summarised by automated review inside their review window. A summary is not the source article and not a verified claim.',

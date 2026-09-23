@@ -113,7 +113,10 @@ Deno.test('Markets detail opens the full asset page for a pasted contract identi
   assertEquals(body.cexCoverage,'unverified')
   // No CoinMarketCap identity, so no CoinMarketCap request is ever made.
   assertEquals(f.fetched.some((u)=>/coinmarketcap/i.test(u)),false)
-  assertEquals(f.seen.some((t)=>/^rpc:/.test(t)&&t!=='rpc:can_access_intel'),false)
+  // The only other RPC allowed is the stored-price read (#252), which looks up our
+  // own archived candles for this contract and never calls a provider or spends
+  // a credit. Any credit or CoinMarketCap RPC still fails this test.
+  assertEquals(f.seen.some((t)=>/^rpc:/.test(t)&&t!=='rpc:can_access_intel'&&t!=='rpc:intel_stored_price_series'),false)
  } finally { restore() }
 }))
 // The CoinMarketCap response shape is unchanged apart from `identity` and the

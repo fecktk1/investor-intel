@@ -406,6 +406,8 @@ export default function MarketAssetPage() {
           historyError={research.error || (position.error && intelReadError(position.error, 'Your portfolio activity is temporarily unavailable. Please retry from Your position.'))} historyHasMore={!!(research.nextCursor || position.nextCursor)}
           onLoadMoreHistory={() => { if (research.nextCursor) research.loadMore(); if (position.nextCursor) position.loadMore() }}
           priceCoverage={{ chartSource:d.chartSource&&d.chartSource.provider==='coinmarketcap_kline'?{...d.chartSource,provider:chartProviderLabel(d.chartSource.provider)}:d.chartSource,capture:d.captureProof?{proof:d.captureProof,bars:d.candles}:null, coverage: d.chartCoverage, state: d.chartState, provenance: d.chartProvenance,
+            // A series built from stored prices says what it is built from (TokenChart caption).
+            storedSeries: d.storedSeries ?? null,
             // The server's receipts and envelope for THIS first load only. Every other
             // period's snapshot carries its own, re-derived by the chart.
             chartEnvelope: d.figureProvenance?.chart ?? null, chartReceipts: d.chartReceipts ?? null }}

@@ -5,8 +5,10 @@
 #   inject synthetic responses;
 # - the production-source Deno tests run without --allow-net, so any network
 #   call from a test would fail rather than reach a provider.
-# The only downloads are the npm packages in package-lock.json and the Deno
-# standard-library modules the tests import.
+# The only downloads are the npm packages in package-lock.json and, in their
+# own step before the tests, the modules the Deno tests import: the Deno
+# standard library and @supabase/supabase-js. The Deno tests then run from that
+# cache only (--cached-only) and without network permission.
 name: test
 
 on:
@@ -45,10 +47,18 @@ jobs:
         with:
           deno-version: v2.8.2
 
+      # production-source/ holds all of Investor Intel. The packaging script writes
+      # the Deno tests that run here to production-source/runnable-tests.txt, and
+      # every other one, with the reason, to production-source/excluded-tests.md.
+      # Some Intel modules import a module of the private parent platform, which is
+      # not in this repository. test-support/deno.json maps such an import, for
+      # these tests only, to a TEST STAND-IN in test-support/stand-ins/ that only
+      # lets the module load: every export throws when used, and any use fails
+      # the run. The published source is unchanged.
+      - name: Fetch the Deno test dependencies
+        run: deno cache --config test-support/deno.json $(cat production-source/runnable-tests.txt)
+
       # --no-check runs the tests without a TypeScript type-check pass, the same
-      # way the private repository runs these modules' tests. production-source/
-      # holds all of Investor Intel; only its standalone subset runs on its own
-      # (the rest imports the parent platform, which is not included), and the
-      # packaging script writes that list to production-source/standalone-tests.txt.
-      - name: Production-source tests (Deno, no network permission)
-        run: deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)
+      # way the private repository runs these modules' tests.
+      - name: Production-source tests (Deno, cache only, no network permission)
+        run: deno test --config test-support/deno.json --cached-only --allow-read --allow-env --no-check $(cat production-source/runnable-tests.txt)

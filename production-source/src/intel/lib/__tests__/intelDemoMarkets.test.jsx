@@ -180,3 +180,28 @@ describe('Markets in the demo', () => {
     expect(demoRequestKey(degenScreenRequest())).toBe(demoSnapshotKey('intel-degen', { orgId: DEMO_ORG_ID, sort: 'trending', dir: 'desc', showExcluded: false, page: 0, limit: 50 }))
   })
 })
+
+describe('the Markets table says when its shared snapshot was captured', () => {
+  it('the provenance line carries the snapshot capture time as plain text, in the demo as in the product', async () => {
+    // The real English strings, so the line is read as a visitor reads it.
+    const { default: i18n } = await import('i18next')
+    const { initReactI18next } = await import('react-i18next')
+    const { readFileSync } = await import('node:fs')
+    const { resolve } = await import('node:path')
+    const intel = JSON.parse(readFileSync(resolve(process.cwd(), 'src/i18n/locales/en/intel.json'), 'utf8'))
+    await i18n.use(initReactI18next).init({ lng: 'en', fallbackLng: 'en', ns: ['intel'], defaultNS: 'intel', resources: { en: { intel } }, interpolation: { escapeValue: false } })
+    const entries = plannedEntries()
+    const demo = demoClient(entries)
+    state.client = demo.client
+    await renderPage('/intel/markets')
+    const line = host.querySelector('[data-testid="markets-snapshot-line"]')
+    expect(line).not.toBeNull()
+    const body = entries[demoRequestKey(marketsScreenRequest())]
+    const { SNAPSHOT_AS_OF_FORMAT } = await import('../../pages/MarketsPage')
+    const captured = new Date(body.snapshot.lastUpdated).toLocaleString(undefined, SNAPSHOT_AS_OF_FORMAT)
+    expect(line.textContent).toBe(`CoinMarketCap · Shared market snapshot · as of ${captured}`)
+    // Plain text on the existing line: no pill, chip, badge, card or tile.
+    expect(line.tagName).toBe('SPAN')
+    expect(line.outerHTML).not.toMatch(/class="[^"]*\b(pill|chip|badge|card|tile)\b/)
+  })
+})

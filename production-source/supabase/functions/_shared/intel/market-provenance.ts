@@ -49,13 +49,20 @@ const worst=(states:FigureFreshness[]):FigureFreshness|null=>
 const CHART_SCOPE:Record<string,string>={coinmarketcap:'cmc_ohlcv',coinmarketcap_kline:'dex_ohlcv',coingecko:'coingecko_ohlc',birdeye:'birdeye_ohlcv',geckoterminal:'dex_ohlcv',dexscreener:'dex_pool'}
 /** Chart provenance for any candle source. CMC charts carry transport receipts;
  * other rungs carry their own state and clock and are described as stored. */
+/** A series built from stored prices (stored-candles.ts) names its own scope:
+ * candles grouped from stored quotes, or daily rows. Mirrored in
+ * src/intel/lib/source-receipt.js chartSnapshotProvenance. */
+export function storedChartScope(chart:any):string|null {
+ const mode=chart?.storedSeries?.mode
+ return mode==='quotes'?'stored_quote_candles':mode==='daily'||mode==='weekly'?'stored_daily_prices':null
+}
 export function chartProvenance(chart:any,now=Date.now()):{receipts:SourceReceipt[];envelope:FigureEnvelope} {
  const source=String(chart?.bestProvider||chart?.source||'unknown')
  const receipts:SourceReceipt[]=(Array.isArray(chart?.receipts)?chart.receipts:[]).map((r:any)=>fromCmcReceipt(r,now)).filter((r:SourceReceipt|null):r is SourceReceipt=>!!r)
  const fetchedAt=newest([...(Array.isArray(chart?.provenance)?chart.provenance.map((p:any)=>p?.fetchedAt):[]),chart?.last_refreshed_at,chart?.lastRefreshedAt])
  const state=String(chart?.sourceState??chart?.chartState??'')
  const freshness=receipts.length?worst(receipts.map(r=>receiptFreshness(r,now))):state==='stale'?'stale':state==='unavailable'||!(chart?.candles?.length)?'unavailable':null
- return {receipts,envelope:figureEnvelope(receipts.some(r=>r.origin==='live')?'live':'stored',source,fetchedAt,freshness,CHART_SCOPE[source]??(source.includes('exchange')||['binance','coinbase','kraken','kucoin','okx','bybit'].includes(source)?'exchange_ohlcv':figureScope('price')))}
+ return {receipts,envelope:figureEnvelope(receipts.some(r=>r.origin==='live')?'live':'stored',source,fetchedAt,freshness,storedChartScope(chart)??CHART_SCOPE[source]??(source.includes('exchange')||['binance','coinbase','kraken','kucoin','okx','bybit'].includes(source)?'exchange_ohlcv':figureScope('price')))}
 }
 
 /** Receipts and envelopes for the single-asset detail quote. A CoinMarketCap

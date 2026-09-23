@@ -94,11 +94,17 @@ import { RWA_WRAPPER_BACKFILL_OPS } from '../_shared/intel/capture-rwa-wrapper-b
 // before. Its views also serve issuer concentration and the expected-ticker watch.
 // It answers to the `coinmarketcap` / `rwa_coverage` policy row.
 import { RWA_COVERAGE_OPS } from '../_shared/intel/capture-rwa-coverage.ts'
+// Keeps the judge-path RWA entries of the shared cache inside their window: the
+// first /intel/rwa list page and ONE batched quotes read of the lookup examples,
+// that page's rows and the wrapper board. At most 2 credits a run, about 47 a
+// day, claimed from the same daily free RWA budget as the public lookup; its
+// pg_cron tick only calls in when an entry reaches the end of its window.
+import { RWA_QUOTE_WARM_OPS } from '../_shared/intel/capture-rwa-quote-warm.ts'
 
 // Both keyless RWA lanes are registered here. Dropping either spread silently
 // removes a whole capture lane while every test still passes, so both must
 // appear here and in LANE_VIEWS (_shared/intel/capture-read-envelope.ts).
-const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...LAUNCHPAD_CAPTURE_OPS, ...SUNPUMP_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS, ...RWA_UNDERLYING_CAPTURE_OPS, ...RWA_DEPTH_CAPTURE_OPS, ...RWA_WRAPPER_CAPTURE_OPS, ...RWA_COVERAGE_OPS, ...RWA_WRAPPER_BACKFILL_OPS, ...UNUSUAL_CAPTURE_OPS }
+const LANE_OPS = { ...VENUE_CAPTURE_OPS, ...CATEGORY_CAPTURE_OPS, ...FX_CAPTURE_OPS, ...LISTING_CAPTURE_OPS, ...MEME_CAPTURE_OPS, ...LAUNCHPAD_CAPTURE_OPS, ...SUNPUMP_CAPTURE_OPS, ...CANDLE_CAPTURE_OPS, ...RWA_YIELD_CAPTURE_OPS, ...RWA_ISSUER_CAPTURE_OPS, ...RWA_UNDERLYING_CAPTURE_OPS, ...RWA_DEPTH_CAPTURE_OPS, ...RWA_WRAPPER_CAPTURE_OPS, ...RWA_COVERAGE_OPS, ...RWA_WRAPPER_BACKFILL_OPS, ...UNUSUAL_CAPTURE_OPS, ...RWA_QUOTE_WARM_OPS }
 
 const corsHeaders = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type, x-cron-secret' }
 function json(body: unknown, status = 200) {

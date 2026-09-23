@@ -12,12 +12,17 @@
 //                     cannot reach the provider and stamps no demand); for a
 //                     tokenised real-world asset token that only the RWA lanes
 //                     capture, the newest captured wrapper or coverage row.
-//   chart candles     the exchange registry's response cache (cacheOnly), the
-//                     CoinMarketCap OHLCV cache (render) and the stored daily
-//                     archive (market_asset_candles). When none of those holds a
-//                     period of the requested window at its width, the stored
-//                     daily archive answers the window at one day, said plainly.
-//   history           the CoinMarketCap history cache (render).
+//   chart candles     STORED PRICES FIRST (stored-candles.ts): intraday candles
+//                     built from the CoinMarketCap quotes the observation lanes
+//                     store (or the CoinGecko catalogue snapshots), the RWA wrapper
+//                     and coverage captures, and daily rows from the candle
+//                     archive and the wrapper OHLCV backfill, at the finest width
+//                     the stored spacing supports. Only when nothing is stored for
+//                     the window: the exchange registry's response cache
+//                     (cacheOnly), the CoinMarketCap OHLCV cache (render) and the
+//                     stored daily archive at one day, said plainly.
+//   history           the CoinMarketCap history cache (render), then the same
+//                     stored prices (intraday buckets, or daily rows).
 //   enrichment        the stored narrative, catalyst and unlock reads, and the
 //                     Birdeye cache only (allowLive false).
 //
@@ -46,6 +51,7 @@ import { loadExchangeCandles } from './exchange-candles.ts'
 import { archiveSeries } from './candle-archive.ts'
 import { CANDLE_RANGE_MS } from './candle-ladder.ts'
 import { chartSeriesResponse } from './chart-series-contract.ts'
+import { loadStoredCandles, storedIdentity, storedRpc, dailyRows, intradayBars } from './stored-candles.ts'
 import { quoteProvenance, chartProvenance, venueProvenance, curatedNewsWithEnvelopes } from './market-provenance.ts'
 import { readMetricAgreement } from './metric-agreement-read.ts'
 import { metricAgreementReceipt } from './metric-agreement.ts'
@@ -159,7 +165,16 @@ async function archiveWindow(db: Db, assetKey: string | null, range: string, req
 }
 
 /** Candles for one asset from stored data only (see the header). */
-export async function demoAssetCandles(db: Db, canonical: Any, verified: boolean, timeframe: string, interval = 'auto', lookback = 0, now = Date.now()): Promise<Any> {
+export async function demoAssetCandles(db: Db, canonical: Any, verifiedInput: boolean | (() => Promise<boolean>), timeframe: string, interval = 'auto', lookback = 0, now = Date.now()): Promise<Any> {
+  // Stored prices first: the same window every visit, labelled with where each
+  // candle came from. A failed stored read falls through to the caches below.
+  const stored = await loadStoredCandles(db, storedIdentity(canonical), timeframe, interval, now, lookback).catch((e) => {
+    console.error('intel_demo_stored_candles_failed', String((e as Error)?.message || e).slice(0, 160))
+    return null
+  })
+  if (Array.isArray(stored?.candles) && stored.candles.length) return stored
+  // Only now is the exchange identity needed (the cached exchange rung below).
+  const verified = typeof verifiedInput === 'function' ? await verifiedInput().catch(() => false) : verifiedInput
   const identityKey = marketCanonicalIdentity(canonical).canonicalAssetKey || (canonical?.source_provider && canonical?.provider_id != null ? `market:${canonical.source_provider}:${canonical.provider_id}` : null)
   const chart: Any = await loadMarketCandles({
     assetKey: identityKey,
@@ -266,17 +281,21 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
   const quoteRead = quoteProvenance(quote, cmc?.receipts || [])
   if (input.quotesOnly) return { status: 200, body: { ...quote, sourceProvider: resolved.data.source_provider, providerId: resolved.data.provider_id, quoteReason, quoteReceipts: quoteRead.receipts, quoteProvenance: quoteRead.figureProvenance } }
   sym = String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
-  const [identityProfile, identityMapping, claimants] = await Promise.all([
-    db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
-    db.from('exchange_asset_mappings').select('*').eq('normalized_symbol', sym).eq('is_active', true).maybeSingle(),
-    db.from('market_assets').select('provider_id', { count: 'exact', head: true }).eq('normalized_symbol', sym),
-  ])
-  const identityMatch = matchCexEnrichment({ normalizedSymbol: sym, providerId: resolved.data.provider_id, platforms: resolved.data.platforms }, { profileBySym: new Map(identityProfile.data ? [[sym, identityProfile.data]] : []), mappingBySym: new Map(identityMapping.data ? [[sym, identityMapping.data]] : []), symbolCounts: new Map([[sym, claimants.count ?? 2]]) })
-  const cexVerified = hasVerifiedCexIdentity(resolved.data, identityMapping.data) && (identityMatch.confidence === 'high' || !!verifiedNativeMarketSymbol(resolved.data))
+  const verifiedIdentity = async (): Promise<boolean> => {
+    const [identityProfile, identityMapping, claimants] = await Promise.all([
+      db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
+      db.from('exchange_asset_mappings').select('*').eq('normalized_symbol', sym).eq('is_active', true).maybeSingle(),
+      db.from('market_assets').select('provider_id', { count: 'exact', head: true }).eq('normalized_symbol', sym),
+    ])
+    const identityMatch = matchCexEnrichment({ normalizedSymbol: sym, providerId: resolved.data.provider_id, platforms: resolved.data.platforms }, { profileBySym: new Map(identityProfile.data ? [[sym, identityProfile.data]] : []), mappingBySym: new Map(identityMapping.data ? [[sym, identityMapping.data]] : []), symbolCounts: new Map([[sym, claimants.count ?? 2]]) })
+    return hasVerifiedCexIdentity(resolved.data, identityMapping.data) && (identityMatch.confidence === 'high' || !!verifiedNativeMarketSymbol(resolved.data))
+  }
   if (input.candlesOnly) {
-    const c = await demoAssetCandles(db, resolved.data, cexVerified, timeframe, interval, lookback)
+    // Candles only: the exchange identity is read only if stored prices hold nothing.
+    const c = await demoAssetCandles(db, resolved.data, verifiedIdentity, timeframe, interval, lookback)
     return { status: 200, body: withSeries({ ...c, timeframe, lookbackBars: lookback, chartAsset: marketCanonicalIdentity(resolved.data).canonicalAssetKey || `market:${resolved.data.source_provider}:${resolved.data.provider_id}` }) }
   }
+  const cexVerified = await verifiedIdentity()
   const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR] = await Promise.all([
     db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
     db.from('exchange_latest_market_signals').select('*').eq('normalized_symbol', sym).maybeSingle(),
@@ -369,24 +388,45 @@ const NO_RISK_METRICS = { volatility30d: null, maxDrawdown: null, distanceFromHi
  * holds the window: the demo shows stored data only. */
 export const DEMO_STORED_ONLY = 'demo_stored_only'
 
-/** A daily history range from the stored daily archive, when the CoinMarketCap
- * history cache holds nothing for it. Closes only, dated, named as the archive. */
-async function archivedHistory(db: Db, asset: Any, range: string, now: number): Promise<Any | null> {
+/** A history range from STORED prices, when the CoinMarketCap history cache
+ * holds nothing for it: 48 hours as 5-minute buckets, 7 and 30 days as hourly
+ * buckets (each point the last stored price of its bucket, at that price's own
+ * time), and 90 days or a year as daily rows (the archive close, else the
+ * backfill close, else the day's last stored price). Nothing is fabricated: an
+ * empty bucket is no point. Costs no credit, and says which store it read. */
+export async function storedHistory(db: Db, asset: Any, range: string, now: number): Promise<Any | null> {
   const plan = historyPlan(range)
-  if (!plan || plan.interval !== 'daily') return null
-  const keys = [marketCanonicalIdentity(asset).canonicalAssetKey, asset?.source_provider && asset?.provider_id != null ? `market:${asset.source_provider}:${asset.provider_id}` : null]
-  for (const key of [...new Set(keys.filter(Boolean))]) {
-    const read = await archiveSeries(db, key as string, '1D', now - plan.count * DAY, now).catch(() => null)
-    const points = (read?.bars || []).filter((bar: Any) => Number.isFinite(Number(bar.c)))
-      .map((bar: Any) => ({ t: bar.t, price: Number(bar.c), volume: bar.v == null ? null : Number(bar.v), marketCap: null }))
-    if (points.length) {
-      return { points, interval: 'daily', source: 'stored daily archive', observedAt: new Date(points[points.length - 1].t).toISOString(), fetchedAt: null, state: 'stale', reason: null, credits: 0 }
-    }
+  if (!plan) return null
+  const identity = storedIdentity(asset)
+  if (!identity.cmcId && !identity.coingeckoId && !identity.archiveKeys.length) return null
+  const rpc = storedRpc(db, identity)
+  const provider = identity.cmcId ? 'CoinMarketCap' : 'CoinGecko'
+  let points: Any[] = []
+  let sourceKey = 'stored_quotes'
+  if (plan.interval === 'daily') {
+    const answer = await rpc('daily', { from: now - plan.count * DAY, to: now })
+    const rows = dailyRows(answer?.days)
+    points = rows.map((row) => ({ t: row.t, price: row.c, volume: row.kind === 'archive' ? row.v : null, marketCap: null }))
+    sourceKey = 'stored_daily'
+  } else {
+    const step = plan.interval === '5m' ? 300_000 : 3_600_000
+    const answer = await rpc('buckets', { from: Math.floor((now - plan.count * step) / step) * step, to: now, bucketSeconds: step / 1000 })
+    const rows: Any[] = Array.isArray(answer?.bars) ? answer.bars : []
+    const kept = new Set(intradayBars(rows, step).bars.map((bar) => bar.t))
+    points = rows.filter((row) => Array.isArray(row) && kept.has(Number(row[0])))
+      .map((row) => ({ t: Number(row[6]) || Number(row[0]), price: Number(row[4]), volume: null, marketCap: null }))
   }
-  return null
+  if (!points.length) return null
+  const newest = points[points.length - 1].t
+  return {
+    points, interval: plan.interval,
+    source: sourceKey === 'stored_daily' ? 'stored daily prices' : `stored ${provider} quotes`, sourceKey, sourceProvider: provider,
+    observedAt: new Date(newest).toISOString(), fetchedAt: null,
+    state: now - newest <= (plan.interval === 'daily' ? 3 * DAY : 3 * 3_600_000) ? 'fresh' : 'stale', reason: null, credits: 0,
+  }
 }
 
-/** The price history figure, from the CoinMarketCap history cache only. */
+/** The price history figure: the CoinMarketCap history cache, then stored prices. */
 export async function demoMarketHistory(db: Db, input: { symbol?: string; sourceProvider?: string; providerId?: string; range?: string }, resolvedAsset?: Any): Promise<DemoReadAnswer> {
   const range = input.range || '90d'
   if (!historyPlan(range)) return { status: 400, body: { error: 'invalid_history_range' } }
@@ -397,10 +437,13 @@ export async function demoMarketHistory(db: Db, input: { symbol?: string; source
   if (!resolved.data) return { status: 404, body: { error: 'asset_not_found', symbol: sym } }
   const identity = detailIdentity(resolved.data, null)
   const cmcId = marketCmcIdentity(resolved.data)
-  if (!cmcId) return { status: 200, body: { history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS, identity } }
   const now = Date.now()
-  let history: Any = await loadAssetHistory(db, { cmcId, range, request: cacheOnlyCmc, ctx: { caller: DEMO_READ_CALLER } })
-  if (!history.points.length) history = await archivedHistory(db, resolved.data, range, now) || { ...history, reason: DEMO_STORED_ONLY }
+  // A CoinGecko row with no CoinMarketCap listing still has stored catalogue
+  // snapshots; only an asset with neither says it has no history here.
+  let history: Any = cmcId
+    ? await loadAssetHistory(db, { cmcId, range, request: cacheOnlyCmc, ctx: { caller: DEMO_READ_CALLER } })
+    : unavailableHistory(range, 'no_coinmarketcap_listing')
+  if (!history.points.length) history = await storedHistory(db, resolved.data, range, now).catch(() => null) || (cmcId ? { ...history, reason: DEMO_STORED_ONLY } : history)
   const metrics = history.points.length ? {
     volatility30d: realizedVolatility(history.points), maxDrawdown: maxDrawdown(history.points),
     distanceFromHigh: distanceFromHigh(history.points, now), timeUnderWaterDays: timeUnderWaterDays(history.points),

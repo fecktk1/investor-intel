@@ -199,6 +199,7 @@
     "select": "Auswählen",
     "selected": "für den Vergleich ausgewählt",
     "sharedSnapshot": "Gemeinsamer Markt-Snapshot",
+    "sharedSnapshotAsOf": "Stand {{date}}",
     "storage_failed": "Der Browserspeicher ist nicht verfügbar. Lass diese Ansicht geöffnet, um deine Auswahl zu behalten.",
     "suggest_count": "{{total}} passende Assets. Wähle mit den Pfeiltasten nach oben und unten eines aus und öffne es mit der Eingabetaste.",
     "suggest_failed": "Asset-Vorschläge sind nicht verfügbar. Deine Eingabe filtert diese Ansicht weiterhin.",
@@ -1278,7 +1279,33 @@
     "working": {
       "saving": "Wird gespeichert",
       "saved": "Gespeichert"
-    }
+    },
+    "width_1M": "1 Minute",
+    "width_5M": "5 Minuten",
+    "width_15M": "15 Minuten",
+    "width_30M": "30 Minuten",
+    "width_1H": "1 Stunde",
+    "width_4H": "4 Stunden",
+    "width_1D": "1 Tag",
+    "width_1W": "1 Woche",
+    "spacing_minutes": "{{count}} Min.",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} T",
+    "stored_quotes": "Jede Kerze umfasst {{width}} und ist aus gespeicherten {{provider}}-Kursen gebildet, etwa einer alle {{spacing}} ({{count}} in diesem Chart).",
+    "stored_quotes_few": "Jede Kerze umfasst {{width}} und ist aus gespeicherten {{provider}}-Kursen gebildet ({{count}} in diesem Chart).",
+    "stored_high_low": "Hochs und Tiefs sind die der gespeicherten Kurse, nicht die jedes Trades.",
+    "stored_singles": "Kerzen aus nur einem gespeicherten Preis werden flach gezeichnet: {{count}} von {{total}}.",
+    "stored_daily_archive": "Tageskerzen aus dem gespeicherten Archiv ({{providers}}): {{count}}.",
+    "stored_daily_backfill": "Tagesschlusskurse aus dem CoinMarketCap-OHLCV-Backfill: {{count}}.",
+    "stored_daily_quotes": "Tage aus gespeicherten {{provider}}-Kursen: {{count}}.",
+    "stored_weekly": "Jede Kerze ist eine vollständige Woche dieser Tage.",
+    "stored_line": "Einige Tage haben nur einen Schlusskurs, daher zeigt der Chart eine Linie der Schlusskurse.",
+    "stored_daily_further": "Gespeicherte Intraday-Preise beginnen erst spät in diesem Zeitraum, daher wird er aus Tageswerten gezeichnet, die weiter zurückreichen.",
+    "stored_ceiling": "Kerzen zu {{requested}} wären für diesen Zeitraum zu viele, daher umfasst jede Kerze hier {{width}}.",
+    "stored_coarser": "Kerzen zu {{requested}} enthielten jeweils weniger als einen gespeicherten Preis, daher umfasst jede Kerze hier {{width}}.",
+    "stored_reach": "Gespeicherte Preise beginnen am {{date}}, innerhalb dieses Zeitraums.",
+    "stored_gaps": "Ein Zeitraum ohne gespeicherten Wert bleibt leer. Aus gespeicherten Daten gelesen; kein Anbieter wurde abgefragt.",
+    "single_price": "Für diesen Zeitraum ist nur ein Preis erfasst: {{price}} am {{time}}. Ein Chart braucht mindestens zwei."
   },
   "charts": {
     "state_unavailable_on_plan": "Im Tarif dieses Workspace nicht erfasst.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "Niedrig",
     "volatility_sub": "Annualisierte Standardabweichung der logarithmischen Renditen über {{windowDays}} Tage, aus {{samples}} Renditen im eigenen Intervall dieser Reihe.",
     "volatility_sub_empty": "Annualisierte Standardabweichung der logarithmischen Renditen über das geladene Fenster.",
-    "volatility_title": "Realisierte Volatilität über 30 Tage"
+    "volatility_title": "Realisierte Volatilität über 30 Tage",
+    "range_stored": "gespeicherte Daten",
+    "demo_prompt": "In der Demo stammt der Preisverlauf nur aus gespeicherten Daten. Kein Anbieter wird abgefragt, es wird also nichts verbraucht. Wähle oben einen Bereich.",
+    "demo_note": "Nur aus gespeicherten Daten gelesen. Kein Anbieter wurde abgefragt, daher wurden keine Credits verbraucht.",
+    "source_stored_quotes": "gespeicherte {{provider}}-Kurse",
+    "source_stored_daily": "gespeicherte Tagespreise"
   },
   "asset_facts": {
     "age_sentence": "Gelistet {{dateAdded}} · gestartet {{dateLaunched}} · {{ageDays}} Tage beim Anbieter · Kohorte {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Meldungen aus gefolgten und globalen Quellen, nach Regeln gebündelt und sortiert. Eine Sortierung ist kein Urteil über die Richtigkeit.",
     "signals_stored": "Signale, die aus gespeicherten Quellen erzeugt und beim Lesen dieser Ansicht für dich sortiert wurden. Ein Signal ist ein Rechercheanstoß, keine Empfehlung.",
     "execution_quote": "Ein Routing-Angebot zu seinem Angebotszeitpunkt, dazu On-Chain-Pool-Kontext. Keine Ausführung, die jemand erhalten hat, und keine Handelsempfehlung.",
-    "exchange_signal": "Eine Einordnung über die Ticker der abgedeckten zentralen Börsen zu deren gemeldetem Zeitpunkt. Kein Preis an einer einzelnen Börse und keine Empfehlung."
+    "exchange_signal": "Eine Einordnung über die Ticker der abgedeckten zentralen Börsen zu deren gemeldetem Zeitpunkt. Kein Preis an einer einzelnen Börse und keine Empfehlung.",
+    "stored_quote_candles": "Kerzen aus von uns gespeicherten Anbieterkursen, nach Zeitraum gruppiert. Hochs und Tiefs sind die der gespeicherten Kurse, nicht die jedes Trades, und ein Zeitraum ohne gespeicherten Wert bleibt leer.",
+    "stored_daily_prices": "Tagespreise aus unserem gespeicherten Archiv, unseren Erfassungen und dem Backfill. Für diesen Chart wurde kein Anbieter abgefragt, und ein Tag ohne gespeicherten Wert bleibt leer."
   },
   "receipt_state": {
     "provider": "Anbieter",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Aufschlag gegenüber dem Anker",
     "served_live": "Live-Aufruf an CoinMarketCap für diese Abfrage",
     "served_cache": "Gemeinsamer Cache (Alter: {{age}}), kein Aufruf",
+    "batch_note": "Dieser Wert stammt aus einem einzigen geplanten, gemeinsamen Abruf von {{size}} Assets, der oben gezeigten Anfrage; diese Abfrage hat keinen Aufruf ausgelöst.",
     "served_retained": "Aufbewahrte Kopie (Alter: {{age}}), da der Live-Lesevorgang nicht geantwortet hat",
     "served_capture": "Gespeicherte Erfassung (Alter: {{age}}), kein Aufruf für diese Abfrage",
     "served_unavailable": "Nichts hat geantwortet",

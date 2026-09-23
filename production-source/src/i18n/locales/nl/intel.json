@@ -199,6 +199,7 @@
     "select": "Selecteren",
     "selected": "geselecteerd om te vergelijken",
     "sharedSnapshot": "Gedeelde marktmomentopname",
+    "sharedSnapshotAsOf": "stand van {{date}}",
     "storage_failed": "Browseropslag is niet beschikbaar. Houd dit scherm open om je selectie te behouden.",
     "suggest_count": "{{total}} overeenkomende activa. Kies er een met de pijltjestoetsen omhoog en omlaag en open het met Enter.",
     "suggest_failed": "Activasuggesties zijn niet beschikbaar. Wat je typt filtert dit scherm nog steeds.",
@@ -1278,7 +1279,33 @@
     "working": {
       "saving": "Opslaan",
       "saved": "Opgeslagen"
-    }
+    },
+    "width_1M": "1 minuut",
+    "width_5M": "5 minuten",
+    "width_15M": "15 minuten",
+    "width_30M": "30 minuten",
+    "width_1H": "1 uur",
+    "width_4H": "4 uur",
+    "width_1D": "1 dag",
+    "width_1W": "1 week",
+    "spacing_minutes": "{{count}} min",
+    "spacing_hours": "{{count}} h",
+    "spacing_days": "{{count}} d",
+    "stored_quotes": "Elke candle beslaat {{width}} en is opgebouwd uit opgeslagen {{provider}}-koersen, ongeveer één per {{spacing}} ({{count}} in deze grafiek).",
+    "stored_quotes_few": "Elke candle beslaat {{width}} en is opgebouwd uit opgeslagen {{provider}}-koersen ({{count}} in deze grafiek).",
+    "stored_high_low": "Hoogste en laagste standen zijn die van de opgeslagen koersen, niet van elke transactie.",
+    "stored_singles": "Candles uit één opgeslagen prijs, vlak getekend: {{count}} van {{total}}.",
+    "stored_daily_archive": "Dagcandles uit het opgeslagen archief ({{providers}}): {{count}}.",
+    "stored_daily_backfill": "Dagslotkoersen uit de OHLCV-backfill van CoinMarketCap: {{count}}.",
+    "stored_daily_quotes": "Dagen opgebouwd uit opgeslagen {{provider}}-koersen: {{count}}.",
+    "stored_weekly": "Elke candle is een volledige week van die dagen.",
+    "stored_line": "Sommige dagen hebben alleen een slotkoers, dus de grafiek tekent een lijn van slotkoersen.",
+    "stored_daily_further": "Opgeslagen intradayprijzen beginnen laat in deze periode, dus die wordt getekend uit dagrijen die verder teruggaan.",
+    "stored_ceiling": "Candles van {{requested}} zouden te veel zijn voor deze periode, dus elke candle beslaat hier {{width}}.",
+    "stored_coarser": "Candles van {{requested}} zouden elk minder dan één opgeslagen prijs bevatten, dus elke candle beslaat hier {{width}}.",
+    "stored_reach": "Opgeslagen prijzen beginnen op {{date}}, binnen deze periode.",
+    "stored_gaps": "Een periode zonder opgeslagen waarde blijft leeg. Gelezen uit opgeslagen gegevens; er is geen aanbieder bevraagd.",
+    "single_price": "Voor deze periode is maar één prijs vastgelegd: {{price}} op {{time}}. Een grafiek heeft er minstens twee nodig."
   },
   "charts": {
     "state_unavailable_on_plan": "Niet vastgelegd in het abonnement van deze werkruimte.",
@@ -3696,7 +3723,12 @@
     "volatility_low": "Laag",
     "volatility_sub": "Geannualiseerde standaarddeviatie van logrendementen over {{windowDays}} dagen, uit {{samples}} rendementen op het eigen interval van deze reeks.",
     "volatility_sub_empty": "Geannualiseerde standaarddeviatie van logrendementen over het geladen venster.",
-    "volatility_title": "Gerealiseerde volatiliteit over 30 dagen"
+    "volatility_title": "Gerealiseerde volatiliteit over 30 dagen",
+    "range_stored": "opgeslagen gegevens",
+    "demo_prompt": "In de demo komt de prijsgeschiedenis alleen uit opgeslagen gegevens. Er wordt geen aanbieder bevraagd, dus er wordt niets uitgegeven. Kies hierboven een bereik.",
+    "demo_note": "Alleen gelezen uit opgeslagen gegevens. Er is geen aanbieder bevraagd, dus er zijn geen credits uitgegeven.",
+    "source_stored_quotes": "opgeslagen {{provider}}-koersen",
+    "source_stored_daily": "opgeslagen dagprijzen"
   },
   "asset_facts": {
     "age_sentence": "Genoteerd {{dateAdded}} · gelanceerd {{dateLaunched}} · {{ageDays}} dagen bij de aanbieder · lichting {{cohort}}",
@@ -4054,7 +4086,9 @@
     "news_stored": "Berichten uit gevolgde en wereldwijde bronnen, volgens regels gebundeld en gerangschikt. Een rangschikking is geen oordeel over juistheid.",
     "signals_stored": "Signalen die uit opgeslagen bronnen zijn gegenereerd en bij het lezen van deze weergave voor je zijn gerangschikt. Een signaal is een aanzet tot onderzoek, geen aanbeveling.",
     "execution_quote": "Eén routeringsquote op het moment van de quote, plus poolcontext on chain. Geen uitvoering die iemand heeft gekregen en geen handelsadvies.",
-    "exchange_signal": "Een classificatie over de tickers van de gedekte centrale beurzen op hun gerapporteerde tijd. Niet de prijs op één beurs en geen aanbeveling."
+    "exchange_signal": "Een classificatie over de tickers van de gedekte centrale beurzen op hun gerapporteerde tijd. Niet de prijs op één beurs en geen aanbeveling.",
+    "stored_quote_candles": "Candles opgebouwd uit koersen van aanbieders die we hebben opgeslagen, gegroepeerd per periode. Hoogste en laagste standen zijn die van de opgeslagen koersen, niet van elke transactie, en een periode zonder opgeslagen waarde blijft leeg.",
+    "stored_daily_prices": "Dagprijzen uit ons opgeslagen archief, onze vastleggingen en de backfill. Voor deze grafiek is geen aanbieder bevraagd, en een dag zonder opgeslagen waarde blijft leeg."
   },
   "receipt_state": {
     "provider": "Aanbieder",
@@ -4710,6 +4744,7 @@
     "figure_premium": "Premie tegen het anker",
     "served_live": "Live aanroep naar CoinMarketCap voor deze opzoeking",
     "served_cache": "Gedeelde cache (leeftijd: {{age}}), geen aanroep gedaan",
+    "batch_note": "Dit cijfer komt uit één geplande, gedeelde uitlezing van {{size}} assets, het verzoek hierboven; deze opzoeking deed geen aanroep.",
     "served_retained": "Bewaarde kopie (leeftijd: {{age}}): de live uitlezing gaf geen antwoord",
     "served_capture": "Opgeslagen vastlegging (leeftijd: {{age}}), geen aanroep gedaan voor deze opzoeking",
     "served_unavailable": "Niets gaf antwoord",
