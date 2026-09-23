@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-09-23T20:07:53.148Z",
+  "createdAt": "2026-09-23T20:19:22.677Z",
   "sourceFiles": [
     {
       "source": "examples/investor-intel-hackathon/adapters/ChartWatchlistAdd.jsx",
@@ -5981,8 +5981,8 @@
   "files": [
     {
       "file": "package.json",
-      "bytes": 627,
-      "sha256": "c3b32300bd40a679c54bed37ffd7779228402a612c17bfd766fdca3781d41500"
+      "bytes": 669,
+      "sha256": "d1d025bc271edf00cb9f94ac6997c034d304801db79fc8528dadbdccfe061551"
     },
     {
       "file": "package-lock.json",
@@ -6006,8 +6006,23 @@
     },
     {
       "file": "README.md",
-      "bytes": 23415,
-      "sha256": "911b474f595dff24e28c2bedfb4536360b718410aa858e979fdc3892e5a346fe"
+      "bytes": 23870,
+      "sha256": "d5006b92030551993aead9264c1cc181f3ef30371aa38a317e4b2e6246bb56f6"
+    },
+    {
+      "file": "LICENSE.md",
+      "bytes": 6341,
+      "sha256": "ebf46e20c8232fd864243803343c4ecba91e08e7a3d2ac5ea98c0166768d5fdf"
+    },
+    {
+      "file": "product/LICENSE.md",
+      "bytes": 4476,
+      "sha256": "85f231b10724986cd4e3da33b41b1e7ac788dc73840bdb3f2523bb3ef3037ef2"
+    },
+    {
+      "file": "production-source/LICENSE.md",
+      "bytes": 4476,
+      "sha256": "85f231b10724986cd4e3da33b41b1e7ac788dc73840bdb3f2523bb3ef3037ef2"
     },
     {
       "file": "index.html",
@@ -7233,14 +7248,14 @@
     },
     {
       "file": "production-source/scripts/package-investor-intel-demo.mjs",
-      "bytes": 18177,
-      "sha256": "90322837156628d24f5c3f70f67c96f51b0643ae430153a107ff4faee85a39d6",
+      "bytes": 18294,
+      "sha256": "39755b859ef82b3a27aedce95a3be310ae54748f2db381faf324cfb687424136",
       "role": "full-source"
     },
     {
       "file": "production-source/scripts/test-intel-extraction-package.mjs",
-      "bytes": 12887,
-      "sha256": "58a29d7f4464ae0ecd7ca1946b5247a53c8a4ecd349c53ad70719b82a7316687",
+      "bytes": 13544,
+      "sha256": "cc44d7b2d2a06e7819a19f1ab21e08d93e661b582c6c806742c0e7352ba04f42",
       "role": "full-source"
     },
     {

@@ -211,7 +211,14 @@ Investor Intel has been part of TheContentForge since June 2026 (narrative radar
 
 ## Licence
 
-Copyright 2026 TheContentForge. All rights reserved. This repository is public so the hackathon judges and CoinMarketCap can read, clone and run it. No licence to reuse, modify or redistribute it is granted. CoinMarketCap may feature and showcase the entry under the hackathon rules. Third-party files keep their own licences: TradingView Lightweight Charts (Apache-2.0, `product/src/intel/vendor/` and `production-source/src/intel/vendor/`) and the bundled fonts (SIL OFL 1.1, `public/fonts/`, `public/vsx-fonts/`). CoinMarketCap data is not covered by any licence here. Data provided by CoinMarketCap.com.
+Source-available, not open source ([`LICENSE.md`](LICENSE.md)). The repository is public for the hackathon so the judges and CoinMarketCap can read, clone, run and test it.
+
+- **The runnable demo and its tooling** (`server/`, `src/`, `tests/`, `test-support/`, `scripts/`, `docs/`, `evidence/` and the root files): PolyForm Noncommercial License 1.0.0. Use, change and share it for any noncommercial purpose.
+- **The Investor Intel product source** (`production-source/` and `product/`): PolyForm Strict License 1.0.0. Read, run and test it for any noncommercial purpose; do not change or redistribute it.
+- **Third-party files keep their own licences:** TradingView Lightweight Charts (Apache-2.0, in the `vendor/` folders) and the bundled fonts (SIL OFL 1.1, `public/fonts/`, `public/vsx-fonts/`).
+- **Data:** no licence here covers CoinMarketCap data or any other provider's data. Data provided by CoinMarketCap.com.
+
+Any commercial use needs written permission from TheContentForge. CoinMarketCap may feature and showcase the entry under the hackathon rules.
 
 No API key is committed. The demo reads `CMC_API_KEY` from a local `.env` that `.gitignore` excludes, and the packaging script refuses to build if any file contains a key-shaped string.
 

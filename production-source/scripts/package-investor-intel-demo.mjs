@@ -146,13 +146,13 @@ for(const [source,dest] of shared){const target=path.join(example,dest);mkdirSyn
 // public repository ignore its own production-source/, so files added in a later
 // package were silently left out of the public commit and its tests failed on a
 // fresh clone. The public repository gets public.gitignore instead.
-const PACKAGE_SOURCE_OVERRIDES=Object.freeze({'.gitignore':'public.gitignore'})
+const PACKAGE_SOURCE_OVERRIDES=Object.freeze({'.gitignore':'public.gitignore','production-source/LICENSE.md':'product/LICENSE.md'})
 const exampleSource=file=>path.join(example,PACKAGE_SOURCE_OVERRIDES[file]||file)
 writeFileSync(path.join(example,'production-source/standalone-tests.txt'),standaloneTests.join('\n')+'\n')
 writeFileSync(path.join(example,RUNNABLE_TESTS),testRun.runnable.join('\n')+'\n')
 writeFileSync(path.join(example,EXCLUDED_TESTS),testRun.markdown)
 const fullSourceFiles=new Set(fullSources.map(file=>`production-source/${file}`))
-const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest),'production-source/standalone-tests.txt',RUNNABLE_TESTS,EXCLUDED_TESTS,...testRun.testSupportFiles]
+const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','LICENSE.md','product/LICENSE.md','production-source/LICENSE.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest),'production-source/standalone-tests.txt',RUNNABLE_TESTS,EXCLUDED_TESTS,...testRun.testSupportFiles]
 // Fail closed before anything is written: the private-document denylist and the
 // secret-shape scan run over every file this package would contain.
 assertPublishable(files.map(file=>({file,text:readFileSync(exampleSource(file),'utf8'),fullSource:fullSourceFiles.has(file)})))

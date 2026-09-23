@@ -24,6 +24,13 @@ assert.ok(manifest.files.some(f=>f.file.endsWith('chart-study.worker.js')))
 assert.ok(manifest.files.some(f=>f.file.endsWith('chart-structure.worker.js')))
 assert.ok(manifest.files.some(f=>f.file.endsWith('lightweight-charts-5.2.0/LICENSE')))
 assert.ok(manifest.files.some(f=>f.file.endsWith('lightweight-charts-5.2.0/NOTICE')))
+// Source-available, never open source: PolyForm Noncommercial at the root,
+// PolyForm Strict on the product source, and no leftover all-rights-reserved text.
+for(const [file,licence] of [['LICENSE.md','PolyForm Noncommercial License 1.0.0'],['product/LICENSE.md','PolyForm Strict License 1.0.0'],['production-source/LICENSE.md','PolyForm Strict License 1.0.0']]){
+  assert.ok(manifest.files.some(f=>f.file===file),`${file} must ship`)
+  assert.ok(readFileSync(path.join(target,file),'utf8').includes(`# ${licence}`),`${file} must carry the ${licence} text`)
+}
+assert.ok(!readFileSync(path.join(target,'README.md'),'utf8').includes('All rights reserved'))
 // Private working documents never ship, and the public docs the README and the
 // submission text point at always do.
 const packaged=manifest.files.map(f=>f.file)
