@@ -1,4 +1,4 @@
-import { logProviderCall } from '../provider-budget.ts'
+import { logProviderCall,redactProviderEndpoint } from '../provider-budget.ts'
 import type { MarketAssetsContext } from './types.ts'
 import { CMC_CAPABILITIES, CMC_DEX_SCHEMA_VALIDATED, CMC_EMPTY_DATA_CAPABILITIES, CMC_FEATURE_CAPS, cmcAddsConvert, cmcParams, cmcObservedAt, cmcRequestBody, estimateCmcCredits, planAllows } from './cmc-capabilities.ts'
 import { normalizeCmcInvestigation } from '../intel/investigation-normalize.ts'
@@ -8,6 +8,7 @@ import {requestGroupedQuotes,quoteRefreshSeconds} from './cmc-quote-groups.ts'
 import {loadCmcOperatingSettings,cmcPolicyEnvironment,type CmcOperatingSettings} from './cmc-operating-settings.ts'
 import {cmcDexPoolRefusal,validateCmcDexResponse} from './cmc-dex.ts'
 import {cmcDemandPolicy,connectedDemandEnabled} from './cmc-demand-policy.ts'
+import {cmcCallProof,type CmcCallProof} from './cmc-reproduce.ts'
 export {loadCmcOperatingSettings} from './cmc-operating-settings.ts'
 
 const BASE='https://pro-api.coinmarketcap.com'
@@ -39,13 +40,24 @@ export function cmcCreditCeiling(settings:CmcOperatingSettings={}):number {
  * never be substituted here. A reported 0 is a real charge of zero and stays 0.
  *
  * keyMode is always 'keyed' today. The field exists so a later keyless lane can
- * set it; no keyless code path is or may become reachable from this product. */
+ * set it; no keyless code path is or may become reachable from this product.
+ *
+ * proof is what the provider actually answered the call behind this figure:
+ * its own status block (timestamp, error_code, credit_count) and a bounded
+ * trimmed excerpt of the body (cmc-reproduce.ts). On a live read it is THIS
+ * call's response; on a cache hit it is the cached row's stored body, which is
+ * the originating call's response verbatim, so proof.creditCount is the charge
+ * that call reported while creditCount above stays the charge of THIS read.
+ * It is optional so the recorded evidence artefacts, whose receipts predate it,
+ * still describe the same interface (RECEIPT_OPTIONAL_FIELDS in
+ * cmc-evidence-shape.ts). */
 export interface CmcReceipt {
   capability:string; endpoint:string; parameters:Record<string,string>
   httpStatus:number|null; creditCount:number|null; elapsedMs:number|null
   origin:'live'|'cache'|'negative-cache'; keyMode:'keyed'|'keyless'
   cacheAgeSeconds:number|null; ttlSeconds:number|null; staleUntil:string|null
   fetchedAt:string|null; reservation:string|null
+  proof?:CmcCallProof|null
 }
 export interface CmcResult<T=any> {
   // 'fresh' means a live 200 answered THIS read. 'cached' means the shared snapshot
@@ -68,14 +80,19 @@ async function readCache(db:any,key:string,name:string,params:Record<string,stri
     const fetched=Date.parse(data.fetched_at),spec=CMC_CAPABILITIES[name]
     // The cached row carries the ORIGINATING call's HTTP status and its clocks, so
     // a figure served from cache can still say what answered it and how old it is.
-    // The originating credit charge is NOT retained here — only provider_call_logs
-    // holds it, and that table is service-role only — so a cache hit reports no
-    // credit rather than inventing or estimating one. Read at call time so the
-    // shorten-only policy update below is reflected.
+    // creditCount is the charge of THIS read, and a cache hit made no call, so it
+    // stays null rather than an invented or estimated figure. The originating
+    // call's own charge is not lost, though: response_json is that call's body
+    // verbatim, so its status.credit_count rides in proof.creditCount with a
+    // trimmed excerpt of the body. A remembered failure keeps no body (see the
+    // negative-cache update below), and its proof says so. Read at call time so
+    // the shorten-only policy update below is reflected.
     const receipt=(origin:'cache'|'negative-cache'):CmcReceipt=>({capability:name,endpoint:spec?.path??'',parameters:params,
       httpStatus:data.status_code==null||!Number.isFinite(Number(data.status_code))?null:Number(data.status_code),creditCount:null,elapsedMs:null,
       origin,keyMode:'keyed',cacheAgeSeconds:Number.isFinite(fetched)?Math.max(0,Math.round((Date.now()-fetched)/1000)):null,
-      ttlSeconds:ttlSeconds??spec?.ttl??null,staleUntil:data.stale_until??null,fetchedAt:data.fetched_at||null,reservation:null})
+      ttlSeconds:ttlSeconds??spec?.ttl??null,staleUntil:data.stale_until??null,fetchedAt:data.fetched_at||null,reservation:null,
+      proof:cmcCallProof(origin==='cache'?data.response_json??null:null,{source:'shared-cache-row',httpStatus:data.status_code,retrievedAt:data.fetched_at,
+        missing:origin==='negative-cache'?'failure_body_not_kept':'not_recorded',secret:cmcApiKey()})})
     if(data.negative_cache && Date.parse(data.expires_at)>Date.now()) return empty(name,data.error_kind||'provider_unavailable','unavailable',receipt('negative-cache'))
     // A deployed shorter policy also applies to older cache rows. Shorten only,
     // with compare-and-set guards so a concurrent refresh cannot be overwritten.
@@ -145,6 +162,25 @@ function errorKind(status:number,code:unknown):string {
   return 'provider_unavailable'
 }
 
+/** A scheduled capture's receipt is read later from provider_call_logs, which
+ * keeps no request and no body, so the capture's own call leaves its proof here:
+ * the request it made and a bounded excerpt of what came back, one row per
+ * caller and endpoint, overwritten by each run (intel_cmc_call_proofs, service
+ * role only, excerpt capped by a CHECK). Only the scheduled capture callers
+ * write it; a reader's call has its body in the shared cache row already.
+ * Best effort: a proof that cannot be recorded never fails the call. */
+export const CMC_PROOF_CALLER_PREFIX='intel-capture-'
+async function recordCaptureProof(db:any,caller:unknown,name:string,path:string,params:Record<string,string>,proof:CmcCallProof):Promise<void> {
+  if(typeof caller!=='string'||!caller.startsWith(CMC_PROOF_CALLER_PREFIX)||typeof db?.from!=='function')return
+  try {
+    const {error}=await db.from('intel_cmc_call_proofs').upsert({caller:caller.slice(0,120),endpoint:redactProviderEndpoint(path)??path,capability:name,
+      request:{capability:name,endpoint:path,parameters:params},http_status:proof.httpStatus,credit_count:proof.creditCount,
+      error_code:proof.errorCode==null?null:String(proof.errorCode).slice(0,40),responded_at:proof.respondedAt,retrieved_at:proof.retrievedAt,
+      excerpt:proof.excerpt,excerpt_missing:proof.excerptMissing,key_mode:'keyed',recorded_at:new Date().toISOString()},{onConflict:'caller,endpoint'})??{}
+    if(error)console.warn(JSON.stringify({cmc_proof_unrecorded:{caller,endpoint:path,code:error.code??null}}))
+  } catch { /* the call and its log stand without a proof row */ }
+}
+
 /** The sole CMC transport: fixed host/path, durable cache, distributed lease,
  * reservation before fetch and exact/ conservative reconciliation after fetch.
  * No retries: each later authorized refresh must obtain its own reservation. */
@@ -192,13 +228,16 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
     const existing=inflight.get(cacheKey);if(existing)return existing
     const promise=(async()=>{
       let reservation:string|null=null,actual:number|null=null,status=0,reason:string|null=null
+      // The parsed provider body and when it arrived: the proof of this call.
+      let body:any=null,unparsed=false,answeredAt:string|null=null,proof:CmcCallProof|null=null
       const started=Date.now()
+      const liveProof=()=>proof??=cmcCallProof(body,{source:'live-response',httpStatus:status||null,retrievedAt:answeredAt,missing:unparsed?'body_not_json':'not_recorded',secret:key})
       // Built at return time so it closes over the reconciled credit_count, the
       // HTTP status and the reservation this call actually used. Never called
       // unless an HTTP request was really issued, so origin:'live' stays true.
       const liveReceipt=(fetchedAt:string|null,staleUntil:string|null):CmcReceipt=>({capability:name,endpoint:spec.path,parameters:params,
         httpStatus:status||null,creditCount:actual,elapsedMs:Date.now()-started,origin:'live',keyMode:'keyed',
-        cacheAgeSeconds:fetchedAt?0:null,ttlSeconds:ttl,staleUntil,fetchedAt,reservation})
+        cacheAgeSeconds:fetchedAt?0:null,ttlSeconds:ttl,staleUntil,fetchedAt,reservation,proof:liveProof()})
       try {
         await syncAccount(db,key,fingerprint)
         const configuredCap=cmcCreditCeiling(settings)
@@ -231,7 +270,7 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
         const post=spec.method==='POST'
         const res=await fetch(`${BASE}${spec.path}${post?'':`?${query}`}`,{method:post?'POST':'GET',headers:{'X-CMC_PRO_API_KEY':key,Accept:'application/json',...(post?{'Content-Type':'application/json'}:{})},
           ...(post?{body:JSON.stringify(cmcRequestBody(name,params))}:{}),signal:AbortSignal.timeout(8000),redirect:'error'})
-        status=res.status
+        status=res.status;answeredAt=new Date().toISOString()
         let raw:string
         try{raw=await readBoundedText(res,2_000_000)}catch(error){throw new Error(error instanceof RequestBodyError&&error.status===413?'response_too_large':'malformed_response')}
         // A REFUSAL does not have to be JSON. The provider's documented error
@@ -243,7 +282,6 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
         // fact here; the body is only evidence, so an unreadable body on a failed
         // response is logged (bounded, public text, the key travels in a header
         // and never appears in a response) and the status decides the reason.
-        let body:any=null,unparsed=false
         try{body=JSON.parse(raw)}catch{
           if(res.ok)throw new Error('malformed_response')
           unparsed=true
@@ -302,6 +340,7 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
           // unknown spending merely because a worker died or the DB timed out.
           try { await rpc(db,'cmc_request_reconcile',{p_reservation:reservation,p_actual:actual,p_status:status,p_error_kind:reason}) } catch { /* durable reservation remains */ }
           await logProviderCall(db,{provider:'coinmarketcap',dataType:spec.feature,endpoint:spec.path,calls:1,creditsOrCu:actual,cacheStatus:status===200&&!reason?'live':'error',statusCode:status,latencyMs:Date.now()-started,caller:ctx?.caller,requestId:reservation,suppressionReason:reason})
+          if(status)await recordCaptureProof(db,ctx?.caller,name,spec.path,params,liveProof())
         }
       }
     })().finally(()=>inflight.delete(cacheKey))

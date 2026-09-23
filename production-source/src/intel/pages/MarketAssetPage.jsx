@@ -77,7 +77,7 @@ import TokenRiskBadge from '../components/TokenRiskBadge'
 import FigureProvenance from '../components/FigureProvenance'
 import MetricAgreementChip from '../components/MetricAgreementChip'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
-import DemoNotInSnapshot from '../demo/DemoNotInSnapshot'
+import DemoNotInSnapshot, { DemoNotTracked, isDemoUntrackedReason } from '../demo/DemoNotInSnapshot'
 import { isIntelDemoActive } from '../demo/demo-mode'
 
 // `coinmarketcap_kline` is the contract k-line aggregate, not the listed-asset
@@ -287,10 +287,11 @@ export default function MarketAssetPage() {
       <Link to={backTo} className="text-[12px] text-[var(--accent)] flex items-center gap-1"><ArrowLeft className="h-3.5 w-3.5" /> {t('markets.backToMarkets', { defaultValue: 'Back to Markets' })}</Link>
       {(!error || candidates.length > 0) && <p className="py-8 text-sm text-[var(--fg-4)]">{candidates.length ? t('markets.choose_identity', { defaultValue: 'This symbol identifies more than one asset. Choose the asset you want to investigate.' }) : t('markets.assetNotFound', { defaultValue: 'No exchange market data for this asset yet.' })}</p>}
       {error && !candidates.length && isIntelDemoActive() && <>
-        {/* Public demo: the live asset read is not in the snapshot, but a
-            tokenised asset's captured on-chain depth is, so it still opens. */}
-        <p role="status" className="text-sm text-[var(--fg-4)]"><DemoNotInSnapshot/></p>
-        {sourceProvider === 'coinmarketcap' && providerId && <RwaTokenDepth sourceProvider={sourceProvider} providerId={providerId} />}
+        {/* Public demo: an asset our capture lanes do not track is not read at
+            all, and says so calmly. Any other miss keeps the snapshot sentence,
+            and a tokenised asset's captured on-chain depth still opens. */}
+        <p role="status" className="text-sm text-[var(--fg-4)]">{isDemoUntrackedReason(error) ? <DemoNotTracked/> : <DemoNotInSnapshot/>}</p>
+        {!isDemoUntrackedReason(error) && sourceProvider === 'coinmarketcap' && providerId && <RwaTokenDepth sourceProvider={sourceProvider} providerId={providerId} />}
       </>}
       {error && !candidates.length && !isIntelDemoActive() && <p role="alert">{t('asset.read_failed', { defaultValue: 'The asset read could not be completed.' })} <button className="underline" onClick={() => setRetry(value => value + 1)}>{t('common.retry', { defaultValue: 'Retry' })}</button></p>}
       {candidates.map(row => <Link className="intel-asset-choice" key={`${row.sourceProvider}:${row.providerId}`} to={row.href} state={location.state}>

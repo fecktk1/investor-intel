@@ -1,6 +1,8 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import TokenAvatar from './TokenAvatar'
+import ProviderText from './ProviderText'
+import { hasProviderMarkdown, plainProviderText } from '../lib/provider-text'
 
 const finite = value => value != null && value !== '' && Number.isFinite(Number(value))
 const fmtNum = value => !finite(value) ? '—' : Number(value).toLocaleString(undefined, { maximumFractionDigits: 2 })
@@ -17,6 +19,11 @@ export default function ProfilePanel({ profile, state, error, reason, onRetry })
   const p = profile || {}
   const title = p.name || p.symbol || t('profile.title', { defaultValue: 'Project profile' })
   const description = typeof p.description === 'string' ? p.description : ''
+  // Provider prose can carry markdown markers ("### "): the short form is plain
+  // text without them, the full form renders them as headings and lists. Prose
+  // without markers is shown exactly as it was published.
+  const markdown = hasProviderMarkdown(description)
+  const plainDescription = markdown ? plainProviderText(description).replace(/\s*\n+\s*/g, ' ') : description
   const supply = p.supply || {}, holders = p.holders || {}, security = p.security || {}
   const categories = Array.isArray(p.categories) ? p.categories.filter(v => typeof v === 'string') : []
   const links = [
@@ -59,8 +66,8 @@ export default function ProfilePanel({ profile, state, error, reason, onRetry })
             {p.profile_complete === false && hasFacts && <span className="text-xs text-[var(--fg-4)]">{t('profile.incomplete', { defaultValue: 'Partial' })}</span>}
             {stale && <span className="text-xs text-[var(--fg-4)]">{t('profile.stale', { defaultValue: 'Stale' })}</span>}
           </div>
-          {description && <><p className="text-xs text-[var(--fg-4)] mt-2">{t('profile.description_context', { defaultValue: 'Provider description. Figures reflect the retrieved metadata snapshot.' })}</p><p className="text-sm text-[var(--fg-3)] mt-2 break-words">{description.length > 280 ? description.slice(0,280).replace(/\s+\S*$/, '') + '…' : description}</p>
-            {description.length > 280 && <details className="intel-evidence-expand mt-2"><summary>{t('profile.read_full', { defaultValue: 'Read full profile' })}</summary><p className="text-sm text-[var(--fg-3)] mt-2 break-words">{description}</p></details>}</>}
+          {description && <><p className="text-xs text-[var(--fg-4)] mt-2">{t('profile.description_context', { defaultValue: 'Provider description. Figures reflect the retrieved metadata snapshot.' })}</p><p className="text-sm text-[var(--fg-3)] mt-2 break-words">{plainDescription.length > 280 ? plainDescription.slice(0,280).replace(/\s+\S*$/, '') + '…' : plainDescription}</p>
+            {plainDescription.length > 280 && <details className="intel-evidence-expand mt-2"><summary>{t('profile.read_full', { defaultValue: 'Read full profile' })}</summary>{markdown ? <ProviderText className="text-sm text-[var(--fg-3)] mt-2 break-words" text={description}/> : <p className="text-sm text-[var(--fg-3)] mt-2 break-words">{description}</p>}</details>}</>}
           {categories.length > 0 && <p className="text-xs text-[var(--fg-4)] mt-2 break-words">{categories.slice(0,8).join(' · ')}</p>}
           {categories.length > 8 && <details className="intel-evidence-expand mt-2"><summary>{t('profile.all_categories', { defaultValue: 'All classifications' })}</summary><p className="text-xs mt-2">{categories.join(' · ')}</p></details>}
         </div>

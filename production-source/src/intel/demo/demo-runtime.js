@@ -8,14 +8,17 @@
 //     help status probe, active-org helpers) is answered by demoFetch too,
 //   * refuses WebSocket connections to the backend host,
 //   * blocks same-origin serverless functions,
-//   * lets exactly one backend function through live, intel-rwa-lookup
-//     (DEMO_LIVE_FUNCTION): the tokenised asset lookup, and a snapshot miss of
-//     a real-world asset research read. Each request is rebuilt from its allowed
-//     fields alone, with the anon key as its only credential and cookies omitted.
+//   * lets exactly two public backend functions through (DEMO_PUBLIC_FUNCTIONS):
+//     intel-rwa-lookup (DEMO_LIVE_FUNCTION), for the tokenised asset lookup and a
+//     snapshot miss of a real-world asset research read; and intel-demo-read
+//     (DEMO_READ_FUNCTION), for a snapshot miss of a visitor's own search and the
+//     asset it opens, answered for actively tracked assets only. Each request is
+//     rebuilt from its allowed fields alone, with the anon key as its only
+//     credential and cookies omitted.
 // Nothing is persisted: the store and the snapshot cache live in this module.
 
 import { setSupabaseFetch, disableSupabaseRealtime } from '../../lib/supabase'
-import { createDemoFetch, DEMO_LIVE_FUNCTION, missBody } from './demo-fetch'
+import { createDemoFetch, DEMO_LIVE_FUNCTION, DEMO_PUBLIC_FUNCTIONS, missBody } from './demo-fetch'
 import { createDemoStore } from './demo-store'
 import { createSnapshotReader, isDemoBucketUrl } from './demo-snapshot'
 import { isIntelDemoActive, resolveDemoActive, setIntelDemoActive } from './demo-mode'
@@ -46,14 +49,16 @@ export function installIntelDemo({ supabaseUrl, anonKey = import.meta.env?.VITE_
   const onMiss = import.meta.env?.DEV
     ? (detail) => { try { (win.__intelDemoMisses ||= []).push({ at: win.location?.pathname || '', ...detail }) } catch { /* diagnostics only */ } }
     : null
-  // The public endpoint, live. A fresh request built from the sanitised body
+  // The public endpoints. A fresh request built from the sanitised body
   // demoFetch hands over: the anon key is the only credential, whatever token
-  // the demo client attached, and cookies are omitted.
-  const forwardPublic = (body) => {
+  // the demo client attached, and cookies are omitted. Only the two public
+  // functions can be named.
+  const forwardPublic = (body, fn = DEMO_LIVE_FUNCTION) => {
     if (!originalFetch || !base) return Promise.reject(new Error('fetch_unavailable'))
+    if (!DEMO_PUBLIC_FUNCTIONS.includes(fn)) return Promise.reject(new Error('demo_function_refused'))
     const headers = { 'Content-Type': 'application/json' }
     if (anonKey) { headers.apikey = anonKey; headers.Authorization = `Bearer ${anonKey}` }
-    return originalFetch(`${base}/functions/v1/${DEMO_LIVE_FUNCTION}`, { method: 'POST', headers, body: JSON.stringify(body || {}), credentials: 'omit' })
+    return originalFetch(`${base}/functions/v1/${fn}`, { method: 'POST', headers, body: JSON.stringify(body || {}), credentials: 'omit' })
   }
   const demoFetch = createDemoFetch({ supabaseUrl: base, reader, store, onMiss, forwardPublic })
 

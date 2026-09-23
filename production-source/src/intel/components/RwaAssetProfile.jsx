@@ -2,6 +2,8 @@ import React, { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import TokenAvatar from './TokenAvatar'
 import { fmtNum } from '../lib/market-format'
+import ProviderText from './ProviderText'
+import { clampProviderBlocks, providerTextBlocks } from '../lib/provider-text'
 
 // The stored descriptive profile of one tokenized real-world asset, as a plain
 // presentational block for a detail drawer.
@@ -65,7 +67,10 @@ export default function RwaAssetProfile({ profile, className = '' }) {
     )
   }
 
-  const description = clampText(profile.description)
+  // The provider's prose carries light markdown ("### " headings, bullets). It is
+  // rendered as blocks, never printed with its markers, and clamped by blocks.
+  const blocks = providerTextBlocks(profile.description)
+  const description = clampProviderBlocks(blocks, CLAMP_CHARS)
   const website = httpsOnly(profile.website)
   const employees = num(profile.employees)
   const rank = num(profile.rwaRank)
@@ -108,12 +113,10 @@ export default function RwaAssetProfile({ profile, className = '' }) {
         </p>
       )}
 
-      {description.head && (
+      {description.blocks.length > 0 && (
         <div className="mt-3">
-          <p className="text-[12px] leading-relaxed whitespace-pre-line max-w-[75ch]">
-            {expanded ? String(profile.description || '') : description.head}
-            {description.clamped && !expanded ? '…' : ''}
-          </p>
+          <ProviderText className="text-[12px] leading-relaxed max-w-[75ch]" blocks={expanded ? blocks : description.blocks}
+            after={description.clamped && !expanded ? '…' : null} />
           {description.clamped && (
             <button type="button" className="intel-text-link text-[12px] mt-1" aria-expanded={expanded} onClick={() => setExpanded(value => !value)}>
               {expanded

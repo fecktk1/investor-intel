@@ -6,13 +6,13 @@ import { loadAssetHistory } from '../intel/asset-history.ts'
 // Self-contained fake of the shared response cache and the accounting RPCs,
 // matching the shape cmc.test.ts uses. Only what the receipt paths touch exists.
 function fakeDb(options:{cache?:any;reserve?:any}={}) {
-  const state={cache:options.cache||null,caches:new Map<string,any>(),rpcs:[] as any[],logs:[] as any[]}
+  const state={cache:options.cache||null,caches:new Map<string,any>(),rpcs:[] as any[],logs:[] as any[],upserts:[] as any[]}
   return {state,rpc:(name:string,args:any)=>{
     state.rpcs.push({name,args})
     return Promise.resolve({data:name==='cmc_account_sync_claim'?{allowed:false,reason:'account_fresh'}:name==='cmc_request_reserve'?(options.reserve||{allowed:true,reservation_id:'test-reservation'}):true})
   },from:(table:string)=>{
     let patch:any=null,key=''
-    const q:any={select:()=>q,eq:(field:string,value:string)=>{if(field==='cache_key')key=value;return q},upsert:()=>Promise.resolve({error:null}),
+    const q:any={select:()=>q,eq:(field:string,value:string)=>{if(field==='cache_key')key=value;return q},upsert:(row:any,opts:any)=>{state.upserts.push({table,row,opts});return Promise.resolve({error:null})},
       maybeSingle:()=>Promise.resolve({data:state.caches.get(key)||options.cache||null}),
       update:(v:any)=>{patch=v;return q},insert:(v:any)=>{state.logs.push(v);return Promise.resolve({error:null})},
       then:(resolve:any)=>{if(table==='market_data_response_cache'&&patch){state.cache={...state.caches.get(key),...patch};state.caches.set(key,state.cache)}resolve({error:null})}}
@@ -40,10 +40,58 @@ Deno.test('a figure served from the shared snapshot reports a cache receipt with
   assert.equal(result.receipt?.httpStatus,200)
   assert.equal(result.receipt?.ttlSeconds,240)
   assert.ok(result.receipt!.cacheAgeSeconds!>=89&&result.receipt!.cacheAgeSeconds!<=93,`age was ${result.receipt!.cacheAgeSeconds}`)
-  // The cache row does not retain the originating charge, and estimateCmcCredits
-  // is a floor rather than a charge, so a cache hit must report no credit at all.
+  // THIS read made no call, and estimateCmcCredits is a floor rather than a
+  // charge, so the cache hit itself reports no credit at all.
   assert.equal(result.receipt?.creditCount,null)
   assert.equal(result.receipt?.keyMode,'keyed')
+}))
+Deno.test('a cache hit carries the charge of the originating call and a trimmed excerpt of its stored body',()=>withEnvironment(async()=>{
+  globalThis.fetch=()=>{throw new Error('Network must not be called')}
+  const body={status:{timestamp:'2026-09-23T02:47:01.166Z',error_code:'0',error_message:'',elapsed:7,credit_count:1},
+    data:{has_more:true,total_size:791,rwa_assets:Array.from({length:25},(_,i)=>({rwa_id:i+1,name:`Asset ${i+1}`}))}}
+  const cache={response_json:body,status_code:200,fetched_at:new Date(Date.now()-736000).toISOString(),
+    expires_at:new Date(Date.now()+60000).toISOString(),stale_until:new Date(Date.now()+3600000).toISOString()}
+  const result=await requestCmc('rwaList',{limit:25},{supabase:fakeDb({cache}),kind:'render'})
+  assert.equal(result.state,'cached')
+  const proof=result.receipt?.proof!
+  // The charge of this read stays null; the charge of the call that filled the
+  // cache is the stored body's own status.credit_count.
+  assert.equal(result.receipt?.creditCount,null)
+  assert.equal(proof.source,'shared-cache-row');assert.equal(proof.creditCount,1);assert.equal(proof.httpStatus,200)
+  assert.equal(proof.respondedAt,'2026-09-23T02:47:01.166Z');assert.equal(proof.retrievedAt,cache.fetched_at)
+  assert.deepEqual(proof.excerpt?.status,body.status)
+  assert.deepEqual(proof.excerpt?.lists[0],{path:'data.rwa_assets',shown:3,total:25})
+  assert.ok(!JSON.stringify(proof).includes('synthetic-cmc-test-key'))
+}))
+Deno.test('a remembered failure says its body is not kept rather than showing one',()=>withEnvironment(async()=>{
+  globalThis.fetch=()=>{throw new Error('Network must not be called')}
+  const cache={response_json:null,negative_cache:true,status_code:403,error_kind:'insufficient_entitlement',fetched_at:new Date(Date.now()-5000).toISOString(),
+    expires_at:new Date(Date.now()+60000).toISOString(),stale_until:null}
+  const result=await requestCmc('rwaList',{},{supabase:fakeDb({cache}),kind:'render'})
+  assert.equal(result.receipt?.origin,'negative-cache')
+  assert.equal(result.receipt?.proof?.excerpt,null);assert.equal(result.receipt?.proof?.excerptMissing,'failure_body_not_kept')
+  assert.equal(result.receipt?.proof?.httpStatus,403);assert.equal(result.receipt?.proof?.creditCount,null)
+}))
+Deno.test('a live read carries its own response as proof, and only a capture caller records it',()=>withEnvironment(async()=>{
+  const body={status:{timestamp:'2026-09-23T03:00:00.000Z',error_code:0,credit_count:1},data:[{id:1},{id:2},{id:3},{id:4}]}
+  globalThis.fetch=async()=>Response.json(body)
+  const reader=fakeDb()
+  const read=await requestCmc('listings',{},{supabase:reader,kind:'request'})
+  assert.equal(read.receipt?.origin,'live');assert.equal(read.receipt?.creditCount,1)
+  assert.equal(read.receipt?.proof?.source,'live-response');assert.equal(read.receipt?.proof?.creditCount,1)
+  assert.deepEqual(read.receipt?.proof?.excerpt?.lists,[{path:'data',shown:3,total:4}])
+  assert.ok(read.receipt?.proof?.retrievedAt)
+  // A reader's call has its body in the shared cache row: nothing else is written.
+  assert.equal(reader.state.upserts.filter((u:any)=>u.table==='intel_cmc_call_proofs').length,0)
+  const lane=fakeDb()
+  await requestCmc('listings',{limit:5},{supabase:lane,kind:'job',caller:'intel-capture-regime'} as any)
+  const [kept]=lane.state.upserts.filter((u:any)=>u.table==='intel_cmc_call_proofs')
+  assert.ok(kept,'a capture call records its proof')
+  assert.deepEqual(kept.opts,{onConflict:'caller,endpoint'})
+  assert.equal(kept.row.caller,'intel-capture-regime');assert.equal(kept.row.endpoint,'/v3/cryptocurrency/listings/latest')
+  assert.deepEqual(kept.row.request,{capability:'listings',endpoint:'/v3/cryptocurrency/listings/latest',parameters:{limit:'5',start:'1'}})
+  assert.equal(kept.row.credit_count,1);assert.equal(kept.row.http_status,200);assert.ok(kept.row.excerpt?.status)
+  assert.ok(!JSON.stringify(kept.row).includes('synthetic-cmc-test-key'))
 }))
 Deno.test('a reported charge of zero is carried as zero, never as unknown',()=>withEnvironment(async()=>{
   globalThis.fetch=async()=>Response.json({data:[{id:1}],status:{error_code:0,credit_count:0}})

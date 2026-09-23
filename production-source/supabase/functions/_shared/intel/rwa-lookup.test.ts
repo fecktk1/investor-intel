@@ -171,6 +171,18 @@ Deno.test('cache first: a shared cache hit answers with no claim and no live pas
   assertEquals(db.rpcLog.filter((r) => r.name === 'intel_rwa_lookup_remember').length, 1)
 })
 
+Deno.test('a cache hit names the original call’s reported charge and keeps the provider status block', async () => {
+  const withProof = () => ({ ...cacheHit(), receipt: { ...cacheHit().receipt, proof: { source: 'shared-cache-row', creditCount: 1, httpStatus: 200 } } })
+  const { d } = deps(fakeDb(tables()), { 'shared-cache': withProof })
+  const q = (await lookupRwa(d, parseLookupQuery('NVDA'), true)).figures!.quote!
+  // This lookup made no call; the call that filled the cache reported 1 credit.
+  assertEquals([q.receipt.served, q.receipt.creditCount, q.receipt.originCreditCount], ['cache', null, 1])
+  assertEquals((q.receipt.raw as { status?: unknown }).status, { error_code: 0, credit_count: 1 })
+  // A receipt from before proofs existed says the charge is unknown, never 0.
+  const { d: old } = deps(fakeDb(tables()), { 'shared-cache': cacheHit })
+  assertEquals((await lookupRwa(old, parseLookupQuery('NVDA'), true)).figures!.quote!.receipt.originCreditCount, null)
+})
+
 Deno.test('a miss claims the daily budget once, then reads live; the curl is this call', async () => {
   const db = fakeDb(tables())
   const { d, calls, claims } = deps(db, { 'shared-live': liveOk })

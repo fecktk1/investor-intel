@@ -20,8 +20,17 @@
 // endpoint path (already redacted by logProviderCall), the cache status, the
 // HTTP status, the credit count, the call count and the time. Request ids,
 // error messages and every org or user column stay behind.
+//
+// PROOF. A capture run's call log keeps no request and no body, so the capture's
+// own call records them at call time in intel_cmc_call_proofs (cmc-transport.ts
+// recordCaptureProof): the request it made, the provider's status block and a
+// bounded trimmed excerpt, one row per caller and endpoint. A capture receipt
+// carries that row as `proof` (source 'capture-record'), with `inRun` saying
+// whether the kept excerpt is from the run the receipt describes or an earlier
+// one, so an older excerpt is dated and never passed off as this run's.
 
 import {ageFreshness,type FigureFreshness} from './market-figure-scope.ts'
+import type {CmcCallProof} from '../market-assets/cmc-reproduce.ts'
 
 export type ReceiptOrigin='live'|'cache'|'negative-cache'|'capture'|'stored'
 export type CaptureCallOrigin='live'|'cache'|'negative-cache'|'error'
@@ -38,6 +47,9 @@ export interface SourceReceipt {
  /** Capture runs only: what the capture run's own call was, how many calls the
   *  run made to this endpoint, and when the newest of them happened. */
  captureCall?:CaptureCallOrigin|null; callCount?:number|null; calledAt?:string|null
+ /** What the provider answered: a transport receipt's own proof, or a capture
+  *  record's (see PROOF above). Absent when nothing was kept. */
+ proof?:(CmcCallProof&{inRun?:boolean})|null
 }
 
 const finiteOrNull=(v:unknown):number|null=>{if(v==null||v==='')return null;const n=Number(v);return Number.isFinite(n)?n:null}
@@ -140,9 +152,29 @@ const MAX_LANES=8,LOG_LIMIT=400,MAX_LOOKBACK_MS=3*86_400_000
 
 const CACHE_STATUS:Record<string,CaptureCallOrigin>={live:'live',miss:'live',hit:'cache',db_hit:'cache',negative_hit:'negative-cache',error:'error'}
 
+const EXCERPT_MISSING=new Set(['failure_body_not_kept','body_not_json','not_recorded','withheld'])
+/** One intel_cmc_call_proofs row as a capture receipt's proof. `newestCallAt` is
+ * the newest call the receipt describes: a proof retrieved inside the run window
+ * before it (or at most a minute after, for the log write's own lag) is that
+ * run's; anything else is an earlier run's and says so. */
+export function captureProof(row:any,newestCallAt:string|null):(CmcCallProof&{inRun:boolean})|null {
+ if(!row||typeof row!=='object')return null
+ const request=row.request&&typeof row.request==='object'&&!Array.isArray(row.request)&&typeof row.request.capability==='string'&&typeof row.request.endpoint==='string'
+  &&row.request.parameters&&typeof row.request.parameters==='object'&&!Array.isArray(row.request.parameters)
+  ?{capability:row.request.capability,endpoint:row.request.endpoint,parameters:Object.fromEntries(Object.entries(row.request.parameters).filter(([,v])=>typeof v==='string')) as Record<string,string>}:null
+ const retrievedAt=iso(row.retrieved_at),called=Date.parse(String(newestCallAt||'')),at=Date.parse(String(retrievedAt||''))
+ const excerpt=row.excerpt&&typeof row.excerpt==='object'&&!Array.isArray(row.excerpt)?row.excerpt:null
+ const credit=finiteOrNull(row.credit_count)
+ return {source:'capture-record',respondedAt:iso(row.responded_at),retrievedAt,creditCount:credit==null?null:Math.max(0,credit),
+  errorCode:row.error_code==null?null:String(row.error_code),httpStatus:finiteOrNull(row.http_status),excerpt,
+  excerptMissing:excerpt?null:(EXCERPT_MISSING.has(row.excerpt_missing)?row.excerpt_missing:'not_recorded'),request,
+  inRun:Number.isFinite(called)&&Number.isFinite(at)&&at>=called-CAPTURE_RUN_WINDOW_MS&&at<=called+60_000}
+}
+
 /** Collapse one lane's newest capture run into one receipt per endpoint. Pure,
- * so the grouping is testable without a database. */
-export function captureRunReceipts(lane:string,spec:CaptureLane,logs:any[],capturedAt:string|null,cadenceSeconds:number|null,now=Date.now()):SourceReceipt[] {
+ * so the grouping is testable without a database. `proofs` are the lane's
+ * intel_cmc_call_proofs rows, matched by caller and endpoint. */
+export function captureRunReceipts(lane:string,spec:CaptureLane,logs:any[],capturedAt:string|null,cadenceSeconds:number|null,now=Date.now(),proofs:any[]=[]):SourceReceipt[] {
  const rows=(Array.isArray(logs)?logs:[]).filter(r=>r&&spec.callers.includes(String(r.caller))&&Number.isFinite(Date.parse(r.ts)))
  const newestByCaller=new Map<string,number>()
  for(const r of rows){const at=Date.parse(r.ts);if(at>(newestByCaller.get(r.caller)??-Infinity))newestByCaller.set(r.caller,at)}
@@ -157,8 +189,19 @@ export function captureRunReceipts(lane:string,spec:CaptureLane,logs:any[],captu
    // A cache hit reports no charge of its own. Only reported charges are summed,
    // and a run with none reports null rather than a zero nobody measured.
    creditCount:credits.length?credits.reduce((s,v)=>s+v,0):null},now)
-  return {...receipt,captureCall:CACHE_STATUS[String(newest.cache_status)]??null,callCount:calls.length,calledAt:iso(newest.ts)}
+  const kept=(Array.isArray(proofs)?proofs:[]).find(p=>p&&p.caller===newest.caller&&String(p.endpoint||'')===String(newest.endpoint||''))
+  return {...receipt,captureCall:CACHE_STATUS[String(newest.cache_status)]??null,callCount:calls.length,calledAt:iso(newest.ts),proof:captureProof(kept,iso(newest.ts))}
  }).sort((a,b)=>String(a.endpoint).localeCompare(String(b.endpoint)))
+}
+
+/** The kept call proofs for a lane's callers. A missing table (before its
+ * migration) or a failed read leaves the receipts without proof, never failed. */
+async function readCallProofs(db:any,callers:string[]):Promise<any[]> {
+ try{
+  const {data,error}=await db.from('intel_cmc_call_proofs').select('caller,endpoint,request,http_status,credit_count,error_code,responded_at,retrieved_at,excerpt,excerpt_missing')
+   .in('caller',callers).limit(40)
+  return error||!Array.isArray(data)?[]:data
+ }catch{return []}
 }
 
 async function newestCapture(db:any,spec:CaptureLane):Promise<string|null> {
@@ -186,14 +229,14 @@ export async function readCaptureReceipts(db:any,params:{lanes?:unknown}={},now:
  const out=await Promise.all(lanes.map(async lane=>{
   const spec=CAPTURE_RECEIPT_LANES[lane],cadence=Math.max(cadenceOf(spec.feature),spec.scheduleSeconds??0)
   const since=new Date(at-Math.min(MAX_LOOKBACK_MS,Math.max(2*3600_000,cadence*2000+CAPTURE_RUN_WINDOW_MS))).toISOString()
-  const [capturedAt,logs]=await Promise.all([newestCapture(db,spec),(async()=>{
+  const [capturedAt,logs,proofs]=await Promise.all([newestCapture(db,spec),(async()=>{
    try{
     const {data,error}=await db.from('provider_call_logs').select('caller,endpoint,cache_status,status_code,credits_or_cu,ts')
      .eq('provider',spec.provider).in('caller',spec.callers).gte('ts',since).order('ts',{ascending:false}).limit(LOG_LIMIT)
     return error?{rows:[],error:true}:{rows:Array.isArray(data)?data:[],error:false}
    }catch{return {rows:[],error:true}}
-  })()])
-  const receipts=captureRunReceipts(lane,spec,logs.rows,capturedAt,cadence,at)
+  })(),readCallProofs(db,spec.callers)])
+  const receipts=captureRunReceipts(lane,spec,logs.rows,capturedAt,cadence,at,proofs)
   return {lane,provider:spec.provider,capturedAt,cadenceSeconds:cadence,freshness:capturedAt?(ageFreshness(capturedAt,cadence*CAPTURE_CADENCE_GRACE,at)??'cached'):'unavailable',
    receipts,reason:logs.error?'call_log_unavailable':receipts.length?null:'no_recent_capture_calls'}
  }))

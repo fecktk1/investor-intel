@@ -20,9 +20,13 @@
 
 export const EVIDENCE_SCHEMA = 'cmc-receipt-evidence/1'
 
-/** Exactly the fields of CmcReceipt in cmc-transport.ts, in declaration order. */
+/** Exactly the required fields of CmcReceipt in cmc-transport.ts, in declaration order. */
 export const RECEIPT_FIELDS = ['capability', 'endpoint', 'parameters', 'httpStatus', 'creditCount', 'elapsedMs',
   'origin', 'keyMode', 'cacheAgeSeconds', 'ttlSeconds', 'staleUntil', 'fetchedAt', 'reservation'] as const
+/** The optional (`?:`) fields of CmcReceipt. A recorded receipt may carry them or
+ * not: the artefacts recorded before `proof` existed stay valid, and a receipt
+ * that does carry one still names nothing outside the interface. */
+export const RECEIPT_OPTIONAL_FIELDS = ['proof'] as const
 export const RECEIPT_ORIGINS = ['live', 'cache', 'negative-cache']
 export const RECEIPT_KEY_MODES = ['keyed', 'keyless']
 
@@ -151,7 +155,8 @@ export async function evidenceIntegrityProblems(artefact: unknown, registry: Rec
     const receipt = probe.receipt as Record<string, any> | undefined
     if (!receipt || typeof receipt !== 'object' || Array.isArray(receipt)) problems.push(`receipt_absent:${name}`)
     else {
-      const fields = Object.keys(receipt).sort().join(',')
+      const optional: readonly string[] = RECEIPT_OPTIONAL_FIELDS
+      const fields = Object.keys(receipt).filter((field) => !optional.includes(field)).sort().join(',')
       if (fields !== [...RECEIPT_FIELDS].sort().join(',')) problems.push(`receipt_fields:${name}`)
       if (receipt.capability !== probe.capability) problems.push(`receipt_capability_mismatch:${name}`)
       if (receipt.endpoint !== probe.endpoint) problems.push(`receipt_endpoint_mismatch:${name}`)

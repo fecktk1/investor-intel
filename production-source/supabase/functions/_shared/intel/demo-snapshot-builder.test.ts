@@ -221,7 +221,7 @@ Deno.test('the research reader runs the shared-cache pass only and never reaches
     // A cached row answers it, exactly as the free lane serves it.
     const later = new Date(Date.now() + 3_600_000).toISOString()
     const cached = fakeDb({ market_data_response_cache: [{
-      provider: 'coinmarketcap', cache_key: 'any', response_json: { data: [{ rwa_id: 5, name: 'Treasury fund' }] },
+      provider: 'coinmarketcap', cache_key: 'any', response_json: { status: { timestamp: '2026-09-23T02:47:01.166Z', error_code: '0', credit_count: 1 }, data: [{ rwa_id: 5, name: 'Treasury fund' }] },
       expires_at: later, stale_until: later, fetched_at: new Date().toISOString(), observed_at: null, status_code: 200, error_kind: null, negative_cache: false,
     }] })
     // The cache key is derived from the API key hash; the fake answers any key.
@@ -238,6 +238,15 @@ Deno.test('the research reader runs the shared-cache pass only and never reaches
     assert(body, 'a cached shared record is served')
     eq(body!.freeShared, { lane: 'rwa_research', served: 'shared-cache' })
     eq(body!.refreshPolicy, { enabled: false, cacheReadSeconds: null, providerRefreshSeconds: null })
+    // The snapshot carries the receipt's proof: the stored response's own charge
+    // and a trimmed excerpt, and scrubbing keeps it (it holds no personal field).
+    const receipt = (body as any).receipt
+    eq(receipt.origin, 'cache')
+    eq(receipt.creditCount, null)
+    eq(receipt.proof.creditCount, 1)
+    eq(receipt.proof.excerpt.status, { timestamp: '2026-09-23T02:47:01.166Z', error_code: '0', credit_count: 1 })
+    eq((scrubBody(body) as any).receipt.proof, receipt.proof)
+    assert(!JSON.stringify(body).includes('test-key-never-sent'), 'the key never rides in a snapshot body')
     // A capability outside the free RWA lane and the two shared market reads
     // (global, listings) is never read at all; those two use the same cache pass.
     eq(await cacheOnlyResearchReader(cached)('quotes', { id: '1' }), null)

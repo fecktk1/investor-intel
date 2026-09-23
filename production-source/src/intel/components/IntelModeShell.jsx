@@ -27,6 +27,7 @@ import PinnedResearch from './PinnedResearch'
 import IntelDemoBanner from '../demo/IntelDemoBanner'
 import IntelDemoPersonalNote from '../demo/IntelDemoPersonalNote'
 import { isIntelDemoActive } from '../demo/demo-mode'
+import { DemoNotTracked } from '../demo/DemoNotInSnapshot'
 
 // Investor Intel shell. Modeled on the demo shell (src/demo/components/
 // DemoLayout.jsx) — same design tokens — but auth-guarded and driven by real
@@ -48,7 +49,11 @@ export default function IntelModeShell({ children }) {
   const [expandedGroup, setExpandedGroup] = useState(null)
   const menuRef = useRef(null)
   const menuButtonRef = useRef(null)
-  const searchAssets = useCallback((query, signal) => searchIntelAssets(supabase, org?.id, query, signal, t), [supabase, org?.id, t])
+  const searchAssets = useCallback(async (query, signal) => {
+    const rows = await searchIntelAssets(supabase, org?.id, query, signal, t)
+    if (rows.demoUntracked) rows.note = <DemoNotTracked />
+    return rows
+  }, [supabase, org?.id, t])
   const closeNavigation = useCallback(() => setOpen(false), [])
   const setCompactMode = useCallback((enabled) => {
     setCompact(enabled)

@@ -89,6 +89,11 @@ export interface FigureReceipt {
   rawTruncated: boolean
   /** A capture run's call log, when the figure came from one. */
   caller?: string | null
+  /** Shared cache only: the credit_count CoinMarketCap reported on the call that
+   * filled the cache, from that call's stored response (the transport receipt's
+   * proof). creditCount stays this lookup's own charge, which a cache hit never
+   * has. Null when the stored response reported none. */
+  originCreditCount?: number | null
   reason: string | null
 }
 
@@ -138,7 +143,7 @@ export function reproduceLine(capability: string, params: Record<string, string>
 
 function receipt(input: {
   capability: string; params: Record<string, string>; served: Served; capturedAt: unknown; now: number
-  httpStatus?: unknown; creditCount?: unknown; raw?: unknown; reason?: string | null; caller?: string | null
+  httpStatus?: unknown; creditCount?: unknown; raw?: unknown; reason?: string | null; caller?: string | null; originCreditCount?: unknown
 }): FigureReceipt {
   const capturedAt = iso(input.capturedAt)
   const excerpt = input.raw === undefined ? { raw: null, rawTruncated: false } : rawExcerpt(input.raw)
@@ -148,7 +153,8 @@ function receipt(input: {
     served: input.served, capturedAt, ageSeconds: age(capturedAt, input.now),
     httpStatus: num(input.httpStatus), creditCount: num(input.creditCount),
     curl, curlMeaning: curl ? (input.served === 'live' ? 'this_call' : 'same_request') : null,
-    ...excerpt, ...(input.caller !== undefined ? { caller: input.caller } : {}), reason: input.reason ?? null,
+    ...excerpt, ...(input.caller !== undefined ? { caller: input.caller } : {}),
+    ...(input.originCreditCount !== undefined ? { originCreditCount: num(input.originCreditCount) } : {}), reason: input.reason ?? null,
   }
 }
 
@@ -332,10 +338,15 @@ export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate
     const r = snap.receipt || {}
     const served: Served = r.origin === 'live' ? 'live' : 'cache'
     const found = quoteAsset(snap.payload)!
-    const rc = receipt({ capability: 'rwaQuotes', params, served, capturedAt: r.fetchedAt ?? snap.provenance?.fetchedAt, now, httpStatus: r.httpStatus, creditCount: r.creditCount, raw: quoteKeep(snap.payload), reason: served === 'cache' && snap.state === 'stale' ? 'shared_cache_past_refresh' : null })
+    // The provider's own status block leads the raw excerpt (timestamp,
+    // error_code, credit_count), and a cache hit names the original call's charge.
+    const status = snap.payload && typeof snap.payload === 'object' ? (snap.payload as { status?: unknown }).status : undefined
+    const rc = receipt({ capability: 'rwaQuotes', params, served, capturedAt: r.fetchedAt ?? snap.provenance?.fetchedAt, now, httpStatus: r.httpStatus, creditCount: r.creditCount,
+      raw: { ...(status && typeof status === 'object' ? { status } : {}), ...quoteKeep(snap.payload) }, reason: served === 'cache' && snap.state === 'stale' ? 'shared_cache_past_refresh' : null,
+      ...(served === 'cache' ? { originCreditCount: r.proof?.creditCount ?? null } : {}) })
     quote = { value: quoteFigure(found.quote), receipt: rc }
     tokensSource = { tokens: Array.isArray(found.asset.tokens) ? found.asset.tokens : [], receipt: rc }
-    await remember(db, rwaId, snap.payload, rc.capturedAt, rc.httpStatus, rc.creditCount, served)
+    await remember(db, rwaId, snap.payload, rc.capturedAt, rc.httpStatus, rc.creditCount ?? rc.originCreditCount ?? null, served)
   } else {
     const kept = await lastGood(db, rwaId)
     const found = kept ? quoteAsset(kept.payload) : null

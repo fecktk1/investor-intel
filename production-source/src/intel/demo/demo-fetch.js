@@ -1,15 +1,15 @@
 // Investor Intel public demo: the network answer for every backend request.
 //
 // In the demo, both Supabase data clients and window.fetch route every request
-// for the backend host here, and NOTHING here forwards a request to it. Each
-// request is answered from one of three places:
+// for the backend host here. Each request is answered from one of these places:
 //
 //   1. the daily snapshot (./demo-snapshot.js), for Edge Function calls whose
 //      key (supabase/functions/_shared/intel/demo-snapshot-key.ts) it holds;
 //   2. the synthetic visitor (./demo-identity.js), for the auth, profile,
 //      membership and access reads every signed-in page makes on boot;
 //   3. the in-memory store (./demo-store.js), for every table the visitor can
-//      write to: it starts empty and is gone on reload.
+//      write to, and the asset chart's working state (intel-chart-workspace
+//      working_get / working_save): it starts empty and is gone on reload.
 //
 // Two more snapshot answers carry SHARED data only: a GET of one of the shared
 // tables in DEMO_REST_TABLES (the builder replayed the same query on the
@@ -22,14 +22,23 @@
 // The only network traffic the demo makes to the backend host is:
 //   * the snapshot reader's credential-free GETs of public objects in the
 //     intel-demo bucket, through the ORIGINAL fetch the reader was given; and
-//   * exactly one Edge Function, DEMO_LIVE_FUNCTION (intel-rwa-lookup, the
-//     public tokenised asset endpoint), through the `forwardPublic` the runtime
-//     supplies, for two things only:
-//       - the tokenised asset lookup ({ q }), always live;
-//       - a SNAPSHOT MISS of one of the six real-world asset research reads of
+//   * exactly two public Edge Functions (DEMO_PUBLIC_FUNCTIONS), through the
+//     `forwardPublic` the runtime supplies:
+//       - DEMO_LIVE_FUNCTION (intel-rwa-lookup, the public tokenised asset
+//         endpoint), for the tokenised asset lookup ({ q }, always live) and a
+//         SNAPSHOT MISS of one of the six real-world asset research reads of
 //         /intel/rwa (DEMO_FORWARDED_RESEARCH), which that endpoint answers
-//         exactly as intel-research answers a free member.
-//     The forwarded body is rebuilt from the allowed fields alone (orgId and
+//         exactly as intel-research answers a free member;
+//       - DEMO_READ_FUNCTION (intel-demo-read), for a SNAPSHOT MISS of a
+//         visitor's own search and the asset it opens (demoReadFor below): the
+//         Markets search and typeahead, the workspace search, and the asset
+//         page's detail, candles, quote, history, facts, profile, venue,
+//         identity, depth, attention, contract evidence and news reads. That endpoint answers them from
+//         stored and cache-only data, and ONLY for an asset one of our capture
+//         lanes actively tracks: the allowlist is enforced on the server, and an
+//         untracked asset comes back as 403 'demo_untracked', which the pages
+//         render as a calm sentence, never as a failed read.
+//     Every forwarded body is rebuilt from the allowed fields alone (orgId and
 //     everything else dropped), and the request carries the anon key only:
 //     never the visitor's token, never cookies (credentials 'omit').
 //     Every other function, and every other miss, is still answered here and
@@ -40,13 +49,20 @@ import {
 } from '../../../supabase/functions/_shared/intel/demo-snapshot-key.ts'
 import { EntityResolveRefusal, normalizeEntity } from '../../../supabase/functions/_shared/entity-resolver.ts'
 import { RWA_FREE_CAPABILITIES } from '../../../supabase/functions/_shared/intel/rwa-free-read.ts'
+import { cmcDexIdentity } from '../../../supabase/functions/_shared/market-assets/cmc-dex.ts'
 import {
   DEMO_ORG, DEMO_ORG_ID, DEMO_PROFILE, DEMO_TIER, DEMO_USER, DEMO_USER_ID, demoMembershipRow,
 } from './demo-identity.js'
 
 export const DEMO_MISS_CODE = 'demo_not_in_snapshot'
-/** The one backend function the demo lets through, live. */
+/** The public endpoint's refusal for an asset no capture lane tracks. */
+export const DEMO_UNTRACKED_CODE = 'demo_untracked'
+/** The public tokenised asset endpoint, live. */
 export const DEMO_LIVE_FUNCTION = 'intel-rwa-lookup'
+/** The public read endpoint for a visitor's own search, tracked assets only. */
+export const DEMO_READ_FUNCTION = 'intel-demo-read'
+/** The only backend functions the demo ever calls. */
+export const DEMO_PUBLIC_FUNCTIONS = Object.freeze([DEMO_LIVE_FUNCTION, DEMO_READ_FUNCTION])
 /** intel-research capabilities whose snapshot miss is forwarded to it: the free
  * real-world asset lane (supabase/functions/_shared/intel/rwa-free-read.ts). */
 export const DEMO_FORWARDED_RESEARCH = RWA_FREE_CAPABILITIES
@@ -172,6 +188,90 @@ export function researchMissBody(capability) {
   }
 }
 
+// ─── A visitor's own search, forwarded to DEMO_READ_FUNCTION ────────────────
+//
+// Only these request shapes cross, each rebuilt from its allowed fields. The
+// endpoint validates them again and decides, on the server, whether the asset
+// is one we actively track.
+
+const present = (value) => value !== undefined && value !== null && value !== ''
+function pick(source, keys) {
+  const out = {}
+  for (const key of keys) if (present(source?.[key])) out[key] = source[key]
+  return out
+}
+const identityOf = (body) => (present(body?.sourceProvider) && present(body?.providerId)
+  ? { sourceProvider: String(body.sourceProvider), providerId: String(body.providerId) }
+  : {})
+const symbolOf = (body) => (typeof body?.symbol === 'string' && body.symbol.trim() ? { symbol: body.symbol.trim().slice(0, 120) } : {})
+const SCREEN_FIELDS = ['provider', 'sort', 'dir', 'chain', 'search', 'category', 'signalDirection', 'view', 'page', 'limit']
+
+/** The tables the asset page's news panel reads (src/intel/lib/asset-news.js). */
+export const DEMO_NEWS_TABLES = Object.freeze(['intel_curated_news', 'intel_global_news'])
+
+/**
+ * The intel-demo-read body for a snapshot miss, or null when the miss is not a
+ * visitor's search (it then stays "not in today's demo snapshot").
+ *   identityFor(canonicalKey) names the catalogue identity an asset page read
+ *   earlier resolved that key to (the venue read carries only the key).
+ */
+export function demoReadFor(name, body, { identityFor = () => null } = {}) {
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {}
+  if (name === 'intel-markets') {
+    if (b.op === 'suggest') return { read: 'suggest', q: String(b.q ?? '').trim().slice(0, 100), ...pick(b, ['limit']) }
+    if (b.op != null) return null
+    const identity = identityOf(b)
+    if (b.history === true) return { read: 'history', ...symbolOf(b), ...pick(b, ['range']), ...identity }
+    if (symbolOf(b).symbol || identity.sourceProvider) {
+      const mode = b.candlesOnly === true ? 'candles' : b.quotesOnly === true ? 'quote' : 'full'
+      return { read: 'detail', mode, ...symbolOf(b), ...pick(b, ['timeframe', 'interval', 'lookbackBars']), ...identity }
+    }
+    // A search of the screen. The visitor has no watchlist on the server.
+    if (typeof b.search === 'string' && b.search.trim() && b.watchlistOnly !== true && b.watchlistOnly !== 'true') {
+      return { read: 'screen', query: { ...pick(b, SCREEN_FIELDS), search: b.search.trim().slice(0, 100) } }
+    }
+    return null
+  }
+  if (name === 'intel-asset-facts') {
+    if ((b.op ?? 'asset') === 'asset') return { read: 'facts', ...identityOf(b), ...pick(b, ['days']) }
+    if (b.op === 'cohorts') return { read: 'cohorts', ...pick(b, ['provider']) }
+    return null
+  }
+  // A refresh is a spend; the demo shows the shared copy only.
+  if (name === 'token-profile-get') return b.refresh !== true && identityOf(b).sourceProvider ? { read: 'profile', ...identityOf(b) } : null
+  if (name === 'intel-capture' && b.op === 'read') {
+    if (b.view === 'rwa_token_depth' && present(b.cryptoId)) return { read: 'capture', view: 'rwa_token_depth', cryptoId: String(b.cryptoId) }
+    if (b.view === 'attention' && present(b.providerId)) return { read: 'capture', view: 'attention', providerId: String(b.providerId), ...pick(b, ['hours']) }
+    return null
+  }
+  // "How this asset was identified" for a CoinMarketCap id; a pasted contract
+  // stays a miss (resolving one asks paid providers).
+  if (name === 'intel-asset-resolve') {
+    const query = typeof b.query === 'string' ? b.query.trim() : ''
+    return /^cmc:[1-9][0-9]{0,9}$/.test(query) && !present(b.chain) ? { read: 'resolve', query } : null
+  }
+  // The chart's retained public DEX events for a contract representation.
+  if (name === 'intel-investigate' && b.operation === 'history' && b.lens === 'liquidity' && typeof b.subject === 'string') {
+    const identity = identityFor(b.subject)
+    return identity ? { read: 'evidence', subject: b.subject, ...pick(b, ['from', 'to', 'limit', 'metrics', 'cursor']), ...identity } : null
+  }
+  if (name === 'intel-research' && b.capability === 'venueContext' && b.params?.refresh !== true) {
+    const canonicalKey = typeof b.params?.canonicalKey === 'string' ? b.params.canonicalKey : ''
+    const identity = canonicalKey ? identityFor(canonicalKey) : null
+    return identity ? { read: 'venue', canonicalKey, ...identity } : null
+  }
+  return null
+}
+
+/** The news terms of an asset news read, or null for any other query. */
+export function demoNewsTerms(table, url) {
+  if (!DEMO_NEWS_TABLES.includes(table)) return null
+  const or = url.searchParams.getAll('or')
+  if (or.length !== 1 || !or[0]) return null
+  const terms = or[0].replace(/^\(/, '').replace(/\)$/, '').split(',').map((term) => term.trim()).filter(Boolean)
+  return terms.length && terms.length <= 6 ? terms : null
+}
+
 const postgrestError = (status, code, message) => respond({ code, message, details: null, hint: null }, status)
 
 // `alias:table(*)` embeds in a select, as the pages write them for the rows the
@@ -192,6 +292,37 @@ function embedsOf(select) {
 export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now = () => Date.now(), forwardPublic = null }) {
   const base = String(supabaseUrl || '').replace(/\/+$/, '')
   const miss = (detail) => { try { onMiss?.(detail) } catch { /* diagnostics only */ } }
+  // Catalogue identities the asset page's detail reads resolved, by every key
+  // that page can name, so its venue read (which carries only the key) can say
+  // which asset it is. In memory only.
+  const identities = new Map()
+  const identityFor = (key) => identities.get(key) || null
+  function remember(detail) {
+    const sourceProvider = detail?.sourceProvider, providerId = detail?.providerId
+    if (!present(sourceProvider) || !present(providerId)) return
+    const identity = { sourceProvider: String(sourceProvider), providerId: String(providerId) }
+    const keys = [detail.canonicalAssetKey, `market:${identity.sourceProvider}:${identity.providerId}`, ...(Array.isArray(detail.identityChoices) ? detail.identityChoices.map((c) => c?.canonicalAssetKey) : [])]
+    for (const key of keys) {
+      if (typeof key !== 'string' || !key) continue
+      identities.set(key, identity)
+      // The chart's contract evidence names the same key in its DEX form.
+      const subject = cmcDexIdentity(key)?.subject
+      if (subject) identities.set(subject, identity)
+    }
+  }
+  // A visitor's search, answered by the public read endpoint. Null when the
+  // endpoint cannot be reached, so the caller keeps its old answer.
+  async function forwardRead(forwarded) {
+    if (typeof forwardPublic !== 'function' || !forwarded) return null
+    try {
+      const response = await forwardPublic(forwarded, DEMO_READ_FUNCTION)
+      if (!response || typeof response.status !== 'number') return null
+      if (forwarded.read === 'detail' && forwarded.mode === 'full' && response.ok) {
+        try { remember(await response.clone().json()) } catch { /* the page still gets its answer */ }
+      }
+      return response
+    } catch { return null }
+  }
 
   async function functions(name, input, init) {
     const text = await readBody(input, init)
@@ -201,7 +332,7 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     if (name === DEMO_LIVE_FUNCTION) {
       if (typeof forwardPublic !== 'function') return respond(missBody())
       const q = typeof body?.q === 'string' ? body.q : (() => { try { return new URL(readUrl(input), 'http://demo.invalid').searchParams.get('q') } catch { return null } })()
-      try { return await forwardPublic({ q: String(q ?? '') }) } catch { return respond({ error: 'lookup_unreachable', reason: 'lookup_unreachable' }, 503) }
+      try { return await forwardPublic({ q: String(q ?? '') }, DEMO_LIVE_FUNCTION) } catch { return respond({ error: 'lookup_unreachable', reason: 'lookup_unreachable' }, 503) }
     }
     const key = demoSnapshotKey(name, body)
     let entry = null
@@ -211,6 +342,10 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     // Identity-shaped function reads every signed-in page makes.
     if (name === 'help-assistant' && body?.action === 'status') return respond({ tutorials_enabled: false, assistant_enabled: false })
     if (name === 'intel-resolve') return resolveInMemory(body)
+    if (name === 'intel-chart-workspace') {
+      const answered = chartWorkspaceInMemory(body)
+      if (answered) return answered
+    }
     // A real-world asset research read the snapshot does not hold: the public
     // endpoint answers it as a free member gets it. Only capability, params and
     // readMode cross; orgId and the visitor's token do not.
@@ -218,8 +353,12 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
       const forwarded = { capability: body.capability }
       if (body.params != null) forwarded.params = body.params
       if (body.readMode != null) forwarded.readMode = body.readMode
-      try { return await forwardPublic(forwarded) } catch { return respond(researchMissBody(body.capability)) }
+      try { return await forwardPublic(forwarded, DEMO_LIVE_FUNCTION) } catch { return respond(researchMissBody(body.capability)) }
     }
+    // A visitor's own search, or the asset it opened: the public read endpoint
+    // answers it for a tracked asset and refuses anything else, calmly.
+    const searched = await forwardRead(demoReadFor(name, body, { identityFor }))
+    if (searched) return searched
     miss({ kind: 'function', name, body })
     if (name === 'intel-research') return respond(researchMissBody(body?.capability))
     return respond(missBody())
@@ -237,6 +376,24 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
       ? store.update('intel_workspace_preferences', row, params)
       : store.insert('intel_workspace_preferences', row, new URLSearchParams())
     return respond(saved)
+  }
+
+  // The asset chart keeps the visitor's working state (range, drawings,
+  // indicators) as a member's chart does, but in memory only, and the visitor
+  // has no chart conditions yet. Layouts, snapshots, sharing and alerts stay
+  // demo misses: they are the visitor's own saved things.
+  const workingStates = new Map()
+  function chartWorkspaceInMemory(body) {
+    const asset = typeof body?.asset === 'string' ? body.asset : ''
+    if (body?.operation === 'working_get' && asset) return respond({ working: workingStates.get(asset) || null })
+    if (body?.operation === 'working_save' && asset && body.state && typeof body.state === 'object') {
+      const revision = (Number.isInteger(body.revision) ? body.revision : 0) + 1
+      const updatedAt = new Date(now()).toISOString()
+      workingStates.set(asset, { asset, state: body.state, revision, updatedAt })
+      return respond({ asset, revision, updatedAt })
+    }
+    if (body?.operation === 'alert_history' && asset) return respond({ rows: [], nextCursor: null })
+    return null
   }
 
   // Tracking something (a watchlist item, a wallet, a holding) first names it
@@ -324,7 +481,15 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
         return postgrestError(404, DEMO_MISS_CODE, DEMO_MISS_TEXT)
       }
       const identity = identityRows(table)
-      const shared = identity ? null : await sharedTableRows(table, url)
+      let shared = identity ? null : await sharedTableRows(table, url)
+      // The asset page's news panel: the shared news tables, searched for the
+      // asset in front of the visitor. The endpoint rebuilds the query itself.
+      const terms = identity || shared ? null : demoNewsTerms(table, url)
+      if (terms) {
+        const answered = await forwardRead({ read: 'news', table, terms })
+        const rows = answered?.ok ? await answered.json().catch(() => null) : null
+        if (Array.isArray(rows)) shared = { rows, total: rows.length, start: 0 }
+      }
       const own = identity || shared ? null : store.select(table, url.searchParams)
       const result = identity ? { rows: identity, total: identity.length, start: 0 } : shared || { ...own, rows: withEmbeds(own.rows, url.searchParams.get('select')) }
       if (!identity && !result.total) miss({ kind: 'rest', table, query: url.search })

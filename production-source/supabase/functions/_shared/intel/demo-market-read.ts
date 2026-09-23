@@ -1,0 +1,409 @@
+// Investor Intel public demo: the asset page's market reads from STORED data only.
+//
+// intel-markets answers a member's asset page (detail, chart candles, the quote
+// poll and the price history) through a ladder that may ask CoinMarketCap, the
+// public exchange registry, CoinGecko or Birdeye live. The public demo must never
+// do that, so this module assembles the SAME response bodies with every
+// provider-facing step replaced by its stored or cache-only form:
+//
+//   identity + quote  market_assets (the catalogue lanes' rows); a CoinMarketCap
+//                     quote and metadata from the shared response cache through
+//                     requestCmc with kind 'render', maxCalls 0 and noDemand (it
+//                     cannot reach the provider and stamps no demand); for a
+//                     tokenised real-world asset token that only the RWA lanes
+//                     capture, the newest captured wrapper or coverage row.
+//   chart candles     the exchange registry's response cache (cacheOnly), the
+//                     CoinMarketCap OHLCV cache (render) and the stored daily
+//                     archive (market_asset_candles). When none of those holds a
+//                     period of the requested window at its width, the stored
+//                     daily archive answers the window at one day, said plainly.
+//   history           the CoinMarketCap history cache (render).
+//   enrichment        the stored narrative, catalyst and unlock reads, and the
+//                     Birdeye cache only (allowLive false).
+//
+// Nothing here writes a row a visitor owns, resolves a user or an org, or calls
+// AI. The only rows the cache passes add are the transports' own zero-call
+// accounting lines (provider_call_logs / exchange_api_usage_logs, calls 0).
+//
+// The assembly below mirrors intel-markets/index.ts marketDetail line for line
+// where it can; the member path is not touched and is not imported from, so a
+// member's read and its provider ladder stay exactly as they were.
+
+import { matchCexEnrichment } from '../market-assets/cex-match.ts'
+import { requestCmc } from '../market-assets/cmc-transport.ts'
+import { marketCanonicalIdentity, marketIdentityChoices, verifiedNativeMarketSymbol, hasVerifiedCexIdentity, usableSpread, marketChain } from './market-read-quality.ts'
+import { resolveMarketAsset } from './market-asset-resolver.ts'
+import { resolveCmcAsset } from './cmc-asset-identity.ts'
+import { assetMarketRead, marketCmcIdentity } from './market-asset-source.ts'
+import { loadAssetHistory, historyPlan, unavailableHistory } from './asset-history.ts'
+import { realizedVolatility, maxDrawdown, distanceFromHigh, timeUnderWaterDays } from './risk-metrics.ts'
+import { marketCoverage, type MarketIdentityKind } from './market-coverage.ts'
+import { positionDepthQuotes } from './position-depth.ts'
+import { loadCmcChart, CHART_WINDOWS, CHART_INTERVALS } from './cmc-chart.ts'
+import { loadMarketCandles } from './market-candle-read.ts'
+import { MAX_LOOKBACK_BARS } from './chart-analysis.ts'
+import { loadExchangeCandles } from './exchange-candles.ts'
+import { archiveSeries } from './candle-archive.ts'
+import { CANDLE_RANGE_MS } from './candle-ladder.ts'
+import { chartSeriesResponse } from './chart-series-contract.ts'
+import { quoteProvenance, chartProvenance, venueProvenance, curatedNewsWithEnvelopes } from './market-provenance.ts'
+import { readMetricAgreement } from './metric-agreement-read.ts'
+import { metricAgreementReceipt } from './metric-agreement.ts'
+import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from './market-enrichment.ts'
+import { getProvider } from '../exchange-market/provider-registry.ts'
+import { getChain } from '../chains.ts'
+
+// deno-lint-ignore no-explicit-any
+type Db = any
+// deno-lint-ignore no-explicit-any
+type Any = any
+
+export const DEMO_READ_CALLER = 'intel-demo-read'
+
+/** A body and its HTTP status, exactly as intel-markets would send it. */
+export interface DemoReadAnswer { status: number; body: Any }
+
+/** requestCmc that can only read the shared cache: kind 'render' returns the
+ * stored record (or an empty 'refresh_required' answer) and never reaches the
+ * provider; maxCalls 0 and noDemand make sure of it; no user and no org ride. */
+// deno-lint-ignore no-explicit-any
+export const cacheOnlyCmc: typeof requestCmc = ((name: string, input: Record<string, unknown> = {}, ctx: any = {}) =>
+  requestCmc(name, input, { ...ctx, kind: 'render', maxCalls: 0, _calls: 0, noDemand: true, waitForFresh: false, selectedDemand: false, orgId: null, userId: null, caller: DEMO_READ_CALLER })) as typeof requestCmc
+
+/** The exchange registry's providers with every kline read held to the cache. */
+// deno-lint-ignore no-explicit-any
+export function cacheOnlyVenue(id: any): Any {
+  const provider = getProvider(id)
+  if (!provider) return null
+  // deno-lint-ignore no-explicit-any
+  return { ...provider, getKlines: (symbol: string, interval: string, limit: number, ctx?: any) => provider.getKlines(symbol, interval, limit, ctx, { cacheOnly: true }) }
+}
+
+const lookbackBars = (value: unknown): number =>
+  Number.isInteger(value) && (value as number) >= 0 && (value as number) <= MAX_LOOKBACK_BARS ? value as number : 0
+
+/** The CMC identity resolver, cache-only. */
+// deno-lint-ignore no-explicit-any
+const cacheOnlyResolveCmc = (admin: Db, id: string) => resolveCmcAsset(admin, id, cacheOnlyCmc, { supabase: admin } as any)
+
+/**
+ * A tokenised real-world asset token that only the RWA lanes capture has no
+ * market_assets row and, usually, no cached CoinMarketCap quote. Its newest
+ * captured row (hourly wrapper lane, else daily coverage lane) is read as the
+ * quote instead: the same CoinMarketCap figures the lane stored, dated.
+ */
+export async function rwaTokenRow(db: Db, cryptoId: string): Promise<Any | null> {
+  if (!/^[1-9][0-9]{0,9}$/.test(cryptoId)) return null
+  const pick = async (table: string, columns: string, order: string) => {
+    try {
+      const { data, error } = await db.from(table).select(columns).eq('crypto_id', cryptoId).order(order, { ascending: false }).limit(1)
+      return error || !Array.isArray(data) ? null : data[0] || null
+    } catch { return null }
+  }
+  const wrapper = await pick('intel_rwa_wrapper_tokens', 'crypto_id,symbol,name,price,market_cap,volume_24h,captured_at,fetched_at', 'captured_at')
+  const coverage = wrapper ? null : await pick('intel_rwa_coverage_tokens', 'crypto_id,symbol,name,price,market_cap,volume_24h,captured_at,fetched_at', 'captured_at')
+  const row = wrapper || coverage
+  if (!row) return null
+  const num = (v: unknown) => (v == null || v === '' || !Number.isFinite(Number(v)) ? null : Number(v))
+  const symbol = String(row.symbol || '').toUpperCase() || null
+  return {
+    source_provider: 'coinmarketcap', provider_id: cryptoId, provider_slug: null,
+    name: row.name ?? null, symbol, normalized_symbol: symbol, primary_chain: null, platforms: null,
+    current_price: num(row.price), market_cap: num(row.market_cap), volume_24h: num(row.volume_24h),
+    market_cap_rank: null, fdv: null, circulating_supply: null, total_supply: null, max_supply: null,
+    change_1h_pct: null, change_24h_pct: null, change_7d_pct: null, image_url: null, categories: null,
+    as_of: row.captured_at ?? null, last_refreshed_at: row.fetched_at ?? row.captured_at ?? null,
+    source_label: wrapper ? 'CoinMarketCap (RWA wrapper capture)' : 'CoinMarketCap (RWA coverage capture)',
+    attribution_label: 'Data via CoinMarketCap',
+  }
+}
+
+/** One asset, resolved exactly as intel-markets resolves it, with the CMC step
+ * cache-only and the RWA-lane row as the last resort for a CMC id. */
+export async function resolveDemoAsset(db: Db, symbol: string, sourceProvider?: string, providerId?: string): Promise<{ data: Any | null; error: unknown; ambiguous: boolean }> {
+  const resolved = await resolveMarketAsset(db, symbol, sourceProvider, providerId, cacheOnlyResolveCmc as Any)
+  if (resolved.data || resolved.ambiguous || !(sourceProvider === 'coinmarketcap' && providerId)) return resolved
+  const row = await rwaTokenRow(db, providerId)
+  return row ? { data: row, error: null, ambiguous: false } : resolved
+}
+
+// deno-lint-ignore no-explicit-any
+function detailIdentity(asset: any, quoteChain: string | null): { kind: MarketIdentityKind; provider: string | null; providerId: string | null; chain: string | null; address: string | null } {
+  const provider = asset?.source_provider ? String(asset.source_provider) : null
+  const kind: MarketIdentityKind = provider === 'contract' ? 'contract' : provider === 'coinmarketcap' ? 'cmc' : 'coingecko'
+  const chain = asset?.contract?.chain ? String(asset.contract.chain) : quoteChain || asset?.primary_chain || null
+  let address: string | null = asset?.contract?.address ? String(asset.contract.address) : null
+  if (!address) {
+    const entries = Object.entries(asset?.platforms || {}).filter(([platform, value]) => typeof value === 'string' && value && (!chain || marketChain(platform) === chain))
+    if (entries.length === 1) address = String(entries[0][1])
+  }
+  return { kind, provider, providerId: asset?.provider_id != null ? String(asset.provider_id) : null, chain, address }
+}
+
+const DAY = 86_400_000
+
+/** The stored daily archive for the requested window, when nothing warmer
+ * answered. The width is one day whatever was asked, and the sentence says so. */
+async function archiveWindow(db: Db, assetKey: string | null, range: string, requested: string, now: number, ladder: Any): Promise<Any | null> {
+  if (!assetKey) return null
+  const span = Math.max(CANDLE_RANGE_MS[range] || 7 * DAY, DAY)
+  const read = await archiveSeries(db, assetKey, '1D', now - span, now).catch(() => null)
+  const bars = read?.bars || []
+  if (!bars.length) return null
+  const coverage = `${bars.length} stored daily candles from the archive. The demo reads stored data only and never asks a live source, so this window is shown at one day${requested !== '1D' ? ` rather than ${requested}` : ''}. Archived volume is USD for every period.`
+  return {
+    candles: bars, source: 'archive', bestProvider: 'archive', bestPair: null, barIntervalMs: DAY, timestampMeaning: 'open',
+    volumeUnit: 'USD', coverage, sourceState: 'stale', sourceReason: null, provenance: [],
+    ladder: { ...(ladder || {}), range, source: 'archive', interval: '1D', requestedInterval: requested, substituted: requested !== '1D', archivedCandles: bars.length, archiveEndsAt: new Date(bars[bars.length - 1].t).toISOString() },
+  }
+}
+
+/** Candles for one asset from stored data only (see the header). */
+export async function demoAssetCandles(db: Db, canonical: Any, verified: boolean, timeframe: string, interval = 'auto', lookback = 0, now = Date.now()): Promise<Any> {
+  const identityKey = marketCanonicalIdentity(canonical).canonicalAssetKey || (canonical?.source_provider && canonical?.provider_id != null ? `market:${canonical.source_provider}:${canonical.provider_id}` : null)
+  const chart: Any = await loadMarketCandles({
+    assetKey: identityKey,
+    symbol: canonical?.normalized_symbol ? String(canonical.normalized_symbol) : null,
+    cexVerified: verified,
+    cmcId: marketCmcIdentity(canonical),
+    klineIdentity: false,
+    coingeckoId: false,
+  }, timeframe, interval, now, {
+    exchange: (range, width, lb) => loadExchangeCandles(db, String(canonical?.normalized_symbol || ''), range, width, now, { provider: cacheOnlyVenue }, lb),
+    cmc: (id, range, width, lb) => loadCmcChart(db, id, range, width, now, cacheOnlyCmc, {}, lb),
+    archive: (assetKey, width, from, to) => archiveSeries(db, assetKey, width, from, to),
+  }, lookback)
+  if (Array.isArray(chart?.candles) && chart.candles.length) return chart
+  const requested = String(chart?.ladder?.requestedInterval || interval)
+  // Nothing warmer held the window: the archive answers it at one day, first
+  // under the canonical key and then under the plain market key.
+  const marketKey = canonical?.source_provider && canonical?.provider_id != null ? `market:${canonical.source_provider}:${canonical.provider_id}` : null
+  for (const key of [...new Set([identityKey, marketKey].filter(Boolean))]) {
+    const stored = await archiveWindow(db, key as string, timeframe, requested, now, chart?.ladder)
+    if (stored) return stored
+  }
+  return {
+    ...chart,
+    coverage: [chart?.coverage, 'The demo reads stored data only and never asks a live source; no stored candles hold this window.'].filter(Boolean).join(' '),
+  }
+}
+
+/** Candles run through the same response contract intel-markets applies. No
+ * chart capture proof is issued in the demo. */
+function withSeries(body: Any): Any {
+  if (!Array.isArray(body?.candles)) return body
+  const series = chartSeriesResponse({ ...body, source: body.source || body.bestProvider })
+  return { ...body, candles: series.candles, chartSource: series.source }
+}
+
+// deno-lint-ignore no-explicit-any
+async function latestDexSnapshotForPlatforms(db: Db, platforms: Record<string, unknown> | null): Promise<Record<string, unknown> | null> {
+  if (!platforms) return null
+  for (const [platform, address] of Object.entries(platforms)) {
+    const addr = String(address || '').trim()
+    if (!addr) continue
+    const appChain = marketChain(platform)
+    const candidates = getChain(appChain)?.evmChainId != null ? [...new Set([addr, addr.toLowerCase()])] : [addr]
+    for (const tokenAddress of candidates) {
+      try {
+        const { data } = await db.from('dex_pair_snapshots')
+          .select('chain, token_address, pair_address, price_usd, liquidity_usd, volume_24h, market_cap, fdv, source_ref, fetched_at, stale_after')
+          .eq('chain', appChain).eq('token_address', tokenAddress).order('fetched_at', { ascending: false }).limit(1).maybeSingle()
+        if (data) return data
+      } catch { return null }
+    }
+  }
+  return null
+}
+
+function dexEnrichment(row: Record<string, unknown>, chain: string): Record<string, unknown> {
+  return {
+    liquidityUsd: row.liquidity_usd ?? null, volume24hUsd: row.volume_24h ?? row.volume_24h_usd ?? null, priceUsd: row.price_usd ?? null,
+    marketCap: row.market_cap ?? null, fdv: row.fdv ?? null, pairAddress: row.pair_address ?? null, sourceUrl: row.source_ref ?? null,
+    fetchedAt: row.fetched_at ?? null, staleAfter: row.stale_after ?? null, chain,
+  }
+}
+
+const FRESH_MS = 5 * 60_000, STALE_MS = 60 * 60_000
+function freshness(asOf: string | null): 'fresh' | 'stale' | 'degraded' | 'unavailable' {
+  if (!asOf) return 'unavailable'
+  const age = Date.now() - new Date(asOf).getTime()
+  if (age <= FRESH_MS) return 'fresh'
+  if (age <= STALE_MS) return 'stale'
+  return 'degraded'
+}
+
+export interface DemoDetailInput {
+  symbol: string
+  sourceProvider?: string
+  providerId?: string
+  timeframe?: string
+  interval?: string
+  lookbackBars?: number
+  candlesOnly?: boolean
+  quotesOnly?: boolean
+}
+
+/**
+ * The asset page's detail read (and its candlesOnly and quotesOnly forms), from
+ * stored data only. Same statuses and body shape as intel-markets marketDetail.
+ * The caller has already checked that the identity is tracked.
+ */
+export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedAsset?: Any): Promise<DemoReadAnswer> {
+  const timeframe = input.timeframe || '7D'
+  const interval = input.interval || 'auto'
+  const lookback = lookbackBars(input.lookbackBars)
+  if (!CHART_WINDOWS[timeframe] || (interval !== 'auto' && !CHART_INTERVALS[interval])) return { status: 400, body: { error: 'invalid_chart_range' } }
+  let sym = String(input.symbol || '').toUpperCase().replace(/^\$/, '')
+  const resolved = resolvedAsset ? { data: resolvedAsset, error: null, ambiguous: false } : await resolveDemoAsset(db, sym, input.sourceProvider, input.providerId)
+  if (resolved.ambiguous) return { status: 409, body: { error: 'ambiguous_asset', symbol: sym } }
+  if (resolved.error) return { status: 503, body: { error: 'identity_unavailable' } }
+  if (!resolved.data) return { status: 404, body: { error: 'asset_not_found', symbol: sym } }
+  const cmcId = marketCmcIdentity(resolved.data)
+  const cmc = cmcId && !input.candlesOnly ? await cacheOnlyResolveCmc(db, cmcId) : null
+  const quote = assetMarketRead(resolved.data, cmc?.data)
+  const quoteReason = cmc?.error || resolved.data.quote_reason || null
+  const quoteRead = quoteProvenance(quote, cmc?.receipts || [])
+  if (input.quotesOnly) return { status: 200, body: { ...quote, sourceProvider: resolved.data.source_provider, providerId: resolved.data.provider_id, quoteReason, quoteReceipts: quoteRead.receipts, quoteProvenance: quoteRead.figureProvenance } }
+  sym = String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
+  const [identityProfile, identityMapping, claimants] = await Promise.all([
+    db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
+    db.from('exchange_asset_mappings').select('*').eq('normalized_symbol', sym).eq('is_active', true).maybeSingle(),
+    db.from('market_assets').select('provider_id', { count: 'exact', head: true }).eq('normalized_symbol', sym),
+  ])
+  const identityMatch = matchCexEnrichment({ normalizedSymbol: sym, providerId: resolved.data.provider_id, platforms: resolved.data.platforms }, { profileBySym: new Map(identityProfile.data ? [[sym, identityProfile.data]] : []), mappingBySym: new Map(identityMapping.data ? [[sym, identityMapping.data]] : []), symbolCounts: new Map([[sym, claimants.count ?? 2]]) })
+  const cexVerified = hasVerifiedCexIdentity(resolved.data, identityMapping.data) && (identityMatch.confidence === 'high' || !!verifiedNativeMarketSymbol(resolved.data))
+  if (input.candlesOnly) {
+    const c = await demoAssetCandles(db, resolved.data, cexVerified, timeframe, interval, lookback)
+    return { status: 200, body: withSeries({ ...c, timeframe, lookbackBars: lookback, chartAsset: marketCanonicalIdentity(resolved.data).canonicalAssetKey || `market:${resolved.data.source_provider}:${resolved.data.provider_id}` }) }
+  }
+  const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR] = await Promise.all([
+    db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
+    db.from('exchange_latest_market_signals').select('*').eq('normalized_symbol', sym).maybeSingle(),
+    db.from('exchange_latest_market_caps').select('*').eq('normalized_symbol', sym).maybeSingle(),
+    db.from('exchange_latest_cross_market_spreads').select('*').eq('normalized_symbol', sym).maybeSingle(),
+    db.from('exchange_market_rollups').select('*').eq('normalized_symbol', sym),
+    db.from('exchange_latest_tickers').select('*').eq('normalized_symbol', sym),
+    db.from('exchange_latest_provider_market_signals').select('provider, direction, strength, confidence, signal_type, factors, raw_metrics, as_of').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(24),
+    db.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8),
+    db.from('exchange_market_memory').select('summary, why_it_matters, memory_type, as_of').eq('normalized_symbol', sym).eq('is_active', true).order('as_of', { ascending: false }).limit(1),
+  ])
+  if (!cexVerified) { for (const result of [profR, sigR, capR, sprR]) result.data = null; for (const result of [rollR, tickR, provSigR, bookR, memR]) result.data = [] }
+  const canonical = resolved.data
+
+  const provSig = new Map<string, Any>()
+  for (const s of (provSigR.data || [])) if (!provSig.has(s.provider)) provSig.set(s.provider, s)
+  const tickByProv = new Map<string, Any>((tickR.data || []).map((t: Any) => [t.provider, t]))
+  const bookByProv = new Map<string, Any>((bookR.data || []).map((b: Any) => [b.provider, b]))
+  const providers = [...new Set([...(tickR.data || []).map((t: Any) => t.provider), ...provSig.keys()])].map((p) => {
+    const t = tickByProv.get(p); const s = provSig.get(p); const b = bookByProv.get(p)
+    return { provider: p, providerSymbol: t?.provider_symbol ?? b?.provider_symbol ?? null, price: t?.price ?? null, change24h: t?.price_change_pct_24h ?? null, volume24h: t?.volume_quote_24h ?? null, spreadPct: t?.spread_pct ?? b?.spread_pct ?? null, direction: s?.direction ?? null, strength: s?.strength ?? null, confidence: s?.confidence ?? null, factors: s?.factors || [], orderbook: b ? { depthLevel: b.depth_level, bidDepthUsd: b.bid_depth_usd, askDepthUsd: b.ask_depth_usd, imbalancePct: b.imbalance_pct, bidPrice: b.bid_price, askPrice: b.ask_price, asOf: b.as_of } : null }
+  }).sort((a, b) => (b.volume24h || 0) - (a.volume24h || 0))
+
+  const orderbookRows = [...(bookR.data || [])].sort((a: Any, b: Any) => ((b.bid_depth_usd || 0) + (b.ask_depth_usd || 0)) - ((a.bid_depth_usd || 0) + (a.ask_depth_usd || 0)))
+  const orderbook = orderbookRows.length ? {
+    providerCount: orderbookRows.length,
+    totalBidDepthUsd: orderbookRows.reduce((s: number, r: Any) => s + (Number(r.bid_depth_usd) || 0), 0),
+    totalAskDepthUsd: orderbookRows.reduce((s: number, r: Any) => s + (Number(r.ask_depth_usd) || 0), 0),
+    bestDepthProvider: orderbookRows[0]?.provider || null,
+    minSpreadPct: orderbookRows.map((r: Any) => Number(r.spread_pct)).filter((x: number) => Number.isFinite(x)).sort((a: number, b: number) => a - b)[0] ?? null,
+    asOf: orderbookRows.reduce((m: string, r: Any) => r.as_of && r.as_of > m ? r.as_of : m, ''),
+    providers: orderbookRows.map((r: Any) => ({ provider: r.provider, providerSymbol: r.provider_symbol, depthLevel: r.depth_level, bidPrice: r.bid_price, askPrice: r.ask_price, bidDepthUsd: r.bid_depth_usd, askDepthUsd: r.ask_depth_usd, imbalancePct: r.imbalance_pct, spreadPct: r.spread_pct, asOf: r.as_of })),
+  } : null
+
+  const rollups: Record<string, Any> = {}
+  for (const r of (rollR.data || [])) rollups[r.timeframe] = r
+  const chart = await demoAssetCandles(db, canonical, cexVerified, timeframe, interval, lookback)
+  const { candles, bestPair, bestProvider } = chart
+  const prof = profR.data, sig = sigR.data
+  const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null
+  const dexSnapshot = await latestDexSnapshotForPlatforms(db, canonicalPlatforms)
+  const dex = dexSnapshot ? dexEnrichment(dexSnapshot, String(dexSnapshot.chain || '')) : null
+
+  const ecoChain = quote.chain
+  const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
+  const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : canonical?.contract?.address ? String(canonical.contract.address) : null
+  const [ecosystemNarratives, catalystRead, onchain, unlocks] = await Promise.all([
+    assembleEcosystemNarrativeState(db, { chain: ecoChain, symbol: sym }),
+    assembleCatalystNewsState(db, { symbol: sym, chain: ecoChain }),
+    // Birdeye's cache only: allowLive false never makes the budgeted live call.
+    assemblePublicOnchainState({
+      chain: onchainChain, tokenAddress: onchainAddress, allowLive: false, nowIso: new Date().toISOString(),
+      birdeyeCtx: { supabase: db, jobName: DEMO_READ_CALLER, caller: DEMO_READ_CALLER, kind: 'render' } as Any,
+    }),
+    assembleTokenUnlockState(db, { symbol: sym, nowMs: Date.now(), allowLive: false }),
+  ])
+  const catalysts = { ...catalystRead, curated_news: curatedNewsWithEnvelopes(catalystRead.curated_news) }
+
+  const payload: Any = {
+    detail: true, symbol: sym, ...quote,
+    providerId: canonical?.provider_id ?? null, sourceProvider: canonical?.source_provider ?? null, primaryChain: canonical?.primary_chain ?? null,
+    signal: sig ? { direction: sig.direction, strength: sig.strength, confidence: sig.confidence, signalType: sig.signal_type, title: sig.title, summary: sig.summary, whyItMatters: sig.why_it_matters, factors: sig.factors || [], confirmingProviders: sig.confirming_providers || [], conflictingProviders: sig.conflicting_providers || [], providerCount: sig.provider_count } : null,
+    profile: prof ? { liquidityScore: prof.liquidity_score, retailRelevanceScore: prof.retail_relevance_score, marketQualityScore: prof.market_quality_score, trendScore: prof.trend_score, bestGlobalPair: prof.best_global_pair, bestUsRetailPair: prof.best_us_retail_pair } : null,
+    ...marketCanonicalIdentity(canonical),
+    identityChoices: marketIdentityChoices(canonical),
+    sourceFreshness: quote.sourceFreshness || freshness(quote.asOf), quoteReason,
+    cexCoverage: cexVerified && providers.length ? 'available' : 'unverified',
+    depthQuotes: positionDepthQuotes(canonical, cexVerified, bookR.data || [], tickR.data || []),
+    spread: cexVerified && usableSpread(sprR.data) ? sprR.data : null, orderbook, rollups, providers, dex,
+    memorySummary: memR.data?.[0]?.summary || null,
+    ecosystemNarratives, catalysts, onchain, unlocks,
+    ...chart, chartAsset: marketCanonicalIdentity(canonical).canonicalAssetKey || `market:${canonical.source_provider}:${canonical.provider_id}`, candles, bestPair, bestProvider, chartCoverage: 'coverage' in chart ? chart.coverage : null,
+    chartState: 'sourceState' in chart ? chart.sourceState : null,
+    chartReason: 'sourceReason' in chart ? chart.sourceReason : null,
+    chartProvenance: 'provenance' in chart ? chart.provenance : null,
+    quoteSourceLabel: canonical?.source_label ? String(canonical.source_label) : null,
+    quoteAttribution: canonical?.attribution_label ? String(canonical.attribution_label) : null,
+  }
+  const identity = detailIdentity(canonical, quote.chain)
+  let metricAgreement = null
+  if (cmcId) try { metricAgreement = metricAgreementReceipt(await readMetricAgreement(db, `market:coinmarketcap:${cmcId}`, Date.now())) } catch { /* additive */ }
+  const chartRead = chartProvenance(chart)
+  const figureProvenance = { ...quoteRead.figureProvenance, ...venueProvenance({ tickers: tickR.data || [], orderbookAsOf: orderbook?.asOf || null, dex }), chart: chartRead.envelope }
+  return { status: 200, body: withSeries({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }), quoteReceipts: quoteRead.receipts, quoteProvenance: quoteRead.figureProvenance, chartReceipts: chartRead.receipts, figureProvenance, metricAgreement }) }
+}
+
+const NO_RISK_METRICS = { volatility30d: null, maxDrawdown: null, distanceFromHigh: null, timeUnderWaterDays: null }
+
+/** The history figure's reason when neither the history cache nor the archive
+ * holds the window: the demo shows stored data only. */
+export const DEMO_STORED_ONLY = 'demo_stored_only'
+
+/** A daily history range from the stored daily archive, when the CoinMarketCap
+ * history cache holds nothing for it. Closes only, dated, named as the archive. */
+async function archivedHistory(db: Db, asset: Any, range: string, now: number): Promise<Any | null> {
+  const plan = historyPlan(range)
+  if (!plan || plan.interval !== 'daily') return null
+  const keys = [marketCanonicalIdentity(asset).canonicalAssetKey, asset?.source_provider && asset?.provider_id != null ? `market:${asset.source_provider}:${asset.provider_id}` : null]
+  for (const key of [...new Set(keys.filter(Boolean))]) {
+    const read = await archiveSeries(db, key as string, '1D', now - plan.count * DAY, now).catch(() => null)
+    const points = (read?.bars || []).filter((bar: Any) => Number.isFinite(Number(bar.c)))
+      .map((bar: Any) => ({ t: bar.t, price: Number(bar.c), volume: bar.v == null ? null : Number(bar.v), marketCap: null }))
+    if (points.length) {
+      return { points, interval: 'daily', source: 'stored daily archive', observedAt: new Date(points[points.length - 1].t).toISOString(), fetchedAt: null, state: 'stale', reason: null, credits: 0 }
+    }
+  }
+  return null
+}
+
+/** The price history figure, from the CoinMarketCap history cache only. */
+export async function demoMarketHistory(db: Db, input: { symbol?: string; sourceProvider?: string; providerId?: string; range?: string }, resolvedAsset?: Any): Promise<DemoReadAnswer> {
+  const range = input.range || '90d'
+  if (!historyPlan(range)) return { status: 400, body: { error: 'invalid_history_range' } }
+  const sym = String(input.symbol || '').toUpperCase().replace(/^\$/, '')
+  const resolved = resolvedAsset ? { data: resolvedAsset, error: null, ambiguous: false } : await resolveDemoAsset(db, sym, input.sourceProvider, input.providerId)
+  if (resolved.ambiguous) return { status: 409, body: { error: 'ambiguous_asset', symbol: sym } }
+  if (resolved.error) return { status: 503, body: { error: 'identity_unavailable' } }
+  if (!resolved.data) return { status: 404, body: { error: 'asset_not_found', symbol: sym } }
+  const identity = detailIdentity(resolved.data, null)
+  const cmcId = marketCmcIdentity(resolved.data)
+  if (!cmcId) return { status: 200, body: { history: unavailableHistory(range, 'no_coinmarketcap_listing'), metrics: NO_RISK_METRICS, identity } }
+  const now = Date.now()
+  let history: Any = await loadAssetHistory(db, { cmcId, range, request: cacheOnlyCmc, ctx: { caller: DEMO_READ_CALLER } })
+  if (!history.points.length) history = await archivedHistory(db, resolved.data, range, now) || { ...history, reason: DEMO_STORED_ONLY }
+  const metrics = history.points.length ? {
+    volatility30d: realizedVolatility(history.points), maxDrawdown: maxDrawdown(history.points),
+    distanceFromHigh: distanceFromHigh(history.points, now), timeUnderWaterDays: timeUnderWaterDays(history.points),
+  } : NO_RISK_METRICS
+  return { status: 200, body: { history, metrics, identity } }
+}

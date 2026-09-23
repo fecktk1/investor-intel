@@ -10,7 +10,9 @@ import {receiptCost} from '../lib/source-receipt'
  * Four shapes, because the four ways a figure gets served cost four different
  * things and must not read alike:
  *   live    "1 provider call · 250 credits · live"
- *   cache   "No provider call · served from the shared cache"
+ *   cache   "No provider call · served from the shared cache · original call 1 credit"
+ *           (the last part only when the receipt carries the original call's
+ *           own reported charge, receipt.proof.creditCount)
  *   shared  "Shared capture, no per-reader provider cost · captured <time>"
  *   failed  "No provider call · a remembered failure answered this read"
  *
@@ -32,7 +34,10 @@ export default function ReceiptCostLine({receipt,as:Tag='span',className=''}){
  if(cost.served==='live'){
   text=`${t('receipt_cost.calls',{count:cost.calls,defaultValue:'{{count}} provider call'})} · ${credits} · ${t('receipt_cost.live',{defaultValue:'live'})}`
  }else if(cost.served==='cache'){
-  text=`${t('receipt_cost.no_call',{defaultValue:'No provider call'})} · ${t('receipt_cost.from_cache',{defaultValue:'served from the shared cache'})}`
+  // The ORIGINAL call's charge, from its stored response, when the receipt
+  // carries it: what filling the shared cache cost once, never this reader.
+  const origin=cost.originCredits==null?null:t('receipt_cost.origin_credits',{count:cost.originCredits,defaultValue:'original call {{count}} credit'})
+  text=[t('receipt_cost.no_call',{defaultValue:'No provider call'}),t('receipt_cost.from_cache',{defaultValue:'served from the shared cache'}),origin].filter(Boolean).join(' · ')
  }else if(cost.served==='shared'){
   // The capture's own call count is what the capture cost ONCE for everyone, so
   // it is stated as the run's cost and never as this reader's.

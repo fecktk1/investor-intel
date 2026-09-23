@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import {receiptFreshness,fromCmcReceipt,storedReceipt,captureRunReceipts,readCaptureReceipts,CAPTURE_RECEIPT_LANES} from './source-receipt.ts'
+import {receiptFreshness,fromCmcReceipt,storedReceipt,captureRunReceipts,captureProof,readCaptureReceipts,CAPTURE_RECEIPT_LANES} from './source-receipt.ts'
 import {curatedEnvelope,figureEnvelope,ageFreshness,sourceFigureScope,SOURCE_SCOPE_KEYS} from './market-figure-scope.ts'
 import {screenProvenance,quoteProvenance,chartProvenance,venueProvenance,tokenChartProvenance,curatedNewsWithEnvelopes} from './market-provenance.ts'
 import {withCuratedEnvelope,dashboardFigureProvenance} from './dashboard-reads.ts'
@@ -49,6 +49,27 @@ Deno.test('a capture run collapses to one receipt per endpoint with summed repor
  for(const r of receipts)for(const key of ['request_id','org_id','user_id','error_message'])assert.ok(!(key in r))
 })
 
+Deno.test('a capture receipt carries the proof its own call kept, dated against the run it describes',()=>{
+ const spec=CAPTURE_RECEIPT_LANES.rwa
+ const logs=[{caller:'intel-capture-rwa',endpoint:'/v5/real-world-assets/assets/list',cache_status:'live',status_code:200,credits_or_cu:1,ts:ago(600)}]
+ const row={caller:'intel-capture-rwa',endpoint:'/v5/real-world-assets/assets/list',request:{capability:'rwaList',endpoint:'/v5/real-world-assets/assets/list',parameters:{limit:'250',start:'1',asset_type:1}},
+  http_status:200,credit_count:1,error_code:'0',responded_at:ago(601),retrieved_at:ago(600),excerpt:{status:{credit_count:1},data:{rwa_assets:[]},lists:[],shortened:0,trimmed:false,dataOmitted:false},excerpt_missing:null}
+ const [receipt]=captureRunReceipts('rwa',spec,logs,ago(590),3600,NOW,[row])
+ assert.equal(receipt.proof?.source,'capture-record');assert.equal(receipt.proof?.inRun,true)
+ assert.equal(receipt.proof?.creditCount,1);assert.equal(receipt.proof?.httpStatus,200)
+ // Only string parameters survive: a recorded request is data, never trusted shape.
+ assert.deepEqual(receipt.proof?.request,{capability:'rwaList',endpoint:'/v5/real-world-assets/assets/list',parameters:{limit:'250',start:'1'}})
+ // A proof kept from an earlier run is still shown, and says it is not this run's.
+ const [older]=captureRunReceipts('rwa',spec,logs,ago(590),3600,NOW,[{...row,retrieved_at:ago(90000)}])
+ assert.equal(older.proof?.inRun,false)
+ // Another caller's or endpoint's proof never attaches, and none is none.
+ assert.equal(captureRunReceipts('rwa',spec,logs,ago(590),3600,NOW,[{...row,caller:'intel-capture-rwa-depth'}])[0].proof,null)
+ assert.equal(captureRunReceipts('rwa',spec,logs,ago(590),3600,NOW)[0].proof,null)
+ const missing=captureProof({...row,excerpt:null,excerpt_missing:'failure_body_not_kept'},ago(600))
+ assert.equal(missing?.excerpt,null);assert.equal(missing?.excerptMissing,'failure_body_not_kept')
+ assert.equal(captureProof({...row,excerpt:null,excerpt_missing:'anything else'},ago(600))?.excerptMissing,'not_recorded')
+})
+
 Deno.test('the capture receipts view reads only named lanes and only safe call-log columns',async()=>{
  const calls:any[]=[]
  const db={from:(table:string)=>{const call:any={table,ops:[]};calls.push(call);const q:any=new Proxy({then:(yes:any)=>Promise.resolve({data:table==='provider_call_logs'?[{caller:'intel-capture-airdrops',endpoint:'/v1/cryptocurrency/airdrops',cache_status:'live',status_code:200,credits_or_cu:1,ts:ago(3600)}]:table==='provider_schedule_policy'?[{provider:'coinmarketcap',feature:'airdrops',cadence_seconds:86400}]:[{last_seen_at:ago(3500)}],error:null}).then(yes)},{get:(t:any,p:string)=>p==='then'?t.then:(...a:any[])=>{call.ops.push([p,...a]);return q}});return q}}
@@ -59,7 +80,11 @@ Deno.test('the capture receipts view reads only named lanes and only safe call-l
  assert.deepEqual(log.ops.find((o:any[])=>o[0]==='select')[1],'caller,endpoint,cache_status,status_code,credits_or_cu,ts')
  assert.deepEqual(log.ops.find((o:any[])=>o[0]==='in'),['in','caller',['intel-capture-airdrops']])
  assert.ok(log.ops.some((o:any[])=>o[0]==='limit'))
- assert.ok(!calls.some(c=>!['provider_call_logs','provider_schedule_policy','intel_airdrop_snapshots'].includes(c.table)))
+ // The capture's own kept proof is read by caller, and only its proof columns.
+ const proofs=calls.find(c=>c.table==='intel_cmc_call_proofs')
+ assert.deepEqual(proofs.ops.find((o:any[])=>o[0]==='select')[1],'caller,endpoint,request,http_status,credit_count,error_code,responded_at,retrieved_at,excerpt,excerpt_missing')
+ assert.deepEqual(proofs.ops.find((o:any[])=>o[0]==='in'),['in','caller',['intel-capture-airdrops']])
+ assert.ok(!calls.some(c=>!['provider_call_logs','provider_schedule_policy','intel_airdrop_snapshots','intel_cmc_call_proofs'].includes(c.table)))
  const empty:any=await readCaptureReceipts(db,{lanes:[]},NOW)
  assert.equal(empty.reason,'no_lane_selected')
 })

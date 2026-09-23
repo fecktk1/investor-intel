@@ -82,7 +82,10 @@ function FigureReceipt({ name, figure }) {
         <dt>{t('rwa_lookup.captured_at', { defaultValue: 'Captured at' })}</dt><dd>{time(r.capturedAt) || absent}</dd>
         <dt>{t('rwa_lookup.http_status', { defaultValue: 'HTTP status' })}</dt><dd>{r.httpStatus == null ? absent : String(r.httpStatus)}</dd>
         {/* A reported 0 is a real charge of zero and reads as 0. */}
-        <dt>{t('rwa_lookup.credits', { defaultValue: 'Credits charged (credit_count)' })}</dt><dd>{r.creditCount == null ? (r.served === 'cache' ? t('rwa_lookup.credits_cache', { defaultValue: 'none for this lookup; the original charge is not kept with a cached copy' }) : absent) : String(r.creditCount)}</dd>
+        <dt>{t('rwa_lookup.credits', { defaultValue: 'Credits charged (credit_count)' })}</dt><dd>{r.creditCount == null ? (r.served === 'cache' ? (r.originCreditCount != null
+          // The original call's charge, from its stored response: never this lookup's.
+          ? t('rwa_lookup.credits_cache_origin', { count: r.originCreditCount, defaultValue: 'none for this lookup; the original call reported {{count}} credit' })
+          : t('rwa_lookup.credits_cache', { defaultValue: 'none for this lookup; the original charge is not kept with a cached copy' })) : absent) : String(r.creditCount)}</dd>
         {r.caller && <><dt>{t('rwa_lookup.capture_lane', { defaultValue: 'Capture lane' })}</dt><dd>{r.caller}</dd></>}
         {r.reason && <><dt>{t('rwa_lookup.why', { defaultValue: 'Why' })}</dt><dd>{reasonText(t, r.reason)}</dd></>}
         {r.curl && <>

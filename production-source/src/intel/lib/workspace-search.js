@@ -2,6 +2,7 @@ import { loadMarkets, resolveAsset } from './markets-api'
 import { marketIdentityParams } from './asset-identity'
 import { detectIdentifierKind } from './chains'
 import { formatUsd } from './market-format'
+import { isIntelDemoActive } from '../demo/demo-mode'
 
 // `t` is optional so the existing call sites keep working; the fallback returns
 // the same English default the key carries, never a raw key.
@@ -76,7 +77,10 @@ function contractGroupRows(result, query, t) {
 export async function searchIntelAssets(supabase, orgId, query, signal, t = fallbackText) {
   if (!orgId || query.trim().length < 2) return []
   const trimmed = query.trim().slice(0, 100)
-  const identifierKind = detectIdentifierKind(trimmed)
+  // The public demo never resolves a pasted identifier: that ladder asks paid
+  // providers. It searches the tracked catalogue only (intel-demo-read).
+  const demo = isIntelDemoActive()
+  const identifierKind = demo ? null : detectIdentifierKind(trimmed)
   const [data, resolution] = await Promise.all([
     loadMarkets(supabase, orgId, { search: trimmed, limit: 10, page: 0, provider: 'auto', sort: 'market_cap' }, { signal }),
     identifierKind ? resolveAsset(supabase, trimmed, null, { orgId, signal }) : Promise.resolve(null),
@@ -88,5 +92,18 @@ export async function searchIntelAssets(supabase, orgId, query, signal, t = fall
     description: `${row.chain || 'Market-wide asset'} · ${row.sourceProvider} · ID ${row.providerId}`,
     group: 'Assets',
   }))
-  return [...catalogue, ...contractGroupRows(resolution, trimmed, t)]
+  // The public demo also offers the tracked assets outside the screen's
+  // catalogue that the same text names (intel-demo-read demoSuggestions).
+  const tracked = demo && Array.isArray(data.demoSuggestions)
+    ? data.demoSuggestions.filter(row => row?.href && row.sourceProvider && row.providerId != null).slice(0, Math.max(0, 10 - catalogue.length)).map(row => ({
+      to: row.href,
+      label: `${row.displayName || row.symbol} · ${row.symbol || ''}`,
+      description: `${row.chain || 'Market-wide asset'} · ${row.sourceProvider} · ID ${row.providerId}`,
+      group: 'Assets',
+    }))
+    : []
+  const rows = [...catalogue, ...tracked, ...contractGroupRows(resolution, trimmed, t)]
+  // The demo's calm reason for an asset it does not track; the shell renders it.
+  if (demo && !rows.length && data?.demoReason === 'demo_untracked') rows.demoUntracked = true
+  return rows
 }

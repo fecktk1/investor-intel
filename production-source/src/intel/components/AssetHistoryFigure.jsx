@@ -56,6 +56,8 @@ const REASON_LABELS = {
   identity_unavailable: 'The asset identity could not be resolved for a history read.',
   asset_not_found: 'No catalogue asset matches this identity.',
   invalid_provider: 'That provider cannot serve price history.',
+  // The public demo reads stored data only (intel-demo-read).
+  demo_stored_only: 'The demo shows stored data only, and no stored history covers this window.',
 }
 
 const num = value => {

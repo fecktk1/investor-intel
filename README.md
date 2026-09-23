@@ -19,7 +19,7 @@ A tokenised stock, fund or commodity is a wrapper. Investor Intel answers the qu
 | Who is the issuer, legally? | Token to legal entity only through dated evidence from GLEIF, SEC EDGAR and OFAC, never by name similarity. The underlying company of a tokenised stock with its latest filings, and advertised yield beside NAV-implied yield. | Structure figures, issuer and registrant sections |
 | Could I get out? | Days a position takes to sell at a chosen share of daily volume, computed twice: through the on-chain pools whose other leg can be valued, and across all venues CoinMarketCap reports. Missing data is a stated reason, never zero days. | Structure figures, on-chain depth, "Exit capacity" |
 
-Every figure carries a receipt: endpoint, parameters, live call or cache, HTTP status, credits charged as CoinMarketCap reported them, and cache age. A live receipt includes a `curl` line that reproduces the call with your own key.
+Every figure carries a receipt: endpoint, parameters, live call or cache, HTTP status, credits charged as CoinMarketCap reported them (for a cached figure, the charge on the original call), and cache age. Every receipt includes a `curl` line that reproduces the call with your own key and, where the call was kept, a trimmed copy of what CoinMarketCap returned.
 
 ## RWA endpoints used
 
@@ -46,7 +46,7 @@ A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-pr
 const quotes = await deps.request('rwaQuotes', { rwa_id: candidates.join(',') }, ctx).catch(() => null)
 ```
 
-`deps.request` is `requestCmc`. After the registry, plan, cache and credit-reservation checks, the request goes out in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts` lines 232 to 233:
+`deps.request` is `requestCmc`. After the registry, plan, cache and credit-reservation checks, the request goes out in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts` lines 271 to 272:
 
 ```ts
 const res=await fetch(`${BASE}${spec.path}${post?'':`?${query}`}`,{method:post?'POST':'GET',headers:{'X-CMC_PRO_API_KEY':key,Accept:'application/json',...(post?{'Content-Type':'application/json'}:{})},
@@ -87,7 +87,7 @@ One call returns every wrapper of the asset with its issuer. Against CMC's own `
 
 ## Check it yourself
 
-Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call: `npm ci`, `npm test` (26 demo tests in fixture mode), `npm run build`, and the standalone production-source Deno tests (475 tests, listed in `production-source/standalone-tests.txt`) without network permission. The same commands work locally with Node.js 24 and Deno 2:
+Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call: `npm ci`, `npm test` (26 demo tests in fixture mode), `npm run build`, and the standalone production-source Deno tests (483 tests, listed in `production-source/standalone-tests.txt`) without network permission. The same commands work locally with Node.js 24 and Deno 2:
 
 ```bash
 npm ci
@@ -113,7 +113,7 @@ Also in the product: CSV export of each table (provider figures are left blank u
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Inside it, a standalone subset runs on its own: the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts). | `deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)` (475 tests, no key, no network permission) |
+| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Inside it, a standalone subset runs on its own: the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts). | `deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)` (483 tests, no key, no network permission) |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm ci`, `npm test`, `npm run dev` (see Quick start) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |

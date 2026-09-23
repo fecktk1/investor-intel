@@ -1,6 +1,8 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
 import SourceCallReceipt from './SourceCallReceipt'
+import ProviderText from './ProviderText'
+import { hasProviderMarkdown } from '../lib/provider-text'
 import DemoNotInSnapshot from '../demo/DemoNotInSnapshot'
 import { DEMO_MISS_CODE, DEMO_MISS_TEXT } from '../demo/demo-fetch'
 
@@ -15,7 +17,9 @@ export function EvidenceRecord({ record, depth = 0 }) {
   return <dl className="intel-evidence-facts">{Object.entries(record).filter(([key, value]) => value != null && key !== 'quote').map(([key, value]) => <div key={key}>
     <dt>{title(key)}</dt><dd>{typeof value === 'object'
       ? <details><summary>{Array.isArray(value) ? `${value.length} records` : title(key)}</summary>{Array.isArray(value) ? value.slice(0, 100).map((item, i) => typeof item === 'object' ? <EvidenceRecord key={i} record={item} depth={depth + 1}/> : <p key={i}>{String(item)}</p>) : <EvidenceRecord record={value} depth={depth + 1}/>}</details>
-      : sourceHref(String(value)) ? <a href={sourceHref(String(value))} target="_blank" rel="noopener noreferrer">{String(value)}</a> : typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : String(value)}</dd>
+      : sourceHref(String(value)) ? <a href={sourceHref(String(value))} target="_blank" rel="noopener noreferrer">{String(value)}</a>
+      // Provider prose with markdown markers ("### ") renders as headings and lists, never with its markers.
+      : typeof value === 'string' && hasProviderMarkdown(value) ? <ProviderText text={value}/> : typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : String(value)}</dd>
   </div>)}{record.quote && <div><dt>USD quote</dt><dd><EvidenceRecord record={record.quote} depth={depth + 1}/></dd></div>}</dl>
 }
 export function ResearchStatus({ query, showObserved=true }) {

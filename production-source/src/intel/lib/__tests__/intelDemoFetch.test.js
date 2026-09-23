@@ -253,3 +253,113 @@ describe('demoFetch and the public RWA endpoint', () => {
     expect((await plain.functions.invoke('intel-rwa-lookup', { body: { q: 'NVDA' } })).data.code).toBe(DEMO_MISS_CODE)
   })
 })
+
+describe('demoFetch and the public read endpoint (a visitor search)', () => {
+  const TRACKED_DETAIL = {
+    detail: true, symbol: 'BTC', displayName: 'Bitcoin', price: 86770, sourceProvider: 'coinmarketcap', providerId: '1',
+    canonicalAssetKey: 'bip122:native:BTC', identityChoices: [{ canonicalAssetKey: 'bip122:native:BTC', chain: 'bitcoin', label: 'Bitcoin' }],
+    candles: [{ t: 1, o: 1, h: 2, l: 1, c: 2 }],
+  }
+  const UNTRACKED = { error: 'demo_untracked', code: 'demo_untracked', reason: 'demo_untracked', state: 'unavailable' }
+  const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+
+  // A fake intel-demo-read that knows BTC (coinmarketcap 1) and nothing else.
+  function readEndpoint(body) {
+    if (body.read === 'suggest') return json(body.q === 'BTC' ? { suggest: true, q: 'BTC', limit: 8, matches: [{ sourceProvider: 'coinmarketcap', providerId: '1', symbol: 'BTC', match: 'symbol_exact', href: '/intel/markets/BTC?provider=coinmarketcap&id=1' }] } : { suggest: true, q: body.q, limit: 8, matches: [], demoReason: 'demo_untracked' })
+    if (body.read === 'screen') return json(body.query.search === 'BTC' ? { rows: [{ symbol: 'BTC', sourceProvider: 'coinmarketcap', providerId: '1' }], total: 1 } : { rows: [], total: 0, demoReason: 'demo_untracked' })
+    if (body.read === 'detail') return body.providerId === '1' || body.symbol === 'BTC' ? json(body.mode === 'full' ? TRACKED_DETAIL : { candles: [], mode: body.mode }) : json(UNTRACKED, 403)
+    if (body.read === 'venue') return json({ canonicalKey: body.canonicalKey, depth: { quotes: [] } })
+    if (body.read === 'news') return json([{ id: 7, title: 'Bitcoin headline', published_at: new Date(Date.now() - 3_600_000).toISOString() }])
+    return json(UNTRACKED, 403)
+  }
+  function searchingClient(entries = {}, endpoint = readEndpoint) {
+    const net = bucket(entries)
+    const reader = createSnapshotReader({ supabaseUrl: URL_BASE, fetchImpl: net.network })
+    const forwarded = []
+    const forwardPublic = vi.fn(async (body, fn) => { forwarded.push({ fn, body }); return endpoint(body, fn) })
+    const demoFetch = createDemoFetch({ supabaseUrl: URL_BASE, reader, store: createDemoStore(), forwardPublic })
+    const client = createClient(URL_BASE, 'anon-key', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: demoFetch } })
+    return { client, forwarded, forwardPublic, net }
+  }
+
+  it('a tracked search and the asset it opens are answered by intel-demo-read, rebuilt without the workspace', async () => {
+    const { client, forwarded } = searchingClient()
+    const { suggestMarketAssets, loadMarkets, loadMarketDetail } = await import('../markets-api')
+    const matches = await suggestMarketAssets(client, DEMO_ORG_ID, 'BTC')
+    expect(matches.map((m) => m.providerId)).toEqual(['1'])
+    const screen = await loadMarkets(client, DEMO_ORG_ID, { search: 'BTC', limit: 10, page: 0, provider: 'auto', sort: 'market_cap' })
+    expect(screen.rows).toHaveLength(1)
+    const detail = await loadMarketDetail(client, DEMO_ORG_ID, 'BTC', { sourceProvider: 'coinmarketcap', providerId: '1' })
+    expect(detail.price).toBe(86770)
+    expect(forwarded.map((f) => f.fn)).toEqual(['intel-demo-read', 'intel-demo-read', 'intel-demo-read'])
+    expect(forwarded.map((f) => f.body)).toEqual([
+      { read: 'suggest', q: 'BTC', limit: 8 },
+      { read: 'screen', query: { provider: 'auto', sort: 'market_cap', search: 'BTC', page: 0, limit: 10 } },
+      { read: 'detail', mode: 'full', symbol: 'BTC', timeframe: '7D', sourceProvider: 'coinmarketcap', providerId: '1' },
+    ])
+    for (const { body } of forwarded) expect(JSON.stringify(body)).not.toContain(DEMO_ORG_ID)
+  })
+
+  it('an untracked asset comes back as the calm demo_untracked reason, never a failed read', async () => {
+    const { client } = searchingClient()
+    const { suggestMarketAssets, loadMarkets, loadMarketDetail } = await import('../markets-api')
+    const { isDemoUntrackedReason } = await import('../../demo/DemoNotInSnapshot')
+    expect(await suggestMarketAssets(client, DEMO_ORG_ID, 'zzqqxxv')).toEqual([])
+    const screen = await loadMarkets(client, DEMO_ORG_ID, { search: 'zzqqxxv', limit: 10, page: 0, provider: 'auto', sort: 'market_cap' })
+    expect(screen.rows).toEqual([])
+    expect(screen.demoReason).toBe('demo_untracked')
+    const failure = await loadMarketDetail(client, DEMO_ORG_ID, 'RANDOM', { sourceProvider: 'contract', providerId: 'ethereum:0x1111111111111111111111111111111111111111' }).catch((e) => e)
+    expect(failure.message).toBe('demo_untracked')
+    expect(isDemoUntrackedReason(failure.message)).toBe(true)
+  })
+
+  it('what the snapshot holds is not forwarded; a screen without a search, a watchlist and other functions stay misses', async () => {
+    const screenKey = demoSnapshotKey('intel-markets', { provider: 'auto', sort: 'market_cap', search: '', page: 0, limit: 50 })
+    const { client, forwarded } = searchingClient({ [screenKey]: { rows: [{ symbol: 'SNAP' }], total: 1 } })
+    const { loadMarkets } = await import('../markets-api')
+    expect((await loadMarkets(client, DEMO_ORG_ID, { provider: 'auto', sort: 'market_cap', search: '', page: 0, limit: 50 })).rows[0].symbol).toBe('SNAP')
+    await expect(loadMarkets(client, DEMO_ORG_ID, { provider: 'auto', sort: 'volume', search: '', page: 0, limit: 50 })).rejects.toThrow(/Not in today/)
+    await expect(loadMarkets(client, DEMO_ORG_ID, { search: 'BTC', watchlistOnly: true })).rejects.toThrow(/Not in today/)
+    const generate = await client.functions.invoke('intel-generate', { body: { orgId: DEMO_ORG_ID, kind: 'brief' } })
+    expect(generate.data.code).toBe(DEMO_MISS_CODE)
+    const refresh = await client.functions.invoke('token-profile-get', { body: { orgId: DEMO_ORG_ID, sourceProvider: 'coinmarketcap', providerId: '1', refresh: true } })
+    expect(refresh.data.code).toBe(DEMO_MISS_CODE)
+    expect(forwarded).toEqual([])
+  })
+
+  it('the venue read crosses only for a key a tracked detail named, and news crosses as its terms alone', async () => {
+    const { client, forwarded } = searchingClient()
+    const venue = () => client.functions.invoke('intel-research', { body: { orgId: DEMO_ORG_ID, capability: 'venueContext', params: { canonicalKey: 'bip122:native:BTC', refresh: false, requestRevision: 0 } } })
+    expect((await venue()).data.reason).toBe(DEMO_MISS_CODE)
+    const { loadMarketDetail } = await import('../markets-api')
+    await loadMarketDetail(client, DEMO_ORG_ID, 'BTC', { sourceProvider: 'coinmarketcap', providerId: '1' })
+    expect((await venue()).data.canonicalKey).toBe('bip122:native:BTC')
+    expect(forwarded.at(-1).body).toEqual({ read: 'venue', canonicalKey: 'bip122:native:BTC', sourceProvider: 'coinmarketcap', providerId: '1' })
+    const { loadAssetNews } = await import('../asset-news')
+    const news = await loadAssetNews(client, DEMO_ORG_ID, { key: 'bip122:native:BTC', symbol: 'BTC', name: 'Bitcoin', chain: 'bitcoin', native: true })
+    expect(news.rows.map((r) => r.id)).toContain(7)
+    const newsBodies = forwarded.filter((f) => f.body.read === 'news').map((f) => f.body)
+    expect(newsBodies.map((b) => b.table).sort()).toEqual(['intel_curated_news', 'intel_global_news'])
+    expect(newsBodies.find((b) => b.table === 'intel_curated_news').terms).toEqual(['tokens.cs.{"BTC"}', 'tokens.cs.{"Bitcoin"}', 'tokens.cs.{"bitcoin:native"}', 'chains.cs.{bitcoin}'])
+  })
+
+  it('an unreachable endpoint falls back to the snapshot sentence', async () => {
+    const { client } = searchingClient({}, () => { throw new Error('offline') })
+    const { loadMarketDetail } = await import('../markets-api')
+    const failure = await loadMarketDetail(client, DEMO_ORG_ID, 'BTC', { sourceProvider: 'coinmarketcap', providerId: '1' }).catch((e) => e)
+    expect(failure.message).toMatch(/Not in today/)
+  })
+
+  it('the chart keeps its working state in memory and has no conditions yet', async () => {
+    const { client, forwarded } = searchingClient()
+    const { readChartWorkingState } = await import('../chart-workspace-api')
+    const context = { supabase: client, orgId: DEMO_ORG_ID, userId: DEMO_USER_ID }
+    expect(await readChartWorkingState(context, 'bip122:native:BTC')).toBeNull()
+    const { data } = await client.functions.invoke('intel-chart-workspace', { body: { orgId: DEMO_ORG_ID, operation: 'working_save', asset: 'bip122:native:BTC', revision: 0, state: { asset: 'bip122:native:BTC', range: '7D' } } })
+    expect(data.revision).toBe(1)
+    expect((await readChartWorkingState(context, 'bip122:native:BTC')).state.range).toBe('7D')
+    const history = await client.functions.invoke('intel-chart-workspace', { body: { orgId: DEMO_ORG_ID, operation: 'alert_history', asset: 'bip122:native:BTC', from: 1, to: 2 } })
+    expect(history.data).toEqual({ rows: [], nextCursor: null })
+    expect(forwarded).toEqual([])
+  })
+})

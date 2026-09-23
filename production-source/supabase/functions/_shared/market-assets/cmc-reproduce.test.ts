@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict'
-import { cmcReproduceCommand, shellQuote, CMC_REPRODUCE_BASE } from './cmc-reproduce.ts'
+import { cmcCallProof, cmcReproduceCommand, cmcReproduceRequest, cmcResponseExcerpt, shellQuote, CMC_EXCERPT_MAX_CHARS, CMC_REPRODUCE_BASE } from './cmc-reproduce.ts'
 import { CMC_CAPABILITIES, CMC_CONVERT_EXEMPT, cmcAddsConvert, cmcParams, cmcRequestBody } from './cmc-capabilities.ts'
 import { requestCmc } from './cmc-transport.ts'
 
@@ -39,9 +39,41 @@ Deno.test('a live keyed receipt reproduces as curl with the key only as the lite
   assert.deepEqual(flagValues(words,'-H'),['X-CMC_PRO_API_KEY: $CMC_API_KEY','Accept: application/json'])
 })
 
-Deno.test('no command for anything that made no keyed call to a registered endpoint',()=>{
-  for(const origin of ['cache','capture','negative-cache','stored',undefined,'LIVE'])assert.equal(cmcReproduceCommand(live('listings',{},{origin})),null,String(origin))
-  assert.equal(cmcReproduceCommand(live('listings',{},{keyMode:'keyless'})),null)
+Deno.test('a cached figure and a remembered failure reproduce the call behind them, and say which call it is',()=>{
+  const command=cmcReproduceCommand(live('listings'))
+  // The shared cache row is keyed by these exact parameters, so the call that
+  // filled it is byte for byte the same request.
+  assert.equal(cmcReproduceCommand(live('listings',{},{origin:'cache',creditCount:null,reservation:null})),command)
+  assert.equal(cmcReproduceCommand(live('listings',{},{origin:'negative-cache'})),command)
+  assert.equal(cmcReproduceRequest(live('listings'))?.meaning,'this_call')
+  assert.equal(cmcReproduceRequest(live('listings',{},{origin:'cache'}))?.meaning,'cache_fill')
+  assert.equal(cmcReproduceRequest(live('listings',{},{origin:'negative-cache'}))?.meaning,'failed_call')
+})
+
+Deno.test('a capture reproduces only from the request it recorded at capture time',()=>{
+  const lane={...live('listings'),capability:'regime',endpoint:'/v3/cryptocurrency/listings/latest',parameters:{},origin:'capture',provider:'coinmarketcap'}
+  // A capture receipt names its lane: without the recorded request nothing is exact.
+  assert.equal(cmcReproduceCommand(lane),null)
+  const recorded={...lane,proof:{request:{capability:'rwaList',endpoint:'/v5/real-world-assets/assets/list',parameters:{limit:'250',start:'1'}}}}
+  const words=shellWords(cmcReproduceCommand(recorded)!)
+  assert.equal(words[3],`${CMC_REPRODUCE_BASE}/v5/real-world-assets/assets/list`)
+  assert.deepEqual(flagValues(words,'--data-urlencode'),['limit=250','start=1','convert=USD'])
+  assert.equal(cmcReproduceRequest(recorded)?.meaning,'capture_call')
+  assert.equal(cmcReproduceCommand({...recorded,origin:'stored'}),cmcReproduceCommand(recorded))
+  // A recorded request is held to the same registry rules as a receipt.
+  assert.equal(cmcReproduceCommand({...lane,proof:{request:{capability:'rwaList',endpoint:'/v1/cryptocurrency/map',parameters:{}}}}),null)
+  assert.equal(cmcReproduceCommand({...lane,proof:{request:{capability:'rwaList',endpoint:'/v5/real-world-assets/assets/list',parameters:{api_key:'x'}}}}),null)
+})
+
+Deno.test('a keyless receipt reproduces in the keyless form: no key header at all',()=>{
+  const command=cmcReproduceCommand(live('listings',{},{keyMode:'keyless'}))!
+  assert.ok(command)
+  assert.ok(!command.includes('X-CMC_PRO_API_KEY')&&!command.includes('$CMC_API_KEY'))
+  assert.deepEqual(flagValues(shellWords(command),'-H'),['Accept: application/json'])
+})
+
+Deno.test('no command for anything that is not a registered call',()=>{
+  for(const origin of [undefined,'LIVE','capture','stored'])assert.equal(cmcReproduceCommand(live('listings',{},{origin})),null,String(origin))
   assert.equal(cmcReproduceCommand(live('listings',{},{keyMode:null})),null)
   assert.equal(cmcReproduceCommand(live('listings',{},{endpoint:'/v1/cryptocurrency/map'})),null)
   assert.equal(cmcReproduceCommand(live('listings',{},{endpoint:''})),null)
@@ -118,4 +150,70 @@ Deno.test('reproduced GET matches the URL the transport actually fetched',async(
       assert.equal(url.searchParams.get('convert')==='USD'&&!('convert' in receipt.parameters),cmcAddsConvert(name),name)
     }
   }finally{globalThis.fetch=originalFetch;names.forEach((n,i)=>saved[i]==null?Deno.env.delete(n):Deno.env.set(n,saved[i]!))}
+})
+
+// ─── Response excerpt ────────────────────────────────────────────────────────
+
+const rwaRow=(i:number)=>({rwa_id:i,name:`Asset ${i}`,symbol:`A${i}`,slug:`asset-${i}`,asset_type:'commodity',
+  tokenized_market_cap:1000+i,tokenized_volume_24h:10+i,tokens:[{crypto_id:100+i,symbol:`T${i}a`},{crypto_id:200+i,symbol:`T${i}b`},{crypto_id:300+i,symbol:`T${i}c`}]})
+const RWA_LIST={status:{timestamp:'2026-09-23T02:47:01.166Z',error_code:'0',error_message:'',elapsed:7,credit_count:1},
+  data:{has_more:true,total_size:791,rwa_assets:Array.from({length:25},(_,i)=>rwaRow(i+1))}}
+
+/** Every leaf the excerpt shows is the body's own value at the same path (or,
+ * for shortened text, its prefix): an excerpt can drop, never invent. */
+function assertSubset(excerpt:unknown,body:unknown,path='data'){
+  if(typeof excerpt==='string'&&typeof body==='string'){assert.ok(excerpt===body||(excerpt.endsWith('…')&&body.startsWith(excerpt.slice(0,-1))),path);return}
+  if(excerpt===null||typeof excerpt!=='object'){assert.deepEqual(excerpt,body,path);return}
+  assert.ok(body&&typeof body==='object',path)
+  for(const [k,v] of Object.entries(excerpt as Record<string,unknown>))assertSubset(v,(body as any)[k],`${path}.${k}`)
+}
+
+Deno.test('the excerpt keeps the status block as returned and the first rows, and names each cut list with its real total',()=>{
+  const excerpt=cmcResponseExcerpt(RWA_LIST)!
+  assert.deepEqual(excerpt.status,RWA_LIST.status)
+  assert.equal((excerpt.data as any).total_size,791)
+  assert.equal((excerpt.data as any).rwa_assets.length,3)
+  assert.deepEqual(excerpt.lists[0],{path:'data.rwa_assets',shown:3,total:25})
+  // A member's own list is cut harder and named too.
+  assert.ok(excerpt.lists.some(l=>l.path==='data.rwa_assets[0].tokens'&&l.shown===2&&l.total===3))
+  assert.equal(excerpt.trimmed,true);assert.equal(excerpt.dataOmitted,false)
+  assertSubset(excerpt.data,RWA_LIST.data)
+  assert.ok(JSON.stringify({status:excerpt.status,data:excerpt.data}).length<=CMC_EXCERPT_MAX_CHARS)
+})
+
+Deno.test('a keyed map of records is cut like a list, and long text is shortened and counted',()=>{
+  const info={status:{error_code:0,credit_count:2},data:Object.fromEntries(Array.from({length:70},(_,i)=>[String(i+1),{id:i+1,description:'x'.repeat(900),urls:{website:['https://example.com']}}]))}
+  const excerpt=cmcResponseExcerpt(info)!
+  assert.deepEqual(Object.keys(excerpt.data as object),['1','2','3'])
+  assert.deepEqual(excerpt.lists[0],{path:'data',shown:3,total:70})
+  assert.equal(excerpt.shortened,3)
+  assert.ok(((excerpt.data as any)['1'].description as string).endsWith('…'))
+  assertSubset(excerpt.data,info.data)
+})
+
+Deno.test('an excerpt never exceeds its bound: rows give way first, then the data member',()=>{
+  const wide={status:{error_code:0,credit_count:1},data:Array.from({length:40},(_,i)=>Object.fromEntries(Array.from({length:60},(_,k)=>[`field_${k}`,`value ${i} ${k} ${'y'.repeat(60)}`])))}
+  const excerpt=cmcResponseExcerpt(wide)!
+  assert.ok(JSON.stringify({status:excerpt.status,data:excerpt.data}).length<=CMC_EXCERPT_MAX_CHARS)
+  assert.equal(excerpt.dataOmitted,true);assert.equal(excerpt.data,null)
+  assert.deepEqual(excerpt.lists,[{path:'data',shown:0,total:40}])
+  assert.deepEqual(excerpt.status,wide.status)
+  const small={status:{error_code:0,credit_count:0},data:[{id:1}]}
+  const whole=cmcResponseExcerpt(small)!
+  assert.deepEqual(whole.data,small.data);assert.equal(whole.trimmed,false);assert.deepEqual(whole.lists,[])
+})
+
+Deno.test('a proof reports the charge its own response carried, and says why an excerpt is missing',()=>{
+  const proof=cmcCallProof(RWA_LIST,{source:'shared-cache-row',httpStatus:200,retrievedAt:'2026-09-23T02:47:01.178+00:00'})
+  assert.equal(proof.creditCount,1);assert.equal(proof.errorCode,'0');assert.equal(proof.httpStatus,200)
+  assert.equal(proof.respondedAt,'2026-09-23T02:47:01.166Z');assert.equal(proof.retrievedAt,'2026-09-23T02:47:01.178Z')
+  assert.equal(proof.excerptMissing,null);assert.ok(proof.excerpt)
+  // A reported zero is a real charge of zero.
+  assert.equal(cmcCallProof({status:{credit_count:0},data:[]},{source:'live-response'}).creditCount,0)
+  const none=cmcCallProof(null,{source:'shared-cache-row',httpStatus:403,missing:'failure_body_not_kept'})
+  assert.equal(none.excerpt,null);assert.equal(none.excerptMissing,'failure_body_not_kept');assert.equal(none.creditCount,null)
+  assert.equal(cmcCallProof({data:[]},{source:'live-response'}).creditCount,null)
+  // The key is never material; were a body ever to echo it, the excerpt is withheld.
+  const echoed=cmcCallProof({status:{credit_count:1},data:[{note:'synthetic-cmc-test-key'}]},{source:'live-response',secret:'synthetic-cmc-test-key'})
+  assert.equal(echoed.excerpt,null);assert.equal(echoed.excerptMissing,'withheld');assert.equal(echoed.creditCount,1)
 })

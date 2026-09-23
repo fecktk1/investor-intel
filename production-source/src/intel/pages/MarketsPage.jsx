@@ -9,6 +9,8 @@ import { CHAINS, detectAddressKind, assetRef } from '../lib/chains'
 import { entityHref, listWatchlist } from '../lib/watchlist-api'
 import { loadMarkets, loadDegenMarkets, locateToken, loadMarketMacro, suggestMarketAssets } from '../lib/markets-api'
 import MarketSearchTypeahead from '../components/MarketSearchTypeahead'
+import { DemoNotTracked, DemoOutsideScreen } from '../demo/DemoNotInSnapshot'
+import { isIntelDemoActive } from '../demo/demo-mode'
 import { formatPrice, formatPct, formatUsd, timeAgo, pctClass } from '../lib/market-format'
 import { marketPanelHref } from '../lib/market-links'
 import AssetInspector from '../components/AssetInspector'
@@ -291,6 +293,11 @@ export default function MarketsPage() {
   const total = marketsData?.total || 0
   const maxPage = Math.max(0, Math.ceil(total / params.limit) - 1)
   const hasData = useMemo(() => rows.length > 0 || (marketsData && total > 0), [rows, marketsData, total])
+  // Public demo: typed text that names no tracked asset gets the calm sentence,
+  // never an error; a tracked asset outside this screen is named as a link.
+  const demoSearchNote = isIntelDemoActive() && params.search
+    ? (marketsData?.demoReason === 'demo_untracked' ? <DemoNotTracked/> : marketsData?.demoSuggestions?.length ? <DemoOutsideScreen rows={marketsData.demoSuggestions}/> : null)
+    : null
   const returnState = useMemo(() => ({ from: `${location.pathname}${location.search}` }), [location.pathname, location.search])
 
   const dsnap = degenData?.snapshot || {}
@@ -361,7 +368,7 @@ export default function MarketsPage() {
             {marketsLoading && !marketsData ? (
               <p role="status" className="py-8 min-h-[60vh] text-sm text-[var(--fg-4)]">{t('markets.loading', { defaultValue: 'Loading market observations…' })}</p>
             ) : !hasData ? (
-              <p className="py-6 text-[13px] text-[var(--fg-4)]">{marketError ? t('markets.screen_read_failed', { defaultValue: 'The market screen could not be loaded. Use Refresh to retry.' }) : t('markets.screen_no_matches', { defaultValue: 'No assets match this screen. Adjust or clear the filters.' })}</p>
+              <p className="py-6 text-[13px] text-[var(--fg-4)]">{marketError ? t('markets.screen_read_failed', { defaultValue: 'The market screen could not be loaded. Use Refresh to retry.' }) : demoSearchNote || t('markets.screen_no_matches', { defaultValue: 'No assets match this screen. Adjust or clear the filters.' })}</p>
             ) : (
               <>
                 <MarketsTable scrollScope={ownerScope} onInspect={row => setInspected({ scope: ownerScope, row })} sort={columnSort.sort} dir={columnSort.dir} onSort={columnSort.toggle} snapshot={snap} rows={rows} columns={columns} selected={selected.map(marketRowKey)} onSelect={toggleSelection} pageOffset={params.page * params.limit} />

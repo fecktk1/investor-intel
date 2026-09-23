@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import {
   compareShapePaths, EVIDENCE_SCHEMA, evidenceIntegrityProblems, findRecordedSecrets,
-  RECEIPT_FIELDS, shapeDigest, shapePaths, type CapabilitySpec,
+  RECEIPT_FIELDS, RECEIPT_OPTIONAL_FIELDS, shapeDigest, shapePaths, type CapabilitySpec,
 } from './cmc-evidence-shape.ts'
 
 const REGISTRY: Record<string, CapabilitySpec> = {
@@ -77,6 +77,19 @@ Deno.test('the recorded receipt names exactly the fields the transport declares'
   const block = source.slice(start, source.indexOf('\n}', start))
   const declared = [...block.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\s*:/g)].map((m) => m[1]).sort()
   assert.deepEqual(declared, [...RECEIPT_FIELDS].sort())
+  // Optional members are declared `name?:` and listed separately, so a new
+  // optional field cannot slip in without the artefact vocabulary naming it.
+  const optional = [...block.matchAll(/([A-Za-z_][A-Za-z0-9_]*)\?\s*:/g)].map((m) => m[1]).sort()
+  assert.deepEqual(optional, [...RECEIPT_OPTIONAL_FIELDS].sort())
+})
+
+Deno.test('a recorded receipt may carry the optional proof, and nothing else outside the interface', async () => {
+  const recorded = await artefact(FIAT)
+  const first = recorded.probes[0]
+  const withProof = { ...recorded, probes: [{ ...first, receipt: { ...first.receipt, proof: null } }] }
+  assert.deepEqual(await evidenceIntegrityProblems(withProof, REGISTRY), [])
+  const extra = { ...recorded, probes: [{ ...first, receipt: { ...first.receipt, rawBody: {} } }] }
+  assert.deepEqual(await evidenceIntegrityProblems(extra, REGISTRY), ['receipt_fields:fiatMap'])
 })
 
 Deno.test('an artefact that carries a key, a key prefix or a cache-key fingerprint is refused', async () => {

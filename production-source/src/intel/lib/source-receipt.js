@@ -60,11 +60,15 @@ export function envelopeFreshness(envelope, now = Date.now()) {
  *   calls    Provider calls this read made FOR THIS READER. A live transport read
  *            is one. A cache hit, a remembered failure, a stored copy and a shared
  *            capture are all zero: nothing was called to draw this view.
- *   credits  The provider's own reported charge. A reported 0 is a real charge of
- *            zero and stays 0. null means it was not reported, which every cache
- *            hit does, because the cache row does not retain the originating
- *            charge (see CmcReceipt in cmc-transport.ts). A caller renders null
- *            in words, never as a zero.
+ *   credits  The provider's own reported charge for THIS read. A reported 0 is a
+ *            real charge of zero and stays 0. null means it was not reported,
+ *            which every cache hit does, because a cache hit made no call. A
+ *            caller renders null in words, never as a zero.
+ *   originCredits The charge the provider reported on the ORIGINAL call behind a
+ *            cached or captured figure: status.credit_count of the stored
+ *            response (receipt.proof, see cmc-transport.ts). null when the
+ *            receipt carries no proof or the response reported none. Never an
+ *            estimate, and never this reader's cost.
  *   runCalls For a shared capture only: how many calls the capture RUN made to
  *            this endpoint. That is what the capture cost once for everyone, not
  *            what this reader cost, so it is kept in a separate field.
@@ -77,13 +81,62 @@ export function envelopeFreshness(envelope, now = Date.now()) {
 export function receiptCost(receipt) {
   if (!receipt || typeof receipt !== 'object') return null
   const credits = finite(receipt.creditCount)
+  const proof = receipt.proof && typeof receipt.proof === 'object' ? receipt.proof : null
+  // A capture proof kept from an earlier run describes that run's call, not the
+  // one this receipt counts, so its charge is not offered as this figure's.
+  const originCredits = proof && !(proof.source === 'capture-record' && proof.inRun === false) ? finite(proof.creditCount) : null
   switch (String(receipt.origin || '')) {
-    case 'live': return { calls: 1, credits, runCalls: null, served: 'live' }
-    case 'negative-cache': return { calls: 0, credits, runCalls: null, served: 'failed' }
+    case 'live': return { calls: 1, credits, originCredits: null, runCalls: null, served: 'live' }
+    case 'negative-cache': return { calls: 0, credits, originCredits, runCalls: null, served: 'failed' }
     case 'capture':
-    case 'stored': return { calls: 0, credits, runCalls: finite(receipt.callCount), served: 'shared' }
-    case 'cache': return { calls: 0, credits, runCalls: null, served: 'cache' }
+    case 'stored': return { calls: 0, credits, originCredits, runCalls: finite(receipt.callCount), served: 'shared' }
+    case 'cache': return { calls: 0, credits, originCredits, runCalls: null, served: 'cache' }
     default: return null
+  }
+}
+
+const EXCERPT_MISSING = ['failure_body_not_kept', 'body_not_json', 'not_recorded', 'withheld']
+const iso = value => {
+  if (value == null || value === '') return null
+  const at = Date.parse(String(value))
+  return Number.isFinite(at) ? new Date(at).toISOString() : null
+}
+
+/** What CoinMarketCap answered the call behind a receipt, ready to draw.
+ * Everything comes from `receipt.proof` (cmc-transport.ts builds it from the
+ * live body or the stored cache row, source-receipt.ts from a capture record);
+ * nothing is reconstructed, so a receipt without a proof says so in `state`.
+ *
+ * Returns null for a receipt that is not CoinMarketCap's (a CmcReceipt names no
+ * provider; a SourceReceipt does). Otherwise:
+ *   state      'excerpt' an excerpt is shown · 'missing' the proof says why none
+ *              was kept (`missing`) · 'stored' a stored normalised row with no
+ *              response kept · 'absent' a receipt that carries no proof field
+ *   json       the excerpt's status block and data, pretty-printed
+ *   lists      each cut list: { path, shown, total }
+ *   shortened  how many text values were shortened; dataOmitted when the data
+ *              member did not fit at all
+ *   credits    status.credit_count of that response (null when not reported)
+ *   respondedAt / retrievedAt  the provider's clock and ours for that response
+ *   earlierRun a capture proof kept from an earlier run than the one described */
+export function receiptProof(receipt) {
+  if (!receipt || typeof receipt !== 'object') return null
+  if (receipt.provider != null && receipt.provider !== 'coinmarketcap') return null
+  const origin = String(receipt.origin || '')
+  const proof = receipt.proof && typeof receipt.proof === 'object' ? receipt.proof : null
+  if (!proof) return { state: origin === 'stored' || origin === 'capture' ? 'stored' : 'absent', missing: null, json: null, lists: [], shortened: 0, dataOmitted: false, credits: null, respondedAt: null, retrievedAt: null, earlierRun: false }
+  const excerpt = proof.excerpt && typeof proof.excerpt === 'object' && !Array.isArray(proof.excerpt) ? proof.excerpt : null
+  const lists = (Array.isArray(excerpt?.lists) ? excerpt.lists : [])
+    .filter(l => l && typeof l.path === 'string' && finite(l.shown) != null && finite(l.total) != null)
+    .map(l => ({ path: l.path, shown: Number(l.shown), total: Number(l.total) }))
+  let json = null
+  if (excerpt) { try { json = JSON.stringify({ status: excerpt.status ?? null, data: excerpt.data ?? null }, null, 2) } catch { json = null } }
+  return {
+    state: json ? 'excerpt' : 'missing',
+    missing: json ? null : (EXCERPT_MISSING.includes(proof.excerptMissing) ? proof.excerptMissing : 'not_recorded'),
+    json, lists, shortened: finite(excerpt?.shortened) ?? 0, dataOmitted: excerpt?.dataOmitted === true,
+    credits: finite(proof.creditCount), respondedAt: iso(proof.respondedAt), retrievedAt: iso(proof.retrievedAt),
+    earlierRun: proof.source === 'capture-record' && proof.inRun === false,
   }
 }
 

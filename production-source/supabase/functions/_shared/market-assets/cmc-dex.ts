@@ -156,7 +156,10 @@ export function cmcDexPoolPage(data:unknown):{rows:any[]}|null {
  */
 // deno-lint-ignore no-explicit-any
 export function cmcDexPoolRefusal(body:any,params:Record<string,unknown>):Record<string,unknown> {
- const network=cmcDexNetwork(params.platform??params.platformName)
+ // cmcDexNetwork matches with ===, so a non-string platform never matches; the
+ // typeof guard says so to the type checker (the worker build runs --check).
+ const platform=params.platform??params.platformName
+ const network=typeof platform==='string'?cmcDexNetwork(platform):undefined
  const address=params.address??params.tokenAddress
  const page=cmcDexPoolPage(body?.data)
  if(!network)return {rule:'unknown_platform'}
