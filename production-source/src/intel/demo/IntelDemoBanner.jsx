@@ -40,6 +40,12 @@ export default function IntelDemoBanner({ manifestLoader = getDemoManifest }) {
 
   const signup = (event) => { event.preventDefault(); exitIntelDemo(DEMO_SIGNUP_PATH) }
   const leave = (event) => { event.preventDefault(); exitIntelDemo() }
+  // A member who reached this page from a direct link signs in and returns here.
+  const signInHref = () => {
+    const here = `${globalThis.location?.pathname || ''}${globalThis.location?.search || ''}`
+    return here.startsWith('/intel') ? `/login?next=${encodeURIComponent(here)}` : '/login'
+  }
+  const signIn = (event) => { event.preventDefault(); exitIntelDemo(signInHref()) }
 
   return (
     <div
@@ -56,6 +62,9 @@ export default function IntelDemoBanner({ manifestLoader = getDemoManifest }) {
       </a>
       <a href="/investors" onClick={leave} className="intel-text-link underline underline-offset-4">
         {t('intel_demo.leave', { defaultValue: 'Leave demo' })}
+      </a>
+      <a href="/login" onClick={signIn} className="intel-text-link underline underline-offset-4">
+        {t('intel_demo.sign_in', { defaultValue: 'Sign in' })}
       </a>
       <a href="https://coinmarketcap.com/" target="_blank" rel="noreferrer" className="underline underline-offset-4 text-[var(--fg-4)] sm:ml-auto">
         {t('intel_demo.attribution', { defaultValue: 'Data provided by CoinMarketCap.com' })}

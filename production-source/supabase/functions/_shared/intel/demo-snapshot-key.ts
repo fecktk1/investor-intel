@@ -115,6 +115,7 @@ export const DEMO_REST_TABLES: Readonly<Record<string, { star?: boolean }>> = Ob
   intel_macro_calendar: { star: true },
   intel_macro_indicators: { star: true },
   intel_recently_discovered: {},
+  market_macro_available: {},
   narrative_taxonomy: {},
   narrative_signals: {},
   narrative_assets: {},

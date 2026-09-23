@@ -6,7 +6,7 @@ import {retainMarketSourceVersions} from '../intel/market-source-versions.ts'
 import {readBoundedText,RequestBodyError} from '../intel/bounded-request.ts'
 import {requestGroupedQuotes,quoteRefreshSeconds} from './cmc-quote-groups.ts'
 import {loadCmcOperatingSettings,cmcPolicyEnvironment,type CmcOperatingSettings} from './cmc-operating-settings.ts'
-import {validateCmcDexResponse} from './cmc-dex.ts'
+import {cmcDexPoolRefusal,validateCmcDexResponse} from './cmc-dex.ts'
 import {cmcDemandPolicy,connectedDemandEnabled} from './cmc-demand-policy.ts'
 export {loadCmcOperatingSettings} from './cmc-operating-settings.ts'
 
@@ -274,7 +274,7 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
           // sample so the next capture is diagnosable from the function logs. A DEX
           // response body is public market data; the key travels in a request header
           // and never appears here.
-          console.warn(JSON.stringify({cmc_malformed:name,sample:JSON.stringify(body).slice(0,800)}))
+          console.warn(JSON.stringify({cmc_malformed:name,sample:JSON.stringify(body).slice(0,800),...(name==='dexPools'?{refusal:cmcDexPoolRefusal(body,params)}:{})}))
           throw new Error('malformed_response')
         }
         const fetchedAt=new Date().toISOString(),observedAt=cmcObservedAt(body,name),expiresAt=new Date(Date.now()+ttl*1000).toISOString()

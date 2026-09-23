@@ -7,11 +7,15 @@
 //   * wraps window.fetch so a raw fetch to the backend host (auth-context, the
 //     help status probe, active-org helpers) is answered by demoFetch too,
 //   * refuses WebSocket connections to the backend host,
-//   * blocks same-origin serverless functions.
+//   * blocks same-origin serverless functions,
+//   * lets exactly one backend function through live, intel-rwa-lookup
+//     (DEMO_LIVE_FUNCTION): the tokenised asset lookup, and a snapshot miss of
+//     a real-world asset research read. Each request is rebuilt from its allowed
+//     fields alone, with the anon key as its only credential and cookies omitted.
 // Nothing is persisted: the store and the snapshot cache live in this module.
 
 import { setSupabaseFetch, disableSupabaseRealtime } from '../../lib/supabase'
-import { createDemoFetch, missBody } from './demo-fetch'
+import { createDemoFetch, DEMO_LIVE_FUNCTION, missBody } from './demo-fetch'
 import { createDemoStore } from './demo-store'
 import { createSnapshotReader, isDemoBucketUrl } from './demo-snapshot'
 import { isIntelDemoActive, resolveDemoActive, setIntelDemoActive } from './demo-mode'
@@ -26,7 +30,7 @@ function hrefOf(input) {
 }
 
 /** Install the demo network layer on `win`. Returns the pieces for tests. */
-export function installIntelDemo({ supabaseUrl, win = globalThis } = {}) {
+export function installIntelDemo({ supabaseUrl, anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY, win = globalThis } = {}) {
   if (installed) return installed
   const base = String(supabaseUrl || '').replace(/\/+$/, '')
   const originalFetch = typeof win.fetch === 'function' ? win.fetch.bind(win) : null
@@ -42,7 +46,16 @@ export function installIntelDemo({ supabaseUrl, win = globalThis } = {}) {
   const onMiss = import.meta.env?.DEV
     ? (detail) => { try { (win.__intelDemoMisses ||= []).push({ at: win.location?.pathname || '', ...detail }) } catch { /* diagnostics only */ } }
     : null
-  const demoFetch = createDemoFetch({ supabaseUrl: base, reader, store, onMiss })
+  // The public endpoint, live. A fresh request built from the sanitised body
+  // demoFetch hands over: the anon key is the only credential, whatever token
+  // the demo client attached, and cookies are omitted.
+  const forwardPublic = (body) => {
+    if (!originalFetch || !base) return Promise.reject(new Error('fetch_unavailable'))
+    const headers = { 'Content-Type': 'application/json' }
+    if (anonKey) { headers.apikey = anonKey; headers.Authorization = `Bearer ${anonKey}` }
+    return originalFetch(`${base}/functions/v1/${DEMO_LIVE_FUNCTION}`, { method: 'POST', headers, body: JSON.stringify(body || {}), credentials: 'omit' })
+  }
+  const demoFetch = createDemoFetch({ supabaseUrl: base, reader, store, onMiss, forwardPublic })
 
   setIntelDemoActive(true)
   setSupabaseFetch(demoFetch)
@@ -80,10 +93,10 @@ export function installIntelDemo({ supabaseUrl, win = globalThis } = {}) {
 }
 
 /** Decide and install, once per document. */
-export function bootIntelDemo({ supabaseUrl = import.meta.env.VITE_SUPABASE_URL, win = globalThis } = {}) {
+export function bootIntelDemo({ supabaseUrl = import.meta.env.VITE_SUPABASE_URL, anonKey = import.meta.env.VITE_SUPABASE_ANON_KEY, win = globalThis } = {}) {
   if (installed) return true
   if (!resolveDemoActive({ session: win.sessionStorage, local: win.localStorage, pathname: win.location?.pathname })) return false
-  installIntelDemo({ supabaseUrl, win })
+  installIntelDemo({ supabaseUrl, anonKey, win })
   return isIntelDemoActive()
 }
 

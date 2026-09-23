@@ -141,6 +141,14 @@ describe('demoFetch', () => {
     expect(user).toEqual({ tutorials_enabled: false, assistant_enabled: false })
   })
 
+  it('the book calendar starts empty in its own object shape, never as a failed read', async () => {
+    const { client } = demoClient()
+    const { loadBookCalendar } = await import('../book-calendar')
+    const from = Date.parse('2026-09-23T00:00:00Z'), to = from + 72 * 3600_000
+    const data = await loadBookCalendar(client, { orgId: DEMO_ORG_ID, from, to, knownAt: from })
+    expect(data).toMatchObject({ rows: [], hasMore: false, page: 0, unmatchedUnlocks: 0, scope: 'book' })
+  })
+
   it('auth answers the synthetic visitor and refuses everything else', async () => {
     const { demoFetch } = demoClient({})
     const me = await (await demoFetch(`${URL_BASE}/auth/v1/user`, { headers: { Authorization: 'Bearer intel-demo-visitor' } })).json()
@@ -187,5 +195,61 @@ describe('the network seam when the demo is off', () => {
     channel.subscribe(status)
     expect(status).toHaveBeenCalledWith('CLOSED')
     mod.setSupabaseFetch(null)
+  })
+})
+
+describe('demoFetch and the public RWA endpoint', () => {
+  function forwardingClient(entries = {}) {
+    const net = bucket(entries)
+    const reader = createSnapshotReader({ supabaseUrl: URL_BASE, fetchImpl: net.network })
+    const forwarded = []
+    const forwardPublic = vi.fn(async (body) => {
+      forwarded.push(body)
+      return new Response(JSON.stringify({ forwarded: true, body }), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    const demoFetch = createDemoFetch({ supabaseUrl: URL_BASE, reader, store: createDemoStore(), forwardPublic })
+    const client = createClient(URL_BASE, 'anon-key', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: demoFetch } })
+    return { client, demoFetch, forwarded, forwardPublic, net }
+  }
+
+  it('an RWA research read the snapshot holds is answered from it, not forwarded', async () => {
+    const key = demoSnapshotKey('intel-research', { capability: 'rwaList', params: { start: 1, limit: 25 } })
+    const { client, forwardPublic } = forwardingClient({ [key]: RWA_LIST })
+    const { data } = await client.functions.invoke('intel-research', { body: { orgId: DEMO_ORG_ID, capability: 'rwaList', params: { start: 1, limit: 25 } } })
+    expect(data).toEqual(RWA_LIST)
+    expect(forwardPublic).not.toHaveBeenCalled()
+  })
+
+  it('a miss of each of the six RWA capabilities is forwarded with capability, params and readMode only', async () => {
+    const { client, forwarded } = forwardingClient({})
+    for (const capability of ['rwaList', 'rwaInfo', 'rwaQuotes', 'rwaPairs', 'issuers', 'issuer']) {
+      const { data } = await client.functions.invoke('intel-research', { body: { orgId: DEMO_ORG_ID, capability, params: { start: 26, limit: 25 }, readMode: 'retained', extra: 'dropped' } })
+      expect(data.forwarded).toBe(true)
+    }
+    expect(forwarded).toHaveLength(6)
+    for (const body of forwarded) {
+      expect(Object.keys(body).sort()).toEqual(['capability', 'params', 'readMode'])
+      expect(JSON.stringify(body)).not.toContain(DEMO_ORG_ID)
+    }
+  })
+
+  it('non-RWA misses and every other function keep the demo reason', async () => {
+    const { client, forwardPublic } = forwardingClient({})
+    const quotes = await client.functions.invoke('intel-research', { body: { orgId: DEMO_ORG_ID, capability: 'quotes', params: { id: 1 } } })
+    expect(quotes.data.reason).toBe(DEMO_MISS_CODE)
+    const capture = await readCaptureView('rwa_depth', {}, { orgId: DEMO_ORG_ID, supabase: client }).catch((e) => e)
+    expect(capture.code).toBe(DEMO_MISS_CODE)
+    const generate = await client.functions.invoke('intel-generate', { body: { orgId: DEMO_ORG_ID, kind: 'brief' } })
+    expect(generate.data.code).toBe(DEMO_MISS_CODE)
+    expect(forwardPublic).not.toHaveBeenCalled()
+  })
+
+  it('the lookup crosses with the query alone; without a forwarder it is the demo miss', async () => {
+    const { client, forwarded } = forwardingClient({})
+    const { data } = await client.functions.invoke('intel-rwa-lookup', { body: { q: 'NVDA', orgId: DEMO_ORG_ID } })
+    expect(data.forwarded).toBe(true)
+    expect(forwarded).toEqual([{ q: 'NVDA' }])
+    const { client: plain } = demoClient({})
+    expect((await plain.functions.invoke('intel-rwa-lookup', { body: { q: 'NVDA' } })).data.code).toBe(DEMO_MISS_CODE)
   })
 })

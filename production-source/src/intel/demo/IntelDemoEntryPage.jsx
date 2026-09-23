@@ -2,10 +2,11 @@ import React, { useEffect } from 'react'
 import { useLocation, useNavigate } from 'react-router'
 import { useTranslation } from 'react-i18next'
 import SEO from '../../components/SEO'
-import { DEMO_ENTRY_PATH, DEMO_START_PATH, hasRealSession, legacyDemoTarget, requestIntelDemo } from './demo-mode'
+import { DEMO_ENTRY_PATH, demoTargetFrom, hasRealSession, legacyDemoTarget, requestIntelDemo } from './demo-mode'
 
 // /intel/demo: public, outside RequireAuth. Turns the demo on for this tab and
-// reloads into the real Investor Intel pages. A signed-in member is simply sent
+// reloads into the real Investor Intel pages: the page named by `?to=` (a
+// signed-out visitor who opened an Intel link directly) or the RWA workspace. A signed-in member is simply sent
 // to the same page as themselves: a real session always wins.
 //
 // /demo/intel and /demo/intel/<section> (the old showroom's links) render this
@@ -15,7 +16,7 @@ export default function IntelDemoEntryPage({ legacy = false, storage = globalThi
   const { t } = useTranslation('intel', { useSuspense: false })
   const navigate = useNavigate()
   const { pathname, search } = useLocation()
-  const target = legacy ? legacyDemoTarget(pathname, search) : DEMO_START_PATH
+  const target = legacy ? legacyDemoTarget(pathname, search) : demoTargetFrom(search)
   useEffect(() => {
     if (hasRealSession(storage)) { navigate(target, { replace: true }); return }
     requestIntelDemo(session)

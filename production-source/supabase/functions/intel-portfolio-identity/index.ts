@@ -56,6 +56,7 @@ import { requireIntelAccess } from '../_shared/intel/research-service.ts'
 import { orgAuthzErrorResponse } from '../_shared/org-authz.ts'
 import { requestCmc } from '../_shared/market-assets/cmc-transport.ts'
 import { cmcDexAddress, cmcDexParams } from '../_shared/market-assets/cmc-dex.ts'
+import { indexResolvedAsset } from '../_shared/intel/on-demand-index.ts'
 import {
   applyBatchAnswers, canonicalAddress, cmcPlatformForChain, coverageByChain, holdingAddress,
   HOLDING_RUN_LIMIT_MAX, planHoldingResolution, summarizeAnswers,
@@ -362,6 +363,13 @@ export async function runResolve(
 
   // One aggregate demand counter per matched contract, never per holding and
   // never with an actor: `intel_record_asset_demand` takes no user or org.
+  // The identity is a CONTRACT ('<chain>:<address>'), recorded as the resolver
+  // records one, so intel_recently_discovered can name it from the shared
+  // record. Recording it as 'coinmarketcap' left every such row nameless: the
+  // view looks a coinmarketcap demand up by its numeric CMC id.
+  // A priced holding (it passed the liquidity and plausibility gates) also gets
+  // its shared on-demand record, named, exactly as a searched contract does. An
+  // unpriced or refused one is demanded but never catalogued.
   const demanded = new Set<string>()
   for (const answer of answers) {
     if (!answer.matched) continue
@@ -369,9 +377,17 @@ export async function runResolve(
     if (demanded.has(key)) continue
     demanded.add(key)
     const { error } = await admin.rpc('intel_record_asset_demand', {
-      p_asset_key: key, p_provider: 'coinmarketcap', p_provider_id: key,
+      p_asset_key: key, p_provider: 'contract', p_provider_id: key,
     })
     if (error) console.warn('[holding-identity] demand not recorded', error.message)
+    if (answer.reason === 'priced' && answer.symbol) {
+      const indexed = await indexResolvedAsset(admin, {
+        kind: 'contract', provider: 'contract', providerId: key,
+        symbol: answer.symbol, name: answer.name, chain: answer.chain, address: answer.address,
+      })
+      const failed = indexed.reasons.find((r) => r.startsWith('index_failed'))
+      if (failed) console.warn('[holding-identity] shared record not written', failed)
+    }
   }
 
   const credits = Number(ctx._calls ?? 0)

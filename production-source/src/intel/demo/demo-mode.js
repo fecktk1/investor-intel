@@ -49,6 +49,26 @@ export function isDemoPath(pathname) {
   return !real.some((prefix) => path === prefix || path.startsWith(`${prefix}/`))
 }
 
+/**
+ * The demo entry for a signed-out visitor who opened an Intel page directly
+ * (a shared link, a bookmark, a README): /intel/demo?to=<that page>, so they
+ * land on the page they asked for instead of the sign-in screen.
+ */
+export function demoEntryFor(pathname, search = '') {
+  const to = `${String(pathname || '')}${String(search || '')}`
+  return to && to !== DEMO_START_PATH ? `${DEMO_ENTRY_PATH}?to=${encodeURIComponent(to)}` : DEMO_ENTRY_PATH
+}
+
+/** Where /intel/demo lands: the requested `?to=` page when the demo serves it, else the RWA workspace. */
+export function demoTargetFrom(search = '') {
+  let to = ''
+  try { to = new URLSearchParams(String(search || '').replace(/^\?/, '')).get('to') || '' } catch { return DEMO_START_PATH }
+  if (!to.startsWith('/') || to.startsWith('//') || to.includes('\\')) return DEMO_START_PATH
+  const path = to.split(/[?#]/)[0]
+  if (path === DEMO_ENTRY_PATH || !isDemoPath(path)) return DEMO_START_PATH
+  return to
+}
+
 /** Decide, once, whether this document runs as the demo. */
 export function resolveDemoActive({
   session = globalThis.sessionStorage,

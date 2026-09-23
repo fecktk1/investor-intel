@@ -312,7 +312,13 @@ Deno.test('demand is recorded once per contract and carries no actor', async () 
 
   const demand = db.rpcCalls.filter((r) => r.name === 'intel_record_asset_demand')
   eq(demand.length, 1, 'the contract nobody answered about is not demanded')
-  eq(demand[0].args, { p_asset_key: `base:${BASE_A}`, p_provider: 'coinmarketcap', p_provider_id: `base:${BASE_A}` })
+  eq(demand[0].args, { p_asset_key: `base:${BASE_A}`, p_provider: 'contract', p_provider_id: `base:${BASE_A}` })
+  // The priced contract gets its shared, named record, so the discovery strip can name it.
+  const upserts = db.rpcCalls.filter((r) => r.name === 'intel_upsert_on_demand_asset')
+  eq(upserts.length, 1)
+  eq(upserts[0].args.p_row.kind, 'contract')
+  eq(upserts[0].args.p_row.providerId, `base:${BASE_A}`)
+  eq(upserts[0].args.p_row.symbol, 'A')
   eq(Object.keys(demand[0].args).some((k) => /user|org|actor|who/i.test(k)), false)
   eq(body.demandRecorded, 1)
 

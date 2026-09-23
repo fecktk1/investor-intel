@@ -265,9 +265,9 @@ Deno.test('the shared plan and a whole build over it make no network call and re
     const plan = await planSharedRequests(db, NOW)
     const keys = finalizePlan(plan as DemoRequest[]).map((r) => r.key)
     eq(new Set(keys).size, keys.length)
-    assert(plan.length < 200, `${plan.length} shared requests`)
+    assert(plan.length < 400, `${plan.length} shared requests`)
     const fns = new Set(plan.map((r) => r.fn))
-    for (const fn of ['intel-dashboard', 'intel-narratives', 'intel-defi-browse', 'intel-research', 'rest', 'rpc']) assert(fns.has(fn), fn)
+    for (const fn of ['intel-dashboard', 'intel-narratives', 'intel-defi-browse', 'intel-research', 'intel-markets', 'intel-degen', 'rest', 'rpc']) assert(fns.has(fn), fn)
     eq(plan.filter((r) => r.fn === 'intel-narratives' && r.body.mode === 'detail').length, 3)
     const restCalls: string[] = []
     const storage = memoryStorage()

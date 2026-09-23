@@ -19,19 +19,37 @@
 // Anything else is "not in today's demo snapshot": a JSON error with code
 // 'demo_not_in_snapshot' that the pages already render as a reason.
 //
-// The only network traffic the demo makes to the backend host is the
-// snapshot reader's credential-free GETs of public objects in the intel-demo
-// bucket, and those go through the ORIGINAL fetch the reader was given.
+// The only network traffic the demo makes to the backend host is:
+//   * the snapshot reader's credential-free GETs of public objects in the
+//     intel-demo bucket, through the ORIGINAL fetch the reader was given; and
+//   * exactly one Edge Function, DEMO_LIVE_FUNCTION (intel-rwa-lookup, the
+//     public tokenised asset endpoint), through the `forwardPublic` the runtime
+//     supplies, for two things only:
+//       - the tokenised asset lookup ({ q }), always live;
+//       - a SNAPSHOT MISS of one of the six real-world asset research reads of
+//         /intel/rwa (DEMO_FORWARDED_RESEARCH), which that endpoint answers
+//         exactly as intel-research answers a free member.
+//     The forwarded body is rebuilt from the allowed fields alone (orgId and
+//     everything else dropped), and the request carries the anon key only:
+//     never the visitor's token, never cookies (credentials 'omit').
+//     Every other function, and every other miss, is still answered here and
+//     never forwarded.
 
 import {
   DEMO_REST_TABLES, DEMO_SHARED_RPCS, demoRestKey, demoRestRefusal, demoRpcKey, demoSnapshotKey,
 } from '../../../supabase/functions/_shared/intel/demo-snapshot-key.ts'
 import { EntityResolveRefusal, normalizeEntity } from '../../../supabase/functions/_shared/entity-resolver.ts'
+import { RWA_FREE_CAPABILITIES } from '../../../supabase/functions/_shared/intel/rwa-free-read.ts'
 import {
   DEMO_ORG, DEMO_ORG_ID, DEMO_PROFILE, DEMO_TIER, DEMO_USER, DEMO_USER_ID, demoMembershipRow,
 } from './demo-identity.js'
 
 export const DEMO_MISS_CODE = 'demo_not_in_snapshot'
+/** The one backend function the demo lets through, live. */
+export const DEMO_LIVE_FUNCTION = 'intel-rwa-lookup'
+/** intel-research capabilities whose snapshot miss is forwarded to it: the free
+ * real-world asset lane (supabase/functions/_shared/intel/rwa-free-read.ts). */
+export const DEMO_FORWARDED_RESEARCH = RWA_FREE_CAPABILITIES
 export const DEMO_MISS_TEXT = "Not in today's demo snapshot. Create a free account to look it up."
 
 /** The Investor Intel surfaces (intel_surface_tiers). Starter reaches all of them. */
@@ -68,8 +86,17 @@ const EMPTY_LIST_RPCS = new Set([
   'signal_feed_v2',
   'intel_list_briefs', 'intel_list_asset_theses', 'intel_portfolio_page', 'intel_portfolio_activity_page',
   'intel_portfolio_activity_legs', 'intel_desk_positions', 'intel_portfolio_thesis_conflicts', 'what_changed',
-  'intel_asset_thesis_activity', 'intel_book_calendar', 'portfolio_exposure', 'intel_thesis_performance_ledger',
+  'intel_asset_thesis_activity', 'portfolio_exposure', 'intel_thesis_performance_ledger',
 ])
+// Personal reads whose empty answer is an OBJECT the page reads fields from. An
+// empty list here reads as a failed read ("Calendar evidence could not be read").
+const EMPTY_SHAPED_RPCS = {
+  // intel_book_calendar's own empty page (20260911191852_intel_calendar_versioned_evidence.sql).
+  intel_book_calendar: (args = {}) => ({
+    rows: [], hasMore: false, page: Number(args.p_page) || 0, unmatchedUnlocks: 0,
+    knownAt: args.p_known_at ?? null, from: args.p_from ?? null, to: args.p_to ?? null, scope: args.p_asset ? 'asset' : 'book',
+  }),
+}
 const EMPTY_VALUE_RPCS = new Set([
   'intel_asset_portfolio_holding', 'intel_asset_portfolio_context', 'intel_portfolio_overview', 'intel_what_changed_context',
   'intel_thesis_snapshot_context', 'intel_thesis_analytics', 'intel_thesis_analytics_scoped', 'intel_trade_analytics',
@@ -77,6 +104,12 @@ const EMPTY_VALUE_RPCS = new Set([
 ])
 // A write the page expects to succeed. In the demo it succeeds in memory only.
 const WRITE_RPC = /(^|_)(save|append|create|record|mark|set|clear|follow|unfollow|pin|reorder|close|reclassify|complete|approve|reject|revoke|grant|claim|log|delete|update|insert|upsert|add|remove|seen)(_|$)/
+
+// SHARED market tables the snapshot does not hold (their reads depend on the
+// data they return, so no fixed request can be planned). A read of one is a
+// miss, never the store's empty list: an empty ranking history would read as
+// "nothing moved" rather than "not in today's demo".
+const UNPLANNED_SHARED_TABLES = new Set(['market_rankings_available'])
 
 // Tables answered by the synthetic visitor rather than the store.
 function identityRows(table) {
@@ -156,13 +189,20 @@ function embedsOf(select) {
  *   reader       { manifest(), entry(key) } from createSnapshotReader
  *   store        createDemoStore()
  */
-export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now = () => Date.now() }) {
+export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now = () => Date.now(), forwardPublic = null }) {
   const base = String(supabaseUrl || '').replace(/\/+$/, '')
   const miss = (detail) => { try { onMiss?.(detail) } catch { /* diagnostics only */ } }
 
   async function functions(name, input, init) {
     const text = await readBody(input, init)
     const body = parseJson(text)
+    // The public lookup is genuinely live. Only the query crosses: whatever else
+    // the page put in the body or the headers stays here.
+    if (name === DEMO_LIVE_FUNCTION) {
+      if (typeof forwardPublic !== 'function') return respond(missBody())
+      const q = typeof body?.q === 'string' ? body.q : (() => { try { return new URL(readUrl(input), 'http://demo.invalid').searchParams.get('q') } catch { return null } })()
+      try { return await forwardPublic({ q: String(q ?? '') }) } catch { return respond({ error: 'lookup_unreachable', reason: 'lookup_unreachable' }, 503) }
+    }
     const key = demoSnapshotKey(name, body)
     let entry = null
     try { entry = reader ? await reader.entry(key) : null } catch { entry = null }
@@ -171,6 +211,15 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     // Identity-shaped function reads every signed-in page makes.
     if (name === 'help-assistant' && body?.action === 'status') return respond({ tutorials_enabled: false, assistant_enabled: false })
     if (name === 'intel-resolve') return resolveInMemory(body)
+    // A real-world asset research read the snapshot does not hold: the public
+    // endpoint answers it as a free member gets it. Only capability, params and
+    // readMode cross; orgId and the visitor's token do not.
+    if (name === 'intel-research' && typeof forwardPublic === 'function' && DEMO_FORWARDED_RESEARCH.has(body?.capability)) {
+      const forwarded = { capability: body.capability }
+      if (body.params != null) forwarded.params = body.params
+      if (body.readMode != null) forwarded.readMode = body.readMode
+      try { return await forwardPublic(forwarded) } catch { return respond(researchMissBody(body.capability)) }
+    }
     miss({ kind: 'function', name, body })
     if (name === 'intel-research') return respond(researchMissBody(body?.capability))
     return respond(missBody())
@@ -247,6 +296,7 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
       if (entry && entry.body !== undefined) return respond(entry.body, Number(entry.status) || 200)
     }
     if (name === 'intel_save_workspace_preferences') return saveWorkspacePreference(body)
+    if (Object.hasOwn(EMPTY_SHAPED_RPCS, name)) return respond(EMPTY_SHAPED_RPCS[name](body || {}))
     if (EMPTY_LIST_RPCS.has(name)) return respond([])
     if (EMPTY_VALUE_RPCS.has(name)) return respond(null)
     if (WRITE_RPC.test(name)) return respond(null)
@@ -269,6 +319,10 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     }
 
     if (method === 'GET' || method === 'HEAD') {
+      if (UNPLANNED_SHARED_TABLES.has(table)) {
+        miss({ kind: 'rest', table, query: url.search })
+        return postgrestError(404, DEMO_MISS_CODE, DEMO_MISS_TEXT)
+      }
       const identity = identityRows(table)
       const shared = identity ? null : await sharedTableRows(table, url)
       const own = identity || shared ? null : store.select(table, url.searchParams)

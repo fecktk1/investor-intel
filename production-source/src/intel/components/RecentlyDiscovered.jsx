@@ -25,7 +25,19 @@ export const DISCOVERED_COLUMNS =
 // The view already caps at the newest 50 demands; the strip shows the newest 12.
 export const DISCOVERED_LIMIT = 12
 
-// A contract demand's provider_id is already '<chain>:<address>'.
+// A contract demand's provider_id is already '<chain>:<address>'. Older wallet
+// demands were written with provider 'coinmarketcap' and a contract id, so the
+// SHAPE of the id decides, not the provider label.
+const CONTRACT_ID = /^[a-z0-9-]+:0x[0-9a-f]{6,}$/i
+const isContractId = row => row?.provider !== 'coinmarketcap' || CONTRACT_ID.test(String(row?.provider_id || ''))
+
+// '0xc787a804…41ac': enough to recognise and to search, never the full 42
+// characters across the row.
+export const shortAddress = address => {
+  const value = String(address || '')
+  return /^0x[0-9a-f]{12,}$/i.test(value) ? `${value.slice(0, 10)}…${value.slice(-4)}` : value
+}
+
 const contractParts = providerId => {
   const separator = providerId.indexOf(':')
   return separator === -1
@@ -40,7 +52,7 @@ const contractParts = providerId => {
 export function discoveredRoute(row) {
   const providerId = row?.provider_id == null ? '' : String(row.provider_id)
   if (!providerId) return null
-  if (row.provider === 'coinmarketcap') {
+  if (!isContractId(row)) {
     return `/intel/markets/${encodeURIComponent(row.symbol || providerId)}?provider=coinmarketcap&id=${encodeURIComponent(providerId)}`
   }
   const { address } = contractParts(providerId)
@@ -51,7 +63,7 @@ export function discoveredRoute(row) {
 // contract lives on, named the way chains.js names it.
 export function discoveredSubtitle(row) {
   if (row?.name) return row.name
-  if (!row || row.provider === 'coinmarketcap') return ''
+  if (!row || !isContractId(row)) return ''
   const { chain } = contractParts(String(row.provider_id || ''))
   if (!chain) return ''
   return getChain(chain)?.label || chain
@@ -61,8 +73,12 @@ export function discoveredLabel(row) {
   if (row?.symbol) return row.symbol
   const providerId = row?.provider_id == null ? '' : String(row.provider_id)
   if (!providerId) return '—'
-  return row.provider === 'coinmarketcap' ? providerId : contractParts(providerId).address || providerId
+  return !isContractId(row) ? providerId : shortAddress(contractParts(providerId).address) || providerId
 }
+
+// Named assets lead; an asset indexing has not named yet follows, in the same
+// newest-first order. Nothing is dropped.
+export const namedFirst = rows => [...(rows || [])].sort((a, b) => (b?.symbol || b?.name ? 1 : 0) - (a?.symbol || a?.name ? 1 : 0))
 
 const inUse = (value, now) => {
   if (!value) return false
@@ -149,7 +165,7 @@ export default function RecentlyDiscovered({ limit = DISCOVERED_LIMIT }) {
         <p className="py-2 text-[12px] text-[var(--fg-4)]">{t('discovered.empty', { defaultValue: 'Nothing discovered yet' })}</p>
       ) : (
         <ul className="intel-discovered-rows">
-          {rows.map((row, index) => <DiscoveredRow key={`${row?.asset_key ?? ''}-${index}`} row={row} now={now} />)}
+          {namedFirst(rows).map((row, index) => <DiscoveredRow key={`${row?.asset_key ?? ''}-${index}`} row={row} now={now} />)}
         </ul>
       )}
     </section>

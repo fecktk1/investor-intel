@@ -117,3 +117,103 @@ export const DEFI_MAX_PAGES = 8
 export const defiBrowseRequest = (view: 'vaults' | 'lending', page: number): SharedDemoRequest => fn('intel-defi-browse', {
   chain: 'solana', view, product: 'all', search: '', sort: 'tvl_usd', direction: 'desc', page, limit: DEFI_PAGE_SIZE,
 }, 'defi')
+
+// ─── Markets (MarketsPage.jsx via useMarketScreen.js -> markets-api.js loadMarkets) ──
+
+export const MARKETS_PAGE_SIZE = 50 // MarketsPage.jsx PAGE_SIZE
+/** Default pages of the unfiltered screen (50 rows a page: the top 1,000). */
+export const MARKETS_DEFAULT_PAGES = 20
+/** Category filters planned: the category leaders first, then the categories of
+ * the assets on the first page, in order. The select offers every category. */
+export const MARKETS_CATEGORIES = 40
+/** Every order the page can send: the Filters & sort select (MarketsPage.jsx
+ * SORTS) and every sortable column header (MarketsTable.jsx MARKET_SORT_KEYS). */
+export const MARKET_SORTS = [
+  'market_cap', 'volume', 'gainers', 'losers', 'change_1h', 'change_24h', 'change_7d', 'exchange_availability', 'arbitrage',
+  'unusual_volume', 'multi_exchange_strength', 'recently_updated', 'rank', 'price', 'drawdown', 'fdv', 'circulating_supply',
+  'max_supply', 'market_pairs',
+]
+/** Columns that start ascending when first picked (MarketsPage.jsx ASCENDING_FIRST). */
+export const MARKET_ASCENDING_FIRST = ['rank', 'drawdown']
+/** The derived-view buttons and the order each one sets (MarketsPage.jsx "Derived views"). */
+export const MARKET_VIEWS: [string, string | null][] = [
+  ['unusual_volume', 'unusual_volume'], ['vol_up_price_flat', null], ['price_up_liq_weak', null],
+  ['multi_exchange', 'multi_exchange_strength'], ['thin_liquidity', null],
+]
+export const MARKET_PROVIDERS = ['coinmarketcap', 'coingecko'] // the Catalogue select besides 'auto'
+
+/**
+ * useMarketScreen -> loadMarkets: { orgId, ...screenParams }, where screenParams
+ * is every m_ default (MarketsPage.jsx useScreenParams) with sort and dir from
+ * useColumnSort. dir is never '' on the wire: an unset m_dir reads as the
+ * column's own first direction.
+ */
+export const marketsScreenRequest = (patch: Record<string, unknown> = {}): SharedDemoRequest => {
+  const sort = String(patch.sort ?? 'market_cap')
+  return fn('intel-markets', {
+    provider: 'auto', sort, dir: MARKET_ASCENDING_FIRST.includes(sort) ? 'asc' : 'desc', chain: '', search: '', category: '',
+    signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: MARKETS_PAGE_SIZE, ...patch,
+  }, 'markets')
+}
+
+/** markets-api.js loadMarketMacro: the global macro bar in the expanded market context. */
+export const MARKET_MACRO_COLUMNS = 'provider,total_market_cap_usd,total_volume_24h_usd,market_cap_change_24h_pct,btc_dominance_pct,eth_dominance_pct,stablecoin_market_cap_usd,defi_market_cap_usd,as_of'
+export const marketMacroRequest = (): SharedDemoRequest => rest('market_macro_available', [
+  ['select', MARKET_MACRO_COLUMNS], ['snapshot_kind', 'eq.global'], ['order', 'as_of.desc'], ['limit', '4'],
+], 'markets')
+
+export interface MarketsDiscovery {
+  total?: number | null
+  derivedCounts?: Record<string, unknown> | null
+  categories?: string[]      // category leaders first, then first-page asset categories
+  heatmapChains?: string[]   // the chain heatmap's chains (MarketsCharts onChain)
+}
+
+/** The Markets screen variants a visitor reaches from the default view. */
+export function marketsRequests(chainIds: string[], found: MarketsDiscovery = {}): SharedDemoRequest[] {
+  const out: SharedDemoRequest[] = [marketMacroRequest()]
+  const pages = (total: unknown, max: number) => Math.max(1, Math.min(max, Math.ceil(Number(total) / MARKETS_PAGE_SIZE) || 1))
+  for (let page = 0; page < pages(found.total ?? MARKETS_DEFAULT_PAGES * MARKETS_PAGE_SIZE, MARKETS_DEFAULT_PAGES); page++) out.push(marketsScreenRequest({ page }))
+  for (const provider of MARKET_PROVIDERS) out.push(marketsScreenRequest({ provider }))
+  // Every column both ways, first and second page.
+  for (const sort of MARKET_SORTS) {
+    const first = MARKET_ASCENDING_FIRST.includes(sort) ? 'asc' : 'desc'
+    for (const page of [0, 1]) for (const dir of [first, first === 'asc' ? 'desc' : 'asc']) out.push(marketsScreenRequest({ sort, dir, page }))
+  }
+  for (const [view, sort] of MARKET_VIEWS) {
+    const count = Number(found.derivedCounts?.[view])
+    // A button with a zero count is disabled; the view is still planned so a
+    // shared link to it answers with its zero.
+    const viewPages = Number.isFinite(count) ? pages(count, 2) : 1
+    for (let page = 0; page < viewPages; page++) out.push(marketsScreenRequest({ view, ...(sort ? { sort } : {}), page }))
+  }
+  for (const chain of [...new Set([...chainIds, ...(found.heatmapChains || [])])]) if (chain) out.push(marketsScreenRequest({ chain }))
+  for (const category of [...new Set(found.categories || [])].slice(0, MARKETS_CATEGORIES)) if (category) out.push(marketsScreenRequest({ category }))
+  return out
+}
+
+// ─── Degen (MarketsPage.jsx ?mode=degen via markets-api.js loadDegenMarkets) ──
+
+export const DEGEN_PAGES = 6
+/** MarketsPage.jsx DEGEN_SORTS (= DEGEN_SORT_KEYS in _shared/memecoin/degen-query.ts). */
+export const DEGEN_SORTS = ['trending', 'volume', 'gainers', 'losers', 'liquidity', 'new', 'market_cap', 'price', 'change_1h', 'change_24h', 'fdv', 'buys', 'sells', 'txns', 'risk', 'age']
+/** MarketsPage.jsx DEGEN_BUCKETS without 'watchlist' (the visitor has none on the server). */
+export const DEGEN_BUCKETS = ['hot', 'new', 'pumpfun', 'migrated', 'trending', 'takeovers', 'established', 'high_volume', 'high_liquidity', 'high_risk']
+export const DEGEN_CHAINS = ['solana', 'ethereum', 'base', 'bnb']
+export const DEGEN_RISK_MAX = [30, 60]
+
+/** MarketsPage.jsx degen effect: the fixed fields, then search/chain/bucket/riskMax only when set. */
+export const degenScreenRequest = (patch: Record<string, unknown> = {}): SharedDemoRequest =>
+  fn('intel-degen', { sort: 'trending', dir: 'desc', showExcluded: false, page: 0, limit: MARKETS_PAGE_SIZE, ...patch }, 'degen')
+
+export function degenRequests(found: { total?: number | null; chains?: string[] } = {}): SharedDemoRequest[] {
+  const out: SharedDemoRequest[] = []
+  const pages = Math.max(1, Math.min(DEGEN_PAGES, Math.ceil(Number(found.total ?? DEGEN_PAGES * MARKETS_PAGE_SIZE) / MARKETS_PAGE_SIZE) || 1))
+  for (let page = 0; page < pages; page++) out.push(degenScreenRequest({ page }))
+  out.push(degenScreenRequest({ showExcluded: true }))
+  for (const sort of DEGEN_SORTS) for (const dir of ['desc', 'asc']) out.push(degenScreenRequest({ sort, dir }))
+  for (const bucket of DEGEN_BUCKETS) out.push(degenScreenRequest({ bucket }))
+  for (const chain of [...new Set([...DEGEN_CHAINS, ...(found.chains || [])])]) if (chain) out.push(degenScreenRequest({ chain }))
+  for (const riskMax of DEGEN_RISK_MAX) out.push(degenScreenRequest({ riskMax }))
+  return out
+}

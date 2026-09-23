@@ -13,6 +13,7 @@ import TokenChart from '../components/TokenChart'
 import RwaRelationships from '../components/RwaRelationships'
 import RwaAssetProfile from '../components/RwaAssetProfile'
 import RwaCoverage from '../components/RwaCoverage'
+import RwaLookup from '../components/RwaLookup'
 import TokenAvatar from '../components/TokenAvatar'
 import { useRwaAssetProfile } from '../lib/useRwaAssetProfile'
 import { useRwaAssetLogos } from '../lib/useRwaAssetLogos'
@@ -168,6 +169,11 @@ export function FreeSharedNotice({ result, loading, t }) {
   const lane = result?.freeShared
   if (loading || !lane) return null
   const served = !!result?.data?.rows?.length
+  // A kept copy after a failed live read: dated, with the reason, never passed
+  // off as a fresh shared read.
+  if (served && lane.served === 'retained' && lane.keptAt) {
+    return <p role="status" className="intel-analysis-caption">{t('research.free_shared_kept', { date: new Date(lane.keptAt).toLocaleString(), reason: lane.reason || '', defaultValue: 'A kept copy from {{date}}: the live read did not answer ({{reason}}).' })}</p>
+  }
   return <p role="status" className="intel-analysis-caption">{served
     ? t('research.free_shared_served', { defaultValue: 'Read from the shared record every member sees. Its retrieval time is shown above.' })
     : t('research.free_shared_not_read', { defaultValue: 'This record has not been read yet today. It opens for Starter members now and for everyone once the shared read refreshes.' })}</p>
@@ -217,6 +223,10 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
     {/* The coverage headline is a precomputed capture view, free on every plan
         and outside the research gate below: how many tokenised assets have no
         tradeable wrapper, and which expected funds CoinMarketCap does not carry. */}
+    {/* Look up one tokenised asset, now: a public read (intel-rwa-lookup) for
+        members and demo visitors alike, outside the research gate, with the
+        proof for every figure under "How this was fetched". */}
+    {workspace === 'rwa' && <RwaLookup />}
     {workspace === 'rwa' && <RwaCoverage />}
     <IntelSurfaceGate surface={surface} title={t(`access.surface_${surface}`, { defaultValue: surface === 'rwa_research' ? 'Real-world asset research' : 'On demand research' })}>
     <ResearchStatus query={query} showObserved={!["globalHistory","cmc100History","cmc20History"].includes(capability)}/>
