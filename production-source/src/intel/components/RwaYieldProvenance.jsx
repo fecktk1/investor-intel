@@ -142,7 +142,7 @@ export default function RwaYieldProvenance() {
   const state = read.status === 'unavailable' ? 'error' : (read.status === 'ready' && rows.length) ? 'ready' : read.status === 'loading' ? 'loading' : 'empty'
 
   return (
-    <section className="intel-rwa-yield space-y-3" aria-label={t('structure.rwa_yield_title', { defaultValue: 'RWA yield provenance' })}>
+    <section id="intel-rwa-yield" className="intel-rwa-yield space-y-3" aria-label={t('structure.rwa_yield_title', { defaultValue: 'RWA yield provenance' })}>
       <div className="border-b border-[var(--border-default)] pb-2">
         <div className="eyebrow">{t('structure.rwa_yield_eyebrow', { defaultValue: 'Yield provenance' })}</div>
         <p className="intel-analysis-caption mb-0">

@@ -1,10 +1,15 @@
-# Runs every test in this repository on each push and pull request, offline.
+# Runs the tests in this repository on each push and pull request, offline.
+# production-source/excluded-tests.md lists the ones that cannot run here, and why.
 #
 # No secrets are used and no CoinMarketCap call is made:
 # - the demo runs in fixture mode (CMC_MODE=fixture, no key), and its tests
 #   inject synthetic responses;
 # - the production-source Deno tests run without --allow-net, so any network
-#   call from a test would fail rather than reach a provider.
+#   call from a test would fail rather than reach a provider;
+# - the production-source Vitest tests hand the code under test a fake network,
+#   and test-support/vitest-offline.mjs replaces the network globals (fetch,
+#   WebSocket, XMLHttpRequest, EventSource) with ones that fail a test that
+#   reaches past it.
 # The only downloads are the npm packages in package-lock.json and, in their
 # own step before the tests, the modules the Deno tests import: the Deno
 # standard library and @supabase/supabase-js. The Deno tests then run from that
@@ -42,6 +47,16 @@ jobs:
 
       - name: Demo build
         run: npm run build
+
+      # The React frontend's tests in production-source/ (Vitest). The packaging
+      # script writes the ones that run here to
+      # production-source/runnable-vitest-tests.txt, and every other one, with the
+      # reason, to production-source/excluded-tests.md. test-support/vitest.config.mjs
+      # applies the stand-in map in test-support/deno.json (see the Deno steps
+      # below), and the script runs Vitest from inside production-source/, which
+      # has the private repository's layout.
+      - name: Production-source frontend tests (Vitest, network globals refused)
+        run: npm run test:vitest
 
       - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
         with:

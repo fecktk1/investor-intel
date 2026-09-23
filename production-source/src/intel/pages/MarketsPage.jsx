@@ -11,6 +11,8 @@ import { loadMarkets, loadDegenMarkets, locateToken, loadMarketMacro, suggestMar
 import MarketSearchTypeahead from '../components/MarketSearchTypeahead'
 import { DemoNotTracked, DemoOutsideScreen } from '../demo/DemoNotInSnapshot'
 import { isIntelDemoActive } from '../demo/demo-mode'
+import { useMarketDetailCache } from '../context/MarketDetailCache'
+import { prefetchSuggestion } from '../lib/suggestion-prefetch'
 import { formatPrice, formatPct, formatUsd, timeAgo, pctClass } from '../lib/market-format'
 import { marketPanelHref } from '../lib/market-links'
 import AssetInspector from '../components/AssetInspector'
@@ -245,6 +247,12 @@ export default function MarketsPage() {
   // A chosen suggestion opens the asset at its EXACT identity, the same address
   // the table rows link to, so a shared ticker is never resolved by guess.
   const openSuggestion = useCallback(row => { if (row?.href) navigate(row.href, { state: { from: `${location.pathname}${location.search}` } }) }, [navigate, location.pathname, location.search])
+  // In the public demo, the highlighted suggestion's detail is read into the
+  // asset page's navigation cache while the list is open, so Enter lands on the
+  // same read a deep link makes, already finished or in flight
+  // (../lib/suggestion-prefetch.js says why this is demo only).
+  const detailCache = useMarketDetailCache()
+  const previewSuggestion = useCallback(row => { prefetchSuggestion({ row, cache: detailCache, supabase, orgId: org?.id }) }, [detailCache, supabase, org?.id])
 
   const onOpen = useCallback(async (e) => {
     e.preventDefault()
@@ -358,7 +366,7 @@ export default function MarketsPage() {
             </div>
             {/* search · sort · category · watchlist — one row, search flexes to fill */}
             <div className="intel-market-filter-toolbar">
-              <MarketSearchTypeahead value={params.search} onChange={setSearchText} suggest={suggestAssets} onOpen={openSuggestion} disabled={!org?.id}/>
+              <MarketSearchTypeahead value={params.search} onChange={setSearchText} suggest={suggestAssets} onOpen={openSuggestion} onPreview={previewSuggestion} disabled={!org?.id}/>
               <details className="intel-market-filter-options"><summary>{t('markets.filter_and_sort', { defaultValue: 'Filters & sort' })}{(params.category || params.chain || params.watchlistOnly || params.provider !== 'auto' || params.sort !== 'market_cap' || columnSort.dir !== 'desc') ? ' · ' + t('markets.custom_screen', { defaultValue: 'Custom' }) : ''}</summary><div className="intel-market-filters">
               <label className="flex items-center gap-2"><span>{t('markets.catalogue', {defaultValue:'Catalogue'})}</span><select className="select text-[12px] py-1" aria-label="Market catalogue" value={params.provider} onChange={e=>setParam({provider:e.target.value})}><option value="auto">{t('markets.cmcPreferred', {defaultValue:'CoinMarketCap preferred'})}</option><option value="coinmarketcap">CoinMarketCap</option><option value="coingecko">CoinGecko</option></select></label>
               {/* Picking an order here keeps the current direction — the header

@@ -202,6 +202,7 @@ const REASONS = {
   accrues_in_price: 'This wrapper accrues its yield inside the token price, so its gap to the anchor is an accrual and not a premium.',
   derivative_not_a_wrapper: 'The provider lists this derivative price among the asset\'s tokens. It is not a token anyone holds or redeems, so it is shown for comparison and never enters the anchor, the widest premium or discount, or the picks.',
   accrual_name_mismatch: 'This wrapper is recorded as accruing under a different name, so the accrual exemption was not applied and its gap is reported as a premium.',
+  reinvested_dividends_not_adjusted: 'This wrapper reinvests the share\'s dividends into its own price and no multiplier from its issuer could be applied, so its gap includes reinvested dividends and is not adjusted. It is shown as an accrual, not a premium, and is kept out of the anchor.',
   price_matches_no_known_weight_unit: 'Unit not established: the price matches neither the asset\'s unit nor a troy ounce to gram conversion, so no premium is reported.',
   price_far_from_peers: 'Unit not established: the price sits too far from the other wrappers of this asset to be the same unit, so no premium is reported.',
   list_value_not_reported: 'The list endpoint reported no value for this asset in the capture being compared.',
@@ -307,6 +308,60 @@ const REFERENCE_REASONS = {
   stale_off_session: 'The feed\'s last update is older than any scheduled market closure explains, so it was not used.',
 }
 
+// ── Reinvested dividends ─────────────────────────────────────────────────────
+// Some wrappers reinvest the share's dividends inside the token, so one token is
+// worth more than one share (accrual-multiplier.ts). Where the issuer publishes
+// that token's multiplier on chain, the premium and the gap to the stock are of
+// the price divided by it, and the row says so with the multiplier, its source
+// and its date; the unadjusted figure stays beside it. Where no multiplier could
+// be applied, the gap is labelled as including reinvested dividends.
+
+/** Where a multiplier came from, in words. */
+const ACCRUAL_SOURCE_LABELS = {
+  ondo_solana_scaled_ui: 'Ondo on-chain multiplier',
+}
+/** Why a reinvesting wrapper was not adjusted, in words. */
+const ACCRUAL_REASONS = {
+  no_multiplier_source: 'Its issuer\'s multiplier for this token is not read here yet.',
+  no_multiplier_address: 'No token account for this wrapper\'s multiplier is recorded yet.',
+  multiplier_read_failed: 'The multiplier could not be read over its public RPC in this capture.',
+  multiplier_not_read: 'The multiplier was not read in this capture.',
+  multiplier_changed_after_observation: 'The multiplier changed after the prices were observed, so the one in effect at that moment is not on chain.',
+  mint_identity_not_proved: 'The token account did not prove it is this token, so its multiplier was not used.',
+  multiplier_authority_changed: 'The multiplier is no longer set by the issuer\'s recorded authority, so it was not used.',
+  no_published_multiplier: 'The token account publishes no multiplier.',
+  multiplier_out_of_range: 'The published multiplier is outside any plausible range, so it was not used.',
+  multiplier_time_unreadable: 'The date the multiplier took effect could not be read, so it was not used.',
+  account_not_found: 'The token account was not found.',
+  not_token_2022: 'The token account is not held by the expected token program, so its multiplier was not used.',
+  wrapper_observation_time_unknown: 'The provider gave no time for the wrapper prices, so the multiplier in effect then is not known.',
+}
+
+/** A multiplier as the row prints it, x1.0095. Four decimals: a year of an
+ * index fund's dividends moves the fourth. */
+export function multiplierLabel(value) {
+  const n = num(value)
+  return n == null ? null : n.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+}
+
+export function accrualReasonText(t, code) {
+  const key = String(code ?? '').trim()
+  if (!key) return null
+  return ACCRUAL_REASONS[key] ? t(`accrual.reason_${key}`, { defaultValue: ACCRUAL_REASONS[key] }) : key
+}
+
+/** The plain-text note on an adjusted wrapper: the multiplier, where it came
+ * from, and since when. Null on every other wrapper. */
+export function accrualNote(t, token) {
+  if (token?.accrualTreatment !== 'adjusted' || num(token?.accrualMultiplier) == null) return null
+  const source = t(`accrual.source_${token.accrualSource}`, { defaultValue: ACCRUAL_SOURCE_LABELS[token.accrualSource] || token.accrualSource || '' })
+  const stamp = String(token.accrualAsOf || '')
+  const date = /^[0-9]{4}-[0-9]{2}-[0-9]{2}/.test(stamp) ? stamp.slice(0, 10) : null
+  return date
+    ? t('accrual.adjusted_note', { multiplier: multiplierLabel(token.accrualMultiplier), source, date, defaultValue: 'Adjusted for reinvested dividends (x{{multiplier}}, {{source}}, as of {{date}}).' })
+    : t('accrual.adjusted_note_undated', { multiplier: multiplierLabel(token.accrualMultiplier), source, defaultValue: 'Adjusted for reinvested dividends (x{{multiplier}}, {{source}}, unchanged since the token was issued).' })
+}
+
 /** How long before the comparison the feed last moved, in the largest whole unit. */
 export function referenceAge(t, seconds) {
   const s = num(seconds)
@@ -378,25 +433,55 @@ export function UnderlyingReferenceNote({ reference: ref, t, bps = 'bps' }) {
       {num(ref.anchorBps) != null && ` ${ref.anchorWithinBand === true
         ? t('underlying_ref.anchor_within', { band, defaultValue: 'The anchor is within the feed\'s {{band}}% update band of the stock, so the two are not distinguishable.' })
         : t('underlying_ref.anchor_gap', { value: bpsLabel(ref.anchorBps, bps), defaultValue: 'The anchor sits {{value}} against the stock.' })}`}
-      {` ${t('underlying_ref.caveat', { defaultValue: 'A gap to the stock compares one token with one share. It does not adjust for dividends a wrapper may have reinvested, and it is not a tradable arbitrage.' })}`}
+      {` ${t('underlying_ref.caveat', { defaultValue: 'A gap to the stock compares one share\'s worth of a wrapper with one share. A wrapper that reinvests dividends into its price is divided by its issuer\'s published multiplier first where one could be read, and is labelled where not. It is not a tradable arbitrage.' })}`}
     </p>
   )
 }
 
 /** One wrapper against the stock. Inside the feed's band the figure is not a
- * premium, so the words lead and the measured gap follows in small type. */
+ * premium, so the words lead and the measured gap follows in small type.
+ *
+ * A wrapper adjusted for reinvested dividends shows its per-share gap with the
+ * multiplier note and its unadjusted gap under it. One that reinvests but could
+ * not be adjusted shows its raw gap labelled as including reinvested dividends:
+ * never as a premium, and never without the label. */
 export function VsStockCell({ token, band, t, bps = 'bps' }) {
+  const small = 'block text-[11px] text-[var(--fg-4)]'
   const value = num(token?.underlyingRefBps)
-  if (value == null) return '—'
+  const raw = num(token?.underlyingRefRawBps)
+  if (value == null) {
+    if (raw != null && token?.accrualTreatment === 'not_adjusted') {
+      return (
+        <span>
+          {bpsLabel(raw, bps)}
+          <span className={small}>{t('accrual.not_adjusted', { defaultValue: 'Includes reinvested dividends, not adjusted.' })}</span>
+        </span>
+      )
+    }
+    return '—'
+  }
+  const note = accrualNote(t, token)
+  const rawLine = note && raw != null
+    ? <span className={small}>{t('accrual.raw', { value: bpsLabel(raw, bps), defaultValue: 'Before the multiplier: {{value}}' })}</span>
+    : null
   if (token.underlyingRefWithinBand === true) {
     return (
       <span>
         {t('underlying_ref.within_band', { band, defaultValue: 'Within the feed\'s {{band}}% update band, not distinguishable' })}
-        <span className="block text-[11px] text-[var(--fg-4)]">{t('underlying_ref.measured', { value: bpsLabel(value, bps), defaultValue: 'Measured {{value}}' })}</span>
+        <span className={small}>{t('underlying_ref.measured', { value: bpsLabel(value, bps), defaultValue: 'Measured {{value}}' })}</span>
+        {note && <span className={small}>{note}</span>}
+        {rawLine}
       </span>
     )
   }
-  return bpsLabel(value, bps)
+  if (!note) return bpsLabel(value, bps)
+  return (
+    <span>
+      {bpsLabel(value, bps)}
+      <span className={small}>{note}</span>
+      {rawLine}
+    </span>
+  )
 }
 
 /** `showHeading` is false when a PAGE already carries the eyebrow, the title and
@@ -617,6 +702,10 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                   // agreement rules differ again in every other locale.
                   defaultValue: 'Assets: {{assets}}. Wrappers: {{wrappers}}. Too thin to anchor: {{thin}}. Price unit restated: {{normalised}}. Accruing inside the token price, so carrying an accrual gap rather than a premium: {{accruing}}.',
                 })}
+                {num(summary.accrualAdjusted) > 0 && ` ${t('rwa_wrappers.summary_adjusted', {
+                  count: num(summary.accrualAdjusted),
+                  defaultValue: 'Compared at a per-share price after the issuer\'s own dividend multiplier: {{count}}.',
+                })}`}
               </p>
 
               {/* One dot per wrapper: how deep it trades against how far it sits
@@ -769,6 +858,11 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                   {row.anchorReason ? ` ${reasonText(t, row.anchorReason)}` : ''}
                                 </p>
                                 <UnderlyingReferenceNote reference={row.underlyingReference} t={t} bps={bps} />
+                                {row.tokens.some(token => token.accrualTreatment) && (
+                                  <p className="text-[11px] text-[var(--fg-4)] max-w-[80ch] mt-1">
+                                    {t('accrual.scope', { defaultValue: 'Some wrappers reinvest the share\'s dividends inside the token, so one token is worth more than one share and its price drifts above the stock for reasons that are not a premium. Where the issuer publishes that token\'s multiplier on chain, the wrapper\'s price is divided by the multiplier in effect when the prices were observed before it is compared with its siblings or the stock, and the row names the multiplier, its source and its date. Where no multiplier could be read, nothing is guessed: the gap is shown as including reinvested dividends, not adjusted, and the wrapper is kept out of the anchor and the cheapest route.' })}
+                                  </p>
+                                )}
                                 {overTimeHref(location, row.rwaId) && (
                                   <p className="text-[11px] mt-1">
                                     <Link className="intel-text-link" to={overTimeHref(location, row.rwaId)}>
@@ -825,6 +919,15 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                               : token.accrualGapBps != null
                                                 ? <span>{t('rwa_wrappers.accrual', { value: bpsLabel(token.accrualGapBps, bps), defaultValue: '{{value}} accrual' })}</span>
                                                 : '—'}
+                                            {token.premiumBps != null && accrualNote(t, token) && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{accrualNote(t, token)}</span>
+                                            )}
+                                            {token.premiumBps != null && token.accrualTreatment === 'adjusted' && num(token.rawPremiumBps) != null && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{t('accrual.raw', { value: bpsLabel(token.rawPremiumBps, bps), defaultValue: 'Before the multiplier: {{value}}' })}</span>
+                                            )}
+                                            {token.premiumBps == null && token.accrualGapBps != null && token.accrualTreatment === 'not_adjusted' && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{t('accrual.not_adjusted', { defaultValue: 'Includes reinvested dividends, not adjusted.' })}</span>
+                                            )}
                                           </td>
                                           {hasReference(row) && (
                                             <td className={numCell}>
@@ -850,6 +953,9 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                             )}
                                             {token.reason && (
                                               <span className="block text-[11px] text-[var(--fg-4)]">{reasonText(t, token.reason)}</span>
+                                            )}
+                                            {token.accrualTreatment === 'not_adjusted' && accrualReasonText(t, token.accrualReason) && (
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{accrualReasonText(t, token.accrualReason)}</span>
                                             )}
                                           </td>
                                         </tr>
@@ -959,6 +1065,9 @@ export default function RwaWrapperSpread({ showHeading = true }) {
           {rows.some(hasReference) && (
             <p className="text-[11px] text-[var(--fg-4)]">{t('underlying_ref.source', { defaultValue: 'Stock reference: Chainlink on-chain price feeds, read through public RPCs.' })}</p>
           )}
+          {rows.some(row => (row.tokens || []).some(token => token.accrualTreatment === 'adjusted')) && (
+            <p className="text-[11px] text-[var(--fg-4)]">{t('accrual.attribution', { defaultValue: 'Dividend multipliers: the issuer\'s own on-chain figures, read from its Solana token accounts through a public RPC.' })}</p>
+          )}
         </>
       )}
     </section>
@@ -1021,6 +1130,11 @@ export function WrapperPicks({ picks, tokens = [], t, bps = 'bps', stateLabel = 
                                 defaultValue: 'This wrapper set the median it is measured against, so its distance is zero by construction. Nearest other wrapper: {{other}} at {{premium}}.',
                               })
                             : t('rwa_wrapper_picks.circular_alone', { defaultValue: 'This wrapper set the median it is measured against, so its distance is zero by construction. No other liquid wrapper carries a premium.' })}
+                        </span>
+                      )}
+                      {pick.accrualTreatment === 'adjusted' && multiplierLabel(pick.accrualMultiplier) && (
+                        <span className="block">
+                          {t('accrual.pick_note', { multiplier: multiplierLabel(pick.accrualMultiplier), defaultValue: 'Premium after this wrapper\'s own dividend multiplier (x{{multiplier}}).' })}
                         </span>
                       )}
                       {key === 'cheapest' && picks.cheapestMatchesCaptured === false && (

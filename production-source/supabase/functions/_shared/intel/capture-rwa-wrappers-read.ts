@@ -29,6 +29,7 @@ import {
 } from './rwa-wrapper-spread.ts'
 import { wrapperPicks, PICK_RULES } from './rwa-wrapper-picks.ts'
 import { REFERENCE_CHAINS, REFERENCE_SCOPE } from './underlying-reference.ts'
+import { ACCRUAL_SCOPE } from './accrual-multiplier.ts'
 
 /** One capture hour holds at most RWA_WRAPPER_ASSET_CAP assets, so 200 asset
  * rows spans several hours and always contains the newest one whole. */
@@ -80,6 +81,8 @@ const ASSET_COLUMNS = [
   'underlying_ref_deviation_pct', 'underlying_ref_heartbeat_s', 'underlying_ref_hours',
   'underlying_ref_observed_at', 'underlying_ref_compared_at', 'underlying_ref_age_s', 'underlying_ref_session',
   'underlying_ref_anchor_bps', 'underlying_ref_anchor_within_band', 'underlying_ref_fetched_at',
+  // Dividend-reinvestment adjustment (migration 20260923220000), nullable.
+  'accrual_adjusted_count',
 ].join(',')
 
 const TOKEN_COLUMNS = [
@@ -88,6 +91,10 @@ const TOKEN_COLUMNS = [
   'unit_state', 'unit_factor', 'wrapper_state', 'premium_bps', 'accrual_gap_bps', 'in_anchor', 'state_reason',
   'underlying_ref_price', 'underlying_ref_bps', 'underlying_ref_within_band', 'underlying_ref_session',
   'underlying_ref_observed_at', 'underlying_ref_source',
+  // Dividend-reinvestment adjustment (migration 20260923220000), all nullable.
+  'accrual_treatment', 'accrual_reason', 'accrual_multiplier', 'accrual_multiplier_source',
+  'accrual_multiplier_as_of', 'accrual_multiplier_network', 'accrual_multiplier_address',
+  'accrual_multiplier_read_at', 'adjusted_price', 'raw_premium_bps', 'underlying_ref_raw_bps',
 ].join(',')
 
 /** The catalogue table the wrapper TOKEN logos come from, and the profile table
@@ -204,6 +211,24 @@ export function wrapperRow(row: Record<string, any>, logo: Logo | null = null) {
     underlyingRefSession: str(row?.underlying_ref_session, 20),
     underlyingRefObservedAt: str(row?.underlying_ref_observed_at, 40),
     underlyingRefSource: str(row?.underlying_ref_source, 20),
+    // A wrapper that reinvests dividends into its price (accrual-multiplier.ts).
+    // 'adjusted': premiumBps and underlyingRefBps are of `adjustedPrice`, the
+    // price divided by `accrualMultiplier`, and the unadjusted figures sit in
+    // `rawPremiumBps` and `underlyingRefRawBps`. 'not_adjusted': no sourced
+    // multiplier applied (`accrualReason` says why), the wrapper carries an
+    // accrual gap, and `underlyingRefRawBps` is its gap to the stock INCLUDING
+    // reinvested dividends. Null on every other wrapper.
+    accrualTreatment: str(row?.accrual_treatment, 20),
+    accrualReason: str(row?.accrual_reason, 120),
+    accrualMultiplier: num(row?.accrual_multiplier),
+    accrualSource: str(row?.accrual_multiplier_source, 40),
+    accrualAsOf: str(row?.accrual_multiplier_as_of, 40),
+    accrualNetwork: str(row?.accrual_multiplier_network, 20),
+    accrualAddress: str(row?.accrual_multiplier_address, 64),
+    accrualReadAt: str(row?.accrual_multiplier_read_at, 40),
+    adjustedPrice: num(row?.adjusted_price),
+    rawPremiumBps: num(row?.raw_premium_bps),
+    underlyingRefRawBps: num(row?.underlying_ref_raw_bps),
   }
 }
 
@@ -267,6 +292,8 @@ export function wrapperAssetRow(row: Record<string, any>, tokens: ReturnType<typ
     liquidCount: num(row?.liquid_count) ?? 0,
     thinCount: num(row?.thin_count) ?? 0,
     accrualCount: num(row?.accrual_count) ?? 0,
+    // Null on a row captured before the adjustment existed, never a zero.
+    accrualAdjustedCount: num(row?.accrual_adjusted_count),
     unitNormalisedCount: num(row?.unit_normalised_count) ?? 0,
     unitRefusedCount: num(row?.unit_refused_count) ?? 0,
     weightDenominated: bool(row?.weight_denominated) ?? false,
@@ -363,8 +390,8 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
   if (!asOf) {
     return {
       view: 'rwa_wrappers', rows: [], points: [], reconciliation: [],
-      summary: { assets: 0, wrappers: 0, anchored: 0, navAnchored: 0, medianAnchored: 0, thin: 0, accruing: 0, unitNormalised: 0, unitRefused: 0, reconcileAgree: 0, reconcileOutside: 0, reconcileNotComparable: 0 },
-      settings, scope: WRAPPER_SPREAD_SCOPE, anchorMeaning: ANCHOR_MEANING, referenceScope: REFERENCE_SCOPE,
+      summary: { assets: 0, wrappers: 0, anchored: 0, navAnchored: 0, medianAnchored: 0, thin: 0, accruing: 0, accrualAdjusted: 0, unitNormalised: 0, unitRefused: 0, reconcileAgree: 0, reconcileOutside: 0, reconcileNotComparable: 0 },
+      settings, scope: WRAPPER_SPREAD_SCOPE, anchorMeaning: ANCHOR_MEANING, referenceScope: REFERENCE_SCOPE, accrualScope: ACCRUAL_SCOPE,
       // Nothing captured yet: when the lane runs, so the panel can say so rather
       // than drawing an empty table.
       schedule: RWA_WRAPPER_CAPTURE_SCHEDULE,
@@ -484,6 +511,9 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
       medianAnchored: rows.filter((row) => row.anchorKind === 'liquid_wrapper_median').length,
       thin: rows.reduce((sum, row) => sum + row.thinCount, 0),
       accruing: rows.reduce((sum, row) => sum + row.accrualCount, 0),
+      // Wrappers compared at a per-share price after their issuer's published
+      // dividend multiplier.
+      accrualAdjusted: rows.reduce((sum, row) => sum + (row.accrualAdjustedCount ?? 0), 0),
       unitNormalised: rows.reduce((sum, row) => sum + row.unitNormalisedCount, 0),
       unitRefused: rows.reduce((sum, row) => sum + row.unitRefusedCount, 0),
       reconcileAgree: rows.filter((row) => row.reconcileState === 'agree').length,
@@ -493,6 +523,8 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
     settings, scope: WRAPPER_SPREAD_SCOPE, anchorMeaning: ANCHOR_MEANING,
     // What the stock reference is and is not, stated once for the whole board.
     referenceScope: REFERENCE_SCOPE,
+    // What the dividend-reinvestment adjustment is and is not.
+    accrualScope: ACCRUAL_SCOPE,
     pickRules: PICK_RULES,
     // Null when every wrapper's market coverage was assessed. A failed catalogue
     // read leaves each wrapper's coverage null with a reason, and says so here.

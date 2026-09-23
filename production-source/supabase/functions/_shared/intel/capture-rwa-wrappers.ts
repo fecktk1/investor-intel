@@ -32,6 +32,12 @@
 //      registry ticker. Zero provider credits. Stored beside the anchor, never
 //      in place of it.
 //
+//   7. Before any spread is computed, the dividend-reinvestment multiplier of
+//      every wrapper that reinvests dividends into its price
+//      (`accrual-multiplier.ts`): ONE batched keyless Solana RPC request for the
+//      Ondo mints, zero provider credits. A wrapper with a sourced multiplier is
+//      compared at its per-share price; one without is labelled, never guessed.
+//
 //   Upper bound: 6 calls and 5 credits per run. At the six-hourly cadence below
 //   that is 20 credits a day, against a Startup allowance measured in hundreds
 //   of thousands a month.
@@ -58,16 +64,19 @@ import { hourBucket, iso, schedulePolicy, CAPTURE_PROVIDER, type CaptureDeps, ty
 import { cmcRows, cmcObservedAt } from '../market-assets/cmc-capabilities.ts'
 import type { MarketAssetsContext } from '../market-assets/types.ts'
 import {
-  wrapperAssetFromQuote, assetListFigures, wrapperSpread, reconcileTokenValue,
+  wrapperAssetFromQuote, assetListFigures, wrapperSpread, reconcileTokenValue, isDerivativeReference,
   RWA_NAV_ANCHORS, WRAPPER_SPREAD_SCOPE, LIQUIDITY_FLOOR_USD,
   RECONCILE_BAND_LOW, RECONCILE_BAND_HIGH,
-  type AssetListFigures, type NavAnchorInput, type WrapperSpread,
+  type AssetListFigures, type NavAnchorInput, type WrapperSpread, type WrapperAssetInput,
 } from './rwa-wrapper-spread.ts'
 import { PROFILE_TABLE, REGISTRANT_TABLE } from './capture-rwa-underlyings.ts'
 import {
   chainlinkReferenceSource, resolveUnderlyingReferences, assetReferenceColumns, tokenReferenceColumns,
-  observationRow, tradfiTickers, type UnderlyingReferenceSource, type ReferenceEvidence,
+  observationRow, tradfiTickers, type UnderlyingReferenceSource, type ReferenceEvidence, type ReferenceOp,
 } from './underlying-reference.ts'
+import {
+  resolveAccrual, ondoSolanaMultiplierSource, type AccrualMultiplierSource, type AccrualStepResult,
+} from './accrual-multiplier.ts'
 
 /** The pg_cron job that runs this lane (UTC), from migration
  * 20260920150000_intel_rwa_wrapper_spread.sql. Every six hours at minute 47,
@@ -114,6 +123,11 @@ export interface RwaWrapperDeps extends CaptureDeps {
    * Chainlink registry read through public RPCs; a test injects a fake, and
    * `false` switches the step off without touching the wrapper capture. */
   referenceSource?: UnderlyingReferenceSource | false
+  /** Where a reinvesting wrapper's dividend multiplier comes from. Defaults to
+   * the Ondo Solana mints over a public RPC; a test injects a fake, and `false`
+   * switches the READ off: the wrappers are then still found and labelled as
+   * not adjusted, never reported as premiums. */
+  accrualSource?: AccrualMultiplierSource | false
 }
 
 const num = (v: unknown): number | null => { if (v == null || v === '' || typeof v === 'boolean') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
@@ -277,6 +291,9 @@ export function assetRow(
     // ── the wrappers ──
     wrapper_count: spread.wrapperCount, liquid_count: spread.liquidCount, thin_count: spread.thinCount,
     accrual_count: spread.accrualCount,
+    // Wrappers compared at a per-share price after a published dividend
+    // multiplier (migration 20260923220000).
+    accrual_adjusted_count: spread.accrualAdjustedCount,
     unit_normalised_count: spread.unitNormalisedCount, unit_refused_count: spread.unitRefusedCount,
     weight_denominated: spread.weightDenominated,
     volume_floor_usd: context.floor,
@@ -307,7 +324,12 @@ export function assetRow(
 
 /** One wrapper row. `premium_bps` and `accrual_gap_bps` are separate columns on
  * purpose: nothing downstream can render an accrual as a premium by reading the
- * wrong field, and the database enforces that only one of them is ever set. */
+ * wrong field, and the database enforces that only one of them is ever set.
+ *
+ * The `accrual_*` columns (migration 20260923220000) are set only on a wrapper
+ * that reinvests dividends into its price: the multiplier it was divided by, its
+ * source, its on-chain effective time and where it was read, or, when it was
+ * not adjusted, why. Every key is always present so an upsert clears a stale one. */
 export function tokenRows(spread: WrapperSpread, context: { capturedAt: string; fetchedAt: string }): Record<string, unknown>[] {
   return spread.tokens.map((row) => ({
     provider: CAPTURE_PROVIDER, rwa_id: spread.rwaId, crypto_id: row.cryptoId, captured_at: context.capturedAt,
@@ -317,6 +339,11 @@ export function tokenRows(spread: WrapperSpread, context: { capturedAt: string; 
     unit_state: row.unitState, unit_factor: row.unitFactor,
     wrapper_state: row.state, premium_bps: row.premiumBps, accrual_gap_bps: row.accrualGapBps,
     in_anchor: row.inAnchor, state_reason: row.reason,
+    accrual_treatment: row.accrualTreatment, accrual_reason: row.accrualReason,
+    accrual_multiplier: row.accrualMultiplier, accrual_multiplier_source: row.accrualSource,
+    accrual_multiplier_as_of: row.accrualAsOf, accrual_multiplier_network: row.accrualNetwork,
+    accrual_multiplier_address: row.accrualAddress, accrual_multiplier_read_at: row.accrualReadAt,
+    adjusted_price: row.adjustedPrice, raw_premium_bps: row.rawPremiumBps,
     fetched_at: context.fetchedAt,
   }))
 }
@@ -352,7 +379,7 @@ export async function attachUnderlyingReferences(
   admin: any,
   assetRows: Record<string, unknown>[],
   wrapperRows: Record<string, unknown>[],
-  context: { tradfi: Map<string, string[] | null>; capturedAt: string; fetchedAt: string; op: 'rwa_wrappers' | 'rwa_wrapper_reference' },
+  context: { tradfi: Map<string, string[] | null>; capturedAt: string; fetchedAt: string; op: ReferenceOp },
   source: UnderlyingReferenceSource,
 ): Promise<ReferenceStepResult> {
   const stock = assetRows.filter((row) => row.asset_type === 'stock' || row.asset_type === 'etf')
@@ -423,7 +450,7 @@ async function referenceStep(
   admin: any,
   assetRows: Record<string, unknown>[],
   wrapperRows: Record<string, unknown>[],
-  context: { tradfi: Map<string, string[] | null>; capturedAt: string; fetchedAt: string; op: 'rwa_wrappers' | 'rwa_wrapper_reference' },
+  context: { tradfi: Map<string, string[] | null>; capturedAt: string; fetchedAt: string; op: ReferenceOp },
   deps: RwaWrapperDeps,
 ): Promise<ReferenceStepResult & { error?: string }> {
   if (deps.referenceSource === false) return { ...NO_REFERENCE, partial: 'reference_switched_off' }
@@ -431,6 +458,42 @@ async function referenceStep(
     return await attachUnderlyingReferences(admin, assetRows, wrapperRows, context, deps.referenceSource || chainlinkReferenceSource())
   } catch (e) {
     return { ...NO_REFERENCE, error: ((e as Error)?.message || 'reference_failed').slice(0, 120) }
+  }
+}
+
+// ─── The dividend-reinvestment multiplier ─────────────────────────────────────
+
+/** Multiplier verdicts for the assets a run is about to compute. Only an asset
+ * that can reach the board (two or more non-derivative tokens) is read for, so a
+ * single-wrapper asset never costs an RPC slot. Never throws and never leaves a
+ * reinvesting wrapper unclassified: if the resolution itself fails, every such
+ * wrapper is still labelled not adjusted with the reason. */
+export async function accrualStep(
+  assets: WrapperAssetInput[],
+  readAt: string,
+  deps: Pick<RwaWrapperDeps, 'accrualSource'>,
+): Promise<AccrualStepResult> {
+  const inputs = assets
+    .filter((asset) => asset.tokens.filter((token) => !isDerivativeReference(token)).length >= 2)
+    .map((asset) => ({ rwaId: asset.rwaId, observedAt: asset.observedAt, tokens: asset.tokens }))
+  const source = deps.accrualSource === false ? false : deps.accrualSource || ondoSolanaMultiplierSource()
+  try {
+    return await resolveAccrual(inputs, source, readAt)
+  } catch (e) {
+    const message = ((e as Error)?.message || 'multiplier_read_failed').slice(0, 120)
+    try {
+      const failing: AccrualMultiplierSource = { id: 'ondo_solana_scaled_ui', network: 'solana', read: () => Promise.reject(new Error(message)) }
+      return await resolveAccrual(inputs, failing, readAt)
+    } catch {
+      return { verdicts: new Map(), reinvesting: 0, adjusted: 0, notAdjusted: 0, reads: 0, error: message }
+    }
+  }
+}
+
+function accrualSummary(step: AccrualStepResult) {
+  return {
+    reinvesting: step.reinvesting, adjusted: step.adjusted, notAdjusted: step.notAdjusted, reads: step.reads,
+    ...(step.error ? { error: step.error } : {}),
   }
 }
 
@@ -586,13 +649,24 @@ export async function captureRwaWrappers(
     // The quotes payload's own `tradfi_markets` tickers: a free cross-check for
     // the stock reference's ticker mapping (no extra call).
     const tradfi = new Map<string, string[] | null>()
-    let multi = 0, anchored = 0, outsideBand = 0
+    const parsed: WrapperAssetInput[] = []
     for (const row of cmcRows('rwaQuotes', quotes.payload).rows) {
       const asset = wrapperAssetFromQuote(row)
       if (!asset) continue
       tradfi.set(asset.rwaId, tradfiTickers(row))
+      parsed.push(asset)
+    }
+    // ── The dividend multipliers, BEFORE any spread: an adjusted wrapper may
+    //    anchor at its per-share price, so the anchor depends on them. RPC only,
+    //    zero credits, and unable to fail the capture.
+    const accrual = await accrualStep(parsed, fetchedAt, deps)
+    let multi = 0, anchored = 0, outsideBand = 0
+    for (const asset of parsed) {
       const mapped = RWA_NAV_ANCHORS[asset.rwaId]
-      const spread = wrapperSpread(asset, { nav: mapped ? navByFeed.get(mapped.feedKey) ?? null : null, liquidityFloorUsd: floor })
+      const spread = wrapperSpread(asset, {
+        nav: mapped ? navByFeed.get(mapped.feedKey) ?? null : null, liquidityFloorUsd: floor,
+        accrual: accrual.verdicts.get(asset.rwaId) ?? null,
+      })
       // The whole surface is about assets wrapped MORE THAN ONCE. A single-token
       // asset is already answered by the RWA universe panel and would only pad
       // the table with rows whose dispersion is structurally absent.
@@ -631,6 +705,7 @@ export async function captureRwaWrappers(
       assetTypes: seed.assetTypes.length, candidates: candidates.length,
       assets: assetRows.length, wrappers: wrapperRows.length,
       multiWrapper: multi, anchored, outsideBand,
+      accrual: accrualSummary(accrual),
       reference: referenceSummary(reference, referenceWrite),
       ...(partial ? { partial } : {}),
       ...(tokenWrite.error || assetWrite.error ? { error: (tokenWrite.error || assetWrite.error) as string } : {}),
@@ -698,6 +773,129 @@ export async function captureUnderlyingReferenceForLatest(
   }
 }
 
+/** The provider's asset as the lane parsed it, rebuilt from a STORED capture:
+ * every input `wrapperSpread` reads is a stored column, so recomputing a stored
+ * capture with new multipliers uses exactly the prices, volumes and issuers that
+ * capture read. Exported for tests. */
+export function assetFromStoredRows(
+  assetRow: Record<string, unknown>,
+  tokens: Record<string, unknown>[],
+): WrapperAssetInput | null {
+  const id = rwaId(assetRow.rwa_id)
+  if (!id) return null
+  const positive = (v: unknown) => { const n = num(v); return n != null && n > 0 ? n : null }
+  const size = (v: unknown) => { const n = num(v); return n != null && n >= 0 ? n : null }
+  return {
+    rwaId: id,
+    symbol: text(assetRow.symbol, 50), name: text(assetRow.name, 200), assetType: text(assetRow.asset_type, 40),
+    rwaRank: (() => { const n = num(assetRow.rwa_rank); return n != null && n > 0 ? Math.trunc(n) : null })(),
+    averageTokenizedPrice: positive(assetRow.average_tokenized_price),
+    tokenizedMarketCap: size(assetRow.tokenized_market_cap),
+    tokenizedVolume24h: size(assetRow.tokenized_volume_24h),
+    observedAt: text(assetRow.source_observed_at, 40),
+    tokens: tokens
+      .filter((row) => rwaId(row.crypto_id))
+      .map((row) => ({
+        cryptoId: rwaId(row.crypto_id), symbol: text(row.symbol, 50), name: text(row.name, 200),
+        issuerId: text(row.issuer_id, 100), issuerName: text(row.issuer_name, 200),
+        price: positive(row.price), marketCap: size(row.market_cap), volume24h: size(row.volume_24h),
+      })),
+  }
+}
+
+/** Recompute the NEWEST wrapper capture with the dividend-reinvestment
+ * multipliers, then re-run the stock reference over it, and write both back onto
+ * the rows already stored. So the board shows the adjustment before the next
+ * scheduled run instead of six hours later.
+ *
+ * Zero CoinMarketCap calls: two reads of this lane's own rows, one batched Solana
+ * RPC request for the multipliers, and the reference step's evidence reads and
+ * feed reads. Every multiplier is taken as in effect at each asset's stored
+ * `source_observed_at`, exactly as the scheduled lane takes it. An asset anchored
+ * to a published NAV is left as stored (none is mapped today). Idempotent. Not
+ * scheduled; an operator runs it by hand. If the reference step cannot run, NOTHING
+ * is written: a recomputed premium beside a stale gap to the stock would disagree. */
+export async function captureAccrualForLatest(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  now: Date,
+  deps: RwaWrapperDeps,
+): Promise<JobResult> {
+  const job = 'rwa_wrapper_accrual'
+  const fetchedAt = new Date(now instanceof Date ? now.getTime() : now).toISOString()
+  try {
+    if (!lanePolicy(deps).enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
+    if (deps.referenceSource === false) return { job, rows: 0, credits: 0, skipped: 'reference_switched_off' }
+    const newest = await readRows(() => admin.from(ASSET_TABLE).select('captured_at').order('captured_at', { ascending: false }).limit(1))
+    if (newest.reason) return { job, rows: 0, credits: 0, error: newest.reason }
+    const capturedAt = text(newest.rows[0]?.captured_at, 40)
+    if (!capturedAt) return { job, rows: 0, credits: 0, skipped: 'no_wrapper_capture' }
+    const capturedMs = Date.parse(capturedAt)
+    if (!Number.isFinite(capturedMs) || now.getTime() - capturedMs > REFERENCE_BACKFILL_MAX_AGE_MS) {
+      return { job, rows: 0, credits: 0, skipped: 'newest_capture_too_old', capturedAt }
+    }
+    const [assets, tokens] = await Promise.all([
+      readRows(() => admin.from(ASSET_TABLE).select('*').eq('captured_at', capturedAt).limit(RWA_WRAPPER_ASSET_CAP * 2)),
+      readRows(() => admin.from(TOKEN_TABLE).select('*').eq('captured_at', capturedAt).limit(MAX_UPSERT_ROWS * 4)),
+    ])
+    if (assets.reason || tokens.reason) return { job, rows: 0, credits: 0, capturedAt, error: (assets.reason || tokens.reason) as string }
+    const strip = (row: Record<string, unknown>) => { const { created_at: _created, ...rest } = row; return rest }
+    const tokensByAsset = new Map<string, Record<string, unknown>[]>()
+    for (const row of tokens.rows.map(strip)) {
+      const id = rwaId(row.rwa_id)
+      if (id) tokensByAsset.set(id, [...(tokensByAsset.get(id) || []), row])
+    }
+    const stored = assets.rows.map(strip)
+    const rebuilt = stored
+      .map((row) => ({ row, asset: RWA_NAV_ANCHORS[String(row.rwa_id)] ? null : assetFromStoredRows(row, tokensByAsset.get(String(row.rwa_id)) || []) }))
+    const accrual = await accrualStep(rebuilt.map((r) => r.asset).filter((a): a is WrapperAssetInput => !!a), fetchedAt, deps)
+
+    const assetRows: Record<string, unknown>[] = []
+    const wrapperRows: Record<string, unknown>[] = []
+    for (const { row, asset } of rebuilt) {
+      const id = String(row.rwa_id)
+      const storedTokens = tokensByAsset.get(id) || []
+      if (!asset) { assetRows.push(row); wrapperRows.push(...storedTokens); continue }
+      const floor = num(row.volume_floor_usd) ?? LIQUIDITY_FLOOR_USD
+      const spread = wrapperSpread(asset, { liquidityFloorUsd: floor, accrual: accrual.verdicts.get(id) ?? null })
+      const list: AssetListFigures = {
+        rwaId: id, symbol: asset.symbol, name: asset.name, assetType: asset.assetType, rwaRank: asset.rwaRank, hasTokens: null,
+        averageTokenizedPrice: num(row.list_average_tokenized_price),
+        tokenizedMarketCap: num(row.list_tokenized_market_cap),
+        tokenizedVolume24h: num(row.list_tokenized_volume_24h),
+        observedAt: text(row.list_observed_at, 40),
+      }
+      // The capture's own clocks stay: this is a recompute, not a new read.
+      const storedFetchedAt = text(row.fetched_at, 40) || fetchedAt
+      assetRows.push({
+        ...row,
+        ...assetRow(spread, list, { capturedAt, listCapturedAt: text(row.list_captured_at, 40), listObservedAt: text(row.list_observed_at, 40), fetchedAt: storedFetchedAt, floor }),
+      })
+      const byCrypto = new Map(storedTokens.map((t) => [String(t.crypto_id), t]))
+      for (const built of tokenRows(spread, { capturedAt, fetchedAt: text(storedTokens[0]?.fetched_at, 40) || storedFetchedAt })) {
+        wrapperRows.push({ ...(byCrypto.get(String(built.crypto_id)) || {}), ...built })
+      }
+    }
+
+    const reference = await referenceStep(admin, assetRows, wrapperRows, { tradfi: new Map(), capturedAt, fetchedAt, op: 'rwa_wrapper_accrual' }, deps)
+    if (reference.error) return { job, rows: 0, credits: 0, capturedAt, accrual: accrualSummary(accrual), error: reference.error }
+    const tokenWrite = await upsert(admin, TOKEN_TABLE, wrapperRows, 'provider,rwa_id,crypto_id,captured_at')
+    const referenceWrite = tokenWrite.error || !reference.observations.length
+      ? { rows: 0 } as { rows: number; error?: string }
+      : await upsert(admin, REFERENCE_TABLE, reference.observations, 'rwa_id,captured_at,source')
+    const assetWrite = tokenWrite.error ? { rows: 0 } as { rows: number; error?: string } : await upsert(admin, ASSET_TABLE, assetRows, 'provider,rwa_id,captured_at')
+    return {
+      job, rows: tokenWrite.rows + referenceWrite.rows + assetWrite.rows, credits: 0, capturedAt,
+      assets: assetRows.length, wrappers: wrapperRows.length,
+      accrual: accrualSummary(accrual),
+      reference: referenceSummary(reference, referenceWrite),
+      ...(tokenWrite.error || assetWrite.error ? { error: (tokenWrite.error || assetWrite.error) as string } : {}),
+    }
+  } catch (e) {
+    return { job, rows: 0, credits: 0, error: ((e as Error)?.message || 'rwa_wrapper_accrual_failed').slice(0, 200) }
+  }
+}
+
 /** Integration surface, wired in `intel-capture/index.ts` beside the other lanes.
  * The CoinMarketCap plan argument is accepted and ignored: every capability this
  * lane uses is available from Basic upward, so there is nothing to gate. */
@@ -709,4 +907,8 @@ export const RWA_WRAPPER_CAPTURE_OPS: Record<string, (
   // Not scheduled: an operator's one-off fill of the newest capture's stock
   // reference. Zero credits (captureUnderlyingReferenceForLatest).
   rwa_wrapper_reference: (admin, _ctxFor, now, _plan, deps) => captureUnderlyingReferenceForLatest(admin, now, deps as RwaWrapperDeps),
+  // Not scheduled: an operator's one-off recompute of the newest capture with
+  // the dividend-reinvestment multipliers, then its stock reference. Zero
+  // credits (captureAccrualForLatest).
+  rwa_wrapper_accrual: (admin, _ctxFor, now, _plan, deps) => captureAccrualForLatest(admin, now, deps as RwaWrapperDeps),
 }

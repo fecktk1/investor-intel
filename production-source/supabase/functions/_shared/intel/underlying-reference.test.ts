@@ -344,6 +344,23 @@ Deno.test('rows: an observed reference fills the asset and each eligible wrapper
   eq(accruing.underlying_ref_within_band, null)
   const noUnit = tokenReferenceColumns({ normalised_price: null, wrapper_state: 'unit_not_established' }, spy)
   eq(noUnit.underlying_ref_bps, null)
+  // A wrapper that pays dividends out carries no raw gap: there is nothing to adjust.
+  eq(dear.underlying_ref_raw_bps, null)
+  // SPYon on 2026-09-23 20:45: 775.69 raw, 768.41 after its 1.009473 multiplier.
+  // The gap to the stock is of the per-share price; the raw gap sits beside it.
+  const spyon = tokenReferenceColumns({ normalised_price: 775.6931836496483, adjusted_price: 775.6931836496483 / 1.0094730727840426, accrual_treatment: 'adjusted', wrapper_state: 'liquid' }, spy)
+  eq(Math.round((spyon.underlying_ref_bps as number) * 10) / 10, -21.1)
+  eq(spyon.underlying_ref_within_band, true)
+  eq(Math.round((spyon.underlying_ref_raw_bps as number) * 10) / 10, 73.4)
+  // Not adjusted: never a gap in underlying_ref_bps, only the raw gap, which the
+  // surface labels as including reinvested dividends.
+  const unadjusted = tokenReferenceColumns({ normalised_price: 775.6931836496483, accrual_treatment: 'not_adjusted', wrapper_state: 'accrues_in_price' }, spy)
+  eq(unadjusted.underlying_ref_bps, null)
+  eq(unadjusted.underlying_ref_within_band, null)
+  eq(Math.round((unadjusted.underlying_ref_raw_bps as number) * 10) / 10, 73.4)
+  // A stored row read back as strings (PostgREST numeric) gives the same figures.
+  const stored = tokenReferenceColumns({ normalised_price: '775.6931836496483', adjusted_price: String(775.6931836496483 / 1.0094730727840426), accrual_treatment: 'adjusted', wrapper_state: 'liquid' }, spy)
+  eq(stored.underlying_ref_bps, spyon.underlying_ref_bps)
   // A commodity is untouched; SpaceX says why it has no reference; an asset with
   // no provider clock is not read "now" instead.
   assert(Object.values(assetReferenceColumns(outcomes.get('1')!, 4300, 'x')).every((v) => v === null))

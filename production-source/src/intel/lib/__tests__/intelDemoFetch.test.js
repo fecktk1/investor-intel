@@ -316,6 +316,33 @@ describe('demoFetch and a snapshot copy past its refresh window', () => {
     const data = await read()
     expect([data.state, data.provenance.fetchedAt]).toEqual(['stale', '2026-09-23T12:00:00.000Z'])
   })
+
+  it('a slow newer read never holds the drawer: the snapshot copy answers at once, and the newer copy answers the next read', async () => {
+    const net = bucket({ [key]: quoteBody('2026-09-23T00:30:18.981Z') })
+    const reader = createSnapshotReader({ supabaseUrl: URL_BASE, fetchImpl: net.network })
+    let release
+    const landed = new Promise((resolve) => { release = resolve })
+    const forwarded = []
+    const forwardPublic = vi.fn(async (body, fn) => {
+      forwarded.push({ fn, body })
+      await landed
+      return new Response(JSON.stringify(quoteBody('2026-09-23T14:52:00.000Z')), { status: 200, headers: { 'Content-Type': 'application/json' } })
+    })
+    const demoFetch = createDemoFetch({ supabaseUrl: URL_BASE, reader, store: createDemoStore(), forwardPublic, now: () => NOW, fresherWaitMs: 20 })
+    const c = createClient(URL_BASE, 'anon-key', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: demoFetch } })
+    const read = async () => (await c.functions.invoke('intel-research', { body: { orgId: DEMO_ORG_ID, capability: 'rwaQuotes', params: { rwa_id: 1 } } })).data
+    const started = Date.now()
+    const first = await read()
+    expect(first.provenance.fetchedAt, 'the dated snapshot copy, served without waiting').toBe('2026-09-23T00:30:18.981Z')
+    expect(Date.now() - started).toBeLessThan(1000)
+    // A second read while the first check is still running shares it.
+    expect((await read()).provenance.fetchedAt).toBe('2026-09-23T00:30:18.981Z')
+    expect(forwarded).toHaveLength(1)
+    release()
+    await new Promise((resolve) => setTimeout(resolve, 5))
+    expect((await read()).provenance.fetchedAt, 'the newer copy, kept when it landed').toBe('2026-09-23T14:52:00.000Z')
+    expect(forwarded).toHaveLength(1)
+  })
 })
 
 describe('demoFetch and the public read endpoint (a visitor search)', () => {

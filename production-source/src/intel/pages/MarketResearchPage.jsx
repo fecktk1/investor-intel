@@ -13,11 +13,12 @@ import TokenChart from '../components/TokenChart'
 import RwaRelationships from '../components/RwaRelationships'
 import RwaAssetProfile from '../components/RwaAssetProfile'
 import RwaCoverage from '../components/RwaCoverage'
-import RwaLookup from '../components/RwaLookup'
+import RwaLookup, { reasonText } from '../components/RwaLookup'
 import TokenAvatar from '../components/TokenAvatar'
 import { useRwaAssetProfile } from '../lib/useRwaAssetProfile'
 import { useRwaAssetLogos } from '../lib/useRwaAssetLogos'
 import MarketPairsEvidence from '../components/MarketPairsEvidence'
+import RwaPairsFallback, { pairsRefusedByPlan } from '../components/RwaPairsFallback'
 import {MarketContextHistory} from '../components/MarketContextHistory'
 import ExchangeDisclosures from '../components/ExchangeDisclosures'
 import DexDiscoveryTable from '../components/DexDiscoveryTable'
@@ -128,7 +129,7 @@ function Investigation({ row, capability, onClose, t, logoUrl = null }) {
   const [venuePage,setVenuePage] = useState(0)
   const venuePairs = useMarketResearch('exchangeDerivativePairs', { exchange_id: exchangeId, start: venuePage * PAGE + 1, limit: PAGE }, !!exchangeId&&venueMarketsOpen)
   // The stored descriptive profile (captured daily, shared, no provider call). A null id leaves the hook idle.
-  const { profile: rwaProfile } = useRwaAssetProfile(rwa ? row.rwa_id : null)
+  const { profile: rwaProfile, status: rwaProfileStatus, reason: rwaProfileReason } = useRwaAssetProfile(rwa ? row.rwa_id : null)
   const rwaPairs = useMarketResearch('rwaPairs', { rwa_id: row.rwa_id, limit: PAGE }, rwa && !!row.rwa_id)
   const info = useMarketResearch(rwa ? 'rwaInfo' : issuer ? 'issuer' : category ? 'category' : 'metadata', rwa ? { rwa_id: row.rwa_id } : issuer ? { issuer_id: row.issuer_id || row.id } : { id: category ? row.id : cryptoId }, !!(rwa ? row.rwa_id : issuer ? row.issuer_id || row.id : category ? row.id : cryptoId))
   const quotes = useMarketResearch(rwa ? 'rwaQuotes' : 'quotes', rwa ? { rwa_id: row.rwa_id } : { id: cryptoId }, !!(rwa ? row.rwa_id : cryptoId && !category && !issuer))
@@ -145,13 +146,15 @@ function Investigation({ row, capability, onClose, t, logoUrl = null }) {
         already read: opening a drawer costs no second request. The stored
         profile below carries its own copy for an asset opened from elsewhere. */}
     <div className="flex items-start justify-between gap-5"><div className="flex items-center gap-3">{(logoUrl || rwaProfile?.logoUrl) && <TokenAvatar src={logoUrl || rwaProfile?.logoUrl} symbol={row.symbol} name={rowName(row)} size="lg"/>}<div><p className="eyebrow">{t('research.evidence', { defaultValue: 'Evidence' })}</p><h2 className="page-title">{rowName(row)}</h2></div></div><button className="btn btn--quiet" onClick={onClose}>{t('common.close', { defaultValue: 'Close' })}</button></div>
-    {rwa && row.rwa_id && <RwaAssetProfile profile={rwaProfile}/>}
+    {rwa && row.rwa_id && <RwaAssetProfile profile={rwaProfile} status={rwaProfileStatus} reason={rwaProfileReason}/>}
     <details className="intel-source-record"><summary>{t('research.asset_background',{defaultValue:'Asset background and source record'})}</summary>{(rwa || issuer || category || isCrypto) && <ResearchStatus query={info}/>}{(info.result?.data?.rows?.length ? info.result.data.rows : [row]).map((item, index) => <EvidenceRecord key={index} record={item}/>)}</details>
     {(rwa || isCrypto) && <ResearchStatus query={quotes}/>}{quotes.result?.data?.rows?.map((item, index) => rwa ? <div key={item.rwa_id || index}><RwaRelationships record={item} onIssuer={setSelectedIssuer}/><details className="py-3"><summary className="cursor-pointer text-sm">{t('research.all_quote_evidence', { defaultValue: 'All quote evidence' })}</summary><EvidenceRecord record={item}/></details></div> : <EvidenceRecord key={index} record={item}/>)}
     {selectedIssuer && <section><h3>{t('research.issuer_evidence', { defaultValue: 'Issuer evidence' })}</h3><ResearchStatus query={issuerEvidence}/>{issuerEvidence.result?.data?.rows?.map((item, index) => <EvidenceRecord key={index} record={item}/>)}</section>}
     {exchangeId && <ExchangeDisclosures venues={[{id:exchangeId,name:rowName(row)}]}/>}
     {exchangeId && <><h3>{t('research.venue_metadata', { defaultValue: 'Venue and derivatives markets' })}</h3><details className="intel-source-record" onToggle={e=>setVenueInfoOpen(e.currentTarget.open)}><summary>Venue background and source record</summary><ResearchStatus query={venueInfo}/>{venueInfo.result?.data?.rows?.map((item, index) => <EvidenceRecord key={index} record={item}/>)}</details><details onToggle={e=>setVenueMarketsOpen(e.currentTarget.open)}><summary>Derivative markets at this venue</summary><ResearchStatus query={venuePairs}/><MarketPairsEvidence key={venuePage} rows={venuePairs.result?.data?.rows} venueName={rowName(row)}/><div className="flex gap-4 items-center text-xs py-3"><button className="btn btn--quiet" disabled={!venuePage||venuePairs.loading} onClick={()=>setVenuePage(p=>p-1)}>Previous markets</button><span>Page {venuePage+1}</span><button className="btn btn--quiet" disabled={venuePairs.loading||!(venuePairs.result?.data?.hasMore||(venuePairs.result?.data?.total!=null?(venuePage+1)*PAGE<venuePairs.result.data.total:venuePairs.result?.data?.rows?.length===PAGE))} onClick={()=>setVenuePage(p=>p+1)}>Next markets</button></div></details></>}
-    {rwa && row.rwa_id && <><h3>{t('research.rwa_markets', { defaultValue: 'Markets for this asset' })}</h3><ResearchStatus query={rwaPairs}/>{rwaPairs.result?.data?.rows?.map((item, index) => <EvidenceRecord key={index} record={item}/>)}</>}
+    {rwa && row.rwa_id && <><h3>{t('research.rwa_markets', { defaultValue: 'Markets for this asset' })}</h3><ResearchStatus query={rwaPairs}/>{rwaPairs.result?.data?.rows?.map((item, index) => <EvidenceRecord key={index} record={item}/>)}
+      {/* A plan refusal is final: the section ends with what we hold instead. */}
+      {!rwaPairs.loading && pairsRefusedByPlan(rwaPairs.result) && <RwaPairsFallback rwaId={row.rwa_id}/>}</>}
     {cryptoId && !rwa && !issuer && !category && <><label className="text-sm">{t('research.price_evidence', { defaultValue: 'Price evidence' })}<select className="select ml-3" value={detailView} onChange={e => setDetailView(e.target.value)}><option value="evidence">{t('research.current', { defaultValue: 'Current' })}</option><option value="history">{t('research.daily_history', { defaultValue: 'Daily observations' })}</option><option value="performance">{t('research.performance', { defaultValue: 'Performance statistics' })}</option><option value="ohlcv">{t('research.candles', { defaultValue: 'Daily OHLCV' })}</option></select></label>{detailView !== 'evidence' && <><ResearchStatus query={history}/>{candles.length > 1 ? <TokenChart candles={candles}/> : history.result?.data?.rows?.map((item, index) => <EvidenceRecord key={index} record={item}/>)}</>}</>}
     <div className="border-t border-[var(--border-default)] pt-5 space-y-3"><label htmlFor="investigation-note" className="text-sm">{t('research.your_notes', { defaultValue: 'Your research notes' })}</label><textarea disabled={saving} id="investigation-note" className="textarea w-full min-h-28" value={note} maxLength={20000} onChange={e => { setNote(e.target.value); setSaved(false) }}/><button className="btn btn--primary" onClick={save} disabled={!note.trim() || saved || saving}>{saving ? 'Saving…' : saved ? t('research.saved', { defaultValue: 'Saved' }) : t('research.save_notes', { defaultValue: 'Save notes to research' })}</button>{error && <p role="alert">{error}</p>}</div>
   </dialog>
@@ -161,10 +164,11 @@ function Investigation({ row, capability, onClose, t, logoUrl = null }) {
  * sentence. Rendered only when the server said it used that lane, so a Starter
  * or trial member never sees it.
  *
- * Two honest states and no third. Either a shared read answered, and the
- * retrieval time above it says how old it is, or nothing has been read yet and
- * the page says so plainly instead of showing an error or an upsell over data
- * that does not exist. Nothing here is derived from a figure. */
+ * Either a shared read answered with rows, and the retrieval time above it says
+ * how old it is; or it answered with none, which is the provider's list being
+ * empty and is said by the page (RwaTypeEmpty); or nothing was served, and the
+ * sentence names the reason. Only a plan gate earns the plan sentence. Nothing
+ * here is derived from a figure. */
 export function FreeSharedNotice({ result, loading, t }) {
   const lane = result?.freeShared
   if (loading || !lane) return null
@@ -174,9 +178,74 @@ export function FreeSharedNotice({ result, loading, t }) {
   if (served && lane.served === 'retained' && lane.keptAt) {
     return <p role="status" className="intel-analysis-caption">{t('research.free_shared_kept', { date: new Date(lane.keptAt).toLocaleString(), reason: lane.reason || '', defaultValue: 'A kept copy from {{date}}: the live read did not answer ({{reason}}).' })}</p>
   }
-  return <p role="status" className="intel-analysis-caption">{served
-    ? t('research.free_shared_served', { defaultValue: 'Read from the shared record every member sees. Its retrieval time is shown above.' })
-    : t('research.free_shared_not_read', { defaultValue: 'This record has not been read yet today. It opens for Starter members now and for everyone once the shared read refreshes.' })}</p>
+  if (served) return <p role="status" className="intel-analysis-caption">{t('research.free_shared_served', { defaultValue: 'Read from the shared record every member sees. Its retrieval time is shown above.' })}</p>
+  // The read ANSWERED and the answer holds no rows: the provider's own list is
+  // empty for this selection (CoinMarketCap lists no government securities, for
+  // one). That is a fact about the provider, said by the page itself
+  // (RwaTypeEmpty), never "not read yet" and never a plan message.
+  if (researchAnswered(result)) return null
+  // Nothing was served. Only a plan gate earns the plan sentence; every other
+  // reason is said as what it is.
+  const reason = lane.reason || result?.reason || null
+  if (FREE_LANE_PLAN_REASONS.has(reason)) {
+    return <p role="status" className="intel-analysis-caption">{t('research.free_shared_not_read', { defaultValue: 'This record has not been read yet today. It opens for Starter members now and for everyone once the shared read refreshes.' })}</p>
+  }
+  return <p role="status" className="intel-analysis-caption">{reason
+    ? t('research.free_shared_not_read_reason', { why: reasonText(t, reason), defaultValue: 'This record could not be read just now. {{why}}' })
+    : t('research.free_shared_not_read_plain', { defaultValue: 'This record has not been read yet today.' })}</p>
+}
+
+/** The free lane's reasons that ARE a plan gate: the free tier's shared daily
+ * allowance is spent or switched off, and a Starter member's read does not go
+ * through that allowance. A per-address limit, a background poll, an unreadable
+ * allowance or a provider refusal is not a plan gate and never says it is. */
+export const FREE_LANE_PLAN_REASONS = new Set(['free_rwa_budget_exhausted', 'free_rwa_lane_disabled'])
+
+/** Did a research read actually answer (fresh, cached or stale)? Only an answer
+ * can say what the provider's list holds; an unread or refused record says
+ * nothing about it. */
+export const researchAnswered = result => ['fresh', 'cached', 'stale'].includes(result?.state)
+
+/** Is this the provider's list answering with nothing of the chosen asset type?
+ *
+ * CoinMarketCap's /v5/real-world-assets/assets/list returns ZERO assets for
+ * government_security and real_estate (see RWA_NAV_ANCHORS in
+ * supabase/functions/_shared/intel/rwa-wrapper-spread.ts). The read answers,
+ * from the shared cache or live, with total 0: an answer about the provider, the
+ * same for a demo visitor, a free member and a paying one. Only the first page
+ * counts: an empty later page is past the end of a list, not an empty list. */
+export function rwaTypeEmpty(result, { capability, assetType, page = 0 } = {}) {
+  if (capability !== 'rwaList' || !assetType || page !== 0) return false
+  if (!researchAnswered(result)) return false
+  return !(result?.data?.rows?.length)
+}
+
+/** Where we cover an asset class the provider's list does not carry. Tokenised
+ * treasury funds are read through their own net asset value feeds: the yield
+ * provenance section of Market structure puts each fund's advertised yield
+ * beside the yield its NAV history actually delivered. */
+export const RWA_TYPE_COVERED_ELSEWHERE = {
+  government_security: {
+    to: '/intel/structure#intel-rwa-yield',
+    key: 'research.rwa_type_elsewhere_government_security',
+    defaultValue: 'We cover tokenised treasury funds through their own net asset value feeds, with each fund\'s advertised yield beside the yield its NAV history actually delivered.',
+    linkKey: 'research.rwa_type_elsewhere_government_security_link',
+    linkDefault: 'Treasury fund yield and NAV on Market structure',
+  },
+}
+const RWA_TYPE_EMPTY_TEXT = {
+  government_security: ['research.rwa_type_empty_government_security', 'CoinMarketCap\'s RWA list has no government securities today.'],
+  real_estate: ['research.rwa_type_empty_real_estate', 'CoinMarketCap\'s RWA list has no real estate today.'],
+}
+
+/** The page's own sentence for an empty type filter, and where else to look. */
+export function RwaTypeEmpty({ assetType, t }) {
+  const [key, defaultValue] = RWA_TYPE_EMPTY_TEXT[assetType] || ['research.rwa_type_empty', 'CoinMarketCap\'s RWA list has no assets of this type today.']
+  const elsewhere = RWA_TYPE_COVERED_ELSEWHERE[assetType]
+  return <div role="status" className="py-3 space-y-1 text-sm" data-testid="rwa-type-empty">
+    <p>{t(key, { defaultValue })}</p>
+    {elsewhere && <p className="text-[var(--fg-3)]">{t(elsewhere.key, { defaultValue: elsewhere.defaultValue })} <Link className="intel-text-link" to={elsewhere.to}>{t(elsewhere.linkKey, { defaultValue: elsewhere.linkDefault })}</Link></p>}
+  </div>
 }
 
 export default function MarketResearchPage({ workspace = 'discovery' }) {
@@ -199,6 +268,9 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
   const params = isDexDiscovery(capability)?{platformIds:dexNetwork,interval:'24h',pageSize:25,...(search.get('cursor')?{nextPageIndex:search.get('cursor')}:{})}:{ ...(['globalHistory','cmc100History','cmc20History'].includes(capability)?{count:capability==='globalHistory'?30:10,interval:'daily'}:{}), ...(paged ? { start: page * PAGE + 1, limit: PAGE } : capability === 'community' ? { limit: 5 } : {}), ...(capability === 'derivativePairs' || capability === 'liquidationAssets' ? { crypto_id: asset } : capability === 'marketPairs' ? { id: asset } : {}), ...(capability === 'rwaList' && search.get('type') ? { asset_type: search.get('type') } : {}) }
   const query = useMarketResearch(capability, params,true,!selection&&!sourceDraft)
   const rows = query.result?.data?.rows || []
+  // The provider's list answered with nothing of this type: the page says so,
+  // and where we cover the class another way, instead of a bare "no records".
+  const typeEmpty = !query.loading && rwaTypeEmpty(query.result, { capability, assetType: search.get('type'), page })
   // One logo read per PAGE of real-world asset rows, never one per row. The
   // images are stored rows the profile lane already wrote, so this costs the
   // free surface nothing; it idles on every other workspace and capability.
@@ -229,7 +301,8 @@ export default function MarketResearchPage({ workspace = 'discovery' }) {
     {workspace === 'rwa' && <RwaLookup />}
     {workspace === 'rwa' && <RwaCoverage />}
     <IntelSurfaceGate surface={surface} title={t(`access.surface_${surface}`, { defaultValue: surface === 'rwa_research' ? 'Real-world asset research' : 'On demand research' })}>
-    <ResearchStatus query={query} showObserved={!["globalHistory","cmc100History","cmc20History"].includes(capability)}/>
+    <ResearchStatus query={query} showObserved={!["globalHistory","cmc100History","cmc20History"].includes(capability)} quietEmpty={typeEmpty}/>
+    {typeEmpty && <RwaTypeEmpty assetType={search.get('type')} t={t}/>}
     <SharedResearchRefresh query={query}/>
     <FreeSharedNotice result={query.result} loading={query.loading} t={t}/>
     {sourceDraft&&<p className="intel-analysis-caption">Automatic updates paused while your source notes are unsaved.</p>}

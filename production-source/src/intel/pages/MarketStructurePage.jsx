@@ -18,6 +18,7 @@ import LiquidationHeat from '../components/LiquidationHeat'
 import LiquidationClock from '../components/LiquidationClock'
 import ExchangeReserves from '../components/ExchangeReserves'
 import VenueShare from '../components/VenueShare'
+import { useHashScroll } from '../lib/useHashScroll'
 
 // /intel/structure — the four figures the CMC capture tables support on their
 // own: where the top names sit week to week, what the tokenized universe is made
@@ -51,6 +52,9 @@ const CAPTURE_RECEIPT_LANES = ['rank', 'rwa', 'rwa_depth', 'index', 'liquidation
 
 export default function MarketStructurePage() {
   const { t } = useTranslation('intel', { useSuspense: false })
+  // A link to one section (#intel-rwa-yield from the RWA type filter,
+  // #intel-rwa-depth from the evidence drawer) lands on that section.
+  useHashScroll()
   const [liquidationIds, setLiquidationIds] = useState([])
 
   const seed = payload => {

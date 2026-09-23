@@ -3,7 +3,8 @@ import { cmcRows } from '../market-assets/cmc-capabilities.ts'
 import {
   wrapperAssetFromQuote, assetListFigures, wrapperSpread, reconcileTokenValue,
   unitVerdict, accrualVerdict, navAnchorUsable, volumeWeightedMedian, median, bps,
-  TROY_OUNCE_GRAMS, LIQUIDITY_FLOOR_USD, RWA_NAV_ANCHORS, ACCRUAL_WRAPPERS,
+  TROY_OUNCE_GRAMS, LIQUIDITY_FLOOR_USD, RWA_NAV_ANCHORS, ACCRUAL_WRAPPERS, comparablePrice,
+  type AccrualVerdict,
 } from './rwa-wrapper-spread.ts'
 
 // ─── Fixtures ─────────────────────────────────────────────────────────────────
@@ -408,4 +409,151 @@ Deno.test('a derivative price among the tokens is labelled, kept, and never a wr
   eq(isDerivativeReference({ issuerName: 'NA (Derivatives)' }), true)
   eq(isDerivativeReference({ name: 'MicroStrategy Inc (Derivatives)' }), true)
   eq(isDerivativeReference({ name: 'NVIDIA tokenized stock (xStock)', issuerName: 'Backed Assets' }), false)
+})
+
+// ─── Dividend-reinvesting wrappers (accrual-multiplier.ts) ────────────────────
+//
+// The SPY wrappers exactly as the 2026-09-23 20:00 capture stored them (prices
+// observed 20:45:01 UTC), with SPYon's own on-chain multiplier that day.
+
+const SPYON_MULTIPLIER = 1.0094730727840426
+const spyToken = (cryptoId: string, symbol: string, name: string, issuerName: string, price: number | null, volume: number | null) =>
+  ({ cryptoId, symbol, name, issuerId: issuerName.toLowerCase(), issuerName, price, marketCap: null, volume24h: volume })
+const spyAsset = () => ({
+  rwaId: '86', symbol: 'SPY', name: 'SPDR S&P 500 ETF Trust', assetType: 'etf', rwaRank: 5,
+  averageTokenizedPrice: null, tokenizedMarketCap: null, tokenizedVolume24h: null,
+  observedAt: '2026-09-23T20:45:01.000Z',
+  tokens: [
+    spyToken('40694', 'SPY', 'SPDR S&P 500 Trust Tokenized ETF (Robinhood)', 'Robinhood', 767.9687413290569, 27054054.94667706),
+    spyToken('37006', 'SPYX', 'SP500 tokenized ETF (xStock)', 'Backed Assets', 770.6229441216093, 20183064.40722753),
+    spyToken('40790', 'SPYB', 'State Street SPDR S&P 500 ETF Tokenized bStocks', 'bStocks', 767.0633303364281, 4853192.69359048),
+    spyToken('38067', 'SPYon', 'SPDR S&P 500 Tokenized ETF (Ondo)', 'Ondo Assets', 775.6931836496483, 2573093.87005658),
+    spyToken('41525', 'wSPYx', 'Wrapped SP500 Tokenized ETF (xStock)', 'Backed Assets', 772.072232628172, 98025.95433425),
+  ],
+})
+const adjusted = (multiplier: number, asOf: string | null = '2026-09-18T17:54:15.000Z'): AccrualVerdict => ({
+  treatment: 'adjusted', reinvestingClass: 'ondo_gm', reason: null, multiplier, source: 'ondo_solana_scaled_ui', asOf,
+  network: 'solana', address: 'k18WJUULWheRkSpSquYGdNNmtuE2Vbw1hpuUi92ondo', readAt: '2026-09-23T21:30:00.000Z',
+})
+const notAdjusted = (reason: string, cls = 'wrapped_xstock'): AccrualVerdict => ({
+  treatment: 'not_adjusted', reinvestingClass: cls, reason, multiplier: null, source: null, asOf: null, network: null, address: null, readAt: null,
+})
+
+Deno.test('a reinvesting wrapper is divided by its own multiplier: SPYon +100.6 bp becomes +5.8 bp, raw kept beside it', () => {
+  const accrual = new Map([['38067', adjusted(SPYON_MULTIPLIER)], ['41525', notAdjusted('no_multiplier_source')]])
+  const spread = wrapperSpread(spyAsset(), { accrual })
+  const on = spread.tokens.find((r) => r.cryptoId === '38067')!
+  // The wrapper's own price is untouched; the per-share price is carried beside it.
+  eq(on.price, 775.6931836496483)
+  eq(on.normalisedPrice, 775.6931836496483)
+  eq(Math.round(on.adjustedPrice! * 1e4) / 1e4, 768.4139)
+  eq(on.accrualTreatment, 'adjusted')
+  eq(on.accrualMultiplier, SPYON_MULTIPLIER)
+  eq(on.accrualSource, 'ondo_solana_scaled_ui')
+  eq(on.accrualAsOf, '2026-09-18T17:54:15.000Z')
+  eq(on.accrualReason, null)
+  eq(on.state, 'liquid')
+  // The anchor is Robinhood's price on both runs (see the anchor test below).
+  eq(spread.anchorPrice, 767.9687413290569)
+  eq(Math.round(on.premiumBps! * 10) / 10, 5.8)
+  eq(Math.round(on.rawPremiumBps! * 10) / 10, 100.6)
+  eq(spread.accrualAdjustedCount, 1)
+  // Every wrapper that pays its dividends out is exactly as it was.
+  const plain = wrapperSpread(spyAsset())
+  for (const id of ['40694', '37006', '40790']) {
+    const a = spread.tokens.find((r) => r.cryptoId === id)!
+    const b = plain.tokens.find((r) => r.cryptoId === id)!
+    eq(a.premiumBps, b.premiumBps)
+    eq(a.accrualTreatment, null)
+    eq(a.adjustedPrice, null)
+    eq(a.rawPremiumBps, null)
+  }
+  // Without a verdict nothing changes at all: the lane passes none for a wrapper outside the register.
+  eq(plain.tokens.find((r) => r.cryptoId === '38067')!.premiumBps, on.rawPremiumBps)
+  eq(plain.accrualAdjustedCount, 0)
+})
+
+Deno.test('a reinvesting wrapper with no sourced multiplier is labelled, never a premium and never an anchor', () => {
+  const accrual = new Map([['38067', notAdjusted('multiplier_read_failed', 'ondo_gm')], ['41525', notAdjusted('no_multiplier_source')]])
+  const spread = wrapperSpread(spyAsset(), { accrual })
+  for (const [id, why] of [['38067', 'multiplier_read_failed'], ['41525', 'no_multiplier_source']]) {
+    const row = spread.tokens.find((r) => r.cryptoId === id)!
+    eq(row.state, 'accrues_in_price')
+    eq(row.reason, 'reinvested_dividends_not_adjusted')
+    eq(row.accrualTreatment, 'not_adjusted')
+    eq(row.accrualReason, why)
+    eq(row.premiumBps, null)
+    eq(row.rawPremiumBps, null)
+    eq(row.adjustedPrice, null)
+    // A multiplier that did not apply is never carried.
+    eq(row.accrualMultiplier, null)
+    eq(row.inAnchor, false)
+    assert(row.accrualGapBps != null)
+  }
+  eq(Math.round(spread.tokens.find((r) => r.cryptoId === '38067')!.accrualGapBps! * 10) / 10, 100.6)
+  eq(spread.accrualCount, 2)
+  eq(spread.accrualAdjustedCount, 0)
+  assert(spread.cheapestCryptoId !== '38067' && spread.widestPremiumCryptoId !== '38067')
+  eq(spread.anchorMembers, 3)
+})
+
+Deno.test('the anchor: an adjusted wrapper anchors at its per-share price, an unadjusted one never anchors', () => {
+  // A reinvesting wrapper carrying most of the volume sits AT the weighted median.
+  const asset = {
+    rwaId: '77', symbol: 'TEST', name: 'Test Corp', assetType: 'stock', rwaRank: 1,
+    averageTokenizedPrice: null, tokenizedMarketCap: null, tokenizedVolume24h: null, observedAt: '2026-09-23T20:45:01.000Z',
+    tokens: [
+      spyToken('1', 'TESTa', 'Test A', 'Alpha', 100.00, 3_000_000),
+      spyToken('2', 'TESTb', 'Test B', 'Beta', 100.10, 3_000_000),
+      spyToken('3', 'TESTon', 'Test Tokenized Stock (Ondo)', 'Ondo Assets', 101.00, 10_000_000),
+    ],
+  }
+  // Unadjusted and unlabelled, as before this change: the dividends set the median.
+  const raw = wrapperSpread(asset)
+  eq(raw.anchorPrice, 101.00)
+  eq(Math.round(raw.tokens[0].premiumBps! * 10) / 10, -99)
+  eq(Math.round(raw.dispersionBps! * 10) / 10, 99)
+  // Adjusted: the per-share price is a member and here it IS the median.
+  const m = 1.0095
+  const adj = wrapperSpread(asset, { accrual: new Map([['3', adjusted(m)]]) })
+  eq(adj.anchorPrice, 101.00 / m)
+  eq(adj.anchorMembers, 3)
+  const on = adj.tokens.find((r) => r.cryptoId === '3')!
+  eq(on.inAnchor, true)
+  eq(on.premiumBps, 0)
+  eq(Math.round(on.rawPremiumBps! * 10) / 10, 95)
+  eq(Math.round(adj.tokens[0].premiumBps! * 10) / 10, -5)
+  eq(Math.round(adj.tokens[1].premiumBps! * 10) / 10, 5)
+  // Dispersion is taken over per-share prices.
+  eq(Math.round(adj.dispersionBps! * 10) / 10, 10)
+  // Not adjusted: kept out of the anchor, so the median is set by the others.
+  const out = wrapperSpread(asset, { accrual: new Map([['3', notAdjusted('multiplier_changed_after_observation', 'ondo_gm')]]) })
+  eq(out.anchorPrice, 100.00)
+  eq(out.anchorMembers, 2)
+  eq(out.tokens.find((r) => r.cryptoId === '3')!.inAnchor, false)
+  eq(Math.round(out.tokens.find((r) => r.cryptoId === '3')!.accrualGapBps! * 10) / 10, 100)
+  // On the real SPY capture the anchor does not move: SPYon adjusted (768.41) sits
+  // above Robinhood (767.97), which still holds the volume-weighted median.
+  eq(wrapperSpread(spyAsset(), { accrual: new Map([['38067', adjusted(SPYON_MULTIPLIER)]]) }).anchorPrice, wrapperSpread(spyAsset()).anchorPrice)
+})
+
+Deno.test('the unit guard reads the per-share price, so a split applied through the multiplier is not a unit failure', () => {
+  const asset = {
+    rwaId: '78', symbol: 'SPLT', name: 'Split Corp', assetType: 'stock', rwaRank: 1,
+    averageTokenizedPrice: null, tokenizedMarketCap: null, tokenizedVolume24h: null, observedAt: '2026-09-23T20:45:01.000Z',
+    tokens: [
+      spyToken('1', 'SPLTa', 'Split A', 'Alpha', 100.00, 3_000_000),
+      spyToken('2', 'SPLTb', 'Split B', 'Beta', 100.20, 3_000_000),
+      // Ten shares per token after a 10:1 split applied through sValue.
+      spyToken('3', 'SPLTon', 'Split Tokenized Stock (Ondo)', 'Ondo Assets', 1001.00, 1_000_000),
+    ],
+  }
+  eq(wrapperSpread(asset).tokens[2].state, 'unit_not_established')
+  const adj = wrapperSpread(asset, { accrual: new Map([['3', adjusted(10)]]) })
+  const on = adj.tokens[2]
+  eq(on.unitState, 'consistent')
+  eq(on.state, 'liquid')
+  eq(on.normalisedPrice, 1001.00)
+  eq(on.adjustedPrice, 100.1)
+  eq(comparablePrice(on), 100.1)
 })

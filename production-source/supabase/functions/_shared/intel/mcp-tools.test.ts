@@ -765,3 +765,25 @@ Deno.test('every listed prompt renders, with a named blank rather than a dead en
  assert(/not advice|never advice/i.test(dd),'the due diligence prompt must say it is not advice')
  assert(/not an expiry/i.test(dd),'the due diligence prompt must say a review date is not an expiry')
 })
+
+Deno.test('rwa_wrapper_premiums and rwa_best_wrapper pass the dividend adjustment through, additively',async()=>{
+ // Additive only: the columns an agent already reads are unchanged and in order.
+ const before=['rwa_id','crypto_id','symbol','name','issuer_name','price','normalised_price','market_cap','volume_24h','unit_state','wrapper_state','premium_bps','accrual_gap_bps','in_anchor','state_reason','captured_at','fetched_at','underlying_ref_price','underlying_ref_bps','underlying_ref_within_band','underlying_ref_session','underlying_ref_observed_at','underlying_ref_source']
+ const columns=[...FORWARD_TABLE_CONTRACT.wrapper_premiums.columns] as string[]
+ assertEquals(columns.slice(0,before.length),before)
+ for(const added of ['accrual_treatment','accrual_reason','accrual_multiplier','accrual_multiplier_source','accrual_multiplier_as_of','adjusted_price','raw_premium_bps','underlying_ref_raw_bps'])assert(columns.includes(added),added)
+ const tool=MCP_TOOLS.find(t=>t.name==='rwa_wrapper_premiums')!
+ assert(String(tool.description).includes('accrual_multiplier'))
+ assert(String(tool.description).includes('includes reinvested dividends'))
+ // The served rows carry the adjustment exactly as stored.
+ const CAP='2026-09-23T20:00:00.000Z'
+ const row={rwa_id:'86',crypto_id:'38067',symbol:'SPYon',name:'SPDR S&P 500 Tokenized ETF (Ondo)',issuer_name:'Ondo Assets',price:775.6931836496483,normalised_price:775.6931836496483,wrapper_state:'liquid',premium_bps:5.8,in_anchor:true,captured_at:CAP,fetched_at:CAP,accrual_treatment:'adjusted',accrual_multiplier:1.0094730727840426,accrual_multiplier_source:'ondo_solana_scaled_ui',accrual_multiplier_as_of:'2026-09-18T17:54:15.000Z',adjusted_price:768.4139,raw_premium_bps:100.6,underlying_ref_price:770.04,underlying_ref_bps:-21.1,underlying_ref_raw_bps:73.4}
+ const fixture:Fixture={...FULL,missing:FULL.missing!.filter(table=>table!==FORWARD_TABLE_CONTRACT.wrapper_premiums.table),tables:{...FULL.tables,intel_rwa_wrapper_tokens:[row]}}
+ const result=await call(ctx(fixture),'rwa_wrapper_premiums',{subject:'38067'})
+ assertEquals(result.outcome,'served')
+ const served=(result.payload.data as Record<string,any>).rows[0]
+ assertEquals(served.accrual_treatment,'adjusted')
+ assertEquals(served.accrual_multiplier,1.0094730727840426)
+ assertEquals(served.raw_premium_bps,100.6)
+ assertEquals(served.underlying_ref_raw_bps,73.4)
+})

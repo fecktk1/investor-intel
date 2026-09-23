@@ -22,6 +22,7 @@
 // the production readers.
 
 import { answerDemoRead, DEMO_READ_HOURLY, DEMO_READ_RATE, DemoReadRefusal, parseDemoRead, type DemoReadDeps } from '../_shared/intel/demo-read.ts'
+import { phaseTimer, TIMING_HEADERS, type PhaseTimer } from '../_shared/intel/server-timing.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -36,6 +37,8 @@ export interface HandlerDeps {
   limit: Limiter
   ipKey: (req: Request, bucket: string) => Promise<string>
   secrets: () => (string | null | undefined)[]
+  /** The phase timer for one request (tests pass their own clock). */
+  timer?: () => PhaseTimer
 }
 
 export const MAX_BODY_BYTES = 4096
@@ -47,7 +50,7 @@ function scrub(text: string, secrets: (string | null | undefined)[]): string {
 }
 
 function send(body: unknown, status: number, secrets: (string | null | undefined)[], extra: Record<string, string> = {}) {
-  return new Response(scrub(JSON.stringify(body), secrets), { status, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extra } })
+  return new Response(scrub(JSON.stringify(body), secrets), { status, headers: { ...cors, ...TIMING_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extra } })
 }
 
 async function readJson(req: Request): Promise<unknown> {
@@ -60,6 +63,8 @@ async function readJson(req: Request): Promise<unknown> {
 
 export async function handleDemoRead(req: Request, deps: HandlerDeps): Promise<Response> {
   const secrets = deps.secrets()
+  // Where this request's time went, as a Server-Timing header (fixed phase names).
+  const timer = deps.timer ? deps.timer() : phaseTimer()
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...cors, 'Access-Control-Max-Age': '600' } })
   if (req.method !== 'POST') return send({ error: 'method_not_allowed' }, 405, secrets, { Allow: 'POST, OPTIONS' })
 
@@ -67,8 +72,12 @@ export async function handleDemoRead(req: Request, deps: HandlerDeps): Promise<R
   let key: string | null = null
   try { key = await deps.ipKey(req, 'demo-read') } catch { key = null }
   if (key) {
-    for (const [bucket, rate] of [['', DEMO_READ_RATE], [':hour', DEMO_READ_HOURLY]] as const) {
-      const gate = await deps.limit(`${key}${bucket}`, rate.limit, rate.windowSeconds)
+    // Both windows are counted at once: two round trips one after the other were
+    // a fixed cost on every read of an asset page that opens with a dozen.
+    const buckets = [['', DEMO_READ_RATE], [':hour', DEMO_READ_HOURLY]] as const
+    const gates = await timer.time('limit', () => Promise.all(buckets.map(([bucket, rate]) => deps.limit(`${key}${bucket}`, rate.limit, rate.windowSeconds))))
+    for (let i = 0; i < buckets.length; i++) {
+      const gate = gates[i], rate = buckets[i][1]
       if (!gate.ok) {
         const retryAfter = Math.max(1, gate.retryAfter || rate.windowSeconds)
         return send({ error: 'rate_limited', reason: 'rate_limited', retryAfter }, 429, secrets, { 'Retry-After': String(retryAfter) })
@@ -82,8 +91,8 @@ export async function handleDemoRead(req: Request, deps: HandlerDeps): Promise<R
     return send({ error: 'invalid_request', reason: 'invalid_request' }, 400, secrets)
   }
   try {
-    const answer = await answerDemoRead(read, deps.reads)
-    return send(answer.body, answer.status, secrets)
+    const answer = await timer.time('read', () => answerDemoRead(read, deps.reads))
+    return send(answer.body, answer.status, secrets, { 'Server-Timing': timer.header() })
   } catch (e) {
     if (e instanceof DemoReadRefusal) return send({ error: e.code, code: e.code, reason: e.code }, e.status, secrets)
     console.error('intel_demo_read_failed', { read: read.read, message: scrub(String((e as Error)?.message || e), secrets).slice(0, 200) })

@@ -123,3 +123,31 @@ Deno.test('cheapest agrees with the capture lane on the spread it computed', () 
 Deno.test('the rules are stated in words', () => {
   for (const text of Object.values(PICK_RULES)) assert(text.length > 20)
 })
+
+Deno.test('an adjusted wrapper that set the median is recognised at its per-share price and carries its multiplier', () => {
+  // TESTon anchored at 101.00 / 1.0095 after its dividend multiplier.
+  const anchor = 101.00 / 1.0095
+  const asset = {
+    anchorKind: 'liquid_wrapper_median', anchorPrice: anchor, anchorReason: null, cheapestCryptoId: '1',
+    tokens: [
+      { cryptoId: '1', symbol: 'TESTa', normalisedPrice: 100.00, volume24h: 3_000_000, unitState: 'consistent', state: 'liquid', premiumBps: -4.95, inAnchor: true, reason: null },
+      { cryptoId: '2', symbol: 'TESTb', normalisedPrice: 100.10, volume24h: 3_000_000, unitState: 'consistent', state: 'liquid', premiumBps: 5.05, inAnchor: true, reason: null },
+      { cryptoId: '3', symbol: 'TESTon', normalisedPrice: 101.00, adjustedPrice: anchor, accrualTreatment: 'adjusted', accrualMultiplier: 1.0095, rawPremiumBps: 95, volume24h: 10_000_000, unitState: 'consistent', state: 'liquid', premiumBps: 0, inAnchor: true, reason: null },
+      { cryptoId: '4', symbol: 'wTESTx', normalisedPrice: 100.6, accrualTreatment: 'not_adjusted', volume24h: 50_000, unitState: 'consistent', state: 'accrues_in_price', premiumBps: null, inAnchor: false, reason: 'reinvested_dividends_not_adjusted' },
+    ],
+  }
+  eq(setsAnchor(asset.tokens[2], asset.anchorKind, asset.anchorPrice), true)
+  // Its OWN price is not the anchor, and must not be what is compared.
+  eq(setsAnchor({ ...asset.tokens[2], accrualTreatment: null }, asset.anchorKind, asset.anchorPrice), false)
+  const picks = wrapperPicks(asset)
+  assert(picks.closest.available)
+  if (picks.closest.available) {
+    eq(picks.closest.cryptoId, '3')
+    eq(picks.closest.circular, true)
+    eq(picks.closest.accrualTreatment, 'adjusted')
+    eq(picks.closest.accrualMultiplier, 1.0095)
+    eq(picks.closest.rawPremiumBps, 95)
+  }
+  assert(picks.mostLiquid.available && picks.mostLiquid.cryptoId === '3')
+  eq(picks.excluded, [{ cryptoId: '4', symbol: 'wTESTx', name: null, state: 'accrues_in_price', reason: 'reinvested_dividends_not_adjusted' }])
+})

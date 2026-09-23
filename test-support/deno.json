@@ -3,6 +3,9 @@
   "lock": false,
   "scopes": {
     "../production-source/": {
+      "../production-source/src/lib/profile-context.jsx": "./stand-ins/src/lib/profile-context.jsx",
+      "../production-source/src/lib/supabase.js": "./stand-ins/src/lib/supabase.js",
+      "../production-source/src/lib/useSupabase.js": "./stand-ins/src/lib/useSupabase.js",
       "../production-source/supabase/functions/_shared/birdeye-client.ts": "./stand-ins/_shared/birdeye-client.ts",
       "../production-source/supabase/functions/_shared/core-intel/hashing.ts": "./stand-ins/_shared/core-intel/hashing.ts",
       "../production-source/supabase/functions/_shared/core-intel/materiality.ts": "./stand-ins/_shared/core-intel/materiality.ts",

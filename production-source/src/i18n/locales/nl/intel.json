@@ -2141,7 +2141,23 @@
     "column_price": "Prijs (USD)",
     "column_tokenized_price": "Getokeniseerde prijs (USD)",
     "column_quote_observed": "Koers waargenomen",
-    "free_shared_kept": "Een bewaarde kopie van {{date}}: de live uitlezing gaf geen antwoord ({{reason}})."
+    "free_shared_kept": "Een bewaarde kopie van {{date}}: de live uitlezing gaf geen antwoord ({{reason}}).",
+    "free_shared_not_read_reason": "Dit record kon op dit moment niet worden gelezen. {{why}}",
+    "free_shared_not_read_plain": "Dit record is vandaag nog niet gelezen.",
+    "rwa_type_empty_government_security": "De RWA-lijst van CoinMarketCap bevat vandaag geen overheidseffecten.",
+    "rwa_type_empty_real_estate": "De RWA-lijst van CoinMarketCap bevat vandaag geen vastgoed.",
+    "rwa_type_empty": "De RWA-lijst van CoinMarketCap bevat vandaag geen activa van dit type.",
+    "rwa_type_elsewhere_government_security": "Getokeniseerde staatsobligatiefondsen volgen we via hun eigen feeds van de intrinsieke waarde, met het geadverteerde rendement van elk fonds naast het rendement dat de NAV-geschiedenis werkelijk opleverde.",
+    "rwa_type_elsewhere_government_security_link": "Rendement en NAV van staatsobligatiefondsen onder Marktstructuur",
+    "read_timeout": "Deze read antwoordde niet binnen 30 seconden en is daarom gestopt.",
+    "pairs_instead_eyebrow": "Wat we in plaats daarvan hebben",
+    "pairs_instead_loading": "De opgeslagen pooldiepte van de tokens van dit activum wordt gelezen…",
+    "pairs_instead_failed": "De opgeslagen pooldiepte kon op dit moment niet worden gelezen: {{why}}",
+    "pairs_instead_none": "De dagelijkse poolvastlegging heeft geen on-chain pools voor de tokens van dit activum vastgelegd, dus hier is geen opgeslagen diepte te tonen.",
+    "pairs_instead_depth": "Opgeslagen on-chain diepte van elke tokenvorm, uit de dagelijkse poolvastlegging. Hiervoor wordt geen aanbieder aangeroepen.",
+    "pairs_instead_as_of": "Vastgelegd {{time}}.",
+    "pairs_instead_board": "De DEX-pools van elk getokeniseerd activum onder Marktstructuur",
+    "pairs_instead_profile": "Het activumprofiel bovenaan dit paneel en de tokenprijzen hierboven komen uit opgeslagen vastleggingen en zijn niet afhankelijk van marktparen."
   },
   "settings": {
     "beginner": "Beginnersbescherming: sterkere risicowaarschuwingen en eenvoudigere uitleg.",
@@ -4305,7 +4321,10 @@
     "profile_website": "Officiele site openen",
     "profile_expand": "Volledige beschrijving lezen",
     "profile_collapse": "Minder tonen",
-    "profile_scope": "Gepubliceerd door {{provider}} en vastgelegd op {{capturedAt}}. Waar een indienersnummer staat, is het het SEC-indienersnummer van de onderliggende beursgenoteerde onderneming zoals de aanbieder het opgeeft, niet dat van het huis dat de token uitgaf."
+    "profile_scope": "Gepubliceerd door {{provider}} en vastgelegd op {{capturedAt}}. Waar een indienersnummer staat, is het het SEC-indienersnummer van de onderliggende beursgenoteerde onderneming zoals de aanbieder het opgeeft, niet dat van het huis dat de token uitgaf.",
+    "profile_loading": "Het opgeslagen profiel van dit activum wordt gelezen…",
+    "profile_failed": "Het opgeslagen profiel kon op dit moment niet worden gelezen: {{why}} Prijzen, tokenvormen en uitgeversonderzoek hieronder zijn er niet van afhankelijk.",
+    "profile_empty_meaning": "CoinMarketCap publiceert voor veel getokeniseerde activa een beschrijvend profiel (beschrijving, website, sector, rang). Wij nemen die profielen elke dag per partij over en zijn nog niet bij dit activum aangekomen, dus er is geen beschrijving te tonen. Prijzen, tokenvormen en uitgeversonderzoek hieronder zijn er niet van afhankelijk."
   },
   "receipt_cost": {
     "calls_one": "{{count}} aanroep bij de provider",
@@ -4440,7 +4459,9 @@
     "state_derivative_reference": "Derivatenprijs, geen wrapper",
     "reason_derivative_not_a_wrapper": "De aanbieder vermeldt deze derivatenprijs tussen de tokens van het asset. Het is geen token dat iemand aanhoudt of inwisselt, dus hij wordt alleen ter vergelijking getoond en telt nooit mee voor het anker, de grootste premie of korting of de keuzes.",
     "as_of_label": "Wrapper-vastlegging",
-    "prices_observed_label": "Prijzen het laatst bijgewerkt door CoinMarketCap"
+    "prices_observed_label": "Prijzen het laatst bijgewerkt door CoinMarketCap",
+    "reason_reinvested_dividends_not_adjusted": "Deze wrapper herbelegt de dividenden van het aandeel in zijn eigen prijs en er kon geen multiplier van de uitgever worden toegepast, dus het verschil bevat herbelegde dividenden en is niet gecorrigeerd. Het wordt getoond als opbouw, niet als premie, en de wrapper blijft buiten het anker.",
+    "summary_adjusted": "Vergeleken tegen een prijs per aandeel na de eigen dividendmultiplier van de uitgever: {{count}}."
   },
   "table_csv": {
     "download": "CSV downloaden",
@@ -4682,7 +4703,7 @@
     "note_last_session": "Buiten de reguliere sessie is dit de laatste update van de feed van toen de markt open was, geen live koers.",
     "anchor_within": "Het anker ligt binnen de updateband van {{band}}% van de feed rond het aandeel, dus de twee zijn niet te onderscheiden.",
     "anchor_gap": "Het anker ligt {{value}} ten opzichte van het aandeel.",
-    "caveat": "Een verschil met het aandeel vergelijkt één token met één aandeel. Het houdt geen rekening met dividenden die een wrapper mogelijk heeft herbelegd en is geen verhandelbare arbitrage.",
+    "caveat": "Een verschil met het aandeel vergelijkt de waarde van één aandeel in een wrapper met één aandeel. Een wrapper die dividenden in zijn prijs herbelegt, wordt eerst gedeeld door de gepubliceerde multiplier van zijn uitgever als die gelezen kon worden, en anders gemarkeerd. Het is geen verhandelbare arbitrage.",
     "within_band": "Binnen de updateband van {{band}}% van de feed, niet te onderscheiden",
     "measured": "Gemeten {{value}}",
     "col_vs_stock": "t.o.v. aandeel",
@@ -4704,6 +4725,29 @@
     "reason_wrapper_observation_time_unknown": "De aanbieder gaf geen tijd voor de wrapperprijzen, dus er is geen moment om het aandeel op te lezen.",
     "reason_stale_in_session": "De feed werd niet binnen zijn heartbeat bijgewerkt terwijl de markt open was, dus hij is niet gebruikt.",
     "reason_stale_off_session": "De laatste update van de feed is ouder dan een geplande marktsluiting verklaart, dus hij is niet gebruikt."
+  },
+  "accrual": {
+    "source_ondo_solana_scaled_ui": "on-chain multiplier van Ondo",
+    "adjusted_note": "Gecorrigeerd voor herbelegde dividenden (x{{multiplier}}, {{source}}, per {{date}}).",
+    "adjusted_note_undated": "Gecorrigeerd voor herbelegde dividenden (x{{multiplier}}, {{source}}, ongewijzigd sinds de uitgifte van de token).",
+    "not_adjusted": "Bevat herbelegde dividenden, niet gecorrigeerd.",
+    "raw": "Voor de multiplier: {{value}}",
+    "scope": "Sommige wrappers herbeleggen de dividenden van het aandeel in de token, dus één token is meer waard dan één aandeel en de prijs loopt weg van het aandeel om redenen die geen premie zijn. Waar de uitgever de multiplier van die token on-chain publiceert, wordt de prijs van de wrapper gedeeld door de multiplier die gold toen de prijzen werden waargenomen, voordat hij wordt vergeleken met de andere wrappers of het aandeel, en de rij noemt de multiplier, de bron en de datum. Waar geen multiplier gelezen kon worden, wordt niets aangenomen: het verschil wordt getoond als inclusief herbelegde dividenden, niet gecorrigeerd, en de wrapper blijft buiten het anker en de goedkoopste liquide route.",
+    "attribution": "Dividendmultipliers: de eigen on-chain cijfers van de uitgever, gelezen uit zijn Solana-tokenaccounts via een publieke RPC.",
+    "pick_note": "Premie na de eigen dividendmultiplier van deze wrapper (x{{multiplier}}).",
+    "reason_no_multiplier_source": "De multiplier van de uitgever voor deze token wordt hier nog niet gelezen.",
+    "reason_no_multiplier_address": "Er is nog geen tokenaccount vastgelegd voor de multiplier van deze wrapper.",
+    "reason_multiplier_read_failed": "De multiplier kon in deze vastlegging niet via zijn publieke RPC worden gelezen.",
+    "reason_multiplier_not_read": "De multiplier is in deze vastlegging niet gelezen.",
+    "reason_multiplier_changed_after_observation": "De multiplier is gewijzigd nadat de prijzen werden waargenomen, dus de multiplier die toen gold staat niet on-chain.",
+    "reason_mint_identity_not_proved": "Het tokenaccount heeft niet aangetoond dat het deze token is, dus de multiplier is niet gebruikt.",
+    "reason_multiplier_authority_changed": "De multiplier wordt niet meer ingesteld door de vastgelegde bevoegdheid van de uitgever, dus hij is niet gebruikt.",
+    "reason_no_published_multiplier": "Het tokenaccount publiceert geen multiplier.",
+    "reason_multiplier_out_of_range": "De gepubliceerde multiplier ligt buiten elk aannemelijk bereik, dus hij is niet gebruikt.",
+    "reason_multiplier_time_unreadable": "De datum waarop de multiplier inging kon niet worden gelezen, dus hij is niet gebruikt.",
+    "reason_account_not_found": "Het tokenaccount is niet gevonden.",
+    "reason_not_token_2022": "Het tokenaccount valt niet onder het verwachte tokenprogramma, dus de multiplier is niet gebruikt.",
+    "reason_wrapper_observation_time_unknown": "De aanbieder gaf geen tijd voor de prijzen van de wrappers, dus de multiplier die toen gold is onbekend."
   },
   "intel_demo": {
     "banner_label": "Demomelding",
@@ -4808,7 +4852,10 @@
     "example_gold": "goud",
     "derivative_label": "Derivatenprijs, geen wrapper die je kunt aanhouden. Ter vergelijking getoond, nooit onderdeel van het anker.",
     "credits_cache_origin_one": "geen voor deze opzoeking; de oorspronkelijke aanroep rapporteerde {{count}} credit",
-    "credits_cache_origin_other": "geen voor deze opzoeking; de oorspronkelijke aanroep rapporteerde {{count}} credits"
+    "credits_cache_origin_other": "geen voor deze opzoeking; de oorspronkelijke aanroep rapporteerde {{count}} credits",
+    "stored_answer": "Dit antwoord is {{age}} geleden samengesteld. Elk cijfer behoudt zijn eigen vastlegtijd.",
+    "stored_answer_refreshing": "Dit antwoord is {{age}} geleden samengesteld en er wordt nu een nieuwer samengesteld. Elk cijfer behoudt zijn eigen vastlegtijd.",
+    "age_under_minute": "minder dan een minuut"
   },
   "receipt_proof": {
     "reproduce_cache_fill": "De aanroep reproduceren die de cache vulde",

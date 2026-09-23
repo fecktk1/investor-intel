@@ -28,6 +28,19 @@
 // stops starting new work at budgetMs. The planned request list for the day is
 // stored once (snapshots/<date>/_plan.json) so a later invocation resumes from
 // the cursor over the SAME list.
+//
+// SAME-DAY REBUILDS. The day's first build writes straight into
+// snapshots/<date>/, which no manifest names yet. A later build of a day that is
+// already being served (the afternoon and evening refresh ticks after the RWA
+// wrapper captures, or a super admin's forced rebuild) is a new GENERATION: its
+// plan's createdAt. It computes every entry into staging/<date>/<generation>/
+// while the old copy keeps serving untouched, then commits (copies each staged
+// entry over the served one, each an atomic overwrite), then writes latest.json
+// with the new build time, then clears the staging files. Nothing is deleted from
+// the served day, and its manifest keeps every key the old one named that is
+// still present, so a rebuild that reads less than the morning did never blanks
+// a page. A manifest with no keys is never published.
+// The cursor runs over [0, N) while computing and [N, 2N) while committing.
 
 import { captureReadEnvelope } from './capture-read-envelope.ts'
 import {
@@ -87,6 +100,14 @@ export interface BuildOptions {
   /** Entries computed by one invocation before it hands on with a cursor. Edge
    * Functions also stop on CPU time, not only wall time, so a run is kept short. */
   maxEntriesPerRun?: number
+  /** Staged entries committed by one invocation (I/O only, so more than computed). */
+  maxCommitsPerRun?: number
+  /** A later build of a day that is already built (the refresh ticks). Starts a new
+   * generation when the day's newest run finished it; resumes a stalled build. */
+  refresh?: boolean
+  /** The generation a hand-off continues (its plan's createdAt). When the stored
+   * plan is a newer generation, this hop stops without doing anything. */
+  generation?: string | null
 }
 
 export const DEFAULT_MAX_ENTRIES = 2500
@@ -95,8 +116,25 @@ export const DEFAULT_BUDGET_MS = 120_000
 export const DEFAULT_KEEP_DATES = 3
 export const DEFAULT_CONCURRENCY = 4
 export const DEFAULT_ENTRIES_PER_RUN = 30
+export const DEFAULT_COMMITS_PER_RUN = 300
+/** A tick (no cursor) that finds the day's newest run partial and younger than
+ * this leaves it alone: that build is still handing on, and resuming it as well
+ * would start a second chain over the same cursor. */
+export const ACTIVE_CHAIN_MS = 10 * 60_000
+export const DEMO_STAGING_PREFIX = 'staging'
 const PLAN_FILE = '_plan.json'
 const MAX_BODY_BYTES = 4_500_000
+
+/** pg_cron jobs that call intel-demo-snapshot. The migrations named here schedule
+ * exactly these (asserted by demo-snapshot-builder.test.ts). Minutes checked
+ * against every active cron.job on 2026-09-23: :19 of hours 15 and 21 is used
+ * only by the every-minute jobs. */
+export const DEMO_SNAPSHOT_SCHEDULE = Object.freeze({
+  daily: { job: 'intel-demo-snapshot-daily', cron: '13 4 * * *', body: { op: 'build' }, migration: '20260923090000_intel_demo_snapshot.sql' },
+  // 32 minutes after the six-hourly RWA wrapper capture at :47 of hours 14 and 20
+  // (one invocation, 110 s timeout) and 12 minutes after intel-capture-hourly at :07.
+  refresh: { job: 'intel-demo-snapshot-refresh', cron: '19 15,21 * * *', body: { op: 'build', refresh: true }, migration: '20260923221000_intel_demo_snapshot_refresh.sql' },
+})
 
 // ─── scrubbing ────────────────────────────────────────────────────────────────
 
@@ -200,33 +238,50 @@ export async function computeEntry(request: DemoRequest, deps: BuildDeps, now: n
 
 export interface RunResult {
   date: string
-  status: 'complete' | 'partial' | 'failed' | 'already_built'
+  status: 'complete' | 'partial' | 'failed' | 'already_built' | 'in_progress' | 'superseded'
   planned: number
   cursor: number | null
   written: number
   skipped: number
   failed: number
   bytes: number
+  /** Staged entries this invocation copied over the served ones. */
+  committed: number
   latestWritten: boolean
+  /** The build generation (its plan's createdAt) this invocation worked on. */
+  generation: string | null
+  /** The generation stages its entries because its date was already being served. */
+  staged: boolean
   prunedDates: string[]
   errors: { key: string; reason: string }[]
   durationMs: number
 }
 
-interface StoredPlan { version: number; date: string; createdAt: string; requests: DemoRequest[] }
+interface StoredPlan { version: number; date: string; createdAt: string; requests: DemoRequest[]; stage?: string | null }
 
-async function loadRuns(db: Db, date: string): Promise<{ cursor: number | null; latestWritten: boolean }> {
+/** The generation's folder name under staging/<date>/: its createdAt, digits only. */
+export function generationId(createdAt: string): string { return String(createdAt).replace(/[^0-9TZ]/g, '') }
+const GENERATION_PATTERN = /^\d{8}T\d{6,9}Z$/
+
+interface PreviousRuns { cursor: number | null; latestWritten: boolean; activeChain: boolean }
+
+async function loadRuns(db: Db, date: string, now: number): Promise<PreviousRuns> {
   try {
-    const { data } = await db.from('intel_demo_snapshot_runs').select('resume_cursor,latest_written,status')
+    const { data, error } = await db.from('intel_demo_snapshot_runs').select('resume_cursor,latest_written,status,finished_at')
       .eq('snapshot_date', date).order('id', { ascending: false }).limit(20)
+    if (error) console.warn('intel_demo_snapshot_runs_read_failed', String(error.message || error).slice(0, 200))
     const rows = Array.isArray(data) ? data : []
+    const newest = rows[0]
+    const partial = rows.length > 0 && newest?.status === 'partial'
+    const finishedAt = Date.parse(String(newest?.finished_at || ''))
     return {
       // Only the newest run decides: a forced rebuild in progress (newest row partial)
       // must keep handing on even though an earlier run finished today.
-      latestWritten: rows[0]?.latest_written === true,
-      cursor: rows.length && rows[0]?.status === 'partial' && Number.isFinite(Number(rows[0]?.resume_cursor)) ? Number(rows[0].resume_cursor) : null,
+      latestWritten: newest?.latest_written === true,
+      cursor: partial && Number.isFinite(Number(newest?.resume_cursor)) ? Number(newest.resume_cursor) : null,
+      activeChain: partial && Number.isFinite(finishedAt) && now - finishedAt < ACTIVE_CHAIN_MS,
     }
-  } catch { return { cursor: null, latestWritten: false } }
+  } catch { return { cursor: null, latestWritten: false, activeChain: false } }
 }
 
 async function recordRun(db: Db, row: Body): Promise<void> {
@@ -234,6 +289,16 @@ async function recordRun(db: Db, row: Body): Promise<void> {
     const { error } = await db.from('intel_demo_snapshot_runs').insert(row)
     if (error) console.warn('intel_demo_snapshot_run_log_failed', String(error.message || error).slice(0, 200))
   } catch (e) { console.warn('intel_demo_snapshot_run_log_failed', String((e as Error)?.message || e).slice(0, 200)) }
+}
+
+/** latest.json as it is served right now, or null. */
+async function servedManifest(storage: DemoStorage): Promise<{ date: string; keys: string[] } | null> {
+  try {
+    const raw = await storage.download(DEMO_LATEST_PATH)
+    const parsed = raw ? JSON.parse(raw) : null
+    if (!parsed || typeof parsed !== 'object' || !DEMO_DATE_PATTERN.test(String(parsed.date || ''))) return null
+    return { date: String(parsed.date), keys: Array.isArray(parsed.keys) ? parsed.keys.map(String) : [] }
+  } catch { return null }
 }
 
 async function prune(storage: DemoStorage, keepDates: number): Promise<string[]> {
@@ -248,6 +313,30 @@ async function prune(storage: DemoStorage, keepDates: number): Promise<string[]>
   return drop
 }
 
+/** Removes the staging files of this generation and of every older one, any date.
+ * A newer generation's files are left for it. */
+async function clearStaging(storage: DemoStorage, upTo: string): Promise<void> {
+  for (const date of (await storage.list(DEMO_STAGING_PREFIX)).filter((n) => DEMO_DATE_PATTERN.test(n))) {
+    for (const gen of await storage.list(`${DEMO_STAGING_PREFIX}/${date}`)) {
+      if (!GENERATION_PATTERN.test(gen) || gen > upTo) continue
+      const dir = `${DEMO_STAGING_PREFIX}/${date}/${gen}`
+      const paths = (await storage.list(dir)).map((f) => `${dir}/${f}`)
+      for (let i = 0; i < paths.length; i += 500) await storage.remove(paths.slice(i, i + 500))
+    }
+  }
+}
+
+/** The body of the next hop, or null when this invocation must not hand on. A
+ * super admin who passed a cursor is stepping by hand and drives the next step
+ * themselves: handing on as well would start a second chain over the same cursor
+ * (on 2026-09-23 hand-stepping a forced rebuild forked it into dozens of chains). */
+export function nextHopBody(result: RunResult, ctx: { cronOk: boolean; manualCursor: boolean; hop: number; maxHops: number }): Record<string, unknown> | null {
+  if (result.status !== 'partial' || result.cursor == null) return null
+  if (ctx.hop >= ctx.maxHops) return null
+  if (!ctx.cronOk && ctx.manualCursor) return null
+  return { op: 'build', cursor: result.cursor, hop: ctx.hop + 1, ...(result.generation ? { generation: result.generation } : {}) }
+}
+
 export async function buildDemoSnapshot(deps: BuildDeps, opts: BuildOptions): Promise<RunResult> {
   const clock = deps.now ?? (() => Date.now())
   const started = clock()
@@ -257,50 +346,80 @@ export async function buildDemoSnapshot(deps: BuildDeps, opts: BuildOptions): Pr
   const deadline = started + budgetMs
   const date = utcDate(started)
   const result: RunResult = {
-    date, status: 'partial', planned: 0, cursor: null, written: 0, skipped: 0, failed: 0, bytes: 0,
-    latestWritten: false, prunedDates: [], errors: [], durationMs: 0,
+    date, status: 'partial', planned: 0, cursor: null, written: 0, skipped: 0, failed: 0, bytes: 0, committed: 0,
+    latestWritten: false, generation: null, staged: false, prunedDates: [], errors: [], durationMs: 0,
   }
   const finish = async (status: RunResult['status']) => {
     result.status = status
     result.durationMs = clock() - started
-    if (status !== 'already_built') {
+    // Only work is logged: a tick that finds nothing to do leaves no row.
+    if (status === 'complete' || status === 'partial' || status === 'failed') {
       await recordRun(deps.db, {
-        snapshot_date: date, started_at: new Date(started).toISOString(), status: status === 'complete' ? 'complete' : status,
+        snapshot_date: date, started_at: new Date(started).toISOString(), status,
         run_trigger: opts.trigger, entries_written: result.written, entries_skipped: result.skipped, entries_failed: result.failed,
         bytes_written: result.bytes, resume_cursor: result.cursor, latest_written: result.latestWritten, duration_ms: result.durationMs,
-        detail: { planned: result.planned, pruned: result.prunedDates, errors: result.errors.slice(0, 50) },
+        detail: {
+          planned: result.planned, pruned: result.prunedDates, errors: result.errors.slice(0, 50),
+          generation: result.generation, staged: result.staged, committed: result.committed,
+        },
       })
     }
     return result
   }
 
   try {
-    const previous = await loadRuns(deps.db, date)
-    if (previous.latestWritten && !opts.force) return await finish('already_built')
+    const previous = await loadRuns(deps.db, date, started)
+    const hop = opts.cursor != null
+    if (!opts.force) {
+      if (previous.latestWritten && !opts.refresh) return await finish('already_built')
+      // A tick while today's build is still handing on leaves it alone.
+      if (!hop && previous.activeChain) return await finish('in_progress')
+    }
+    // A new generation: forced, or a refresh tick on a day whose newest run finished it.
+    const fresh = opts.force === true || (opts.refresh === true && previous.latestWritten && !hop)
 
-    // The day's plan: stored once, reused by every resuming invocation.
+    // The day's plan: stored once per generation, reused by every resuming invocation.
     const planPath = `snapshots/${date}/${PLAN_FILE}`
     let plan: StoredPlan | null = null
-    const resuming = !opts.force && (opts.cursor != null || previous.cursor != null)
+    const resuming = !fresh && (opts.cursor != null || previous.cursor != null)
     if (resuming) {
       try { const raw = await deps.storage.download(planPath); plan = raw ? JSON.parse(raw) : null } catch { plan = null }
       if (plan && (plan.version !== DEMO_SNAPSHOT_KEY_VERSION || plan.date !== date || !Array.isArray(plan.requests))) plan = null
+    }
+    // A hand-off from a generation a newer plan has replaced stops here.
+    if (plan && hop && opts.generation && plan.createdAt !== opts.generation) {
+      result.generation = plan.createdAt
+      return await finish('superseded')
     }
     // A cursor only means something over the list it was taken from.
     const resumed = resuming && plan != null
     if (!plan) {
       if (!deps.planner) throw new Error('no_planner')
       const requests = finalizePlan(await deps.planner(deps.db, started), maxEntries)
-      plan = { version: DEMO_SNAPSHOT_KEY_VERSION, date, createdAt: new Date(started).toISOString(), requests }
+      const createdAt = new Date(started).toISOString()
+      // The day is already being served: stage, so the old copy keeps serving
+      // until the new one is complete.
+      const served = await servedManifest(deps.storage)
+      const stage = served?.date === date ? `${DEMO_STAGING_PREFIX}/${date}/${generationId(createdAt)}` : null
+      plan = { version: DEMO_SNAPSHOT_KEY_VERSION, date, createdAt, requests, stage }
       await deps.storage.upload(planPath, JSON.stringify(plan), { cacheSeconds: 60 })
       // Planning reads the day's data to enumerate every variant, which is the
       // heaviest single step; it gets an invocation of its own and hands on.
       result.planned = plan.requests.length
+      result.generation = createdAt
+      result.staged = stage != null
       result.cursor = 0
       return await finish('partial')
     }
     result.planned = plan.requests.length
-    let index = resumed ? Math.max(0, Math.min(plan.requests.length, Number(opts.cursor ?? previous.cursor ?? 0))) : 0
+    result.generation = plan.createdAt
+    const stage = plan.stage ? String(plan.stage) : null
+    if (stage != null && stage !== `${DEMO_STAGING_PREFIX}/${date}/${generationId(plan.createdAt)}`) throw new Error('plan_stage_mismatch')
+    result.staged = stage != null
+    const total = plan.requests.length
+    const end = stage ? 2 * total : total
+    let index = resumed ? Math.max(0, Math.min(end, Number(opts.cursor ?? previous.cursor ?? 0))) : 0
+    const entryPath = (key: string) => (stage ? `${stage}/${key}.json` : demoEntryPath(date, key))
 
     // Small concurrent batches. The cursor is the first request of the first
     // batch not started, so a resumed run never skips or repeats a batch.
@@ -314,7 +433,7 @@ export async function buildDemoSnapshot(deps: BuildDeps, opts: BuildOptions): Pr
         const stored: DemoEntry = { version: DEMO_SNAPSHOT_KEY_VERSION, key, fn: request.fn, status: entry.status, body }
         const text = JSON.stringify(stored)
         if (text.length > MAX_BODY_BYTES) { result.skipped++; result.errors.push({ key, reason: 'entry_too_large' }); return }
-        await deps.storage.upload(demoEntryPath(date, key), text, { cacheSeconds: 3600 })
+        await deps.storage.upload(entryPath(key), text, { cacheSeconds: 3600 })
         result.written++
         result.bytes += text.length
       } catch (e) {
@@ -322,18 +441,54 @@ export async function buildDemoSnapshot(deps: BuildDeps, opts: BuildOptions): Pr
         result.errors.push({ key, reason: String((e as Error)?.message || e).slice(0, 160) })
       }
     }
-    const perRun = Math.max(1, Math.min(500, opts.maxEntriesPerRun ?? DEFAULT_ENTRIES_PER_RUN))
-    const stopAt = Math.min(plan.requests.length, index + perRun)
-    while (index < stopAt) {
-      if (clock() > deadline) break
-      const batch = plan.requests.slice(index, Math.min(stopAt, index + concurrency))
-      await Promise.all(batch.map(one))
-      index += batch.length
+    if (index < total) {
+      const perRun = Math.max(1, Math.min(500, opts.maxEntriesPerRun ?? DEFAULT_ENTRIES_PER_RUN))
+      const stopAt = Math.min(total, index + perRun)
+      while (index < stopAt) {
+        if (clock() > deadline) break
+        const batch = plan.requests.slice(index, Math.min(stopAt, index + concurrency))
+        await Promise.all(batch.map(one))
+        index += batch.length
+      }
+      if (index < total) {
+        result.cursor = index
+        return await finish('partial')
+      }
     }
 
-    if (index < plan.requests.length) {
-      result.cursor = index
-      return await finish('partial')
+    // A staged generation: every entry is computed; copy each staged one over the
+    // served one. Each copy is one atomic overwrite, so a reader gets the old or
+    // the new body of an entry, never nothing.
+    if (stage && index < end) {
+      const staged = new Set((await deps.storage.list(stage))
+        .filter((name) => name.endsWith('.json')).map((name) => name.slice(0, -'.json'.length)))
+      // Nothing computed: publish nothing, and the served copy stays as it is.
+      if (!staged.size) throw new Error('nothing_staged')
+      const commitStop = Math.min(end, index + Math.max(1, Math.min(2000, opts.maxCommitsPerRun ?? DEFAULT_COMMITS_PER_RUN)))
+      const commitOne = async (request: DemoRequest) => {
+        const key = request.key || demoRequestKey(request)
+        if (!staged.has(key)) return
+        try {
+          const text = await deps.storage.download(`${stage}/${key}.json`)
+          if (text == null) throw new Error('staged_entry_unreadable')
+          await deps.storage.upload(demoEntryPath(date, key), text, { cacheSeconds: 3600 })
+          result.committed++
+        } catch (e) {
+          result.failed++
+          result.errors.push({ key, reason: `commit:${String((e as Error)?.message || e).slice(0, 150)}` })
+        }
+      }
+      while (index < commitStop) {
+        if (clock() > deadline) break
+        const from = index - total
+        const batch = plan.requests.slice(from, Math.min(commitStop - total, from + 8))
+        await Promise.all(batch.map(commitOne))
+        index += batch.length
+      }
+      if (index < end) {
+        result.cursor = index
+        return await finish('partial')
+      }
     }
 
     // Every planned request has been attempted. The manifest names exactly the
@@ -342,9 +497,23 @@ export async function buildDemoSnapshot(deps: BuildDeps, opts: BuildOptions): Pr
       .filter((name) => name.endsWith('.json') && name !== PLAN_FILE)
       .map((name) => name.slice(0, -'.json'.length)))
     const keys = plan.requests.map((r) => r.key!).filter((k) => present.has(k))
+    if (stage) {
+      // A same-day rebuild keeps every page the served manifest names whose entry
+      // is still there (its body states its own time), so it never blanks one.
+      const served = await servedManifest(deps.storage)
+      if (served?.date === date) {
+        const listed = new Set(keys)
+        for (const key of served.keys) if (present.has(key) && !listed.has(key)) { keys.push(key); listed.add(key) }
+      }
+    }
+    // An empty manifest would blank the whole demo: keep serving what is there.
+    if (!keys.length) throw new Error('no_entries')
     const latest = { date, capturedAt: plan.createdAt, version: DEMO_SNAPSHOT_KEY_VERSION, keys }
     await deps.storage.upload(DEMO_LATEST_PATH, JSON.stringify(latest), { cacheSeconds: 300 })
     result.latestWritten = true
+    try { await clearStaging(deps.storage, generationId(plan.createdAt)) } catch (e) {
+      result.errors.push({ key: 'staging', reason: String((e as Error)?.message || e).slice(0, 160) })
+    }
     try { result.prunedDates = await prune(deps.storage, opts.keepDates ?? DEFAULT_KEEP_DATES) } catch (e) {
       result.errors.push({ key: 'prune', reason: String((e as Error)?.message || e).slice(0, 160) })
     }

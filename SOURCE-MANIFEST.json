@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-09-23T20:30:47.810Z",
+  "createdAt": "2026-09-23T23:06:46.624Z",
   "sourceFiles": [
     {
       "source": "examples/investor-intel-hackathon/adapters/ChartWatchlistAdd.jsx",
@@ -612,6 +612,14 @@
     {
       "source": "supabase/functions/_shared/intel/underlying-reference.test.ts",
       "extracted": "production-source/supabase/functions/_shared/intel/underlying-reference.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/accrual-multiplier.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/accrual-multiplier.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/accrual-multiplier.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/accrual-multiplier.test.ts"
     },
     {
       "source": "supabase/functions/_shared/intel/rwa-wrapper-picks.ts",
@@ -1806,6 +1814,10 @@
       "extracted": "production-source/src/intel/components/RwaLookup.jsx"
     },
     {
+      "source": "src/intel/components/RwaPairsFallback.jsx",
+      "extracted": "production-source/src/intel/components/RwaPairsFallback.jsx"
+    },
+    {
       "source": "src/intel/components/RwaPortfolioExposure.jsx",
       "extracted": "production-source/src/intel/components/RwaPortfolioExposure.jsx"
     },
@@ -2554,6 +2566,10 @@
       "extracted": "production-source/src/intel/lib/stored-series-caption.js"
     },
     {
+      "source": "src/intel/lib/suggestion-prefetch.js",
+      "extracted": "production-source/src/intel/lib/suggestion-prefetch.js"
+    },
+    {
       "source": "src/intel/lib/table-csv.js",
       "extracted": "production-source/src/intel/lib/table-csv.js"
     },
@@ -2632,6 +2648,10 @@
     {
       "source": "src/intel/lib/useDashboard.js",
       "extracted": "production-source/src/intel/lib/useDashboard.js"
+    },
+    {
+      "source": "src/intel/lib/useHashScroll.js",
+      "extracted": "production-source/src/intel/lib/useHashScroll.js"
     },
     {
       "source": "src/intel/lib/useInvestigation.js",
@@ -4542,6 +4562,14 @@
       "extracted": "production-source/supabase/functions/_shared/intel/schedule-policy.ts"
     },
     {
+      "source": "supabase/functions/_shared/intel/server-timing.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/server-timing.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/server-timing.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/server-timing.ts"
+    },
+    {
       "source": "supabase/functions/_shared/intel/signal-trends.test.ts",
       "extracted": "production-source/supabase/functions/_shared/intel/signal-trends.test.ts"
     },
@@ -5878,6 +5906,18 @@
       "extracted": "production-source/supabase/migrations/20260923193000_intel_rwa_underlying_reference.sql"
     },
     {
+      "source": "supabase/migrations/20260923220000_intel_rwa_wrapper_accrual_multiplier.sql",
+      "extracted": "production-source/supabase/migrations/20260923220000_intel_rwa_wrapper_accrual_multiplier.sql"
+    },
+    {
+      "source": "supabase/migrations/20260923221000_intel_demo_snapshot_refresh.sql",
+      "extracted": "production-source/supabase/migrations/20260923221000_intel_demo_snapshot_refresh.sql"
+    },
+    {
+      "source": "supabase/migrations/20260923224137_intel_rwa_lookup_answers.sql",
+      "extracted": "production-source/supabase/migrations/20260923224137_intel_rwa_lookup_answers.sql"
+    },
+    {
       "source": "supabase/migrations/206_intel_activate_subscription.sql",
       "extracted": "production-source/supabase/migrations/206_intel_activate_subscription.sql"
     },
@@ -5989,13 +6029,13 @@
   "files": [
     {
       "file": "package.json",
-      "bytes": 669,
-      "sha256": "d1d025bc271edf00cb9f94ac6997c034d304801db79fc8528dadbdccfe061551"
+      "bytes": 887,
+      "sha256": "b212433efe9baf83df0fc943b69e26c3d18e199a978aeb5af9ad1228fe11431d"
     },
     {
       "file": "package-lock.json",
-      "bytes": 48296,
-      "sha256": "59ecab375d9e731bc2ba21993404fb2504f093b11047aa72b5ffb44459068e84"
+      "bytes": 95290,
+      "sha256": "d9f455885e0f2b4837768d332c03599998f6d514fec1a64c41b3af72dcf91a0e"
     },
     {
       "file": ".gitignore",
@@ -6004,8 +6044,8 @@
     },
     {
       "file": ".github/workflows/test.yml",
-      "bytes": 2591,
-      "sha256": "c808d024385a7e30523dcc5c1dd06ebc6f49d73a5241e1a0be7310d0b9a97301"
+      "bytes": 3547,
+      "sha256": "42915a6fe38aa7bb1e2174382f7412fa98c8affa5383bb16dbe602de78582355"
     },
     {
       "file": ".env.example",
@@ -6014,8 +6054,8 @@
     },
     {
       "file": "README.md",
-      "bytes": 23870,
-      "sha256": "84c4ecfab6c5e7a1db360bcf842b079b848b82772ae72aa92985e67decba92c9"
+      "bytes": 24801,
+      "sha256": "df2d81bce0ea799c75a1d0ec62bdaf8694f6a27f8668a0034b3c9290f079a877"
     },
     {
       "file": "LICENSE.md",
@@ -6129,13 +6169,13 @@
     },
     {
       "file": "docs/build-timeline.md",
-      "bytes": 4952,
-      "sha256": "5ba4c6ad4c647e9ba20aad301d5b2e7a159930902f3cc39f2b58c3f2b516599c"
+      "bytes": 4954,
+      "sha256": "cb4a26d3a36a6f49d4596d859c47f0a470cceb1cacfdf984e6d1ad3ff14f7019"
     },
     {
       "file": "docs/demo-guide.md",
-      "bytes": 14689,
-      "sha256": "d5fed53427b17146e6149f51fce8bdd1adc39468915ec37b732fac2988b224e9"
+      "bytes": 15255,
+      "sha256": "e964d886ae81ecdf60eae81d898473254e14d792fae7df8b1f05304a7da30a8a"
     },
     {
       "file": "docs/x-post-2026-09-22.png",
@@ -6619,13 +6659,13 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers-read.ts",
-      "bytes": 31696,
-      "sha256": "d3e5c45c395f7941c207eed5d50173e63d3ccd707ee40e483cf20d3dbec45ae7"
+      "bytes": 33837,
+      "sha256": "28d73f40f6b6aabe5fe409db0480c30e1939e2e6b784ae1187516023b0e48949"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts",
-      "bytes": 40145,
-      "sha256": "40bb876ac7e493de50c5bec0ac7294ee55e363cc1460b7d5640f2c0ca8b19b20"
+      "bytes": 52188,
+      "sha256": "2f6b79335d87c3033dafcee4932f70a88297c6ac4db08a5221853c7543615106"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-rwa-yield-read.ts",
@@ -6669,8 +6709,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.test.ts",
-      "bytes": 43338,
-      "sha256": "0e9243cf9c290ebe93d5e46925a22ddcb2a5b782f46f59362c526bc10d273fba"
+      "bytes": 56413,
+      "sha256": "874a5e84f2bdf0f32052ed75cca0cd5b76f6e89bd32579e8492b9d600db24195"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/capture-rwa-yield-read.test.ts",
@@ -6729,8 +6769,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.ts",
-      "bytes": 36882,
-      "sha256": "ffebaa68d30113685ff966b9514b6e4896f25b60955dc5b8386e17578d5e201f"
+      "bytes": 43380,
+      "sha256": "a2edaf0f52be4098588b87933cbd2429da1e491875cfa20399f027180e44af1a"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-yield-realized.ts",
@@ -6789,8 +6829,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.test.ts",
-      "bytes": 24249,
-      "sha256": "b48913842eb9e2124df1002ea286d66defca1e2775b0db0624ad304bce317807"
+      "bytes": 32555,
+      "sha256": "194c0a5980e6393f7038cc02c6fb21537d57638aecdb085a7067f2f5db89524b"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-yield-realized.test.ts",
@@ -6899,23 +6939,33 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/underlying-reference.ts",
-      "bytes": 31769,
-      "sha256": "2ef775163c3edaf1efa88bb6137909ba3965468c9aaa0c5c568df84ab6c3dd37"
+      "bytes": 33479,
+      "sha256": "986abe618961e4b39cb494e2c4f5f9bef803221ef19891a56c8274627e957143"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/underlying-reference.test.ts",
-      "bytes": 23942,
-      "sha256": "bfe72dd48e39bc814d3ee77b5fc1b215c9267a54f7fcdcb29c35fd1105b16557"
+      "bytes": 25436,
+      "sha256": "a9b976f09583c1533013c1edb7503c69078289c29f32af315372ab44a96ae484"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/accrual-multiplier.ts",
+      "bytes": 27275,
+      "sha256": "852d4f4adb590f6b02ed2d0e3e4b925b48e4005a002807db755f9a8122111706"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/accrual-multiplier.test.ts",
+      "bytes": 17685,
+      "sha256": "3d17bd0f2231a8c5cc1ab5e4e13905b16dec5341a095cb3bd315b33cd4e6e42b"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-wrapper-picks.ts",
-      "bytes": 10228,
-      "sha256": "c79cdecc247932c359b2a139fb1f0ccb5a73976f272cddd67200153eb3a3dd80"
+      "bytes": 11347,
+      "sha256": "ee26bbd5834e2f0f4c58ee3d468d9fb72fd4154254f51662cac3b280b44bf2e9"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-wrapper-picks.test.ts",
-      "bytes": 7922,
-      "sha256": "cbc759bea4a24200e959b858173a77a518b850a14d2b7105d83fb46bc51b22c0"
+      "bytes": 9986,
+      "sha256": "72deab8cedd7425088b9490f2bcc5e321bef28975be0dd8427c379b1f39b1b57"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-coverage.ts",
@@ -7250,68 +7300,68 @@
     },
     {
       "file": "production-source/scripts/intel-extraction-test-run.mjs",
-      "bytes": 16221,
-      "sha256": "5be7d924cabedb86c397baeb7500fd6d0a706491c1e86d78c55dffe9fedf8623",
+      "bytes": 19793,
+      "sha256": "9d59ea42feb40fc52a4b22f4cd49529b74728c82ffec522927496dc0dc4c27af",
       "role": "full-source"
     },
     {
       "file": "production-source/scripts/package-investor-intel-demo.mjs",
-      "bytes": 18294,
-      "sha256": "39755b859ef82b3a27aedce95a3be310ae54748f2db381faf324cfb687424136",
+      "bytes": 18466,
+      "sha256": "d58b277d8687ea802989ed252de214db6beba901b150cacb20de2265299e41b0",
       "role": "full-source"
     },
     {
       "file": "production-source/scripts/test-intel-extraction-package.mjs",
-      "bytes": 13544,
-      "sha256": "cc44d7b2d2a06e7819a19f1ab21e08d93e661b582c6c806742c0e7352ba04f42",
+      "bytes": 26581,
+      "sha256": "5f9047435d57348cf64bbd00da8a93ae9dd161194ff917a93eff9940053ee681",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/de/intel.json",
-      "bytes": 330590,
-      "sha256": "4b380805780bb31efcb12fd15347ffd55045ed4434109df14a02055f6deaddc9",
+      "bytes": 337359,
+      "sha256": "9d81f01897e961ccb193c76247ae1529620e531d63c1e8d3b142cb3acc2f5ac9",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/en/intel.json",
-      "bytes": 292855,
-      "sha256": "2ff32676de653e988e6650ae78836083d121dbd872fce8af762f8dff222f6972",
+      "bytes": 298696,
+      "sha256": "d0525d27e6c9da7fbe72902d5e5aee5d1039742f1380da089a2dbaf5715f1b67",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/es/intel.json",
-      "bytes": 329522,
-      "sha256": "506c7bd4a5afeea811f2cdf124541d2e66daf42aff137584c62bb835fdfcafcb",
+      "bytes": 336021,
+      "sha256": "67a3b22842705d8dfb4e62aca936149b70d9021dd73fc0367166d014739a6e0d",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/fr/intel.json",
-      "bytes": 343150,
-      "sha256": "1af9ae6e00014a79d3dd387270a7e77bbb471e72d281bc49cc963b2692561cbc",
+      "bytes": 350076,
+      "sha256": "85c14347f8635ed69f5c6f907664724af13c97d386290ec61525b64e07fd012e",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/it/intel.json",
-      "bytes": 333390,
-      "sha256": "f7fbd31b2a18e221ba9e966a8b384e1edfa009af51d669bfd2a47479a0433e94",
+      "bytes": 340198,
+      "sha256": "8b062445877bf569ce3e07752cdce136fbfb45831b74087e7cf1f0bc9eaf8233",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/nl/intel.json",
-      "bytes": 324195,
-      "sha256": "d74997af158e05764c1353d3003cf3595cb0fc599316405854df0255d0311f59",
+      "bytes": 330629,
+      "sha256": "0d6fdb8f675dfd6b91c626cd3cf4eeec1def424f33a2024beb11d5cd3049d6a1",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/pt-BR/intel.json",
-      "bytes": 326041,
-      "sha256": "255ae2c54c9d838947cbcd4ec1f1545124dc099dd606d3f241e3789c8c1e4e79",
+      "bytes": 332418,
+      "sha256": "50db97eacc9cf81e2ca3dc7084bb9cb88ab8056d689ab44a12ad77d81c35a371",
       "role": "full-source"
     },
     {
       "file": "production-source/src/i18n/locales/sq/intel.json",
-      "bytes": 330852,
-      "sha256": "a1c5d7a16e23efd5fa1e7362d4ace665cb87426e64466eb378c3713aceb375a5",
+      "bytes": 337357,
+      "sha256": "348166b5aa2d6dc986c8f2e0f6d9c49ed7dfc1d0388bd673f6942f2c6955b5fc",
       "role": "full-source"
     },
     {
@@ -8252,8 +8302,8 @@
     },
     {
       "file": "production-source/src/intel/components/MarketSearchTypeahead.jsx",
-      "bytes": 10342,
-      "sha256": "d9972ee5554b81cacd3f57ded446693decc068c7fcedc87373e9f02730a0fc0e",
+      "bytes": 11129,
+      "sha256": "e484541da7b8c52d0cf157ef48fb7ceed647c91c02365a33dd6353f6543eb2e5",
       "role": "full-source"
     },
     {
@@ -8558,8 +8608,8 @@
     },
     {
       "file": "production-source/src/intel/components/ResearchEvidence.jsx",
-      "bytes": 4883,
-      "sha256": "03f47c2800a05577a2882119d829c42b9a02e1ab0f2cb3ad344e2005880a8719",
+      "bytes": 5184,
+      "sha256": "db016fa6eb30059e46e66749deb9979dc4fb8ae4b10989449e3aad3cdce1b947",
       "role": "full-source"
     },
     {
@@ -8588,8 +8638,8 @@
     },
     {
       "file": "production-source/src/intel/components/RwaAssetProfile.jsx",
-      "bytes": 7434,
-      "sha256": "28119dca3a7b7dce339569fc41ca2a29a10be1895f7378ac12bfaf237563facc",
+      "bytes": 9265,
+      "sha256": "e27e27738dbc08f3ef40ee016db20d281d7a36ae366a488aa9945d754e21c6d8",
       "role": "full-source"
     },
     {
@@ -8624,8 +8674,14 @@
     },
     {
       "file": "production-source/src/intel/components/RwaLookup.jsx",
-      "bytes": 18650,
-      "sha256": "c975ed18a2ab865f026f7a80700584ca9bbd1aa60bda7bad7f3b160413636040",
+      "bytes": 19727,
+      "sha256": "e41decb8fa747dac00fc9fd02987001fa314cdf8e345926ebd756e4641c0efdf",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/src/intel/components/RwaPairsFallback.jsx",
+      "bytes": 7253,
+      "sha256": "0161486cb0dec191ed470f054d0caa0ce6952073e5376c3ef1c7484576330472",
       "role": "full-source"
     },
     {
@@ -8690,14 +8746,14 @@
     },
     {
       "file": "production-source/src/intel/components/RwaWrapperSpread.jsx",
-      "bytes": 67467,
-      "sha256": "fe74d48025f57277964592fb96cd454db98f5fda156455ec2bfe67b3a901391a",
+      "bytes": 76184,
+      "sha256": "5b54714a7209b2e60c4504759171d86b1bea8f031c1d7312fb3a67e20244151a",
       "role": "full-source"
     },
     {
       "file": "production-source/src/intel/components/RwaYieldProvenance.jsx",
-      "bytes": 16875,
-      "sha256": "ea45bb2c50539f60e9dbfeb5189dab9d21a6d0e3d4a07aff6738a63871539797",
+      "bytes": 16896,
+      "sha256": "104de6067523a300d294fb37e7f2c608d47b0fe4ac9996079dbbfe3184989afd",
       "role": "full-source"
     },
     {
@@ -9104,8 +9160,8 @@
     },
     {
       "file": "production-source/src/intel/demo/demo-fetch.js",
-      "bytes": 37657,
-      "sha256": "02ad036bf1348373a68153861c9391d6cf3c75d8b997efce06ba46bb9d10e9da",
+      "bytes": 39841,
+      "sha256": "5f848bd669b3d0d6be798ae20bbf1de21fa407fd4b085250d2a8e68d7010f931",
       "role": "full-source"
     },
     {
@@ -9122,8 +9178,8 @@
     },
     {
       "file": "production-source/src/intel/demo/demo-runtime.js",
-      "bytes": 6229,
-      "sha256": "99afab7d46d5eb5229d640d5addf48827fc14c525a120810f40fc9a9a3005ba5",
+      "bytes": 6352,
+      "sha256": "784a7312dcce636f976f55e72c8bc4f133429548e12f1d1c2424f2d3a8c84be3",
       "role": "full-source"
     },
     {
@@ -9164,8 +9220,8 @@
     },
     {
       "file": "production-source/src/intel/lib/__tests__/intelDemoFetch.test.js",
-      "bytes": 35198,
-      "sha256": "732ab2566c9c447d297fe6bbce28ae67c8646412a8e7ccd170378b455e2378e7",
+      "bytes": 37014,
+      "sha256": "9613c7899d1c5e243d032da37af446ce92c9f06ab55de4830aa7726309e42989",
       "role": "full-source"
     },
     {
@@ -9710,8 +9766,8 @@
     },
     {
       "file": "production-source/src/intel/lib/rwa-wrapper-csv.js",
-      "bytes": 5993,
-      "sha256": "0e2277a77e27ee61085ac9780b7e5953b1ce323082ee40c46ce34fedbd89bec2",
+      "bytes": 7451,
+      "sha256": "00c96fe49aedb2706fbea575655d6f3d4f2606280477048ce8e24b47923c7271",
       "role": "full-source"
     },
     {
@@ -9748,6 +9804,12 @@
       "file": "production-source/src/intel/lib/stored-series-caption.js",
       "bytes": 5084,
       "sha256": "77e1cedb0411791ebcb77bb58e3bf87af1f4462e4de644ca91fc254f735073ae",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/src/intel/lib/suggestion-prefetch.js",
+      "bytes": 2612,
+      "sha256": "d6cc12438e4c87964b27bacd1e84a5546ed9ebd040863f5cff0c65e6a023da70",
       "role": "full-source"
     },
     {
@@ -9871,6 +9933,12 @@
       "role": "full-source"
     },
     {
+      "file": "production-source/src/intel/lib/useHashScroll.js",
+      "bytes": 1914,
+      "sha256": "69f6b994f9ec6171fe912de11091f9682b41b2359a6d03d21d0bc1ce6f287562",
+      "role": "full-source"
+    },
+    {
       "file": "production-source/src/intel/lib/useInvestigation.js",
       "bytes": 2427,
       "sha256": "986db08781aae54d58687c20e69780b2fe589fbd5efd09502d8bb0f5245da103",
@@ -9896,8 +9964,8 @@
     },
     {
       "file": "production-source/src/intel/lib/useMarketResearch.js",
-      "bytes": 3332,
-      "sha256": "63fd4617ade62750ac0e2a1c43340fb8b9483677370916c14a70b24407611644",
+      "bytes": 4067,
+      "sha256": "a6b719cc6eba10e36f6728c447f9567c6be232ee75de61398b1ab3fb69bbe21f",
       "role": "full-source"
     },
     {
@@ -10148,20 +10216,20 @@
     },
     {
       "file": "production-source/src/intel/pages/MarketResearchPage.jsx",
-      "bytes": 31716,
-      "sha256": "916d1d051007e14e779aa097cd350af752757b68b7a0bd48afb2c54c67721180",
+      "bytes": 36778,
+      "sha256": "c3f9bb3fb88c0eeb0f4502575ad938188e49ca8865b33b3c2f3e180fe2d2092b",
       "role": "full-source"
     },
     {
       "file": "production-source/src/intel/pages/MarketStructurePage.jsx",
-      "bytes": 6174,
-      "sha256": "f6837517f0d8a993752d85dca8051049034f3fe580d8fb37d201ebd065560c5b",
+      "bytes": 6387,
+      "sha256": "b9e022c29e64c7260c8b6ec89eaaee30cb8874d30a7d38df5c473f7e44753c2c",
       "role": "full-source"
     },
     {
       "file": "production-source/src/intel/pages/MarketsPage.jsx",
-      "bytes": 57267,
-      "sha256": "60021bdd6344b08818201e06db689453846b04736b97ae67327f59f78c0928f6",
+      "bytes": 57922,
+      "sha256": "371993b80de08484e2b35ad49a08fe6e772ce708e9630d312aa2f5bdab1387c6",
       "role": "full-source"
     },
     {
@@ -11528,14 +11596,14 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/demo-market-read.ts",
-      "bytes": 40028,
-      "sha256": "fe2d4f2370378d7a7ddbb799d651b2a23fc1964dc9a7dccdd5edcf483b10a294",
+      "bytes": 41323,
+      "sha256": "d0d82aa73b06807bc7821bb1737e722844099e53787cd34c274a81c463a0ceef",
       "role": "full-source"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/demo-read.test.ts",
-      "bytes": 18464,
-      "sha256": "83576ca13250f428d0718429c36d2f99c306e285dfed99bb286df23c5f766862",
+      "bytes": 19851,
+      "sha256": "67491c3db3ee4573b3fb8a4c554f9475314d794e8c146c5585ad5d024b99b442",
       "role": "full-source"
     },
     {
@@ -11546,14 +11614,14 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/demo-snapshot-builder.test.ts",
-      "bytes": 20058,
-      "sha256": "dcdfcc870c2897dcb3ad96f3986cb9879dc267672c338b2c4d9734f474d0069f",
+      "bytes": 32596,
+      "sha256": "a31806d799b85b0cd0afe3df5e5dd2aa906dc743ac9420f2c19f04380e41d5d9",
       "role": "full-source"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/demo-snapshot-builder.ts",
-      "bytes": 17647,
-      "sha256": "715c70017677b809eca17082b2aabb1557ca3df168b14722cbc1a8572bbe37aa",
+      "bytes": 27450,
+      "sha256": "618a3e4d772ec7e4f353341fc8d56d463e2634daee0546cad50b61f5d93f199a",
       "role": "full-source"
     },
     {
@@ -12152,8 +12220,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/mcp-rwa-forward.ts",
-      "bytes": 9711,
-      "sha256": "caf09a912e6dae4063ace50c5da4b7da68100ced8b4541ae2486672ec76ef55d",
+      "bytes": 10594,
+      "sha256": "d5d4a03d3167755f520fa5d9343ca25e3ca2f3a5672f412f51166ea51ea16738",
       "role": "full-source"
     },
     {
@@ -12188,14 +12256,14 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/mcp-tools.test.ts",
-      "bytes": 47204,
-      "sha256": "9a3e12859e2c6372a6c15da90d3c8d003b40173437f591fd4dce9fbb35e5b638",
+      "bytes": 49593,
+      "sha256": "b3e817a2dd6efa799a86692f7df4090b0081ef829d5a92223d50d04bf3be7767",
       "role": "full-source"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/mcp-tools.ts",
-      "bytes": 92761,
-      "sha256": "9c951cefc1a0ea208b44501c8eca6f53f2b5bb64af9b734a3de614b216ec461f",
+      "bytes": 93641,
+      "sha256": "37f338e229b0640aa91d3dea5f3b3e877f40ffc622cfb4b741b9f70e40c9bc17",
       "role": "full-source"
     },
     {
@@ -12698,8 +12766,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-free-read.ts",
-      "bytes": 14735,
-      "sha256": "b073606b3b601ecd44a7c7e4edda7e56d41d149e573b9d90e8c70780bfd33043",
+      "bytes": 15090,
+      "sha256": "2a94be959a1ed2920af6f48a59d3ccf94da84e03847be2ff9d0c04e885dd3dc8",
       "role": "full-source"
     },
     {
@@ -12710,14 +12778,14 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-lookup.test.ts",
-      "bytes": 36583,
-      "sha256": "dee8b7e7038769658bbe568c9bc89615337f8129fe09a2ea44844b96329025a6",
+      "bytes": 45703,
+      "sha256": "525b905be6a2b5e2c11fbcb2a85b0ebe4ae6bc48b4823078d07bdcb539f87a9e",
       "role": "full-source"
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/rwa-lookup.ts",
-      "bytes": 37155,
-      "sha256": "bf14c75ae067bbc5516a5fb10aea5480363fbd2133fd1343d4317f1342b975e1",
+      "bytes": 44363,
+      "sha256": "c5a63effc5c4c6e4fe2e010d199ec5dfeb2492a23378fdbaa58bbd62bc826889",
       "role": "full-source"
     },
     {
@@ -12730,6 +12798,18 @@
       "file": "production-source/supabase/functions/_shared/intel/schedule-policy.ts",
       "bytes": 19377,
       "sha256": "af693c5cc975156298fb40e13072b2bdce1ba7d6407e6582ce880fb658dc5dfe",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/server-timing.test.ts",
+      "bytes": 1214,
+      "sha256": "db3fe9ee7c9ce0c02295009d7f437ddcd7547e2f97af3aa2bedd97609325ba7a",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/server-timing.ts",
+      "bytes": 2193,
+      "sha256": "f86ffe06e2d1684b8f05af0e3f1b298b4eb397ab787624f03ce007610b03aba4",
       "role": "full-source"
     },
     {
@@ -13178,8 +13258,8 @@
     },
     {
       "file": "production-source/supabase/functions/intel-demo-read/handler.ts",
-      "bytes": 4721,
-      "sha256": "12f6c1987425b3050c413253051207da05f03b11b0dfbf14614da14e43f0f162",
+      "bytes": 5449,
+      "sha256": "5b634d5027121d98e00a7db94f0d233a4cb85481e43c6b39f210bfe5430b999b",
       "role": "full-source"
     },
     {
@@ -13190,8 +13270,8 @@
     },
     {
       "file": "production-source/supabase/functions/intel-demo-snapshot/index.ts",
-      "bytes": 6950,
-      "sha256": "4541156824e1fee22e34e5fcb83f8434644fd2845bb00327ad7c55cb1a4b24f0",
+      "bytes": 7491,
+      "sha256": "767d2c77e0f043cbea2eda665b578499a211801f30b830f292c306aca968ef28",
       "role": "full-source"
     },
     {
@@ -13370,14 +13450,14 @@
     },
     {
       "file": "production-source/supabase/functions/intel-rwa-lookup/handler.ts",
-      "bytes": 6550,
-      "sha256": "bfc853cf68f48433cb57ef13be5f418c242a7cce8b2e8d533eaf2d05c71bf21d",
+      "bytes": 7202,
+      "sha256": "6e2581ffa8ffe71c08d354c571b7fd5852b7bb49414a44c460ddc0a0e2ef77d2",
       "role": "full-source"
     },
     {
       "file": "production-source/supabase/functions/intel-rwa-lookup/index.ts",
-      "bytes": 3258,
-      "sha256": "e8888a794b5e62036b11049d681a38b1533e189ba2df457cae3e4bf0e87c72df",
+      "bytes": 4501,
+      "sha256": "5182bb35d51bbd14dbc10a9782298be1467c056e743976882e132d1d3f99ed9d",
       "role": "full-source"
     },
     {
@@ -14737,6 +14817,24 @@
       "role": "full-source"
     },
     {
+      "file": "production-source/supabase/migrations/20260923220000_intel_rwa_wrapper_accrual_multiplier.sql",
+      "bytes": 7701,
+      "sha256": "056bac7d41f37569772dc9c59e3a6911996afa968dd0fb0bf4ae1a2e9ca38565",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/migrations/20260923221000_intel_demo_snapshot_refresh.sql",
+      "bytes": 3117,
+      "sha256": "e66a2122055d66ba189d3dd05e9d955c6d6dd31bd241d32f599376e092b5179b",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/migrations/20260923224137_intel_rwa_lookup_answers.sql",
+      "bytes": 3206,
+      "sha256": "281e95f4dd65242cd3220e22b9ea5ff98b061b6971bc75035140caae770f0bdd",
+      "role": "full-source"
+    },
+    {
       "file": "production-source/supabase/migrations/206_intel_activate_subscription.sql",
       "bytes": 12760,
       "sha256": "a09ba20e3742cdd8e966e362b61ad019c8c3f2ae71c266484b25d2f1b319cef4",
@@ -14900,28 +14998,33 @@
     },
     {
       "file": "production-source/standalone-tests.txt",
-      "bytes": 4117,
-      "sha256": "fddccedb854b469f4fb0cf7afdddbb70e683bc3b7c7fc82f2a9f8b2ed084ba24"
+      "bytes": 4195,
+      "sha256": "1ac62a52f5beb3edf674a399f52ff75d92786801ce5c0d61a04668856018e54d"
     },
     {
       "file": "production-source/runnable-tests.txt",
-      "bytes": 18871,
-      "sha256": "763ccf86e3dd329177e37b8ab6d710f5790bfe1392115af2ade3a95e2fbac991"
+      "bytes": 19022,
+      "sha256": "ef6c7e97f02dc0974b71d8ada94e59ce98f8504eebd40c3087846ad5c473d9d0"
+    },
+    {
+      "file": "production-source/runnable-vitest-tests.txt",
+      "bytes": 316,
+      "sha256": "181f2472ba227c67f4478157bd78c23b2713f271ebfd4ad03a9058a0a14108e4"
     },
     {
       "file": "production-source/excluded-tests.md",
-      "bytes": 10113,
-      "sha256": "f2e96ca8c4649ff7d0c10afac8f4f3a83e9ba52dfb1d0ee33ac8b01e1b17ddc1"
+      "bytes": 10328,
+      "sha256": "57060f72067575d451c59552847a9d8bcab2d0aecaf19b1da775a405a006969d"
     },
     {
       "file": "test-support/deno.json",
-      "bytes": 2615,
-      "sha256": "aaa697d26d99e68a032e5ff0b440891e4aa5baf4a0d7c8b2484d4491ddf875eb"
+      "bytes": 2892,
+      "sha256": "34355e7781377eb94d71f098598dda096cb5c2e23addf4f31b37e5167aeb49d8"
     },
     {
       "file": "test-support/excluded-tests.json",
-      "bytes": 5087,
-      "sha256": "7d4df768c4238169d9c9d3247cf4ece6ba19bff094e832fa343c5e36802698a2"
+      "bytes": 5394,
+      "sha256": "abdcfca5c85b748dd9b34abc8fa07b2de190fc540727272f97e1225c3cd286fd"
     },
     {
       "file": "test-support/stand-ins/_shared/birdeye-client.ts",
@@ -14945,8 +15048,8 @@
     },
     {
       "file": "test-support/stand-ins/_shared/entity-resolver.ts",
-      "bytes": 654,
-      "sha256": "dded4a789a3c3e16e717a41dccec1607258c4105a0450c374dfd36f850a768b8"
+      "bytes": 980,
+      "sha256": "b86928f9d05f82484817ca5cd76b06b4eef3871d0e88ba7eda7ab95f28e4fce1"
     },
     {
       "file": "test-support/stand-ins/_shared/exchange-market/http.ts",
@@ -15024,9 +15127,34 @@
       "sha256": "49c96d90efe7288fe89483883f37e41d1f78ba94ef3215cf7b8cd1093a04db1e"
     },
     {
+      "file": "test-support/stand-ins/src/lib/profile-context.jsx",
+      "bytes": 794,
+      "sha256": "891e734047f470f1b49fd5c251c6281d676afc168a50d9a52d1e573de7c41911"
+    },
+    {
+      "file": "test-support/stand-ins/src/lib/supabase.js",
+      "bytes": 1170,
+      "sha256": "b29825b1359cd63dbe1bce6ca398fd159cc105592a3623d0b4999c089a8aa5ee"
+    },
+    {
+      "file": "test-support/stand-ins/src/lib/useSupabase.js",
+      "bytes": 784,
+      "sha256": "0ac758dd49b3d4d6dfd21187d867f1f4c69097a5929203a3e36382ffd8c9bacb"
+    },
+    {
       "file": "test-support/stand-ins/unavailable.ts",
       "bytes": 2428,
       "sha256": "5e42366c30f0f257caa8f9f6d9d0ea3f79db4b3c6c7e1ed0ebf64d4c244eb12b"
+    },
+    {
+      "file": "test-support/vitest-offline.mjs",
+      "bytes": 1086,
+      "sha256": "922fa39fbc58ddd1b65395c795f71d1173009c403d1e563d0bc697a75fe4cc70"
+    },
+    {
+      "file": "test-support/vitest.config.mjs",
+      "bytes": 3544,
+      "sha256": "ed0fd3cc9f26bb03d9b30cf21c84d19f0571a45df48bacfa95b7baba16691187"
     }
   ]
 }

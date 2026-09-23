@@ -1,6 +1,7 @@
 import { assert, assertEquals as eq, assertThrows } from 'https://deno.land/std@0.224.0/assert/mod.ts'
 import {
-  buildDemoSnapshot, computeEntry, finalizePlan, scrubBody, PersonalDataError, type DemoRequest,
+  ACTIVE_CHAIN_MS, buildDemoSnapshot, computeEntry, DEMO_SNAPSHOT_SCHEDULE, DEMO_STAGING_PREFIX, finalizePlan, generationId, nextHopBody,
+  scrubBody, PersonalDataError, type BuildOptions, type DemoRequest, type RunResult,
 } from './demo-snapshot-builder.ts'
 import { captureReadEnvelope, CAPTURE_READ_VIEWS, LANE_VIEWS } from './capture-read-envelope.ts'
 import { readCaptureView } from './capture-read.ts'
@@ -282,4 +283,198 @@ Deno.test('a forced rebuild keeps handing on after an earlier run finished the s
   const next = await buildDemoSnapshot(deps, { trigger: 'cron', cursor: 0 })
   eq(next.status, 'complete')
   eq(next.written, 4)
+})
+
+// ─── same-day refresh builds ─────────────────────────────────────────────────
+
+const MORNING = Date.parse('2026-09-23T04:13:00.000Z')
+const EVENING = Date.parse('2026-09-23T21:19:00.000Z')
+
+/** A fake whose run log is appended to, newest first, like the real table. */
+function loggingDb(clock: () => number) {
+  const db = fakeDb({ intel_demo_snapshot_runs: [] })
+  let seq = 0
+  const from = db.from
+  // deno-lint-ignore no-explicit-any
+  ;(db as any).from = (table: string) => {
+    const q = from(table)
+    if (table === 'intel_demo_snapshot_runs') {
+      const insert = q.insert
+      q.insert = (row: Record<string, unknown>) => {
+        db.tables.intel_demo_snapshot_runs.push({ id: String(++seq).padStart(6, '0'), finished_at: new Date(clock()).toISOString(), ...row })
+        return insert(row)
+      }
+    }
+    return q
+  }
+  return db
+}
+
+/** Follows the deployed function's hand-offs (nextHopBody) until the chain ends. */
+async function followChain(deps: Parameters<typeof buildDemoSnapshot>[0], first: BuildOptions, step: Partial<BuildOptions> = {}, each?: (r: RunResult) => void) {
+  let result = await buildDemoSnapshot(deps, first)
+  each?.(result)
+  const seen: RunResult[] = [result]
+  for (let hop = 0; ; hop++) {
+    const next = nextHopBody(result, { cronOk: first.trigger === 'cron', manualCursor: first.cursor != null, hop, maxHops: 300 })
+    if (!next) break
+    result = await buildDemoSnapshot(deps, { trigger: 'cron', cursor: next.cursor as number, generation: (next.generation as string) ?? null, ...step })
+    each?.(result)
+    seen.push(result)
+  }
+  return seen
+}
+
+const servedBodies = (storage: ReturnType<typeof memoryStorage>, date = '2026-09-23') =>
+  [...storage.files.entries()].filter(([p]) => p.startsWith(`snapshots/${date}/`) && !p.endsWith('_plan.json')).map(([, text]) => JSON.parse(text).body.data.rows[0].built)
+const stagingFiles = (storage: ReturnType<typeof memoryStorage>) => [...storage.files.keys()].filter((p) => p.startsWith(`${DEMO_STAGING_PREFIX}/`))
+
+Deno.test('a same-day refresh stages a new generation, the old copy serves until it commits, then latest.json carries the new build time', async () => {
+  let clock = MORNING, label = 'morning'
+  const db = loggingDb(() => clock), storage = memoryStorage()
+  const deps = {
+    db, storage, env, now: () => clock, planner: async () => requests(6),
+    research: async (_c: string, p: Record<string, unknown>) => ({ ...researchBody(p), data: { rows: [{ rwa_id: p.rwa_id, built: label }] } }),
+  }
+  const morning = await followChain(deps, { trigger: 'cron' })
+  eq(morning.at(-1)!.status, 'complete')
+  eq(morning[0].staged, false, "the day's first build writes straight into the unserved day")
+  eq(JSON.parse(storage.files.get(DEMO_LATEST_PATH)!).capturedAt, new Date(MORNING).toISOString())
+  eq(servedBodies(storage), Array(6).fill('morning'))
+
+  // The daily tick again: nothing to do. A refresh tick: a new generation.
+  clock = EVENING; label = 'evening'
+  eq((await buildDemoSnapshot(deps, { trigger: 'cron' })).status, 'already_built')
+  const morningManifest = storage.files.get(DEMO_LATEST_PATH)
+  let commitStarted = false
+  const evening = await followChain(deps, { trigger: 'cron', refresh: true }, { maxEntriesPerRun: 2, maxCommitsPerRun: 2 }, (r) => {
+    eq(r.generation, new Date(EVENING).toISOString())
+    eq(r.staged, true)
+    if (r.status !== 'complete') {
+      // Until the generation is complete, the manifest is the morning's and every
+      // served entry is present: morning, or (once committing) already evening.
+      eq(storage.files.get(DEMO_LATEST_PATH), morningManifest)
+      const bodies = servedBodies(storage)
+      eq(bodies.length, 6)
+      if (r.committed) commitStarted = true
+      if (!commitStarted) eq(bodies, Array(6).fill('morning'), 'computing never touches the served copy')
+    }
+  })
+  assert(commitStarted)
+  eq(evening[0].cursor, 0, 'the planning invocation computes nothing')
+  const last = evening.at(-1)!
+  eq(last.status, 'complete')
+  const latest = JSON.parse(storage.files.get(DEMO_LATEST_PATH)!)
+  eq(latest.date, '2026-09-23')
+  eq(latest.capturedAt, new Date(EVENING).toISOString(), "the banner's built time is the new generation's")
+  eq(latest.keys.length, 6)
+  eq(servedBodies(storage), Array(6).fill('evening'))
+  eq(stagingFiles(storage), [], 'the staging files are removed after the commit')
+  eq(evening.reduce((n, r) => n + r.committed, 0), 6)
+  // Every invocation that did work is logged, and only those.
+  const rows = db.tables.intel_demo_snapshot_runs
+  eq(rows.length, morning.length + evening.length)
+  assert(rows.every((row) => ['complete', 'partial'].includes(String(row.status))))
+})
+
+Deno.test('a refresh tick leaves a build that is still handing on alone, and resumes one that stalled', async () => {
+  let clock = MORNING
+  const db = loggingDb(() => clock), storage = memoryStorage()
+  const deps = { db, storage, env, now: () => clock, planner: async () => requests(4), research: async (_c: string, p: Record<string, unknown>) => researchBody(p) }
+  await followChain(deps, { trigger: 'cron' })
+  clock = EVENING
+  const planned = await buildDemoSnapshot(deps, { trigger: 'cron', refresh: true })
+  eq([planned.status, planned.cursor], ['partial', 0])
+  const rowsBefore = db.tables.intel_demo_snapshot_runs.length
+  clock = EVENING + 2 * 60_000
+  eq((await buildDemoSnapshot(deps, { trigger: 'cron', refresh: true })).status, 'in_progress')
+  eq((await buildDemoSnapshot(deps, { trigger: 'cron' })).status, 'in_progress', 'the daily tick does not fork it either')
+  eq(db.tables.intel_demo_snapshot_runs.length, rowsBefore, 'a tick with nothing to do leaves no row')
+  // Its hand-off never arrived: after ACTIVE_CHAIN_MS a tick picks it up from the stored cursor.
+  clock = EVENING + ACTIVE_CHAIN_MS + 60_000
+  const resumed = await followChain(deps, { trigger: 'cron', refresh: true })
+  eq(resumed[0].generation, planned.generation, 'the same generation, not a new one')
+  eq(resumed.at(-1)!.status, 'complete')
+  eq(JSON.parse(storage.files.get(DEMO_LATEST_PATH)!).capturedAt, planned.generation)
+})
+
+Deno.test('a hand-off from a superseded generation stops without writing, and a manual cursor never hands on', async () => {
+  let clock = MORNING
+  const db = loggingDb(() => clock), storage = memoryStorage()
+  const deps = { db, storage, env, now: () => clock, planner: async () => requests(3), research: async (_c: string, p: Record<string, unknown>) => researchBody(p) }
+  await followChain(deps, { trigger: 'cron' })
+  clock = EVENING
+  const first = await buildDemoSnapshot(deps, { trigger: 'cron', refresh: true })
+  clock = EVENING + 60_000
+  const forced = await buildDemoSnapshot(deps, { trigger: 'super_admin', force: true })
+  assert(forced.generation !== first.generation)
+  const files = storage.files.size, rows = db.tables.intel_demo_snapshot_runs.length
+  const stale = await buildDemoSnapshot(deps, { trigger: 'cron', cursor: 0, generation: first.generation })
+  eq(stale.status, 'superseded')
+  eq([storage.files.size, db.tables.intel_demo_snapshot_runs.length], [files, rows])
+  eq(nextHopBody(stale, { cronOk: true, manualCursor: true, hop: 1, maxHops: 300 }), null)
+
+  const partial: RunResult = { ...stale, status: 'partial', cursor: 30, generation: 'g' }
+  eq(nextHopBody(partial, { cronOk: false, manualCursor: true, hop: 0, maxHops: 300 }), null, 'a super admin stepping by hand drives the next step')
+  eq(nextHopBody(partial, { cronOk: false, manualCursor: false, hop: 0, maxHops: 300 }), { op: 'build', cursor: 30, hop: 1, generation: 'g' })
+  eq(nextHopBody(partial, { cronOk: true, manualCursor: true, hop: 4, maxHops: 300 }), { op: 'build', cursor: 30, hop: 5, generation: 'g' })
+  eq(nextHopBody(partial, { cronOk: true, manualCursor: true, hop: 300, maxHops: 300 }), null)
+  eq(nextHopBody({ ...partial, status: 'complete', cursor: null }, { cronOk: true, manualCursor: false, hop: 0, maxHops: 300 }), null)
+})
+
+Deno.test('a refresh on a day with no build yet is the ordinary build, and an empty manifest is never published', async () => {
+  const clock = EVENING
+  const storage = memoryStorage()
+  await storage.upload(DEMO_LATEST_PATH, JSON.stringify({ date: '2026-09-22', capturedAt: '2026-09-22T21:19:00.000Z', version: 1, keys: ['intel-research.0000000000000000'] }))
+  const yesterday = storage.files.get(DEMO_LATEST_PATH)
+  // Nothing computes: the run fails and yesterday's snapshot keeps serving.
+  const empty = await followChain({ db: loggingDb(() => clock), storage, env, now: () => clock, planner: async () => requests(3), research: async () => null }, { trigger: 'cron', refresh: true })
+  eq(empty.at(-1)!.status, 'failed')
+  eq(empty.at(-1)!.errors.at(-1)!.reason, 'no_entries')
+  eq(storage.files.get(DEMO_LATEST_PATH), yesterday)
+  // With data it builds straight into the unserved day.
+  const built = await followChain({ db: loggingDb(() => clock), storage, env, now: () => clock, planner: async () => requests(3), research: async (_c: string, p: Record<string, unknown>) => researchBody(p) }, { trigger: 'cron', refresh: true })
+  eq(built[0].staged, false)
+  eq(built.at(-1)!.status, 'complete')
+  eq(JSON.parse(storage.files.get(DEMO_LATEST_PATH)!).date, '2026-09-23')
+  eq(stagingFiles(storage), [])
+})
+
+Deno.test('a refresh that reads less keeps the served pages it did not rebuild', async () => {
+  let clock = MORNING, n = 5
+  const db = loggingDb(() => clock), storage = memoryStorage()
+  const deps = { db, storage, env, now: () => clock, planner: async () => requests(n), research: async (_c: string, p: Record<string, unknown>) => researchBody(p) }
+  await followChain(deps, { trigger: 'cron' })
+  clock = EVENING; n = 2
+  const evening = await followChain(deps, { trigger: 'cron', refresh: true })
+  eq(evening.at(-1)!.status, 'complete')
+  const latest = JSON.parse(storage.files.get(DEMO_LATEST_PATH)!)
+  eq(latest.keys.length, 5, 'the three pages the evening plan left out still resolve')
+  eq(latest.capturedAt, new Date(EVENING).toISOString())
+})
+
+Deno.test("the cron jobs the migrations schedule are the ones this module names, with the daily job's authentication", async () => {
+  const wrappers = await Deno.readTextFile(new URL('../../../migrations/20260920150000_intel_rwa_wrapper_spread.sql', import.meta.url))
+  const auth = "headers := jsonb_build_object('Content-Type','application/json','Authorization', concat('Bearer ', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'SUPABASE_SERVICE_ROLE_KEY')), 'x-cron-secret', (SELECT decrypted_secret FROM vault.decrypted_secrets WHERE name = 'CRON_SECRET'))"
+  for (const schedule of Object.values(DEMO_SNAPSHOT_SCHEDULE)) {
+    const migration = await Deno.readTextFile(new URL(`../../../migrations/${schedule.migration}`, import.meta.url))
+    assert(migration.includes(`cron.schedule('${schedule.job}', '${schedule.cron}'`), `${schedule.migration} schedules ${schedule.job}`)
+    assert(migration.includes(`SELECT cron.unschedule('${schedule.job}') WHERE EXISTS (SELECT 1 FROM cron.job WHERE jobname = '${schedule.job}');`), 'unscheduled by name first')
+    assert(migration.includes("'/functions/v1/intel-demo-snapshot'"))
+    assert(migration.includes(auth), 'the same vault-secret authentication')
+    const body = Object.entries(schedule.body).map(([k, v]) => `'${k}',${typeof v === 'string' ? `'${v}'` : v}`).join(',')
+    assert(migration.includes(`body    := jsonb_build_object(${body})`), `${schedule.job} posts ${body}`)
+  }
+  // The refresh runs in the hour after the 14:47 and 20:47 wrapper captures.
+  const wrapperCron = /cron\.schedule\('intel-capture-rwa-wrappers-6h', '(\d+) ([\d,]+) \* \* \*'/.exec(wrappers)!
+  const [minute, hours] = DEMO_SNAPSHOT_SCHEDULE.refresh.cron.split(' ')
+  eq(hours.split(',').map((h) => Number(h) - 1), [14, 20])
+  for (const h of ['14', '20']) assert(wrapperCron[2].split(',').includes(h))
+  assert(Number(minute) !== Number(wrapperCron[1]))
+  assert(DEMO_SNAPSHOT_SCHEDULE.daily.cron.split(' ')[0] !== minute, 'distinct from the daily build minute')
+})
+
+Deno.test('a generation id is the plan time, file-safe and ordered', () => {
+  eq(generationId('2026-09-23T21:19:00.000Z'), '20260923T211900000Z')
+  assert(generationId('2026-09-23T15:19:00.000Z') < generationId('2026-09-23T21:19:00.000Z'))
 })

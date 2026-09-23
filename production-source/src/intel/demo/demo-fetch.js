@@ -252,6 +252,22 @@ const SCREEN_FIELDS = ['provider', 'sort', 'dir', 'chain', 'search', 'category',
  * same check, and the endpoint is asked at most once per view in that time. */
 export const CAPTURE_CHECK_TTL_MS = 120_000
 
+/** How long a read that HAS a snapshot copy waits for a newer answer before the
+ * copy is served. The copy is dated and complete, so a visitor never watches a
+ * spinner because the newer read is slow (under load on 23 Sep one took 15 s).
+ * The newer answer is still taken when it lands: it is kept in memory and the
+ * next read of the same thing is answered with it. */
+export const FRESHER_WAIT_MS = 1_500
+
+/** The value of `promise` if it settles within `ms`, else null. Never rejects. */
+export function within(promise, ms) {
+  let timer
+  return Promise.race([
+    Promise.resolve(promise).catch(() => null),
+    new Promise((resolve) => { timer = setTimeout(() => resolve(null), ms) }),
+  ]).finally(() => clearTimeout(timer))
+}
+
 /**
  * The intel-demo-read body that reads a snapshotted capture view again from the
  * capture tables, or null when the view is not one the demo refreshes. A shared
@@ -368,7 +384,7 @@ function embedsOf(select) {
  *   reader       { manifest(), entry(key) } from createSnapshotReader
  *   store        createDemoStore()
  */
-export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now = () => Date.now(), forwardPublic = null }) {
+export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now = () => Date.now(), forwardPublic = null, fresherWaitMs = FRESHER_WAIT_MS }) {
   const base = String(supabaseUrl || '').replace(/\/+$/, '')
   const miss = (detail) => { try { onMiss?.(detail) } catch { /* diagnostics only */ } }
   // Catalogue identities the asset page's detail reads resolved, by every key
@@ -390,11 +406,13 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     }
   }
   // A visitor's search, answered by the public read endpoint. Null when the
-  // endpoint cannot be reached, so the caller keeps its old answer.
-  async function forwardRead(forwarded) {
+  // endpoint cannot be reached, so the caller keeps its old answer. The page's
+  // own abort signal rides along, so a search the page has left (the Markets
+  // screen after a suggestion is opened) is cancelled rather than left running.
+  async function forwardRead(forwarded, signal = null) {
     if (typeof forwardPublic !== 'function' || !forwarded) return null
     try {
-      const response = await forwardPublic(forwarded, DEMO_READ_FUNCTION)
+      const response = await forwardPublic(forwarded, DEMO_READ_FUNCTION, signal ? { signal } : undefined)
       if (!response || typeof response.status !== 'number') return null
       if (forwarded.read === 'detail' && forwarded.mode === 'full' && response.ok) {
         try { remember(await response.clone().json()) } catch { /* the page still gets its answer */ }
@@ -412,18 +430,37 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
   }
   // The shared copy for a snapshot copy past its window, or null to keep the
   // snapshot copy: when the endpoint cannot be reached, answers no usable body,
-  // or answers one older than the copy already held.
-  async function fresherResearch(name, body, stored) {
+  // answers one older than the copy already held, or has not answered within
+  // fresherWaitMs. A newer answer that lands after that is kept (newerResearch)
+  // and answers the next read of the same key; one endpoint read per key is in
+  // flight at a time.
+  const newerResearch = new Map()
+  const researchChecks = new Map()
+  function checkResearch(key, body, stored) {
+    const held = researchChecks.get(key)
+    if (held) return held
+    const check = (async () => {
+      let response
+      try { response = await forwardPublic(researchBody(body), DEMO_LIVE_FUNCTION) } catch { return null }
+      if (!response || !response.ok) return null
+      let answer
+      try { answer = await response.json() } catch { return null }
+      if (!USABLE_STATES.includes(answer?.state)) return null
+      if (USABLE_STATES.includes(stored?.state) && fetchedMs(answer) < fetchedMs(stored)) return null
+      newerResearch.set(key, answer)
+      return answer
+    })().finally(() => researchChecks.delete(key))
+    researchChecks.set(key, check)
+    return check
+  }
+  async function fresherResearch(name, body, stored, key) {
     if (name !== 'intel-research' || typeof forwardPublic !== 'function' || !DEMO_FORWARDED_RESEARCH.has(body?.capability)) return null
+    // A newer answer an earlier read brought back, still inside its window.
+    const kept = newerResearch.get(key)
+    if (kept && !researchCopyPastWindow(kept, now())) return respond(kept)
     if (!researchCopyPastWindow(stored, now())) return null
-    let response
-    try { response = await forwardPublic(researchBody(body), DEMO_LIVE_FUNCTION) } catch { return null }
-    if (!response || !response.ok) return null
-    let answer
-    try { answer = await response.clone().json() } catch { return null }
-    if (!USABLE_STATES.includes(answer?.state)) return null
-    if (USABLE_STATES.includes(stored?.state) && fetchedMs(answer) < fetchedMs(stored)) return null
-    return response
+    const answer = await within(checkResearch(key, body, stored), fresherWaitMs)
+    return answer ? respond(answer) : (kept ? respond(kept) : null)
   }
 
   // A snapshotted stored read past its lane's cadence (a capture view, or the
@@ -444,7 +481,9 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
       })()
       storedChecks.set(key, { at: now(), check })
     }
-    const fresh = await storedChecks.get(key).check
+    // A slow check never holds the page: the snapshot copy answers after
+    // fresherWaitMs, and the check, still running, answers the next read.
+    const fresh = await within(storedChecks.get(key).check, fresherWaitMs)
     return fresh ? respond(fresh) : null
   }
   async function fresherCapture(name, body, key, entry) {
@@ -476,7 +515,7 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     let entry = null
     try { entry = reader ? await reader.entry(key) : null } catch { entry = null }
     if (entry && entry.body !== undefined) {
-      const fresher = await fresherResearch(name, body, entry.body) || await fresherCapture(name, body, key, entry)
+      const fresher = await fresherResearch(name, body, entry.body, key) || await fresherCapture(name, body, key, entry)
       if (fresher) return fresher
       return respond(entry.body, Number(entry.status) || 200)
     }
@@ -492,11 +531,12 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     // endpoint answers it as a free member gets it. Only capability, params and
     // readMode cross; orgId and the visitor's token do not.
     if (name === 'intel-research' && typeof forwardPublic === 'function' && DEMO_FORWARDED_RESEARCH.has(body?.capability)) {
-      try { return await forwardPublic(researchBody(body), DEMO_LIVE_FUNCTION) } catch { return respond(researchMissBody(body.capability)) }
+      const signal = init?.signal || null
+      try { return await forwardPublic(researchBody(body), DEMO_LIVE_FUNCTION, signal ? { signal } : undefined) } catch { return respond(researchMissBody(body.capability)) }
     }
     // A visitor's own search, or the asset it opened: the public read endpoint
     // answers it for a tracked asset and refuses anything else, calmly.
-    const searched = await forwardRead(demoReadFor(name, body, { identityFor }))
+    const searched = await forwardRead(demoReadFor(name, body, { identityFor }), init?.signal || null)
     if (searched) return searched
     miss({ kind: 'function', name, body })
     if (name === 'intel-research') return respond(researchMissBody(body?.capability))

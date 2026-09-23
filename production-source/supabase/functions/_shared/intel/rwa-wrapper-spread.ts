@@ -47,6 +47,13 @@
 //      gap with its own state and is never called a premium, and the token is
 //      kept out of the anchor and out of the cheapest route.
 //
+//      The same guard covers a tokenised STOCK that reinvests its dividends into
+//      its price (Ondo Global Markets, wrapped xStocks). Where the issuer
+//      publishes that token's multiplier on chain, the caller passes it in
+//      (`options.accrual`, from `accrual-multiplier.ts`) and the price is divided
+//      by it first, so the premium is like-for-like; where it does not, the
+//      wrapper takes the accrual state above instead of a premium.
+//
 // Pure. No database, no network, no clock of its own: every time value is passed
 // in. Field names are read from the shapes the provider actually returns (see
 // `rwa-wrapper-spread.test.ts`, whose fixtures are built from the live
@@ -406,6 +413,32 @@ export interface NavAnchorInput {
   currency: string | null
 }
 
+/** How a wrapper that reinvests dividends INTO ITS PRICE is treated
+ * (`accrual-multiplier.ts`). 'adjusted' means its price was divided by the
+ * issuer's own published multiplier before any comparison; 'not_adjusted' means
+ * no sourced multiplier applied, so the wrapper is an accrual, not a premium. */
+export const ACCRUAL_TREATMENTS = ['adjusted', 'not_adjusted'] as const
+export type AccrualTreatment = typeof ACCRUAL_TREATMENTS[number]
+
+export interface AccrualVerdict {
+  treatment: AccrualTreatment
+  /** Which issuer rule found it (`reinvestingClass`). */
+  reinvestingClass: string
+  /** Why the price was not adjusted. Null when adjusted. */
+  reason: string | null
+  /** Shares of the underlying per token, in effect when the wrapper prices were
+   * observed. Only ever set on 'adjusted': a multiplier that did not apply is
+   * never carried, so it cannot be read as one that did. */
+  multiplier: number | null
+  source: string | null
+  /** The multiplier's own on-chain effective time. Null when the chain records
+   * none (a multiplier never updated since the token was created). */
+  asOf: string | null
+  network: string | null
+  address: string | null
+  readAt: string | null
+}
+
 export interface WrapperRow {
   cryptoId: string
   symbol: string | null
@@ -413,6 +446,8 @@ export interface WrapperRow {
   issuerId: string | null
   issuerName: string | null
   price: number | null
+  /** The wrapper's own price in the asset's unit (troy ounce, gram or share).
+   * Never divided by a dividend multiplier: that is `adjustedPrice`. */
   normalisedPrice: number | null
   marketCap: number | null
   volume24h: number | null
@@ -421,12 +456,34 @@ export interface WrapperRow {
   state: WrapperState
   /** Non-null only where the state admits a premium. An accruing wrapper carries
    * `accrualGapBps` instead, so nothing downstream can render an accrual as a
-   * premium by reading the wrong field. */
+   * premium by reading the wrong field. For an adjusted wrapper this is the
+   * premium of its PER-SHARE price. */
   premiumBps: number | null
   accrualGapBps: number | null
   /** Whether this wrapper contributed to the anchor. */
   inAnchor: boolean
   reason: string | null
+  /** Set only on a wrapper that reinvests dividends into its price. */
+  accrualTreatment: AccrualTreatment | null
+  accrualReason: string | null
+  accrualMultiplier: number | null
+  accrualSource: string | null
+  accrualAsOf: string | null
+  accrualNetwork: string | null
+  accrualAddress: string | null
+  accrualReadAt: string | null
+  /** `normalisedPrice` divided by the multiplier: the price of one share's worth
+   * of this wrapper. Only on 'adjusted'. */
+  adjustedPrice: number | null
+  /** The premium of the UNADJUSTED price, kept beside the adjusted one so the
+   * adjustment is always visible. Only on 'adjusted'. */
+  rawPremiumBps: number | null
+}
+
+/** The price a wrapper is compared at: its per-share price where a dividend
+ * multiplier was applied, its unit-normalised price otherwise. */
+export function comparablePrice(row: Pick<WrapperRow, 'accrualTreatment' | 'adjustedPrice' | 'normalisedPrice'>): number | null {
+  return row.accrualTreatment === 'adjusted' ? row.adjustedPrice : row.normalisedPrice
 }
 
 export interface WrapperSpread {
@@ -466,6 +523,8 @@ export interface WrapperSpread {
   observedAt: string | null
   weightDenominated: boolean
   accrualCount: number
+  /** Wrappers whose price was divided by a published dividend multiplier. */
+  accrualAdjustedCount: number
   unitNormalisedCount: number
   unitRefusedCount: number
   tokens: WrapperRow[]
@@ -508,25 +567,58 @@ export function navAnchorUsable(
 /** The whole calculation for ONE underlying asset.
  *
  * Order matters and is the point of the function:
- *   1. the peer reference, from the raw prices;
+ *   1. the per-share price of a wrapper that reinvests dividends into its price
+ *      and has a sourced multiplier (`options.accrual`), then the peer
+ *      reference from those prices;
  *   2. the unit guard per wrapper, which may rescale or exclude it;
  *   3. the accrual guard, which removes a wrapper from the premium question
- *      entirely rather than answering it wrongly;
+ *      entirely rather than answering it wrongly: a register fund token, or a
+ *      dividend-reinvesting wrapper with no sourced multiplier;
  *   4. the liquidity gate, which decides anchor membership only;
  *   5. the anchor;
- *   6. the premium of every priced wrapper against it, thin ones included. */
+ *   6. the premium of every priced wrapper against it, thin ones included.
+ *
+ * THE ANCHOR AND A DIVIDEND-REINVESTING WRAPPER, decided 2026-09-23. An ADJUSTED
+ * wrapper is compared at its per-share price everywhere, including as an anchor
+ * member: that price is like-for-like with every wrapper that pays dividends out,
+ * and leaving a deep, adjusted wrapper out would shrink the anchor for no reason.
+ * An UNADJUSTED one never anchors, exactly like a register fund token: its price
+ * is a share plus accumulated dividends, and letting it in would lift the median
+ * by the very amount the adjustment exists to remove. On the 2026-09-23 20:00
+ * capture this moved four anchors, each one where the raw Ondo price had been
+ * the volume-weighted median itself: ASML -53.1 bp, LLY -43.9, MSFT -42.8 and
+ * MRVL -14.8. Every other anchor, SPY and NVDA included, stayed where it was
+ * (see `rwa-wrapper-spread.test.ts` for both cases). */
 export function wrapperSpread(
   asset: WrapperAssetInput,
-  options: { nav?: NavAnchorInput | null; liquidityFloorUsd?: number } = {},
+  options: { nav?: NavAnchorInput | null; liquidityFloorUsd?: number; accrual?: Map<string, AccrualVerdict> | null } = {},
 ): WrapperSpread {
   const floor = Number.isFinite(Number(options.liquidityFloorUsd)) && Number(options.liquidityFloorUsd) >= 0
     ? Number(options.liquidityFloorUsd) : LIQUIDITY_FLOOR_USD
   const weightDenominated = WEIGHT_DENOMINATED_SYMBOLS.has(String(asset.symbol ?? '').toUpperCase())
-  const reference = median(asset.tokens.map((t) => t.price).filter((v): v is number => v != null))
+  const verdictOf = (token: WrapperTokenInput): AccrualVerdict | null => (token.cryptoId ? options.accrual?.get(token.cryptoId) ?? null : null)
+  /** The multiplier to divide by, only where one was sourced and it is usable. */
+  const divisorOf = (verdict: AccrualVerdict | null): number | null =>
+    verdict?.treatment === 'adjusted' && verdict.multiplier != null && Number.isFinite(verdict.multiplier) && verdict.multiplier > 0
+      ? verdict.multiplier : null
+  // The peer reference is taken over per-share prices, so a large but sourced
+  // multiplier (a split applied through it) cannot fail the unit guard.
+  const reference = median(asset.tokens.map((t) => {
+    const m = divisorOf(verdictOf(t))
+    return t.price == null ? null : m ? t.price / m : t.price
+  }).filter((v): v is number => v != null))
 
   // 1-4. Classify every wrapper.
   const rows: WrapperRow[] = asset.tokens.map((token) => {
-    const unit = unitVerdict(token.price, reference, { weightDenominated })
+    const verdict = verdictOf(token)
+    const divisor = divisorOf(verdict)
+    const unit = unitVerdict(token.price != null && divisor ? token.price / divisor : token.price, reference, { weightDenominated })
+    // The wrapper's OWN price in the asset's unit stays what it always was; the
+    // per-share figure is carried separately so both are always on the row.
+    const normalisedPrice = !divisor ? unit.normalisedPrice
+      : unit.normalisedPrice == null || unit.factor == null || token.price == null ? null
+      : unit.factor === 1 ? token.price : token.price * unit.factor
+    const adjustedPrice = divisor ? unit.normalisedPrice : null
     const accrual = accrualVerdict(token.cryptoId, token.name)
     let state: WrapperState
     let reason: string | null = null
@@ -534,24 +626,35 @@ export function wrapperSpread(
     else if (unit.state === 'not_established') { state = 'unit_not_established'; reason = unit.reason }
     else if (isDerivativeReference(token)) { state = 'derivative_reference'; reason = 'derivative_not_a_wrapper' }
     else if (accrual.accruing) { state = 'accrues_in_price'; reason = 'accrues_in_price' }
+    else if (verdict?.treatment === 'not_adjusted') { state = 'accrues_in_price'; reason = 'reinvested_dividends_not_adjusted' }
     else if (token.volume24h == null) { state = 'volume_not_reported'; reason = 'volume_not_reported' }
     else if (token.volume24h < floor) { state = 'too_thin_to_anchor'; reason = 'below_volume_floor' }
     else { state = 'liquid' }
+    const adjusted = verdict?.treatment === 'adjusted'
     return {
       cryptoId: token.cryptoId!, symbol: token.symbol, name: token.name,
       issuerId: token.issuerId, issuerName: token.issuerName,
-      price: token.price, normalisedPrice: unit.normalisedPrice,
+      price: token.price, normalisedPrice,
       marketCap: token.marketCap, volume24h: token.volume24h,
       unitState: unit.state, unitFactor: unit.factor,
       state, premiumBps: null, accrualGapBps: null, inAnchor: false,
       reason: reason ?? accrual.reason,
+      accrualTreatment: verdict?.treatment ?? null,
+      accrualReason: verdict && !adjusted ? verdict.reason || 'no_multiplier_source' : null,
+      accrualMultiplier: adjusted ? verdict!.multiplier : null,
+      accrualSource: adjusted ? verdict!.source : null,
+      accrualAsOf: adjusted ? verdict!.asOf : null,
+      accrualNetwork: verdict?.network ?? null,
+      accrualAddress: verdict?.address ?? null,
+      accrualReadAt: verdict?.readAt ?? null,
+      adjustedPrice, rawPremiumBps: null,
     }
   }).filter((row) => !!row.cryptoId)
 
   // 5. The anchor. A published NAV wins where one is mapped, proved and fresh.
   const navCheck = navAnchorUsable(asset, options.nav ?? null)
-  const members = rows.filter((row) => row.state === 'liquid' && row.normalisedPrice != null)
-  const weighted = volumeWeightedMedian(members.map((row) => ({ price: row.normalisedPrice!, weight: row.volume24h ?? 0 })))
+  const members = rows.filter((row) => row.state === 'liquid' && comparablePrice(row) != null)
+  const weighted = volumeWeightedMedian(members.map((row) => ({ price: comparablePrice(row)!, weight: row.volume24h ?? 0 })))
   let anchorKind: AnchorKind = 'none'
   let anchorPrice: number | null = null
   let anchorFeedKey: string | null = null
@@ -580,11 +683,16 @@ export function wrapperSpread(
   //    wrapper gets an accrual gap and never a premium.
   if (anchorPrice != null && anchorPrice > 0) {
     for (const row of rows) {
-      if (row.normalisedPrice == null) continue
-      const gap = bps(row.normalisedPrice, anchorPrice)
+      const price = comparablePrice(row)
+      if (price == null) continue
+      const gap = bps(price, anchorPrice)
       if (gap == null) continue
       if (row.state === 'accrues_in_price') row.accrualGapBps = gap
-      else row.premiumBps = gap
+      else {
+        row.premiumBps = gap
+        // The unadjusted figure, beside the adjusted one, never instead of it.
+        if (row.accrualTreatment === 'adjusted' && row.normalisedPrice != null) row.rawPremiumBps = bps(row.normalisedPrice, anchorPrice)
+      }
     }
   }
 
@@ -598,13 +706,13 @@ export function wrapperSpread(
   const cheapestLiquid = premiums.filter((row) => row.state === 'liquid')
     .reduce<WrapperRow | null>((best, row) => (best == null || row.premiumBps! < best.premiumBps! ? row : best), null)
 
-  const memberPrices = members.map((row) => row.normalisedPrice!)
+  const memberPrices = members.map((row) => comparablePrice(row)!)
   const dispersionBps = anchorPrice != null && anchorPrice > 0 && memberPrices.length >= ANCHOR_MIN_LIQUID
     ? ((Math.max(...memberPrices) - Math.min(...memberPrices)) / anchorPrice) * 10_000
     : null
   const weightBase = members.reduce((sum, row) => sum + (row.volume24h ?? 0), 0)
   const weightedSpreadBps = anchorPrice != null && anchorPrice > 0 && weightBase > 0
-    ? members.reduce((sum, row) => sum + (row.volume24h ?? 0) * Math.abs(bps(row.normalisedPrice!, anchorPrice) ?? 0), 0) / weightBase
+    ? members.reduce((sum, row) => sum + (row.volume24h ?? 0) * Math.abs(bps(comparablePrice(row)!, anchorPrice) ?? 0), 0) / weightBase
     : null
 
   const reportedCaps = rows.map((row) => row.marketCap).filter((v): v is number => v != null)
@@ -635,6 +743,7 @@ export function wrapperSpread(
     observedAt: asset.observedAt,
     weightDenominated,
     accrualCount: rows.filter((row) => row.state === 'accrues_in_price').length,
+    accrualAdjustedCount: rows.filter((row) => row.accrualTreatment === 'adjusted' && row.adjustedPrice != null).length,
     unitNormalisedCount: rows.filter((row) => row.unitState === 'normalised_troy_ounce' || row.unitState === 'normalised_gram').length,
     unitRefusedCount: rows.filter((row) => row.unitState === 'not_established').length,
     tokens: rows,

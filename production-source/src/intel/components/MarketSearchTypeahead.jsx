@@ -35,6 +35,9 @@ const SYNC_MS = 250
 const MIN_LENGTH = 2
 const CACHE_LIMIT = 24
 const CACHE_MS = 30_000
+// How long a suggestion stays highlighted before onPreview is told about it: a
+// pause on a row, not every row the arrow keys pass over.
+export const PREVIEW_MS = 250
 
 /** The project name, else the ticker. A contract no metadata source has named
  *  has neither, and is said to be unnamed rather than labelled with its own
@@ -53,7 +56,7 @@ export function suggestionIdentity(row) {
   return [row?.symbol, row?.chain, `${row?.sourceProvider} ${row?.providerId}`].filter(Boolean).join(' · ')
 }
 
-export default function MarketSearchTypeahead({ value, onChange, onOpen, suggest, disabled = false, label, placeholder }) {
+export default function MarketSearchTypeahead({ value, onChange, onOpen, onPreview = null, suggest, disabled = false, label, placeholder }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const money = useDisplayCurrency()
   const id = useId()
@@ -110,6 +113,18 @@ export default function MarketSearchTypeahead({ value, onChange, onOpen, suggest
   const failed = state?.query === query ? state.error || null : null
   const open = focused && !dismissed && query.length >= MIN_LENGTH && (rows.length > 0 || pending || !!failed)
   const index = Math.min(active, Math.max(0, rows.length - 1))
+
+  // The highlighted row, handed to onPreview once it has stayed highlighted for
+  // PREVIEW_MS, so the page can start reading what Enter would open.
+  const previewRow = open && rows.length ? rows[index] : null
+  const previewRef = useRef(previewRow)
+  previewRef.current = previewRow
+  const previewKey = previewRow?.href || null
+  useEffect(() => {
+    if (!onPreview || !previewKey) return undefined
+    const timer = setTimeout(() => { if (previewRef.current?.href === previewKey) onPreview(previewRef.current) }, PREVIEW_MS)
+    return () => clearTimeout(timer)
+  }, [onPreview, previewKey])
 
   useEffect(() => { setDismissed(false); setActive(0) }, [query])
 

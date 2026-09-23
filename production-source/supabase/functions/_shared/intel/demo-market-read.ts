@@ -387,16 +387,24 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
   if (resolved.error) return { status: 503, body: { error: 'identity_unavailable' } }
   if (!resolved.data) return { status: 404, body: { error: 'asset_not_found', symbol: sym } }
   const cmcId = marketCmcIdentity(resolved.data)
-  const [cmc, tape] = cmcId && !input.candlesOnly
-    ? await Promise.all([cacheOnlyResolveCmc(db, cmcId), readQuoteTape(db, cmcId)])
-    : [null, null]
-  const read = demoQuoteRead(resolved.data, cmc?.data, cmc?.receipts || [], tape)
-  const quote = read.quote
-  // A cache read that answered nothing is no reason when a stored price did.
-  const quoteReason = read.priceSource === 'quote_tape' || read.priceSource === 'catalogue' ? null : cmc?.error || resolved.data.quote_reason || null
-  const quoteRead = { receipts: read.receipts, figureProvenance: read.figureProvenance }
-  const priceRead = { priceSource: read.priceSource, figuresAsOf: read.figuresAsOf }
-  if (input.quotesOnly) return { status: 200, body: { ...quote, sourceProvider: resolved.data.source_provider, providerId: resolved.data.provider_id, quoteReason, quoteReceipts: quoteRead.receipts, quoteProvenance: quoteRead.figureProvenance, ...priceRead } }
+  // The quote: the shared CoinMarketCap cache and the stored quote tape. Started
+  // here and awaited only where its answer is needed, so the full read below
+  // runs every read that does not depend on it at the same time (the detail read
+  // was about ten database round trips one after another; under load that was
+  // the 9 to 15 seconds a visitor watched "Loading asset observations").
+  const quoteP = (async () => {
+    const [cmc, tape] = cmcId && !input.candlesOnly
+      ? await Promise.all([cacheOnlyResolveCmc(db, cmcId), readQuoteTape(db, cmcId)])
+      : [null, null]
+    const read = demoQuoteRead(resolved.data, cmc?.data, cmc?.receipts || [], tape)
+    // A cache read that answered nothing is no reason when a stored price did.
+    const quoteReason = read.priceSource === 'quote_tape' || read.priceSource === 'catalogue' ? null : cmc?.error || resolved.data.quote_reason || null
+    return { read, quoteReason }
+  })()
+  if (input.quotesOnly) {
+    const { read, quoteReason } = await quoteP
+    return { status: 200, body: { ...read.quote, sourceProvider: resolved.data.source_provider, providerId: resolved.data.provider_id, quoteReason, quoteReceipts: read.receipts, quoteProvenance: read.figureProvenance, priceSource: read.priceSource, figuresAsOf: read.figuresAsOf } }
+  }
   sym = String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
   const verifiedIdentity = async (): Promise<boolean> => {
     const [identityProfile, identityMapping, claimants] = await Promise.all([
@@ -412,8 +420,36 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
     const c = await demoAssetCandles(db, resolved.data, verifiedIdentity, timeframe, interval, lookback)
     return { status: 200, body: withSeries({ ...c, timeframe, lookbackBars: lookback, chartAsset: marketCanonicalIdentity(resolved.data).canonicalAssetKey || `market:${resolved.data.source_provider}:${resolved.data.provider_id}` }) }
   }
-  const cexVerified = await verifiedIdentity()
-  const [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR] = await Promise.all([
+  // Everything the full read needs, started together. The exchange identity
+  // check, the nine exchange reads, the candles, the DEX snapshot, the four
+  // enrichment assemblies and the metric agreement depend on the resolved asset
+  // only (the enrichments also on the quote's chain), never on each other, so
+  // none of them waits for another. The same reads as before, and the same body.
+  const canonical = resolved.data
+  const verifiedP = verifiedIdentity()
+  const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null
+  const dexP = latestDexSnapshotForPlatforms(db, canonicalPlatforms)
+  const chartP = demoAssetCandles(db, canonical, () => verifiedP, timeframe, interval, lookback)
+  const enrichP = Promise.all([quoteP, dexP]).then(([{ read }, dexSnapshot]) => {
+    const ecoChain = read.quote.chain
+    const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
+    const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : canonical?.contract?.address ? String(canonical.contract.address) : null
+    return Promise.all([
+      assembleEcosystemNarrativeState(db, { chain: ecoChain, symbol: sym }),
+      assembleCatalystNewsState(db, { symbol: sym, chain: ecoChain }),
+      // The Birdeye cache only: allowLive false never makes the budgeted live call.
+      assemblePublicOnchainState({
+        chain: onchainChain, tokenAddress: onchainAddress, allowLive: false, nowIso: new Date().toISOString(),
+        birdeyeCtx: { supabase: db, jobName: DEMO_READ_CALLER, caller: DEMO_READ_CALLER, kind: 'render' } as Any,
+      }),
+      assembleTokenUnlockState(db, { symbol: sym, nowMs: Date.now(), allowLive: false }),
+    ])
+  })
+  // Additive: an unreadable agreement is no agreement, never a failed read.
+  const metricP = cmcId
+    ? readMetricAgreement(db, `market:coinmarketcap:${cmcId}`, Date.now()).then(metricAgreementReceipt).catch(() => null)
+    : Promise.resolve(null)
+  const readsP = Promise.all([
     db.from('exchange_latest_asset_profiles').select('*').eq('normalized_symbol', sym).maybeSingle(),
     db.from('exchange_latest_market_signals').select('*').eq('normalized_symbol', sym).maybeSingle(),
     db.from('exchange_latest_market_caps').select('*').eq('normalized_symbol', sym).maybeSingle(),
@@ -424,8 +460,12 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
     db.from('exchange_latest_orderbook').select('*').eq('normalized_symbol', sym).order('as_of', { ascending: false }).limit(8),
     db.from('exchange_market_memory').select('summary, why_it_matters, memory_type, as_of').eq('normalized_symbol', sym).eq('is_active', true).order('as_of', { ascending: false }).limit(1),
   ])
+  const [cexVerified, [profR, sigR, capR, sprR, rollR, tickR, provSigR, bookR, memR], { read, quoteReason }, chart, dexSnapshot, [ecosystemNarratives, catalystRead, onchain, unlocks], metricAgreement] =
+    await Promise.all([verifiedP, readsP, quoteP, chartP, dexP, enrichP, metricP])
+  const quote = read.quote
+  const quoteRead = { receipts: read.receipts, figureProvenance: read.figureProvenance }
+  const priceRead = { priceSource: read.priceSource, figuresAsOf: read.figuresAsOf }
   if (!cexVerified) { for (const result of [profR, sigR, capR, sprR]) result.data = null; for (const result of [rollR, tickR, provSigR, bookR, memR]) result.data = [] }
-  const canonical = resolved.data
 
   const provSig = new Map<string, Any>()
   for (const s of (provSigR.data || [])) if (!provSig.has(s.provider)) provSig.set(s.provider, s)
@@ -449,26 +489,10 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
 
   const rollups: Record<string, Any> = {}
   for (const r of (rollR.data || [])) rollups[r.timeframe] = r
-  const chart = await demoAssetCandles(db, canonical, cexVerified, timeframe, interval, lookback)
   const { candles, bestPair, bestProvider } = chart
   const prof = profR.data, sig = sigR.data
-  const canonicalPlatforms = canonical?.platforms && typeof canonical.platforms === 'object' ? canonical.platforms as Record<string, unknown> : null
-  const dexSnapshot = await latestDexSnapshotForPlatforms(db, canonicalPlatforms)
   const dex = dexSnapshot ? dexEnrichment(dexSnapshot, String(dexSnapshot.chain || '')) : null
 
-  const ecoChain = quote.chain
-  const onchainChain = String(dexSnapshot?.chain || ecoChain || '').toLowerCase() || null
-  const onchainAddress = dexSnapshot?.token_address ? String(dexSnapshot.token_address) : canonical?.contract?.address ? String(canonical.contract.address) : null
-  const [ecosystemNarratives, catalystRead, onchain, unlocks] = await Promise.all([
-    assembleEcosystemNarrativeState(db, { chain: ecoChain, symbol: sym }),
-    assembleCatalystNewsState(db, { symbol: sym, chain: ecoChain }),
-    // Birdeye's cache only: allowLive false never makes the budgeted live call.
-    assemblePublicOnchainState({
-      chain: onchainChain, tokenAddress: onchainAddress, allowLive: false, nowIso: new Date().toISOString(),
-      birdeyeCtx: { supabase: db, jobName: DEMO_READ_CALLER, caller: DEMO_READ_CALLER, kind: 'render' } as Any,
-    }),
-    assembleTokenUnlockState(db, { symbol: sym, nowMs: Date.now(), allowLive: false }),
-  ])
   const catalysts = { ...catalystRead, curated_news: curatedNewsWithEnvelopes(catalystRead.curated_news) }
 
   const payload: Any = {
@@ -492,8 +516,6 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
     quoteAttribution: canonical?.attribution_label ? String(canonical.attribution_label) : null,
   }
   const identity = detailIdentity(canonical, quote.chain)
-  let metricAgreement = null
-  if (cmcId) try { metricAgreement = metricAgreementReceipt(await readMetricAgreement(db, `market:coinmarketcap:${cmcId}`, Date.now())) } catch { /* additive */ }
   const chartRead = chartProvenance(chart)
   const figureProvenance = { ...quoteRead.figureProvenance, ...venueProvenance({ tickers: tickR.data || [], orderbookAsOf: orderbook?.asOf || null, dex }), chart: chartRead.envelope }
   return { status: 200, body: withSeries({ ...payload, identity, coverage: marketCoverage(payload, { identityKind: identity.kind, cmcId }), quoteReceipts: quoteRead.receipts, quoteProvenance: quoteRead.figureProvenance, chartReceipts: chartRead.receipts, figureProvenance, metricAgreement }) }

@@ -2141,7 +2141,23 @@
     "column_price": "Prezzo (USD)",
     "column_tokenized_price": "Prezzo tokenizzato (USD)",
     "column_quote_observed": "Quotazione osservata",
-    "free_shared_kept": "Una copia conservata del {{date}}: la lettura in tempo reale non ha risposto ({{reason}})."
+    "free_shared_kept": "Una copia conservata del {{date}}: la lettura in tempo reale non ha risposto ({{reason}}).",
+    "free_shared_not_read_reason": "Non è stato possibile leggere questo record in questo momento. {{why}}",
+    "free_shared_not_read_plain": "Questo record non è ancora stato letto oggi.",
+    "rwa_type_empty_government_security": "Oggi l’elenco RWA di CoinMarketCap non contiene titoli di Stato.",
+    "rwa_type_empty_real_estate": "Oggi l’elenco RWA di CoinMarketCap non contiene attività immobiliari.",
+    "rwa_type_empty": "Oggi l’elenco RWA di CoinMarketCap non contiene asset di questo tipo.",
+    "rwa_type_elsewhere_government_security": "Copriamo i fondi tokenizzati di titoli di Stato attraverso i loro feed del valore netto d’inventario, con il rendimento dichiarato di ogni fondo accanto al rendimento che la sua storia del NAV ha effettivamente prodotto.",
+    "rwa_type_elsewhere_government_security_link": "Rendimento e NAV dei fondi di titoli di Stato in Struttura del mercato",
+    "read_timeout": "Questa lettura non ha risposto entro 30 secondi, quindi è stata interrotta.",
+    "pairs_instead_eyebrow": "Cosa abbiamo invece",
+    "pairs_instead_loading": "Lettura della profondità delle pool salvata per i token di questo asset…",
+    "pairs_instead_failed": "Non è stato possibile leggere ora la profondità delle pool salvata: {{why}}",
+    "pairs_instead_none": "L’acquisizione giornaliera delle pool non ha registrato pool on-chain per i token di questo asset, quindi qui non c’è una profondità salvata da mostrare.",
+    "pairs_instead_depth": "Profondità on-chain salvata di ogni rappresentazione in token, dall’acquisizione giornaliera delle pool. Per questo non viene fatta alcuna chiamata al fornitore.",
+    "pairs_instead_as_of": "Acquisito {{time}}.",
+    "pairs_instead_board": "Le pool DEX di ogni asset tokenizzato in Struttura del mercato",
+    "pairs_instead_profile": "Il profilo dell’asset in cima a questo pannello e i prezzi dei token qui sopra provengono da acquisizioni salvate e non dipendono dalle coppie di mercato."
   },
   "settings": {
     "beginner": "Protezione Principiante: avvisi di rischio più forti e spiegazioni più semplici.",
@@ -4305,7 +4321,10 @@
     "profile_website": "Apri il sito ufficiale",
     "profile_expand": "Leggi la descrizione completa",
     "profile_collapse": "Mostra meno",
-    "profile_scope": "Pubblicato da {{provider}} e acquisito il {{capturedAt}}. Dove compare un numero di depositante, è il numero di depositante SEC della società quotata sottostante come lo indica il fornitore, non quello della casa che ha emesso il token."
+    "profile_scope": "Pubblicato da {{provider}} e acquisito il {{capturedAt}}. Dove compare un numero di depositante, è il numero di depositante SEC della società quotata sottostante come lo indica il fornitore, non quello della casa che ha emesso il token.",
+    "profile_loading": "Lettura del profilo salvato di questo asset…",
+    "profile_failed": "Non è stato possibile leggere ora il profilo salvato: {{why}} I prezzi, le rappresentazioni in token e la ricerca sugli emittenti qui sotto non dipendono da esso.",
+    "profile_empty_meaning": "CoinMarketCap pubblica un profilo descrittivo (descrizione, sito web, settore, posizione) per molti asset tokenizzati. Copiamo questi profili a lotti ogni giorno e non siamo ancora arrivati a questo asset, quindi non c’è una descrizione da mostrare. I prezzi, le rappresentazioni in token e la ricerca sugli emittenti qui sotto non dipendono da esso."
   },
   "receipt_cost": {
     "calls_one": "{{count}} chiamata al provider",
@@ -4440,7 +4459,9 @@
     "state_derivative_reference": "Prezzo di un derivato, non un wrapper",
     "reason_derivative_not_a_wrapper": "Il fornitore elenca questo prezzo di un derivato tra i token dell'asset. Non è un token che qualcuno detiene o riscatta, quindi è mostrato solo per confronto e non entra mai nell'ancora, nel premio o sconto più ampio né nelle scelte.",
     "as_of_label": "Cattura degli involucri",
-    "prices_observed_label": "Prezzi aggiornati l’ultima volta da CoinMarketCap"
+    "prices_observed_label": "Prezzi aggiornati l’ultima volta da CoinMarketCap",
+    "reason_reinvested_dividends_not_adjusted": "Questo involucro reinveste i dividendi dell’azione nel proprio prezzo e non è stato possibile applicare alcun moltiplicatore del suo emittente, quindi il suo scarto include dividendi reinvestiti e non è rettificato. È mostrato come accumulo, non come premio, e resta fuori dall’ancora.",
+    "summary_adjusted": "Confrontati a un prezzo per azione dopo il moltiplicatore di dividendi dell’emittente stesso: {{count}}."
   },
   "table_csv": {
     "download": "Scarica CSV",
@@ -4682,7 +4703,7 @@
     "note_last_session": "Fuori dalla sessione regolare questo è l’ultimo aggiornamento del feed a mercato aperto, non un prezzo in tempo reale.",
     "anchor_within": "L’ancora è entro la banda di aggiornamento di {{band}}% del feed rispetto all’azione, quindi le due non sono distinguibili.",
     "anchor_gap": "L’ancora si trova a {{value}} rispetto all’azione.",
-    "caveat": "Uno scarto dall’azione confronta un token con un’azione. Non tiene conto dei dividendi che un involucro può aver reinvestito e non è un arbitraggio negoziabile.",
+    "caveat": "Uno scarto dall’azione confronta l’equivalente di un’azione di un involucro con un’azione. Un involucro che reinveste i dividendi nel prezzo viene prima diviso per il moltiplicatore pubblicato dal suo emittente quando è stato possibile leggerlo, e segnalato quando no. Non è un arbitraggio negoziabile.",
     "within_band": "Entro la banda di aggiornamento di {{band}}% del feed, non distinguibile",
     "measured": "Misurato {{value}}",
     "col_vs_stock": "vs azione",
@@ -4704,6 +4725,29 @@
     "reason_wrapper_observation_time_unknown": "Il fornitore non ha indicato l’ora dei prezzi degli involucri, quindi non c’è un momento in cui leggere l’azione.",
     "reason_stale_in_session": "Il feed non si è aggiornato entro il suo heartbeat a mercato aperto, quindi non è stato usato.",
     "reason_stale_off_session": "L’ultimo aggiornamento del feed è più vecchio di quanto spieghi qualsiasi chiusura programmata del mercato, quindi non è stato usato."
+  },
+  "accrual": {
+    "source_ondo_solana_scaled_ui": "moltiplicatore on-chain di Ondo",
+    "adjusted_note": "Rettificato per i dividendi reinvestiti (x{{multiplier}}, {{source}}, al {{date}}).",
+    "adjusted_note_undated": "Rettificato per i dividendi reinvestiti (x{{multiplier}}, {{source}}, invariato dall’emissione del token).",
+    "not_adjusted": "Include dividendi reinvestiti, non rettificato.",
+    "raw": "Prima del moltiplicatore: {{value}}",
+    "scope": "Alcuni involucri reinvestono i dividendi dell’azione dentro il token, quindi un token vale più di un’azione e il suo prezzo si allontana dall’azione per motivi che non sono un premio. Quando l’emittente pubblica on-chain il moltiplicatore di quel token, il prezzo dell’involucro viene diviso per il moltiplicatore in vigore quando i prezzi sono stati osservati prima di essere confrontato con gli altri involucri o con l’azione, e la riga indica il moltiplicatore, la sua fonte e la sua data. Quando non è stato possibile leggere alcun moltiplicatore, non si ipotizza nulla: lo scarto è mostrato come comprensivo di dividendi reinvestiti, non rettificato, e l’involucro resta fuori dall’ancora e dalla via liquida più economica.",
+    "attribution": "Moltiplicatori di dividendi: i valori on-chain dell’emittente stesso, letti dai suoi conti token su Solana tramite un RPC pubblico.",
+    "pick_note": "Premio dopo il moltiplicatore di dividendi di questo involucro (x{{multiplier}}).",
+    "reason_no_multiplier_source": "Il moltiplicatore del suo emittente per questo token non viene ancora letto qui.",
+    "reason_no_multiplier_address": "Non è ancora registrato alcun conto token per il moltiplicatore di questo involucro.",
+    "reason_multiplier_read_failed": "Il moltiplicatore non è stato letto tramite il suo RPC pubblico in questa acquisizione.",
+    "reason_multiplier_not_read": "Il moltiplicatore non è stato letto in questa acquisizione.",
+    "reason_multiplier_changed_after_observation": "Il moltiplicatore è cambiato dopo l’osservazione dei prezzi, quindi quello in vigore in quel momento non è on-chain.",
+    "reason_mint_identity_not_proved": "Il conto token non ha dimostrato di essere questo token, quindi il suo moltiplicatore non è stato usato.",
+    "reason_multiplier_authority_changed": "Il moltiplicatore non è più impostato dall’autorità registrata dell’emittente, quindi non è stato usato.",
+    "reason_no_published_multiplier": "Il conto token non pubblica alcun moltiplicatore.",
+    "reason_multiplier_out_of_range": "Il moltiplicatore pubblicato è fuori da qualsiasi intervallo plausibile, quindi non è stato usato.",
+    "reason_multiplier_time_unreadable": "Non è stato possibile leggere la data di entrata in vigore del moltiplicatore, quindi non è stato usato.",
+    "reason_account_not_found": "Il conto token non è stato trovato.",
+    "reason_not_token_2022": "Il conto token non appartiene al programma token previsto, quindi il suo moltiplicatore non è stato usato.",
+    "reason_wrapper_observation_time_unknown": "Il fornitore non ha indicato l’ora dei prezzi degli involucri, quindi il moltiplicatore allora in vigore non è noto."
   },
   "intel_demo": {
     "banner_label": "Avviso demo",
@@ -4808,7 +4852,10 @@
     "example_gold": "oro",
     "derivative_label": "Prezzo di un derivato, non un wrapper che puoi detenere. Mostrato per confronto, mai parte dell'ancora.",
     "credits_cache_origin_one": "nessuno per questa ricerca; la chiamata originale ha riportato {{count}} credito",
-    "credits_cache_origin_other": "nessuno per questa ricerca; la chiamata originale ha riportato {{count}} crediti"
+    "credits_cache_origin_other": "nessuno per questa ricerca; la chiamata originale ha riportato {{count}} crediti",
+    "stored_answer": "Questa risposta è stata composta {{age}} fa. Ogni cifra mantiene il proprio orario di acquisizione.",
+    "stored_answer_refreshing": "Questa risposta è stata composta {{age}} fa e ne è in corso una più recente. Ogni cifra mantiene il proprio orario di acquisizione.",
+    "age_under_minute": "meno di un minuto"
   },
   "receipt_proof": {
     "reproduce_cache_fill": "Riproduci la chiamata che ha riempito la cache",

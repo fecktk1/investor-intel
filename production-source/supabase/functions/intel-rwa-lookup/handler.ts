@@ -25,7 +25,8 @@
 //
 // See _shared/intel/rwa-lookup.ts for the answers and their receipts.
 
-import { LOOKUP_LIVE_RATE, LOOKUP_RATE, lookupRwa, parseLookupQuery, parseResearchRequest, researchRwa, ResearchRequestError, scrubSecrets, type LookupDeps, type ResearchDeps } from '../_shared/intel/rwa-lookup.ts'
+import { answerLookup, LOOKUP_LIVE_RATE, LOOKUP_RATE, parseLookupQuery, parseResearchRequest, researchRwa, ResearchRequestError, scrubSecrets, type AnswerStore, type LookupDeps, type ResearchDeps } from '../_shared/intel/rwa-lookup.ts'
+import { phaseTimer, TIMING_HEADERS, type PhaseTimer } from '../_shared/intel/server-timing.ts'
 
 const cors = {
   'Access-Control-Allow-Origin': '*',
@@ -37,6 +38,10 @@ const cors = {
 type Limiter = (key: string, limit: number, windowSeconds: number, opts?: { failClosed?: boolean }) => Promise<{ ok: boolean; retryAfter: number }>
 
 export interface HandlerDeps extends LookupDeps, ResearchDeps {
+  /** The kept finished answers (answerLookup). Absent: every lookup is assembled. */
+  answers?: AnswerStore | null
+  /** The phase timer for one request (tests pass their own clock). */
+  timer?: () => PhaseTimer
   limit: Limiter
   ipKey: (req: Request, bucket: string) => Promise<string>
   secrets: () => (string | null | undefined)[]
@@ -44,7 +49,7 @@ export interface HandlerDeps extends LookupDeps, ResearchDeps {
 
 function send(body: unknown, status: number, secrets: (string | null | undefined)[], extra: Record<string, string> = {}) {
   const text = scrubSecrets(JSON.stringify(body), secrets)
-  return new Response(text, { status, headers: { ...cors, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extra } })
+  return new Response(text, { status, headers: { ...cors, ...TIMING_HEADERS, 'Content-Type': 'application/json', 'Cache-Control': 'no-store', ...extra } })
 }
 
 /** The request, as { q } (a lookup) or { capability, params, readMode } (a
@@ -63,6 +68,9 @@ async function readRequest(req: Request): Promise<Record<string, unknown>> {
 
 export async function handleLookup(req: Request, deps: HandlerDeps): Promise<Response> {
   const secrets = deps.secrets()
+  // Where this request's time went, as a Server-Timing header (phase names are
+  // fixed words; no query, figure or identity is ever put in one).
+  const timer = deps.timer ? deps.timer() : phaseTimer()
   if (req.method === 'OPTIONS') return new Response('ok', { headers: { ...cors, 'Access-Control-Max-Age': '600' } })
   if (req.method !== 'GET' && req.method !== 'POST') return send({ error: 'method_not_allowed' }, 405, secrets, { Allow: 'GET, POST, OPTIONS' })
 
@@ -70,7 +78,7 @@ export async function handleLookup(req: Request, deps: HandlerDeps): Promise<Res
   let key: string | null = null
   try { key = await deps.ipKey(req, 'rwa-lookup') } catch { key = null }
   if (key) {
-    const gate = await deps.limit(key, LOOKUP_RATE.limit, LOOKUP_RATE.windowSeconds)
+    const gate = await timer.time('limit', () => deps.limit(key!, LOOKUP_RATE.limit, LOOKUP_RATE.windowSeconds))
     if (!gate.ok) return send({ error: 'rate_limited', reason: 'rate_limited', retryAfter: gate.retryAfter }, 429, secrets, { 'Retry-After': String(Math.max(1, gate.retryAfter || 60)), 'Cache-Control': 'no-store' })
   }
 
@@ -104,8 +112,8 @@ export async function handleLookup(req: Request, deps: HandlerDeps): Promise<Res
     try { return (await deps.limit(`${key}:live`, LOOKUP_LIVE_RATE.limit, LOOKUP_LIVE_RATE.windowSeconds, { failClosed: true })).ok } catch { return false }
   }
   try {
-    if (rr) return send(await researchRwa(deps, rr, liveGate), 200, secrets)
-    return send(await lookupRwa(deps, q!, liveGate), 200, secrets)
+    const body = rr ? await timer.time('research', () => researchRwa(deps, rr!, liveGate)) : await answerLookup(deps, q!, liveGate, timer)
+    return send(body, 200, secrets, { 'Server-Timing': timer.header() })
   } catch {
     return send(rr ? { error: 'research_unavailable' } : { error: 'lookup_unavailable', reason: 'lookup_unavailable' }, 503, secrets, { 'Cache-Control': 'no-store' })
   }

@@ -74,4 +74,18 @@ export const WRAPPER_CSV_COLUMNS = [
   { key: 'underlying_ref_session', label: 'US session when compared', value: r => r.asset?.underlyingReference?.session ?? null },
   { key: 'vs_stock_bps', label: 'Gap to stock (bps)', value: r => num(r.token?.underlyingRefBps) },
   { key: 'vs_stock_within_band', label: 'Gap inside feed band', value: r => flag(r.token?.underlyingRefWithinBand) },
+  // A wrapper that reinvests dividends into its price. 'adjusted': the premium
+  // and the gap to the stock above are of the price divided by the issuer's own
+  // on-chain multiplier, and the unadjusted figures follow. 'not_adjusted': no
+  // sourced multiplier applied, and the raw gap includes reinvested dividends.
+  // The price per share is CoinMarketCap's price restated, so it is gated like
+  // the restated troy-ounce price; the multiplier is the issuer's on-chain figure.
+  { key: 'dividend_treatment', label: 'Reinvested dividends', value: r => r.token?.accrualTreatment ?? null },
+  { key: 'dividend_not_adjusted_reason', label: 'Why not adjusted', value: r => r.token?.accrualReason ?? null },
+  { key: 'dividend_multiplier', label: 'Dividend multiplier (shares per token)', value: r => num(r.token?.accrualMultiplier) },
+  { key: 'dividend_multiplier_source', label: 'Multiplier source', value: r => r.token?.accrualSource ?? null },
+  { key: 'dividend_multiplier_as_of', label: 'Multiplier effective since', value: r => r.token?.accrualAsOf ?? null },
+  { key: 'price_per_share_usd', label: 'Price per share after the multiplier (USD)', cmcRaw: true, value: r => num(r.token?.adjustedPrice) },
+  { key: 'raw_premium_bps', label: 'Premium before the multiplier (bps)', value: r => num(r.token?.rawPremiumBps) },
+  { key: 'raw_vs_stock_bps', label: 'Gap to stock before the multiplier (bps)', value: r => num(r.token?.underlyingRefRawBps) },
 ]

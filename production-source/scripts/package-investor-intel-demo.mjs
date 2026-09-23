@@ -6,7 +6,7 @@ import { spawnSync } from 'node:child_process'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { PUBLIC_DOCS, assertPublishable, deniedPackagePaths } from './intel-extraction-package-guards.mjs'
-import { planPublishedTestRun, RUNNABLE_TESTS, EXCLUDED_TESTS } from './intel-extraction-test-run.mjs'
+import { planPublishedTestRun, RUNNABLE_TESTS, RUNNABLE_VITEST_TESTS, EXCLUDED_TESTS } from './intel-extraction-test-run.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),example=path.join(root,'examples/investor-intel-hackathon')
 // Explicit fail-closed boundaries keep private app providers out of the standalone package.
 const adapters={
@@ -57,7 +57,7 @@ const productionSources=[
   ...['admission-drift','benchmark-rates','counter-leg','issuer-aliases','issuer-evidence','legitimacy','nav-integrity','portfolio-exposure','terms','wrapper-spread','yield-realized','yield-register'].map(name=>`rwa-${name}.ts`),
   ...['admission-drift','benchmark-rates','counter-leg','issuer-aliases','issuer-review-cycles','legitimacy','nav-integrity','portfolio-exposure','terms','wrapper-spread','yield-realized','yield-register'].map(name=>`rwa-${name}.test.ts`),
   ...['blockscout','edgar-agent','edgar','gleif','http','ofac','sourcify'].flatMap(name=>[`rwa-sources/${name}.ts`,`rwa-sources/${name}.test.ts`]),'rwa-sources/test-support.ts',
-  ...['chainlink-nav','sec-nmfp-yield','underlying-reference'].flatMap(name=>[`${name}.ts`,`${name}.test.ts`]),
+  ...['chainlink-nav','sec-nmfp-yield','underlying-reference','accrual-multiplier'].flatMap(name=>[`${name}.ts`,`${name}.test.ts`]),
   ...['rwa-wrapper-picks','rwa-coverage','capture-rwa-coverage','capture-rwa-coverage-read','capture-rwa-wrapper-backfill','capture-rwa-wrapper-history-read',].flatMap(name=>[`${name}.ts`,`${name}.test.ts`]),'rwa-exit-capacity.ts','capture-rwa-coverage.fixtures.ts','capture-rwa-wrappers-read.test.ts',
   'cmc-chart.ts',
   'chart-analysis.ts',
@@ -116,10 +116,10 @@ const fullSources=trackedFiles.filter(isFullSource)
 // The standalone subset's tests need nothing outside it, so they run with no
 // configuration at all; the list stays for the command that shows that.
 const standaloneTests=productionSources.filter(file=>file.endsWith('.test.ts')).map(file=>`production-source/${file}`)
-// The published test run: every Deno test in production-source/ whose modules
-// load inside this package, where a parent-platform import may resolve to a
-// reviewed TEST STAND-IN (test-support/), and the rest listed with the reason in
-// production-source/excluded-tests.md. scripts/intel-extraction-test-run.mjs
+// The published test run: every Deno and Vitest test in production-source/
+// whose modules load inside this package, where a parent-platform import may
+// resolve to a reviewed TEST STAND-IN (test-support/), and the rest listed with
+// the reason in production-source/excluded-tests.md. scripts/intel-extraction-test-run.mjs
 // decides which and checks the stand-ins; see its header.
 const testRun=planPublishedTestRun({root,example,publishedSource:[...productionSources,...fullSources],tracked:trackedFiles,isIntelSource:isFullSource})
 const leftRun=standaloneTests.filter(file=>!testRun.runnable.includes(file))
@@ -150,9 +150,10 @@ const PACKAGE_SOURCE_OVERRIDES=Object.freeze({'.gitignore':'public.gitignore','p
 const exampleSource=file=>path.join(example,PACKAGE_SOURCE_OVERRIDES[file]||file)
 writeFileSync(path.join(example,'production-source/standalone-tests.txt'),standaloneTests.join('\n')+'\n')
 writeFileSync(path.join(example,RUNNABLE_TESTS),testRun.runnable.join('\n')+'\n')
+writeFileSync(path.join(example,RUNNABLE_VITEST_TESTS),testRun.vitestRunnable.join('\n')+'\n')
 writeFileSync(path.join(example,EXCLUDED_TESTS),testRun.markdown)
 const fullSourceFiles=new Set(fullSources.map(file=>`production-source/${file}`))
-const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','LICENSE.md','product/LICENSE.md','production-source/LICENSE.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest),'production-source/standalone-tests.txt',RUNNABLE_TESTS,EXCLUDED_TESTS,...testRun.testSupportFiles]
+const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','LICENSE.md','product/LICENSE.md','production-source/LICENSE.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest),'production-source/standalone-tests.txt',RUNNABLE_TESTS,RUNNABLE_VITEST_TESTS,EXCLUDED_TESTS,...testRun.testSupportFiles]
 // Fail closed before anything is written: the private-document denylist and the
 // secret-shape scan run over every file this package would contain.
 assertPublishable(files.map(file=>({file,text:readFileSync(exampleSource(file),'utf8'),fullSource:fullSourceFiles.has(file)})))

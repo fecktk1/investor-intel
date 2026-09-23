@@ -43,6 +43,13 @@ export interface PickToken {
   premiumBps?: number | null
   inAnchor?: boolean | null
   reason?: string | null
+  /** Set on a wrapper that reinvests dividends into its price. When 'adjusted',
+   * `premiumBps` is of `adjustedPrice` (the per-share price) and that is also
+   * the price it anchored at. */
+  accrualTreatment?: string | null
+  accrualMultiplier?: number | null
+  adjustedPrice?: number | null
+  rawPremiumBps?: number | null
 }
 
 /** The fields of one asset this module reads. The read view's `wrapperAssetRow`
@@ -65,6 +72,12 @@ export interface PickedWrapper {
   absPremiumBps: number
   volume24h: number | null
   state: string
+  /** 'adjusted' when the premium is of the wrapper's price divided by its
+   * issuer's published dividend multiplier, with the multiplier and the
+   * unadjusted premium beside it. Null on every other wrapper. */
+  accrualTreatment: string | null
+  accrualMultiplier: number | null
+  rawPremiumBps: number | null
 }
 
 export interface Unavailable { available: false; reason: string }
@@ -143,16 +156,21 @@ function picked(token: PickToken): PickedWrapper {
     premiumBps: premium, absPremiumBps: Math.abs(premium),
     volume24h: num(token.volume24h),
     state: String(token.state ?? 'no_price'),
+    accrualTreatment: token.accrualTreatment ?? null,
+    accrualMultiplier: num(token.accrualMultiplier),
+    rawPremiumBps: num(token.rawPremiumBps),
   }
 }
 
 /** Did this wrapper set the liquid-wrapper median? The weighted median returns a
  * member's own price, so the setter's normalised price IS the anchor. Compared
- * with a relative tolerance, because the price went through a numeric column. */
+ * with a relative tolerance, because the price went through a numeric column.
+ * A wrapper adjusted for reinvested dividends anchored at its per-share price,
+ * so that is the price compared. */
 export function setsAnchor(token: PickToken, anchorKind: unknown, anchorPrice: unknown): boolean {
   if (anchorKind !== 'liquid_wrapper_median') return false
   const anchor = num(anchorPrice)
-  const price = num(token.normalisedPrice)
+  const price = token.accrualTreatment === 'adjusted' ? num(token.adjustedPrice) : num(token.normalisedPrice)
   if (anchor == null || price == null || anchor <= 0) return false
   if (token.inAnchor === false) return false
   return Math.abs(price - anchor) <= anchor * 1e-9
@@ -164,7 +182,8 @@ function exclusionReason(token: PickToken, anchorKind: string, anchorReason: str
   const state = String(token.state ?? 'no_price')
   if (state === 'no_price') return token.reason || 'price_not_reported'
   if (state === 'unit_not_established') return token.reason || 'unit_not_established'
-  if (state === 'accrues_in_price') return 'accrues_in_price'
+  // A dividend-reinvesting wrapper with no sourced multiplier says so.
+  if (state === 'accrues_in_price') return token.reason === 'reinvested_dividends_not_adjusted' ? token.reason : 'accrues_in_price'
   if (state === 'volume_not_reported') return 'volume_not_reported'
   if (num(token.premiumBps) == null) return anchorKind === 'none' ? (anchorReason || 'no_anchor') : (token.reason || 'no_premium')
   return token.reason || state

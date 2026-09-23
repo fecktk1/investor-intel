@@ -227,3 +227,27 @@ Deno.test('the unsearched screen is the stored catalogue page: no suggestions, a
   // A watchlist screen is still refused: the visitor has none on the server.
   assertThrows(() => parseDemoRead({ read: 'screen', query: { watchlistOnly: true } }), DemoReadRefusal, 'invalid_request')
 })
+
+Deno.test('handler: both rate windows are counted at once, and the answer says where its time went', async () => {
+  const { deps } = fakes()
+  const started: string[] = []
+  let open = 0, overlap = 0
+  const limit: HandlerDeps['limit'] = async (key) => {
+    started.push(key); open++; overlap = Math.max(overlap, open)
+    await new Promise((r) => setTimeout(r, 2))
+    open--
+    return { ok: true, retryAfter: 0 }
+  }
+  const res = await handleDemoRead(post({ read: 'detail', symbol: 'BTC', sourceProvider: 'coinmarketcap', providerId: '1' }), handlerDeps(deps, limit))
+  assertEquals(res.status, 200)
+  assertEquals(started, ['ip:test:demo-read', 'ip:test:demo-read:hour'])
+  assertEquals(overlap, 2, 'the minute and hour windows were asked together')
+  const timing = res.headers.get('Server-Timing') || ''
+  for (const phase of ['limit;dur=', 'read;dur=', 'total;dur=']) assertEquals(timing.includes(phase), true, timing)
+  assertEquals(res.headers.get('Timing-Allow-Origin'), '*')
+  // Either window refusing still refuses, with its own Retry-After.
+  const hourly = handlerDeps(deps, (key) => Promise.resolve(key.endsWith(':hour') ? { ok: false, retryAfter: 900 } : { ok: true, retryAfter: 0 }))
+  const refused = await handleDemoRead(post({ read: 'suggest', q: 'BTC' }), hourly)
+  assertEquals(refused.status, 429)
+  assertEquals(refused.headers.get('Retry-After'), '900')
+})

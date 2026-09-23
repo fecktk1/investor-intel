@@ -53,12 +53,13 @@ export function installIntelDemo({ supabaseUrl, anonKey = import.meta.env?.VITE_
   // demoFetch hands over: the anon key is the only credential, whatever token
   // the demo client attached, and cookies are omitted. Only the two public
   // functions can be named.
-  const forwardPublic = (body, fn = DEMO_LIVE_FUNCTION) => {
+  const forwardPublic = (body, fn = DEMO_LIVE_FUNCTION, { signal } = {}) => {
     if (!originalFetch || !base) return Promise.reject(new Error('fetch_unavailable'))
     if (!DEMO_PUBLIC_FUNCTIONS.includes(fn)) return Promise.reject(new Error('demo_function_refused'))
     const headers = { 'Content-Type': 'application/json' }
     if (anonKey) { headers.apikey = anonKey; headers.Authorization = `Bearer ${anonKey}` }
-    return originalFetch(`${base}/functions/v1/${fn}`, { method: 'POST', headers, body: JSON.stringify(body || {}), credentials: 'omit' })
+    // The page's abort signal, when it passed one (a search it has left).
+    return originalFetch(`${base}/functions/v1/${fn}`, { method: 'POST', headers, body: JSON.stringify(body || {}), credentials: 'omit', ...(signal ? { signal } : {}) })
   }
   const demoFetch = createDemoFetch({ supabaseUrl: base, reader, store, onMiss, forwardPublic })
 

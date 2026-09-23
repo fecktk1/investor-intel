@@ -22,7 +22,7 @@ export function EvidenceRecord({ record, depth = 0 }) {
       : typeof value === 'string' && hasProviderMarkdown(value) ? <ProviderText text={value}/> : typeof value === 'number' ? value.toLocaleString(undefined, { maximumFractionDigits: 8 }) : String(value)}</dd>
   </div>)}{record.quote && <div><dt>USD quote</dt><dd><EvidenceRecord record={record.quote} depth={depth + 1}/></dd></div>}</dl>
 }
-export function ResearchStatus({ query, showObserved=true }) {
+export function ResearchStatus({ query, showObserved=true, quietEmpty=false }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const { result, loading, error, refresh } = query
   if (loading) return <p role="status" className="intel-event-meta py-4">{t('research.loading_evidence', { defaultValue: 'Loading market evidence…' })}</p>
@@ -31,7 +31,9 @@ export function ResearchStatus({ query, showObserved=true }) {
   const unavailableReason = result?.reason === 'insufficient_entitlement' && result?.capability === 'rwaPairs' ? 'RWA market pairs require CMC Growth or above. Token prices and issuer research remain available.' : null
   if (error || ['unavailable', 'unsupported', 'refreshing'].includes(result?.state)) return <div role="status" className="py-4 text-sm text-[var(--fg-4)]">
     {error&&result&&<p role="alert">The latest read failed. Previously loaded evidence keeps its original source time.</p>}
-    <p>{unavailableReason || t(`research.reason_${result?.reason || 'unavailable'}`, { defaultValue: result?.reason ? title(result.reason) : 'This source is unavailable.' })}</p>
+    <p>{unavailableReason || (error === 'read_timeout' && !result
+      ? t('research.read_timeout', { defaultValue: 'This read did not answer within 30 seconds, so it was stopped.' })
+      : t(`research.reason_${result?.reason || 'unavailable'}`, { defaultValue: result?.reason ? title(result.reason) : 'This source is unavailable.' }))}</p>
     {!unavailableReason && <button className="underline underline-offset-4 mt-2" onClick={refresh}>{t('common.retry', { defaultValue: 'Retry' })}</button>}
     {/* A refused or failed call still has a receipt, and that is exactly when a reader wants it. */}
     <SourceCallReceipt receipt={result?.receipt} scope={result?.scope} observedAt={result?.provenance?.observedAt}/>
@@ -43,7 +45,8 @@ export function ResearchStatus({ query, showObserved=true }) {
       {result?.state === 'stale' && <strong>{t('research.stale', { defaultValue: 'Delayed data' })}</strong>}
       {showObserved && p?.observedAt && <span>{t('research.observed', { defaultValue: 'Observed' })} <time dateTime={p.observedAt}>{new Date(p.observedAt).toLocaleString()}</time></span>}
       {p?.fetchedAt && <span>{t('research.fetched', { defaultValue: 'Retrieved' })} <time dateTime={p.fetchedAt}>{new Date(p.fetchedAt).toLocaleString()}</time></span>}
-      {!loading && !result?.data?.rows?.length && <span>{t('research.no_coverage', { defaultValue: 'No records returned for this selection.' })}</span>}
+      {/* A page that explains an empty answer itself (quietEmpty) says it once, in its own words. */}
+      {!loading && !quietEmpty && !result?.data?.rows?.length && <span>{t('research.no_coverage', { defaultValue: 'No records returned for this selection.' })}</span>}
     </div>
     <SourceCallReceipt receipt={result?.receipt} scope={result?.scope} observedAt={showObserved ? p?.observedAt : null}/>
   </>

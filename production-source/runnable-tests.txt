@@ -1,3 +1,4 @@
+production-source/supabase/functions/_shared/intel/accrual-multiplier.test.ts
 production-source/supabase/functions/_shared/intel/adoption-attention.test.ts
 production-source/supabase/functions/_shared/intel/agent-annotate-write.test.ts
 production-source/supabase/functions/_shared/intel/agent-forged-fields.test.ts
@@ -200,6 +201,7 @@ production-source/supabase/functions/_shared/intel/rwa-yield-realized.test.ts
 production-source/supabase/functions/_shared/intel/rwa-yield-register.test.ts
 production-source/supabase/functions/_shared/intel/schedule-policy.test.ts
 production-source/supabase/functions/_shared/intel/sec-nmfp-yield.test.ts
+production-source/supabase/functions/_shared/intel/server-timing.test.ts
 production-source/supabase/functions/_shared/intel/signal-trends.test.ts
 production-source/supabase/functions/_shared/intel/source-history-service.test.ts
 production-source/supabase/functions/_shared/intel/source-receipt.test.ts

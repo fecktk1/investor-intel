@@ -8,11 +8,21 @@ import { claimFreeRwaRead } from '../_shared/intel/rwa-free-read.ts'
 import { checkAndIncrement, hashedIpKey } from '../_shared/rate-limit.ts'
 import { researchParams, researchSnapshot } from '../_shared/intel/research-service.ts'
 import { loadWarmState, type WarmState } from '../_shared/intel/capture-rwa-quote-warm.ts'
+import type { AnswerStore } from '../_shared/intel/rwa-lookup.ts'
 import { handleLookup, type HandlerDeps } from './handler.ts'
 
 /** The warm lane's run log changes about once an hour, so one isolate reads it
  * at most every 15 seconds rather than once per request. */
 const WARM_MEMO_MS = 15_000
+
+/** Work that runs after the response is sent: the runtime keeps the isolate
+ * alive for it (EdgeRuntime.waitUntil). A failure never reaches the caller. */
+function defer(work: Promise<unknown>) {
+  work.catch(() => {})
+  // deno-lint-ignore no-explicit-any
+  const runtime = (globalThis as any).EdgeRuntime
+  if (runtime && typeof runtime.waitUntil === 'function') runtime.waitUntil(work)
+}
 
 function productionDeps(): HandlerDeps {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
@@ -26,8 +36,23 @@ function productionDeps(): HandlerDeps {
     if (!warmMemo || Date.now() - warmMemo.at > WARM_MEMO_MS) warmMemo = { at: Date.now(), value: loadWarmState(db) }
     return warmMemo.value
   }
+  // The finished answers (rwa-lookup.ts answerLookup). Service role only; the
+  // keep RPC only ever moves an answer forward in time.
+  const answers: AnswerStore = {
+    async read(key) {
+      const { data, error } = await db.from('intel_rwa_lookup_answers').select('body,built_at').eq('query_key', key).maybeSingle()
+      if (error || !data || !data.body || typeof data.built_at !== 'string') return null
+      return { body: data.body, builtAt: data.built_at }
+    },
+    async keep(key, rwaId, body, builtAt) {
+      const { error } = await db.rpc('intel_rwa_lookup_answer_keep', { p_query_key: key, p_rwa_id: rwaId == null ? null : Number(rwaId), p_body: body, p_built_at: builtAt })
+      if (error) throw new Error('answer_keep_failed')
+    },
+  }
   return {
     db,
+    defer,
+    answers,
     readQuote: (rwaId) => (plan) => requestCmc('rwaQuotes', { rwa_id: rwaId }, ctx(plan)),
     claim: (rwaId) => claimFreeRwaRead(db, 'rwaQuotes', { rwa_id: rwaId }),
     // The warm lane's batched entry is read from the shared cache only: this

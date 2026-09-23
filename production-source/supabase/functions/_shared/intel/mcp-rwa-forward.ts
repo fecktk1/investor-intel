@@ -73,7 +73,16 @@ export const FORWARD_TABLE_CONTRACT={
   // The underlying_ref_* columns (migration 20260923193000) are the wrapper
   // against the listed share's Chainlink price; within_band true means the gap
   // is inside the feed's update band and is not distinguishable from zero.
-  columns:['rwa_id','crypto_id','symbol','name','issuer_name','price','normalised_price','market_cap','volume_24h','unit_state','wrapper_state','premium_bps','accrual_gap_bps','in_anchor','state_reason','captured_at','fetched_at','underlying_ref_price','underlying_ref_bps','underlying_ref_within_band','underlying_ref_session','underlying_ref_observed_at','underlying_ref_source'],
+  // The accrual_* columns (migration 20260923220000), appended and never
+  // renamed: on a wrapper that reinvests dividends into its price,
+  // accrual_treatment 'adjusted' means premium_bps and underlying_ref_bps are of
+  // adjusted_price (price divided by accrual_multiplier, the issuer's own
+  // on-chain multiplier, from accrual_multiplier_source, effective
+  // accrual_multiplier_as_of), with the unadjusted figures in raw_premium_bps
+  // and underlying_ref_raw_bps; 'not_adjusted' means no sourced multiplier
+  // applied (accrual_reason), the wrapper carries accrual_gap_bps and
+  // underlying_ref_raw_bps includes reinvested dividends.
+  columns:['rwa_id','crypto_id','symbol','name','issuer_name','price','normalised_price','market_cap','volume_24h','unit_state','wrapper_state','premium_bps','accrual_gap_bps','in_anchor','state_reason','captured_at','fetched_at','underlying_ref_price','underlying_ref_bps','underlying_ref_within_band','underlying_ref_session','underlying_ref_observed_at','underlying_ref_source','accrual_treatment','accrual_reason','accrual_multiplier','accrual_multiplier_source','accrual_multiplier_as_of','accrual_multiplier_network','accrual_multiplier_address','adjusted_price','raw_premium_bps','underlying_ref_raw_bps'],
  },
  // One row per token per day (capture-rwa-depth.ts). Provider figures only; the
  // exitability sizes are computed on read in the app and are not stored.

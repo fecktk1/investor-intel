@@ -55,6 +55,13 @@ export function ageText(t, seconds) {
   return t('rwa_lookup.age_days', { count: Math.round(s / 86400), defaultValue: '{{count}} days' })
 }
 
+/** How old a kept answer is, in words: under a minute is said as that. */
+export function storedAgeText(t, seconds) {
+  const s = num(seconds)
+  if (s != null && s < 60) return t('rwa_lookup.age_under_minute', { defaultValue: 'less than a minute' })
+  return ageText(t, seconds)
+}
+
 export function reasonText(t, code) {
   if (!code) return null
   return t(`rwa_lookup.reason_${code}`, { defaultValue: REASON_DEFAULTS[code] || t('rwa_lookup.reason_other', { code, defaultValue: 'The live read did not answer ({{code}}).' }) })
@@ -138,6 +145,12 @@ function Answer({ answer, onPick }) {
       <div>
         <h3 className="text-lg font-medium">{a.name}{a.symbol ? ` · ${a.symbol}` : ''}</h3>
         <p className="text-[12px] text-[var(--fg-4)]">{[a.assetType ? String(a.assetType).replaceAll('_', ' ') : null, t('rwa_lookup.rwa_id', { id: a.rwaId, defaultValue: 'rwa_id {{id}}' }), a.primaryExchange].filter(Boolean).join(' · ')}</p>
+        {/* A kept answer, served at once (intel-rwa-lookup answerLookup): when it
+            was assembled, and whether a newer one is on its way. Each figure
+            below still states its own capture time and age. */}
+        {answer.stored && <p className="text-[12px] text-[var(--fg-4)]" data-testid="rwa-lookup-stored">{answer.stored.refreshing
+          ? t('rwa_lookup.stored_answer_refreshing', { age: storedAgeText(t, answer.stored.ageSeconds), defaultValue: 'This answer was assembled {{age}} ago and a newer one is being assembled now. Each figure keeps its own capture time.' })
+          : t('rwa_lookup.stored_answer', { age: storedAgeText(t, answer.stored.ageSeconds), defaultValue: 'This answer was assembled {{age}} ago. Each figure keeps its own capture time.' })}</p>}
       </div>
       {q ? (
         <dl className="intel-event-facts">

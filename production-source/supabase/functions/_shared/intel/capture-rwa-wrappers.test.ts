@@ -3,8 +3,9 @@ import {
   captureRwaWrappers, candidateSeed, rankCandidates, assetRow, tokenRows, lanePolicy,
   RWA_WRAPPER_CAPTURE_OPS, RWA_WRAPPER_CAPTURE_SCHEDULE, RWA_WRAPPER_ASSET_CAP, RWA_WRAPPER_MAX_TYPES,
   RWA_WRAPPER_DEFAULT_TYPES, RWA_WRAPPER_CADENCE_SECONDS, ASSET_TABLE, TOKEN_TABLE, UNIVERSE_TABLE,
-  REFERENCE_TABLE, captureUnderlyingReferenceForLatest,
+  REFERENCE_TABLE, captureUnderlyingReferenceForLatest, captureAccrualForLatest,
 } from './capture-rwa-wrappers.ts'
+import type { AccrualMultiplierSource } from './accrual-multiplier.ts'
 import { PROFILE_TABLE, REGISTRANT_TABLE } from './capture-rwa-underlyings.ts'
 import type { ReferenceReading, UnderlyingReferenceSource } from './underlying-reference.ts'
 import { wrapperAssetFromQuote, assetListFigures, wrapperSpread, LIQUIDITY_FLOOR_USD } from './rwa-wrapper-spread.ts'
@@ -361,9 +362,10 @@ Deno.test('the list endpoint zero survives the whole lane as a stated disagreeme
 })
 
 Deno.test('the lane is registered under its own op name and its cron matches the migration', async () => {
-  // The scheduled lane, and the unscheduled one-off fill of its newest capture's
-  // stock reference (zero credits).
-  eq(Object.keys(RWA_WRAPPER_CAPTURE_OPS), ['rwa_wrappers', 'rwa_wrapper_reference'])
+  // The scheduled lane, the unscheduled one-off fill of its newest capture's
+  // stock reference, and the one-off dividend-multiplier recompute of that
+  // capture (both zero credits).
+  eq(Object.keys(RWA_WRAPPER_CAPTURE_OPS), ['rwa_wrappers', 'rwa_wrapper_reference', 'rwa_wrapper_accrual'])
   const result = await RWA_WRAPPER_CAPTURE_OPS.rwa_wrappers(
     fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }), ctxFor, NOW, 'startup', { request: fakeRequest(handler()).request },
   )
@@ -744,4 +746,212 @@ Deno.test('reference: the one-off step fills the newest stored capture and the r
   // A commodity row has no reference object at all.
   // deno-lint-ignore no-explicit-any
   eq((board.rows as any[]).find((r) => r.rwaId === '1').underlyingReference, null)
+})
+
+// ─── The dividend-reinvestment multiplier ─────────────────────────────────────
+//
+// The SPY wrappers as the 2026-09-23 20:00 capture stored them, with the real
+// CoinMarketCap issuer ids, so the register classifies them exactly as it does
+// in production. Quote clock: the fixture's 2026-09-20 14:25 UTC.
+
+const SPY_TOKENS = [
+  { crypto_id: 40694, symbol: 'SPY', name: 'SPDR S&P 500 Trust Tokenized ETF (Robinhood)', issuer_id: '6a465832fbe3004b1a0ea2dd', issuer_name: 'Robinhood', price: 767.9687413290569, market_cap: 22443238.12, volume_24h: 27054054.94667706 },
+  { crypto_id: 37006, symbol: 'SPYX', name: 'SP500 tokenized ETF (xStock)', issuer_id: '6878977dcbbf471de3366e85', issuer_name: 'Backed Assets', price: 770.6229441216093, market_cap: 66914607.4, volume_24h: 20183064.40722753 },
+  { crypto_id: 38067, symbol: 'SPYon', name: 'SPDR S&P 500 Tokenized ETF (Ondo)', issuer_id: '688ca4ccabae9b5b9fb3167a', issuer_name: 'Ondo Assets', price: 775.6931836496483, market_cap: 45365708.28, volume_24h: 2573093.87005658 },
+  { crypto_id: 41525, symbol: 'wSPYx', name: 'Wrapped SP500 Tokenized ETF (xStock)', issuer_id: '6878977dcbbf471de3366e85', issuer_name: 'Backed Assets', price: 772.072232628172, market_cap: 0, volume_24h: 98025.95433425 },
+]
+const SPYON_MINT = 'k18WJUULWheRkSpSquYGdNNmtuE2Vbw1hpuUi92ondo'
+const accrualHandler = () => {
+  const base = handler()
+  return (name: string, params: Record<string, unknown>) => {
+    if (name !== 'rwaQuotes') return base(name, params)
+    return { payload: { data: { rwa_assets: [
+      { ...quoteRow(2, 'NVDA', 'Nvidia Corp', 'stock', 184448519, NVDA_TOKENS), tradfi_markets: [{ ticker: 'NVDA', exchange: { name: 'Binance' } }] },
+      quoteRow(86, 'SPY', 'SPDR S&P 500 ETF Trust', 'etf', 150000000, SPY_TOKENS),
+    ] } } }
+  }
+}
+
+/** A stand-in multiplier source: SPYon's real 2026-09-23 reading, a later one,
+ * or a failed read. Records what it was asked for. */
+function fakeAccrual(options: { fail?: boolean; effectiveAt?: number } = {}) {
+  const asked: { mint: string; symbol: string }[] = []
+  const source: AccrualMultiplierSource = {
+    id: 'ondo_solana_scaled_ui', network: 'solana',
+    read(requests, readAt) {
+      asked.push(...requests)
+      if (options.fail) return Promise.reject(new Error('rpc_http_503'))
+      return Promise.resolve(new Map(requests.map((r) => [r.mint, {
+        mint: r.mint, state: 'read' as const, reason: null, detail: null, onChainSymbol: r.symbol,
+        multiplier: 1.0094730727840426, newMultiplier: 1.0094730727840426,
+        effectiveAt: options.effectiveAt ?? 1789754055, readAt,
+      }])))
+    },
+  }
+  return { source, asked }
+}
+
+Deno.test('accrual: the lane divides a reinvesting wrapper by its own multiplier before any comparison', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const acc = fakeAccrual({ effectiveAt: Date.parse('2026-09-18T17:54:15Z') / 1000 })
+  const result = await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, writes), ctxFor, NOW,
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: acc.source })
+  // Zero credits: the provider calls are exactly what they were.
+  assert(result.credits <= 5)
+  eq(result.accrual, { reinvesting: 2, adjusted: 1, notAdjusted: 1, reads: 1 })
+  // Only the registry mint is read, once.
+  eq(acc.asked, [{ mint: SPYON_MINT, symbol: 'SPYon' }])
+  // deno-lint-ignore no-explicit-any
+  const tokens = writes[TOKEN_TABLE] as any[]
+  const on = tokens.find((row) => row.crypto_id === '38067')
+  eq(on.accrual_treatment, 'adjusted')
+  eq(on.accrual_multiplier, 1.0094730727840426)
+  eq(on.accrual_multiplier_source, 'ondo_solana_scaled_ui')
+  eq(on.accrual_multiplier_as_of, '2026-09-18T17:54:15.000Z')
+  eq(on.accrual_multiplier_network, 'solana')
+  eq(on.accrual_multiplier_address, SPYON_MINT)
+  eq(on.accrual_reason, null)
+  eq(on.normalised_price, 775.6931836496483)
+  eq(Math.round(on.adjusted_price * 1e4) / 1e4, 768.4139)
+  eq(on.wrapper_state, 'liquid')
+  eq(Math.round(on.premium_bps * 10) / 10, 5.8)
+  eq(Math.round(on.raw_premium_bps * 10) / 10, 100.6)
+  // The wrapped xStock is labelled, not guessed.
+  const wrapped = tokens.find((row) => row.crypto_id === '41525')
+  eq(wrapped.wrapper_state, 'accrues_in_price')
+  eq(wrapped.state_reason, 'reinvested_dividends_not_adjusted')
+  eq(wrapped.accrual_treatment, 'not_adjusted')
+  eq(wrapped.accrual_reason, 'no_multiplier_source')
+  eq(wrapped.premium_bps, null)
+  eq(wrapped.accrual_multiplier, null)
+  assert(wrapped.accrual_gap_bps != null)
+  // Every wrapper row carries every accrual key, so an upsert clears a stale one.
+  for (const row of tokens) assert('accrual_treatment' in row && 'adjusted_price' in row && 'raw_premium_bps' in row)
+  eq(tokens.find((row) => row.crypto_id === '40694').accrual_treatment, null)
+  // A reinvesting wrapper under another asset of the same run is not touched.
+  assert(tokens.filter((row) => row.rwa_id === '2').every((row) => row.accrual_treatment === null))
+  // deno-lint-ignore no-explicit-any
+  const spy = (writes[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '86')
+  eq(spy.accrual_adjusted_count, 1)
+  eq(spy.accrual_count, 1)
+  eq(spy.anchor_price, 767.9687413290569)
+})
+
+Deno.test('accrual: a failed or out-of-date multiplier labels the wrapper and never fails the capture', async () => {
+  const failed: Record<string, unknown[]> = {}
+  const result = await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, failed), ctxFor, NOW,
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: fakeAccrual({ fail: true }).source })
+  eq(result.error, undefined)
+  // deno-lint-ignore no-explicit-any
+  eq((result.accrual as any).error, 'rpc_http_503')
+  // deno-lint-ignore no-explicit-any
+  const on = (failed[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067')
+  eq(on.wrapper_state, 'accrues_in_price')
+  eq(on.accrual_treatment, 'not_adjusted')
+  eq(on.accrual_reason, 'multiplier_read_failed')
+  eq(on.accrual_multiplier, null)
+  eq(on.premium_bps, null)
+  eq(on.in_anchor, false)
+  eq(Math.round(on.accrual_gap_bps * 10) / 10, 100.6)
+  // A multiplier that took effect after the prices were observed is not applied.
+  const late: Record<string, unknown[]> = {}
+  await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, late), ctxFor, NOW,
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: fakeAccrual({ effectiveAt: Date.parse('2026-09-21T00:00:00Z') / 1000 }).source })
+  // deno-lint-ignore no-explicit-any
+  eq((late[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067').accrual_reason, 'multiplier_changed_after_observation')
+  // The read switched off still labels, never reverts to a premium.
+  const off: Record<string, unknown[]> = {}
+  await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, off), ctxFor, NOW,
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: false })
+  // deno-lint-ignore no-explicit-any
+  const offRow = (off[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067')
+  eq(offRow.accrual_reason, 'multiplier_not_read')
+  eq(offRow.premium_bps, null)
+})
+
+Deno.test('accrual: the one-off op recomputes the newest capture, re-reads the reference, and the board shows both figures', async () => {
+  // A capture stored before the adjustment existed: no accrual columns at all.
+  const stored: Record<string, unknown[]> = {}
+  await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, stored), ctxFor, NOW,
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: false })
+  const strip = (row: Record<string, unknown>) => Object.fromEntries(Object.entries(row).filter(([k]) => !k.startsWith('accrual_') && k !== 'adjusted_price' && k !== 'raw_premium_bps'))
+  // deno-lint-ignore no-explicit-any
+  const tables: Record<string, unknown[]> = { [ASSET_TABLE]: (stored[ASSET_TABLE] as any[]).map(strip), [TOKEN_TABLE]: (stored[TOKEN_TABLE] as any[]).map(strip) }
+  // deno-lint-ignore no-explicit-any
+  eq((tables[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067').wrapper_state, 'accrues_in_price')
+
+  const writes: Record<string, unknown[]> = {}
+  const later = new Date(NOW.getTime() + 5 * 3_600_000)
+  const ref = fakeReference({ price: 176 })
+  const acc = fakeAccrual()
+  const result = await captureAccrualForLatest(fakeDb(tables, writes), later,
+    { request: () => Promise.reject(new Error('no provider call')), referenceSource: ref.source, accrualSource: acc.source })
+  eq(result.credits, 0)
+  eq(result.error, undefined)
+  eq(result.capturedAt, HOUR)
+  // deno-lint-ignore no-explicit-any
+  eq((result.accrual as any).adjusted, 1)
+  // deno-lint-ignore no-explicit-any
+  const on = (writes[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067')
+  eq(on.accrual_treatment, 'adjusted')
+  eq(on.wrapper_state, 'liquid')
+  eq(Math.round(on.premium_bps * 10) / 10, 5.8)
+  // The capture's own clocks are kept: this is a recompute, not a new read.
+  // deno-lint-ignore no-explicit-any
+  eq(on.fetched_at, (tables[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067').fetched_at)
+  // deno-lint-ignore no-explicit-any
+  const spy = (writes[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '86')
+  eq(spy.accrual_adjusted_count, 1)
+  eq(spy.source_observed_at, '2026-09-20T14:25:00.000Z')
+  // The reference is re-read at the stored quote clock, and tagged with this op.
+  eq(ref.asked[0].asOfMs, Date.parse('2026-09-20T14:25:00.000Z'))
+  // deno-lint-ignore no-explicit-any
+  eq((writes[REFERENCE_TABLE] as any[])[0].capture_op, 'rwa_wrapper_accrual')
+  // Idempotent against the lane: the same figures as a scheduled run with the multiplier.
+  const direct: Record<string, unknown[]> = {}
+  await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, direct), ctxFor, NOW,
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: fakeAccrual().source })
+  // deno-lint-ignore no-explicit-any
+  for (const row of direct[TOKEN_TABLE] as any[]) {
+    // deno-lint-ignore no-explicit-any
+    const again = (writes[TOKEN_TABLE] as any[]).find((r) => r.crypto_id === row.crypto_id && r.rwa_id === row.rwa_id)
+    eq(again.premium_bps, row.premium_bps)
+    eq(again.accrual_gap_bps, row.accrual_gap_bps)
+    eq(again.in_anchor, row.in_anchor)
+    eq(again.adjusted_price, row.adjusted_price)
+  }
+
+  // Refusals: too old a capture, and no reference to keep the gap to the stock consistent.
+  const stale = await captureAccrualForLatest(fakeDb(tables, {}), new Date(NOW.getTime() + 14 * 3_600_000), { request: () => Promise.reject(new Error('x')), referenceSource: ref.source, accrualSource: acc.source })
+  eq(stale.skipped, 'newest_capture_too_old')
+  const noRef = await captureAccrualForLatest(fakeDb(tables, {}), later, { request: () => Promise.reject(new Error('x')), referenceSource: false, accrualSource: acc.source })
+  eq(noRef.skipped, 'reference_switched_off')
+  const thrower: UnderlyingReferenceSource = { id: 'chainlink', covers: () => ({ assetType: 'stock' }), readAsOf: () => Promise.reject(new Error('boom')) }
+  const nothing: Record<string, unknown[]> = {}
+  const broken = await captureAccrualForLatest(fakeDb(tables, nothing), later, { request: () => Promise.reject(new Error('x')), referenceSource: thrower, accrualSource: acc.source })
+  eq(broken.error, 'boom')
+  eq(nothing[TOKEN_TABLE], undefined)
+
+  // The board reads both figures back, and the picks name the adjusted wrapper's multiplier.
+  const board = await readRwaWrappers(fakeDb({ [ASSET_TABLE]: writes[ASSET_TABLE], [TOKEN_TABLE]: writes[TOKEN_TABLE] }), {}, later)
+  // deno-lint-ignore no-explicit-any
+  const row = (board.rows as any[]).find((r) => r.rwaId === '86')
+  eq(row.accrualAdjustedCount, 1)
+  // deno-lint-ignore no-explicit-any
+  const wrapper = row.tokens.find((t: any) => t.cryptoId === '38067')
+  eq(wrapper.accrualTreatment, 'adjusted')
+  eq(wrapper.accrualMultiplier, 1.0094730727840426)
+  eq(wrapper.accrualSource, 'ondo_solana_scaled_ui')
+  eq(wrapper.accrualAsOf, '2026-09-18T17:54:15.000Z')
+  eq(Math.round(wrapper.rawPremiumBps * 10) / 10, 100.6)
+  // deno-lint-ignore no-explicit-any
+  const wrapped = row.tokens.find((t: any) => t.cryptoId === '41525')
+  eq(wrapped.accrualTreatment, 'not_adjusted')
+  eq(wrapped.accrualReason, 'no_multiplier_source')
+  // deno-lint-ignore no-explicit-any
+  eq((board.summary as any).accrualAdjusted, 1)
+  eq(typeof board.accrualScope, 'string')
+  // deno-lint-ignore no-explicit-any
+  const excluded = row.picks.excluded.find((e: any) => e.cryptoId === '41525')
+  eq(excluded.reason, 'reinvested_dividends_not_adjusted')
 })

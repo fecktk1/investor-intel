@@ -2141,7 +2141,23 @@
     "column_price": "Preis (USD)",
     "column_tokenized_price": "Tokenisierter Preis (USD)",
     "column_quote_observed": "Kurs beobachtet",
-    "free_shared_kept": "Eine aufbewahrte Kopie vom {{date}}: Der Live-Lesevorgang hat nicht geantwortet ({{reason}})."
+    "free_shared_kept": "Eine aufbewahrte Kopie vom {{date}}: Der Live-Lesevorgang hat nicht geantwortet ({{reason}}).",
+    "free_shared_not_read_reason": "Dieser Datensatz konnte gerade nicht gelesen werden. {{why}}",
+    "free_shared_not_read_plain": "Dieser Datensatz wurde heute noch nicht gelesen.",
+    "rwa_type_empty_government_security": "Die RWA-Liste von CoinMarketCap enthält heute keine Staatsanleihen.",
+    "rwa_type_empty_real_estate": "Die RWA-Liste von CoinMarketCap enthält heute keine Immobilien.",
+    "rwa_type_empty": "Die RWA-Liste von CoinMarketCap enthält heute keine Vermögenswerte dieses Typs.",
+    "rwa_type_elsewhere_government_security": "Tokenisierte Staatsanleihefonds erfassen wir über ihre eigenen Nettoinventarwert-Feeds, mit der beworbenen Rendite jedes Fonds neben der Rendite, die seine NAV-Historie tatsächlich erbracht hat.",
+    "rwa_type_elsewhere_government_security_link": "Rendite und NAV der Staatsanleihefonds unter Marktstruktur",
+    "read_timeout": "Dieser Abruf hat nicht innerhalb von 30 Sekunden geantwortet und wurde deshalb gestoppt.",
+    "pairs_instead_eyebrow": "Was wir stattdessen haben",
+    "pairs_instead_loading": "Die gespeicherte Pool-Tiefe der Token dieses Vermögenswerts wird gelesen…",
+    "pairs_instead_failed": "Die gespeicherte Pool-Tiefe konnte gerade nicht gelesen werden: {{why}}",
+    "pairs_instead_none": "Die tägliche Pool-Erfassung hat für die Token dieses Vermögenswerts keine On-Chain-Pools verzeichnet, daher gibt es hier keine gespeicherte Tiefe.",
+    "pairs_instead_depth": "Gespeicherte On-Chain-Tiefe jeder Token-Darstellung aus der täglichen Pool-Erfassung. Dafür wird kein Anbieter abgefragt.",
+    "pairs_instead_as_of": "Erfasst {{time}}.",
+    "pairs_instead_board": "DEX-Pools aller tokenisierten Vermögenswerte unter Marktstruktur",
+    "pairs_instead_profile": "Das Asset-Profil oben in diesem Bereich und die Token-Preise darüber stammen aus gespeicherten Erfassungen und hängen nicht von Marktpaaren ab."
   },
   "settings": {
     "beginner": "Einsteigerschutz: stärkere Risikowarnungen und einfachere Erklärungen.",
@@ -4305,7 +4321,10 @@
     "profile_website": "Offizielle Website öffnen",
     "profile_expand": "Vollständige Beschreibung lesen",
     "profile_collapse": "Weniger anzeigen",
-    "profile_scope": "Veröffentlicht von {{provider}} und erfasst am {{capturedAt}}. Wo eine Einreichernummer steht, ist es die SEC-Einreichernummer des zugrunde liegenden börsennotierten Unternehmens, wie der Anbieter sie angibt, nicht die des Hauses, das den Token herausgegeben hat."
+    "profile_scope": "Veröffentlicht von {{provider}} und erfasst am {{capturedAt}}. Wo eine Einreichernummer steht, ist es die SEC-Einreichernummer des zugrunde liegenden börsennotierten Unternehmens, wie der Anbieter sie angibt, nicht die des Hauses, das den Token herausgegeben hat.",
+    "profile_loading": "Das gespeicherte Profil dieses Vermögenswerts wird gelesen…",
+    "profile_failed": "Das gespeicherte Profil konnte gerade nicht gelesen werden: {{why}} Preise, Token-Darstellungen und Emittentenrecherche weiter unten hängen nicht davon ab.",
+    "profile_empty_meaning": "CoinMarketCap veröffentlicht für viele tokenisierte Vermögenswerte ein beschreibendes Profil (Beschreibung, Website, Branche, Rang). Wir übernehmen diese Profile jeden Tag stapelweise und sind bei diesem Vermögenswert noch nicht angekommen, daher gibt es keine Beschreibung. Preise, Token-Darstellungen und Emittentenrecherche weiter unten hängen nicht davon ab."
   },
   "receipt_cost": {
     "calls_one": "{{count}} Anbieteraufruf",
@@ -4440,7 +4459,9 @@
     "state_derivative_reference": "Derivatpreis, kein Wrapper",
     "reason_derivative_not_a_wrapper": "Der Anbieter führt diesen Derivatpreis unter den Token des Assets. Es ist kein Token, den jemand hält oder einlöst. Er wird daher nur zum Vergleich gezeigt und fließt nie in den Anker, die größte Prämie oder den größten Abschlag oder die Auswahl ein.",
     "as_of_label": "Hüllen-Erfassung",
-    "prices_observed_label": "Preise zuletzt von CoinMarketCap aktualisiert"
+    "prices_observed_label": "Preise zuletzt von CoinMarketCap aktualisiert",
+    "reason_reinvested_dividends_not_adjusted": "Diese Hülle reinvestiert die Dividenden der Aktie in ihren eigenen Preis, und es konnte kein Multiplikator ihres Emittenten angewendet werden. Ihre Differenz enthält daher reinvestierte Dividenden und ist nicht bereinigt. Sie wird als Ansammlung gezeigt, nicht als Aufschlag, und bleibt aus dem Anker ausgeschlossen.",
+    "summary_adjusted": "Zu einem Preis je Aktie nach dem eigenen Dividendenmultiplikator des Emittenten verglichen: {{count}}."
   },
   "table_csv": {
     "download": "CSV herunterladen",
@@ -4682,7 +4703,7 @@
     "note_last_session": "Außerhalb der regulären Handelszeit ist dies die letzte Aktualisierung des Feeds aus der Zeit, als der Markt offen war, kein Live-Kurs.",
     "anchor_within": "Der Anker liegt innerhalb des Aktualisierungsbands des Feeds von {{band}} % um die Aktie, daher sind beide nicht unterscheidbar.",
     "anchor_gap": "Der Anker liegt {{value}} gegenüber der Aktie.",
-    "caveat": "Eine Differenz zur Aktie vergleicht einen Token mit einer Aktie. Sie berücksichtigt keine Dividenden, die eine Hülle reinvestiert haben kann, und ist keine handelbare Arbitrage.",
+    "caveat": "Eine Differenz zur Aktie vergleicht den Gegenwert einer Aktie in einer Hülle mit einer Aktie. Eine Hülle, die Dividenden in ihren Preis reinvestiert, wird zuerst durch den veröffentlichten Multiplikator ihres Emittenten geteilt, wo er gelesen werden konnte, und sonst gekennzeichnet. Sie ist keine handelbare Arbitrage.",
     "within_band": "Innerhalb des Aktualisierungsbands des Feeds von {{band}} %, nicht unterscheidbar",
     "measured": "Gemessen {{value}}",
     "col_vs_stock": "ggü. Aktie",
@@ -4704,6 +4725,29 @@
     "reason_wrapper_observation_time_unknown": "Der Anbieter nannte keine Zeit für die Hüllenpreise, daher gibt es keinen Zeitpunkt, zu dem die Aktie gelesen werden kann.",
     "reason_stale_in_session": "Der Feed wurde bei geöffnetem Markt nicht innerhalb seines Heartbeats aktualisiert und daher nicht verwendet.",
     "reason_stale_off_session": "Die letzte Aktualisierung des Feeds ist älter, als jede geplante Marktschließung erklärt, und wurde daher nicht verwendet."
+  },
+  "accrual": {
+    "source_ondo_solana_scaled_ui": "On-Chain-Multiplikator von Ondo",
+    "adjusted_note": "Um reinvestierte Dividenden bereinigt (x{{multiplier}}, {{source}}, Stand {{date}}).",
+    "adjusted_note_undated": "Um reinvestierte Dividenden bereinigt (x{{multiplier}}, {{source}}, seit Ausgabe des Tokens unverändert).",
+    "not_adjusted": "Enthält reinvestierte Dividenden, nicht bereinigt.",
+    "raw": "Vor dem Multiplikator: {{value}}",
+    "scope": "Manche Hüllen reinvestieren die Dividenden der Aktie im Token. Ein Token ist dann mehr wert als eine Aktie, und sein Preis entfernt sich aus Gründen von der Aktie, die kein Aufschlag sind. Wo der Emittent den Multiplikator dieses Tokens on-chain veröffentlicht, wird der Preis der Hülle durch den Multiplikator geteilt, der galt, als die Preise beobachtet wurden, bevor er mit den anderen Hüllen oder der Aktie verglichen wird, und die Zeile nennt den Multiplikator, seine Quelle und sein Datum. Wo kein Multiplikator gelesen werden konnte, wird nichts geschätzt: Die Differenz wird als einschließlich reinvestierter Dividenden, nicht bereinigt, gezeigt, und die Hülle bleibt aus dem Anker und dem günstigsten liquiden Weg ausgeschlossen.",
+    "attribution": "Dividendenmultiplikatoren: die eigenen On-Chain-Werte des Emittenten, gelesen aus seinen Solana-Token-Konten über einen öffentlichen RPC.",
+    "pick_note": "Aufschlag nach dem eigenen Dividendenmultiplikator dieser Hülle (x{{multiplier}}).",
+    "reason_no_multiplier_source": "Der Multiplikator des Emittenten für diesen Token wird hier noch nicht gelesen.",
+    "reason_no_multiplier_address": "Für den Multiplikator dieser Hülle ist noch kein Token-Konto hinterlegt.",
+    "reason_multiplier_read_failed": "Der Multiplikator konnte in dieser Erfassung nicht über seinen öffentlichen RPC gelesen werden.",
+    "reason_multiplier_not_read": "Der Multiplikator wurde in dieser Erfassung nicht gelesen.",
+    "reason_multiplier_changed_after_observation": "Der Multiplikator hat sich geändert, nachdem die Preise beobachtet wurden, daher ist der damals gültige Wert nicht on-chain.",
+    "reason_mint_identity_not_proved": "Das Token-Konto hat nicht nachgewiesen, dass es dieser Token ist, daher wurde sein Multiplikator nicht verwendet.",
+    "reason_multiplier_authority_changed": "Der Multiplikator wird nicht mehr von der hinterlegten Berechtigung des Emittenten gesetzt, daher wurde er nicht verwendet.",
+    "reason_no_published_multiplier": "Das Token-Konto veröffentlicht keinen Multiplikator.",
+    "reason_multiplier_out_of_range": "Der veröffentlichte Multiplikator liegt außerhalb jedes plausiblen Bereichs, daher wurde er nicht verwendet.",
+    "reason_multiplier_time_unreadable": "Das Datum, ab dem der Multiplikator gilt, konnte nicht gelesen werden, daher wurde er nicht verwendet.",
+    "reason_account_not_found": "Das Token-Konto wurde nicht gefunden.",
+    "reason_not_token_2022": "Das Token-Konto gehört nicht zum erwarteten Token-Programm, daher wurde sein Multiplikator nicht verwendet.",
+    "reason_wrapper_observation_time_unknown": "Der Anbieter hat keine Zeit für die Preise der Hüllen angegeben, daher ist der damals gültige Multiplikator unbekannt."
   },
   "intel_demo": {
     "banner_label": "Demo-Hinweis",
@@ -4808,7 +4852,10 @@
     "example_gold": "Gold",
     "derivative_label": "Derivatpreis, kein Wrapper, den du halten kannst. Nur zum Vergleich gezeigt, nie Teil des Ankers.",
     "credits_cache_origin_one": "keine für diese Abfrage; der ursprüngliche Aufruf meldete {{count}} Credit",
-    "credits_cache_origin_other": "keine für diese Abfrage; der ursprüngliche Aufruf meldete {{count}} Credits"
+    "credits_cache_origin_other": "keine für diese Abfrage; der ursprüngliche Aufruf meldete {{count}} Credits",
+    "stored_answer": "Alter dieser Antwort: {{age}}. Jede Zahl behält ihre eigene Erfassungszeit.",
+    "stored_answer_refreshing": "Alter dieser Antwort: {{age}}. Eine neuere wird gerade zusammengestellt. Jede Zahl behält ihre eigene Erfassungszeit.",
+    "age_under_minute": "weniger als eine Minute"
   },
   "receipt_proof": {
     "reproduce_cache_fill": "Den Aufruf nachvollziehen, der den Cache gefüllt hat",

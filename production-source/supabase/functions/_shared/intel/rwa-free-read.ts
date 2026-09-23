@@ -221,8 +221,11 @@ export function newestUsable(...list: (ResearchSnapshot | null)[]): ResearchSnap
 export interface FreshReadOptions {
   /** A second shared copy of the same figure, cache only (the warm batch). */
   alternate?: (() => Promise<ResearchSnapshot | null>) | null
-  /** A provider refusal already known (a recorded plan refusal): no claim, no call. */
-  liveBlocked?: string | null
+  /** A provider refusal already known (a recorded plan refusal): no claim, no
+   * call. May be a function, asked only when a live read would be the next step,
+   * so a caller can read the warm lane's state beside the shared copy instead of
+   * before it. A function that throws counts as no refusal. */
+  liveBlocked?: string | null | (() => Promise<string | null>)
 }
 
 export async function freeRwaReadFresh(
@@ -247,7 +250,8 @@ export async function freeRwaReadFresh(
   const keep = (reason: string | null) => kept ? lane(kept, { served: 'shared-cache', reason }) : lane(shared, { served: 'retained', reason })
   if (!allowLive) return keep('free_rwa_background_read')
   if (shared.state === 'unsupported') return lane(shared, { served: 'retained', reason: shared.reason ?? 'unsupported_capability' })
-  if (opts.liveBlocked) return keep(opts.liveBlocked)
+  const blocked = typeof opts.liveBlocked === 'function' ? await opts.liveBlocked().catch(() => null) : opts.liveBlocked
+  if (blocked) return keep(blocked)
   const granted = await claim()
   if (!granted.allowed) return keep(granted.reason)
   const live = await read('shared-live')

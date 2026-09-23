@@ -154,7 +154,7 @@ export type ReferenceState = typeof REFERENCE_STATES[number]
 
 /** What the board says about a gap, and what the storage calls it. */
 export const REFERENCE_SCOPE =
-  'The stock reference is a Chainlink on-chain price feed for the listed share, taken at the round in effect when the wrapper prices were observed. The feed only writes a new price after a move of its stated band or after its heartbeat, so a gap smaller than the band is not distinguishable from zero. A gap compares one token with one share: it does not adjust for dividends a wrapper may have reinvested, and it is not a tradable arbitrage.'
+  'The stock reference is a Chainlink on-chain price feed for the listed share, taken at the round in effect when the wrapper prices were observed. The feed only writes a new price after a move of its stated band or after its heartbeat, so a gap smaller than the band is not distinguishable from zero. A gap compares one share\'s worth of a wrapper with one share: where a wrapper reinvests dividends into its price and its issuer publishes the multiplier on chain, its price is divided by that multiplier first and the row says so; where no multiplier could be read, the gap includes reinvested dividends and is labelled as not adjusted. It is not a tradable arbitrage.'
 
 // ─── Ticker mapping ───────────────────────────────────────────────────────────
 
@@ -477,20 +477,36 @@ export function assetReferenceColumns(outcome: ReferenceOutcome | null, anchorPr
  * not established has no comparable price. */
 const GAP_STATES = new Set(['liquid', 'too_thin_to_anchor', 'volume_not_reported', 'derivative_reference'])
 
-/** The additive columns on one `intel_rwa_wrapper_tokens` row. */
+/** The additive columns on one `intel_rwa_wrapper_tokens` row.
+ *
+ * A wrapper that reinvests dividends into its price (`accrual_treatment` set,
+ * `accrual-multiplier.ts`) is compared with the share at its PER-SHARE price when
+ * its multiplier was applied (`adjusted_price`), and its unadjusted gap is kept
+ * beside it in `underlying_ref_raw_bps`. An unadjusted one carries ONLY the raw
+ * gap, which the surface labels as including reinvested dividends: it is never
+ * `underlying_ref_bps`, for the same reason it is never a premium. Reading the
+ * stored columns, not recomputing them, is what keeps a later re-run of the
+ * reference step from undoing the adjustment. */
 export function tokenReferenceColumns(
-  token: { normalised_price?: unknown; wrapper_state?: unknown },
+  token: { normalised_price?: unknown; wrapper_state?: unknown; accrual_treatment?: unknown; adjusted_price?: unknown },
   outcome: ReferenceOutcome | null,
 ): Record<string, unknown> {
   const empty = {
     underlying_ref_price: null, underlying_ref_bps: null, underlying_ref_within_band: null,
     underlying_ref_session: null, underlying_ref_observed_at: null, underlying_ref_source: null,
+    underlying_ref_raw_bps: null,
   }
   const reading = outcome?.reading
   if (!reading || reading.state !== 'observed') return empty
-  const price = token.normalised_price == null ? null : Number(token.normalised_price)
+  const numeric = (v: unknown) => (v == null || v === '' ? null : Number(v))
+  const own = numeric(token.normalised_price)
+  const treatment = String(token.accrual_treatment ?? '')
+  const price = treatment === 'adjusted' ? numeric(token.adjusted_price) : own
   const eligible = GAP_STATES.has(String(token.wrapper_state ?? ''))
   const gap = eligible ? referenceGap(price, reading) : { bps: null, withinBand: null }
+  const reinvesting = treatment === 'adjusted' || treatment === 'not_adjusted'
+  const accrues = String(token.wrapper_state ?? '') === 'accrues_in_price'
+  const raw = reinvesting && (eligible || accrues) ? referenceGap(own, reading) : { bps: null, withinBand: null }
   return {
     underlying_ref_price: reading.price,
     underlying_ref_bps: gap.bps,
@@ -498,8 +514,14 @@ export function tokenReferenceColumns(
     underlying_ref_session: reading.session,
     underlying_ref_observed_at: reading.roundUpdatedAt,
     underlying_ref_source: reading.source,
+    underlying_ref_raw_bps: raw.bps,
   }
 }
+
+/** Which run wrote an observation: the scheduled lane, the one-off reference
+ * step over the newest capture, or the one-off dividend-multiplier recompute of
+ * the newest capture (which re-reads the reference because the anchor moved). */
+export type ReferenceOp = 'rwa_wrappers' | 'rwa_wrapper_reference' | 'rwa_wrapper_accrual'
 
 /** One `intel_rwa_underlying_reference_observations` row per asset a read was
  * attempted for, failures included: a failed read is stored as a reason, never
@@ -507,7 +529,7 @@ export function tokenReferenceColumns(
 export function observationRow(
   rwaId: string,
   outcome: ReferenceOutcome | null,
-  context: { capturedAt: string; fetchedAt: string; op: 'rwa_wrappers' | 'rwa_wrapper_reference' },
+  context: { capturedAt: string; fetchedAt: string; op: ReferenceOp },
 ): Record<string, unknown> | null {
   const reading = outcome?.reading
   if (!outcome || outcome.mapping.state !== 'mapped' || !reading) return null

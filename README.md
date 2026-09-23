@@ -12,7 +12,7 @@ A tokenised stock, fund or commodity is a wrapper. Investor Intel answers the qu
 
 | Question | Answer in the product | Where |
 |---|---|---|
-| Which wrapper of this asset should I hold? | Premium or discount of every wrapper against an anchor. Today every anchor is the volume-weighted median of the liquid wrappers, and each row says so. The reason: none of the assets in CoinMarketCap's RWA data is a fund whose own published NAV feed we can map to it (checked 2026-09-20, `rwa-wrapper-spread.ts` lines 173 to 188). A published-NAV anchor is built and tested (`rwa-wrapper-spread.ts` line 551, `rwa-wrapper-spread.test.ts` line 284) but switches on only for a fund mapped to its own feed, so it has not run in production. For tokenised stocks and ETFs, every wrapper is also compared with the listed share itself: the price from a Chainlink on-chain feed (12 tickers verified today, no key and no CMC credits), with the feed's age, its update band and the US market session when the wrapper price was observed. A gap inside the feed's band is labelled not distinguishable rather than shown as a premium. CoinMarketCap's RWA data names the ticker but carries no stock price. Picks for cheapest to the anchor, closest to it and most traded, with every wrapper left out and why. A wrapper that sets the median is flagged rather than presented as closest. | Wrapper premiums (`/intel/rwa/wrappers`) |
+| Which wrapper of this asset should I hold? | Premium or discount of every wrapper against an anchor. Today every anchor is the volume-weighted median of the liquid wrappers, and each row says so. The reason: none of the assets in CoinMarketCap's RWA data is a fund whose own published NAV feed we can map to it (checked 2026-09-20, `rwa-wrapper-spread.ts` lines 180 to 195). A published-NAV anchor is built and tested (`rwa-wrapper-spread.ts` line 654, `rwa-wrapper-spread.test.ts` line 285) but switches on only for a fund mapped to its own feed, so it has not run in production. For tokenised stocks and ETFs, every wrapper is also compared with the listed share itself: the price from a Chainlink on-chain feed (12 tickers verified today, no key and no CMC credits), with the feed's age, its update band and the US market session when the wrapper price was observed. A gap inside the feed's band is labelled not distinguishable rather than shown as a premium. CoinMarketCap's RWA data names the ticker but carries no stock price. Picks for cheapest to the anchor, closest to it and most traded, with every wrapper left out and why. A wrapper that sets the median is flagged rather than presented as closest. | Wrapper premiums (`/intel/rwa/wrappers`) |
 | Has that premium held? | Each wrapper's premium from every six-hourly capture, plus up to 90 days before that rebuilt from daily OHLCV closes through the same unit, accrual and liquidity rules, labelled as reconstructed, with weekends and exchange holidays shaded. | Wrapper premiums, history panel below the board |
 | Does it trade at all? | A daily census of every tokenised asset in the RWA map: a wrapper that trades, priced but not traded, or listed only, and what changed since the day before. On 2026-09-22, 526 of 791 had no wrapper with reported trading. | Real-world assets (`/intel/rwa`), RWA universe coverage |
 | Who holds the value? | Issuer concentration (HHI, effective number of issuers, top-five share) and the chains wrappers are deployed on, with value attributed to a chain only for single-chain tokens. | Structure figures (`/intel/structure`) |
@@ -40,7 +40,7 @@ The other endpoints the product calls (markets, derivatives, DEX lanes) are list
 
 ## One real call, with the code that made it
 
-A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-premium lane asks for quotes on the assets it is pricing, in `production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts` line 553:
+A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-premium lane asks for quotes on the assets it is pricing, in `production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts` line 616:
 
 ```ts
 const quotes = await deps.request('rwaQuotes', { rwa_id: candidates.join(',') }, ctx).catch(() => null)
@@ -89,20 +89,24 @@ One call returns every wrapper of the asset with its issuer. Against CMC's own `
 
 Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call:
 - `npm ci`, then `npm test` (26 demo tests in fixture mode), then `npm run build`;
-- **2,244 Deno tests from 242 of the 284 test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission.
+- **2,274 Deno tests from 244 of the 286 Deno test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission;
+- **32 Vitest tests from 5 of the 6 Vitest test files in `production-source/`**, the React frontend's, listed in `production-source/runnable-vitest-tests.txt`, with the network globals replaced by ones that fail the test.
 
-The other 41 files (406 tests) are listed with the reason each can't run here in `production-source/excluded-tests.md`. Most import a module of the private parent platform. For the ones that only need such a module to load, `test-support/deno.json` maps it to a TEST STAND-IN in `test-support/stand-ins/`. A stand-in has no behaviour: every export throws, and any use fails the run.
+The other 42 Deno test files (421 tests) and 1 Vitest test file (31 tests) are listed with the reason each can't run here in `production-source/excluded-tests.md`. Most import a module of the private parent platform. For the ones that only need such a module to load, `test-support/deno.json` maps it to a TEST STAND-IN in `test-support/stand-ins/`, and the Vitest run applies the same map. A stand-in has no behaviour: every export throws, and any use fails the run.
+
+The packaging test (`production-source/scripts/test-intel-extraction-package.mjs`) builds this repository, runs these tests, and checks every count of tests, test files and MCP tools stated in this README and in `docs/` against what it built. The only counts it leaves alone are the ones recorded for a named earlier run.
 
 The same commands work locally with Node.js 24 and Deno 2:
 
 ```bash
 npm ci
 npm test
+npm run test:vitest
 deno cache --config test-support/deno.json $(cat production-source/runnable-tests.txt)
 deno test --config test-support/deno.json --cached-only --allow-read --allow-env --no-check $(cat production-source/runnable-tests.txt)
 ```
 
-`--no-check` runs the tests without a TypeScript type-check pass, the same way the private repository runs these modules' tests.
+`npm run test:vitest` runs Vitest from inside `production-source/` with `test-support/vitest.config.mjs`. `--no-check` runs the Deno tests without a TypeScript type-check pass, the same way the private repository runs these modules' tests.
 
 ## Links
 
@@ -171,7 +175,7 @@ The server's source is `production-source/supabase/functions/intel-mcp-demo/`. I
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,244 tests from `production-source/runnable-tests.txt`, no key, no network permission. `test-support/` holds the config and the stand-ins those commands use. |
+| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,274 tests from `production-source/runnable-tests.txt`, no key, no network permission. `npm run test:vitest`: 32 tests from `production-source/runnable-vitest-tests.txt`. `test-support/` holds the configs and the stand-ins those commands use. |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm ci`, `npm test`, `npm run dev` (see Quick start) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |
@@ -182,7 +186,7 @@ The server's source is `production-source/supabase/functions/intel-mcp-demo/`. I
 Some Investor Intel modules import the private parent platform (authentication, the Supabase client and shared provider helpers), which is not in this repository.
 - **Tests that still run.** Where a test only needs such a module to load, it runs here against a stand-in that has no behaviour.
 - **Tests that don't.** Where it needs the module to work, it is listed in `production-source/excluded-tests.md` with the reason.
-- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 502 tests behind the RWA lane and the CMC transport.
+- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 519 tests behind the RWA lane and the CMC transport.
 
 The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
 
@@ -240,9 +244,10 @@ Open http://127.0.0.1:5187. The demo has three modes, set in a local `.env` (cop
 | **Live, with your own key** | `CMC_MODE=live`, `CMC_API_KEY=<your key>` and, for a hackathon Startup key, `CMC_VERIFIED_PLAN=startup` | **Real RWA listings, profiles, quotes and issuers** from `/v5/real-world-assets/*`, plus live quotes, OHLCV (Startup) and derivatives. The server spends at most 20 credits a month by default (`CMC_DEMO_CREDIT_LIMIT`) and never sends the key to the browser. |
 | Keyless | `CMC_MODE=keyless` | CoinMarketCap's anonymous public API, no key at all. It does not cover the RWA family, and the shared pool refuses bursts (HTTP 429). Caveat, verbatim: keyless commercial terms are unstated; keep it to the demo until reviewed. |
 
-The production modules have their own tests (Deno 2). This runs the same 2,244 tests as CI:
+The production modules have their own tests (Deno 2, and Vitest for the React frontend). This runs the same 2,274 Deno tests and 32 Vitest tests as CI:
 
 ```bash
+npm run test:vitest
 deno cache --config test-support/deno.json $(cat production-source/runnable-tests.txt)
 deno test --config test-support/deno.json --cached-only --allow-read --allow-env --no-check $(cat production-source/runnable-tests.txt)
 ```

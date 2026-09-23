@@ -2141,7 +2141,23 @@
     "column_price": "Çmimi (USD)",
     "column_tokenized_price": "Çmimi i tokenizuar (USD)",
     "column_quote_observed": "Kuotimi i vëzhguar",
-    "free_shared_kept": "Një kopje e ruajtur nga {{date}}: leximi live nuk u përgjigj ({{reason}})."
+    "free_shared_kept": "Një kopje e ruajtur nga {{date}}: leximi live nuk u përgjigj ({{reason}}).",
+    "free_shared_not_read_reason": "Ky regjistër nuk mund të lexohej tani. {{why}}",
+    "free_shared_not_read_plain": "Ky regjistër nuk është lexuar ende sot.",
+    "rwa_type_empty_government_security": "Lista RWA e CoinMarketCap nuk ka sot tituj qeveritarë.",
+    "rwa_type_empty_real_estate": "Lista RWA e CoinMarketCap nuk ka sot pasuri të paluajtshme.",
+    "rwa_type_empty": "Lista RWA e CoinMarketCap nuk ka sot aktive të këtij lloji.",
+    "rwa_type_elsewhere_government_security": "Fondet e tokenizuara të titujve qeveritarë i mbulojmë përmes burimeve të tyre të vlerës neto të aktiveve, me yield-in e shpallur të çdo fondi pranë yield-it që historia e tij e NAV-it dha në të vërtetë.",
+    "rwa_type_elsewhere_government_security_link": "Yield-i dhe NAV-i i fondeve të titujve qeveritarë te Struktura e tregut",
+    "read_timeout": "Ky lexim nuk u përgjigj brenda 30 sekondave, prandaj u ndal.",
+    "pairs_instead_eyebrow": "Çfarë kemi në vend të kësaj",
+    "pairs_instead_loading": "Po lexohet thellësia e ruajtur e pool-eve për tokenët e këtij aktivi…",
+    "pairs_instead_failed": "Thellësia e ruajtur e pool-eve nuk mund të lexohej tani: {{why}}",
+    "pairs_instead_none": "Kapja ditore e pool-eve nuk ka regjistruar pool-e on-chain për tokenët e këtij aktivi, kështu që këtu nuk ka thellësi të ruajtur për të shfaqur.",
+    "pairs_instead_depth": "Thellësia on-chain e ruajtur e çdo përfaqësimi në token, nga kapja ditore e pool-eve. Për këtë nuk bëhet asnjë thirrje te ofruesi.",
+    "pairs_instead_as_of": "Kapur {{time}}.",
+    "pairs_instead_board": "Pool-et DEX të çdo aktivi të tokenizuar te Struktura e tregut",
+    "pairs_instead_profile": "Profili i aktivit në krye të këtij paneli dhe çmimet e tokenëve më sipër vijnë nga kapje të ruajtura dhe nuk varen nga çiftet e tregut."
   },
   "settings": {
     "beginner": "Mbrojtja për fillestarët: paralajmërime rreziku më të forta dhe shpjegime më të thjeshta.",
@@ -4305,7 +4321,10 @@
     "profile_website": "Hap faqen zyrtare",
     "profile_expand": "Lexo përshkrimin e plotë",
     "profile_collapse": "Shfaq më pak",
-    "profile_scope": "Publikuar nga {{provider}} dhe kapur më {{capturedAt}}. Kur shfaqet një numër dorëzuesi, është numri i dorëzuesit pranë SEC i kompanisë së listuar nën bazë sipas ofruesit, jo i shtëpisë që nxori token-in."
+    "profile_scope": "Publikuar nga {{provider}} dhe kapur më {{capturedAt}}. Kur shfaqet një numër dorëzuesi, është numri i dorëzuesit pranë SEC i kompanisë së listuar nën bazë sipas ofruesit, jo i shtëpisë që nxori token-in.",
+    "profile_loading": "Po lexohet profili i ruajtur i këtij aktivi…",
+    "profile_failed": "Profili i ruajtur nuk mund të lexohej tani: {{why}} Çmimet, përfaqësimet në token dhe kërkimi për emetuesit më poshtë nuk varen prej tij.",
+    "profile_empty_meaning": "CoinMarketCap publikon një profil përshkrues (përshkrim, faqe interneti, industri, renditje) për shumë aktive të tokenizuara. Ne i kopjojmë këto profile një grup në një kohë çdo ditë dhe nuk kemi arritur ende te ky aktiv, kështu që nuk ka përshkrim për të shfaqur. Çmimet, përfaqësimet në token dhe kërkimi për emetuesit më poshtë nuk varen prej tij."
   },
   "receipt_cost": {
     "calls_one": "{{count}} thirrje te ofruesi",
@@ -4440,7 +4459,9 @@
     "state_derivative_reference": "Çmim derivati, jo wrapper",
     "reason_derivative_not_a_wrapper": "Ofruesi e rendit këtë çmim derivati mes tokenëve të asetit. Nuk është token që dikush e mban ose e shlyen, prandaj shfaqet vetëm për krahasim dhe nuk hyn kurrë në ankorim, në primin ose zbritjen më të madhe apo në zgjedhjet.",
     "as_of_label": "Regjistrimi i mbulesësve",
-    "prices_observed_label": "Çmimet u përditësuan së fundi nga CoinMarketCap"
+    "prices_observed_label": "Çmimet u përditësuan së fundi nga CoinMarketCap",
+    "reason_reinvested_dividends_not_adjusted": "Ky mbulës i riinveston dividendët e aksionit në çmimin e vet dhe nuk mund të zbatohej asnjë shumëzues i emetuesit, prandaj diferenca e tij përfshin dividendë të riinvestuar dhe nuk është e rregulluar. Ajo shfaqet si grumbullim, jo si prim, dhe mbulësi mbetet jashtë spirancës.",
+    "summary_adjusted": "Të krahasuar me një çmim për aksion pas shumëzuesit të dividendëve të vetë emetuesit: {{count}}."
   },
   "table_csv": {
     "download": "Shkarko CSV",
@@ -4682,7 +4703,7 @@
     "note_last_session": "Jashtë seancës së rregullt, ky është përditësimi i fundit i feed-it nga koha kur tregu ishte i hapur, jo një çmim i drejtpërdrejtë.",
     "anchor_within": "Spiranca është brenda brezit të përditësimit prej {{band}}% të feed-it ndaj aksionit, prandaj të dyja nuk dallohen.",
     "anchor_gap": "Spiranca qëndron {{value}} ndaj aksionit.",
-    "caveat": "Një diferencë ndaj aksionit krahason një token me një aksion. Ajo nuk rregullon dividendët që një mbulës mund të ketë riinvestuar dhe nuk është arbitrazh i tregtueshëm.",
+    "caveat": "Një diferencë ndaj aksionit krahason vlerën e një aksioni në një mbulës me një aksion. Një mbulës që riinveston dividendët në çmimin e tij pjesëtohet fillimisht me shumëzuesin e publikuar nga emetuesi i tij kur ai mund të lexohej, dhe shënohet kur jo. Nuk është arbitrazh i tregtueshëm.",
     "within_band": "Brenda brezit të përditësimit prej {{band}}% të feed-it, nuk dallohet",
     "measured": "Matur {{value}}",
     "col_vs_stock": "ndaj aksionit",
@@ -4704,6 +4725,29 @@
     "reason_wrapper_observation_time_unknown": "Ofruesi nuk dha kohë për çmimet e mbulësve, prandaj nuk ka një moment për të lexuar aksionin.",
     "reason_stale_in_session": "Feed-i nuk u përditësua brenda heartbeat-it të tij ndërsa tregu ishte i hapur, prandaj nuk u përdor.",
     "reason_stale_off_session": "Përditësimi i fundit i feed-it është më i vjetër se sa shpjegon çdo mbyllje e planifikuar e tregut, prandaj nuk u përdor."
+  },
+  "accrual": {
+    "source_ondo_solana_scaled_ui": "shumëzuesi on-chain i Ondo",
+    "adjusted_note": "I rregulluar për dividendët e riinvestuar (x{{multiplier}}, {{source}}, më {{date}}).",
+    "adjusted_note_undated": "I rregulluar për dividendët e riinvestuar (x{{multiplier}}, {{source}}, i pandryshuar që nga emetimi i tokenit).",
+    "not_adjusted": "Përfshin dividendë të riinvestuar, i parregulluar.",
+    "raw": "Para shumëzuesit: {{value}}",
+    "scope": "Disa mbulësë i riinvestojnë dividendët e aksionit brenda tokenit, prandaj një token vlen më shumë se një aksion dhe çmimi i tij largohet nga aksioni për arsye që nuk janë prim. Kur emetuesi e publikon on-chain shumëzuesin e atij tokeni, çmimi i mbulësit pjesëtohet me shumëzuesin që ishte në fuqi kur u vëzhguan çmimet përpara se të krahasohet me mbulësët e tjerë ose me aksionin, dhe rreshti tregon shumëzuesin, burimin dhe datën e tij. Kur nuk mund të lexohej asnjë shumëzues, nuk supozohet asgjë: diferenca shfaqet si që përfshin dividendë të riinvestuar, e parregulluar, dhe mbulësi mbetet jashtë spirancës dhe rrugës likuide më të lirë.",
+    "attribution": "Shumëzuesit e dividendëve: shifrat on-chain të vetë emetuesit, të lexuara nga llogaritë e tij të tokenëve në Solana përmes një RPC publik.",
+    "pick_note": "Prim pas shumëzuesit të dividendëve të vetë këtij mbulësi (x{{multiplier}}).",
+    "reason_no_multiplier_source": "Shumëzuesi i emetuesit për këtë token nuk lexohet ende këtu.",
+    "reason_no_multiplier_address": "Ende nuk është regjistruar asnjë llogari tokeni për shumëzuesin e këtij mbulësi.",
+    "reason_multiplier_read_failed": "Shumëzuesi nuk mund të lexohej përmes RPC-së së tij publike në këtë kapje.",
+    "reason_multiplier_not_read": "Shumëzuesi nuk u lexua në këtë kapje.",
+    "reason_multiplier_changed_after_observation": "Shumëzuesi ndryshoi pasi u vëzhguan çmimet, prandaj ai që ishte në fuqi në atë moment nuk është on-chain.",
+    "reason_mint_identity_not_proved": "Llogaria e tokenit nuk provoi se është ky token, prandaj shumëzuesi i saj nuk u përdor.",
+    "reason_multiplier_authority_changed": "Shumëzuesi nuk caktohet më nga autoriteti i regjistruar i emetuesit, prandaj nuk u përdor.",
+    "reason_no_published_multiplier": "Llogaria e tokenit nuk publikon asnjë shumëzues.",
+    "reason_multiplier_out_of_range": "Shumëzuesi i publikuar është jashtë çdo intervali të besueshëm, prandaj nuk u përdor.",
+    "reason_multiplier_time_unreadable": "Data kur shumëzuesi hyri në fuqi nuk mund të lexohej, prandaj ai nuk u përdor.",
+    "reason_account_not_found": "Llogaria e tokenit nuk u gjet.",
+    "reason_not_token_2022": "Llogaria e tokenit nuk i përket programit të pritur të tokenëve, prandaj shumëzuesi i saj nuk u përdor.",
+    "reason_wrapper_observation_time_unknown": "Ofruesi nuk dha kohë për çmimet e mbulësëve, prandaj shumëzuesi që ishte në fuqi atëherë nuk dihet."
   },
   "intel_demo": {
     "banner_label": "Njoftim demo",
@@ -4808,7 +4852,10 @@
     "example_gold": "ari",
     "derivative_label": "Çmim derivati, jo wrapper që mund ta mbash. Shfaqet për krahasim, kurrë pjesë e ankorimit.",
     "credits_cache_origin_one": "asnjë për këtë kërkim; thirrja origjinale raportoi {{count}} kredit",
-    "credits_cache_origin_other": "asnjë për këtë kërkim; thirrja origjinale raportoi {{count}} kredite"
+    "credits_cache_origin_other": "asnjë për këtë kërkim; thirrja origjinale raportoi {{count}} kredite",
+    "stored_answer": "Kjo përgjigje u përpilua {{age}} më parë. Çdo shifër ruan kohën e vet të kapjes.",
+    "stored_answer_refreshing": "Kjo përgjigje u përpilua {{age}} më parë dhe një më e re po përpilohet tani. Çdo shifër ruan kohën e vet të kapjes.",
+    "age_under_minute": "më pak se një minutë"
   },
   "receipt_proof": {
     "reproduce_cache_fill": "Riprodhoje thirrjen që mbushi cache-in",

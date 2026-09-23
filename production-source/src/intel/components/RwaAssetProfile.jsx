@@ -4,6 +4,9 @@ import TokenAvatar from './TokenAvatar'
 import { fmtNum } from '../lib/market-format'
 import ProviderText from './ProviderText'
 import { clampProviderBlocks, providerTextBlocks } from '../lib/provider-text'
+import { captureReasonText } from '../lib/capture-api'
+import DemoNotInSnapshot from '../demo/DemoNotInSnapshot'
+import { DEMO_MISS_CODE } from '../demo/demo-fetch'
 
 // The stored descriptive profile of one tokenized real-world asset, as a plain
 // presentational block for a detail drawer.
@@ -50,18 +53,36 @@ const httpsOnly = url => (typeof url === 'string' && /^https:\/\/[^\s]+$/i.test(
 
 const rule = 'border-b border-[var(--border-default)] py-2'
 
-export default function RwaAssetProfile({ profile, className = '' }) {
+/** What an absent profile means, by the read's state (useRwaAssetProfile):
+ * still reading, the read failed (or the demo snapshot does not hold it), or the
+ * read answered and this asset has not been profiled yet. Three different
+ * sentences, because "not captured" said while a read is still in flight, or
+ * after it failed, is a claim nobody checked. `status` absent is the old
+ * contract: the caller only passes a profile, and null means not captured. */
+export function profileAbsence(status, reason) {
+  // 'idle' means there is no id to read, which never becomes an answer: it is
+  // said as not captured rather than left on a reading line.
+  if (status === 'loading') return { kind: 'loading' }
+  if (status === 'unavailable') return reason === DEMO_MISS_CODE ? { kind: 'demo' } : { kind: 'failed', reason }
+  return { kind: 'not_captured' }
+}
+
+export default function RwaAssetProfile({ profile, status, reason = null, className = '' }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   const [expanded, setExpanded] = useState(false)
 
   // No profile is a stated state, not a blank. The caller may prefer its own
   // wording, but this component never renders nothing.
   if (!profile) {
+    const absence = profileAbsence(status, reason)
     return (
-      <div className={`intel-rwa-profile ${className}`}>
+      <div className={`intel-rwa-profile ${className}`} data-profile-state={absence.kind}>
         <div className="eyebrow">{t('rwa_underlying.profile_eyebrow', { defaultValue: 'Asset profile' })}</div>
-        <p role="status" className="text-[12px] mt-1">
-          {t('rwa_underlying.profile_empty', { defaultValue: 'No descriptive profile has been captured for this asset yet. Profiles are read a batch at a time each day, so coverage grows over several days.' })}
+        <p role="status" className="text-[12px] mt-1 max-w-[75ch]">
+          {absence.kind === 'loading' && t('rwa_underlying.profile_loading', { defaultValue: 'Reading the stored profile of this asset…' })}
+          {absence.kind === 'demo' && <DemoNotInSnapshot/>}
+          {absence.kind === 'failed' && t('rwa_underlying.profile_failed', { why: captureReasonText(t, absence.reason), defaultValue: 'The stored profile could not be read just now: {{why}} Prices, token representations and issuer research below do not depend on it.' })}
+          {absence.kind === 'not_captured' && t('rwa_underlying.profile_empty_meaning', { defaultValue: 'CoinMarketCap publishes a descriptive profile (description, website, industry, rank) for many tokenised assets. We copy those profiles a batch at a time each day and have not reached this asset yet, so there is no description to show. Prices, token representations and issuer research below do not depend on it.' })}
         </p>
       </div>
     )

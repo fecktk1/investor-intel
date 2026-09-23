@@ -19,7 +19,7 @@ Submissions opened on 2026-09-09. The first commit of the hackathon CoinMarketCa
 | 2026-09-17 | 35 | Launchpad and meme lanes asked per documented request, and a 403 kept as a plan refusal. |
 | 2026-09-20 | 56 | The RWA workspace: wrapper premiums and dispersion, the two-endpoint reconciliation, on-chain depth with the recognised-pool rule, underlying SEC registrants from the CMC filer number, logos and source lines, and the workspace opened to free members. |
 | 2026-09-21 | 8 | Fixes. |
-| 2026-09-22 | 14 | Public repository packaged. Best-wrapper picks, premium history with a one-off OHLCV reconstruction, exit capacity, the daily universe coverage lane with its changes feed and issuer concentration, CSV export, reproducible receipts, six more MCP tools, and a no-account demo served from a daily snapshot. |
+| 2026-09-22 | 14 | Public repository packaged. Best-wrapper picks, premium history with a one-off OHLCV reconstruction, exit capacity, the daily universe coverage lane with its changes feed and issuer concentration, CSV export, reproducible receipts, seven more MCP tools, and a no-account demo served from a daily snapshot. |
 
 Work after 2026-09-22 appears as ordinary commits on top of this history.
 

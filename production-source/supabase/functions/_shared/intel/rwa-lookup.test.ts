@@ -1,5 +1,6 @@
 import { assert, assertEquals, assertFalse, assertThrows } from 'jsr:@std/assert@1'
-import { lookupRwa, parseLookupQuery, parseResearchRequest, reproduceLine, researchRwa, scrubSecrets, trimRaw, IP_LIVE_LIMIT_REASON, LOOKUP_LIVE_RATE, LOOKUP_RATE } from './rwa-lookup.ts'
+import { ANSWER_REFRESH_MS, ANSWER_SERVE_MAX_MS, answerKey, answerLookup, lookupRwa, parseLookupQuery, parseResearchRequest, reproduceLine, researchRwa, reserveAnswer, scrubSecrets, trimRaw, IP_LIVE_LIMIT_REASON, LOOKUP_LIVE_RATE, LOOKUP_RATE, type AnswerStore, type StoredAnswer } from './rwa-lookup.ts'
+import { phaseTimer } from './server-timing.ts'
 import { researchParams } from './research-service.ts'
 import { handleLookup, type HandlerDeps } from '../../intel-rwa-lookup/handler.ts'
 import type { FreeRwaPlan } from './rwa-free-read.ts'
@@ -557,4 +558,152 @@ Deno.test('research: a single-asset quote past its window is answered by the war
   const page = await researchRwa({ ...list.d, warm: async () => WARM }, parseResearchRequest({ capability: 'rwaList', params: { start: 1, limit: 25 } }, researchParams), true) as Row
   assertEquals(list.calls.map((c) => c.plan), ['shared-cache', 'shared-live']); assertEquals(list.claims(), 1)
   assertEquals(page.freeShared.served, 'shared-live')
+})
+
+// ─── Speed: reads side by side, bookkeeping after, the stored answer first ───
+
+Deno.test('speed: the shared quote is read without waiting for the warm lane state', async () => {
+  const order: string[] = []
+  let releaseWarm: (v: unknown) => void = () => {}
+  const warmGate = new Promise((resolve) => { releaseWarm = resolve })
+  const { d } = deps(fakeDb(tables()), { 'shared-cache': () => { order.push('shared-cache'); return cacheHit() } })
+  const running = lookupRwa({ ...d, warm: async () => { order.push('warm-start'); await warmGate; order.push('warm-done'); return null } }, parseLookupQuery('NVDA'), true)
+  await new Promise((r) => setTimeout(r, 5))
+  // The quote read has already happened while the warm state is still pending.
+  assert(order.includes('shared-cache'), order.join(','))
+  assertFalse(order.includes('warm-done'))
+  releaseWarm(null)
+  const out = await running
+  assertEquals(out.state, 'found'); assertEquals(out.figures!.quote!.receipt.served, 'cache')
+})
+
+Deno.test('speed: keeping the last good copy runs after the answer when a defer is given', async () => {
+  const db = fakeDb(tables())
+  const { d } = deps(db, { 'shared-cache': cacheHit })
+  const deferred: Promise<unknown>[] = []
+  const out = await lookupRwa({ ...d, defer: (work) => { deferred.push(work) } }, parseLookupQuery('NVDA'), true)
+  assertEquals(out.state, 'found')
+  assertEquals(deferred.length, 1, 'the remember call was handed to defer')
+  await Promise.all(deferred)
+  assert(db.rpcLog.some((c) => c.name === 'intel_rwa_lookup_remember'))
+  // Without a defer it is awaited in line, exactly as before.
+  const inline = fakeDb(tables())
+  await lookupRwa(deps(inline, { 'shared-cache': cacheHit }).d, parseLookupQuery('NVDA'), true)
+  assert(inline.rpcLog.some((c) => c.name === 'intel_rwa_lookup_remember'))
+})
+
+Deno.test('speed: the same figures come back whether the reads run side by side or not', async () => {
+  const { d } = deps(fakeDb(tables()), { 'shared-cache': cacheHit })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), true)
+  assertEquals(out.figures!.premium!.value.widestPremiumBps, 7.7)
+  assertEquals(out.figures!.premium!.receipt.httpStatus, 200)
+  assertEquals(out.figures!.premium!.receipt.creditCount, 2)
+  assertEquals(out.figures!.identity.receipt.creditCount, 1)
+  assertEquals(out.figures!.wrappers!.value.find((w) => w.symbol === 'NVDAX')!.premiumBps, 7.7)
+  // SGOV has no wrapper hour: the coverage capture answers, and no premium.
+  const sgov = await lookupRwa(deps(fakeDb(tables()), {}).d, parseLookupQuery('SGOV'), false)
+  assertEquals(sgov.figures!.premium, null)
+  assertEquals(sgov.figures!.quote!.receipt.served, 'capture')
+  assertEquals(sgov.figures!.quote!.receipt.creditCount, 8)
+})
+
+function memoryAnswers(initial: Record<string, StoredAnswer> = {}) {
+  const map = new Map(Object.entries(initial))
+  const kept: string[] = []
+  const store: AnswerStore = {
+    read: async (key) => map.get(key) ?? null,
+    keep: async (key, _rwaId, body, builtAt) => { kept.push(key); map.set(key, { body, builtAt }) },
+  }
+  return { store, map, kept }
+}
+
+Deno.test('stored answer: none kept, the lookup is assembled and kept under its query key', async () => {
+  const { d, calls } = deps(fakeDb(tables()), { 'shared-cache': cacheHit })
+  const answers = memoryAnswers()
+  const out = await answerLookup({ ...d, answers: answers.store }, parseLookupQuery('nvda'), true) as Row
+  assertEquals(out.state, 'found'); assertEquals(out.stored, undefined)
+  assertEquals(calls, ['shared-cache'])
+  assertEquals(answers.kept, ['q:nvda'])
+  assertEquals(answerKey(parseLookupQuery('242')), 'id:242')
+  // Nothing found is never kept.
+  const none = memoryAnswers()
+  await answerLookup({ ...deps(fakeDb(tables()), {}).d, answers: none.store }, parseLookupQuery('ZZZZQ'), true)
+  assertEquals(none.kept, [])
+})
+
+Deno.test('stored answer: a young answer is served at once, re-aged, with no read of its own', async () => {
+  const built = new Date(NOW - 30_000).toISOString()
+  const first = await lookupRwa(deps(fakeDb(tables()), { 'shared-live': liveOk }).d, parseLookupQuery('NVDA'), true)
+  assertEquals(first.figures!.quote!.receipt.served, 'live')
+  const answers = memoryAnswers({ 'q:nvda': { body: first as Row, builtAt: built } })
+  const { d, calls } = deps(fakeDb(tables()), { 'shared-cache': cacheHit })
+  const out = await answerLookup({ ...d, answers: answers.store }, parseLookupQuery('NVDA'), true) as Row
+  assertEquals(calls, [], 'no quote read for a young stored answer')
+  assertEquals(answers.kept, [])
+  assertEquals(out.stored, { builtAt: built, ageSeconds: 30, refreshing: false })
+  assertEquals(out.servedAt, new Date(NOW).toISOString())
+  // A figure a live call answered is, served again, a stored copy: no call for this lookup.
+  const r = out.figures.quote.receipt
+  assertEquals([r.served, r.creditCount, r.originCreditCount, r.curlMeaning], ['cache', null, 1, 'same_request'])
+  // Ages are measured now, from each figure's own capture time.
+  assertEquals(out.figures.premium.receipt.ageSeconds, Math.round((NOW - Date.parse('2026-09-30T20:00:00.000Z')) / 1000))
+})
+
+Deno.test('stored answer: past the refresh age it is still served, and a fresh one is assembled behind it', async () => {
+  const built = new Date(NOW - ANSWER_REFRESH_MS - 5_000).toISOString()
+  const old = await lookupRwa(deps(fakeDb(tables()), { 'shared-cache': cacheHit }).d, parseLookupQuery('NVDA'), true)
+  const answers = memoryAnswers({ 'q:nvda': { body: old as Row, builtAt: built } })
+  const { d, calls } = deps(fakeDb(tables()), { 'shared-cache': cacheHit })
+  const deferred: Promise<unknown>[] = []
+  const out = await answerLookup({ ...d, answers: answers.store, defer: (w) => { deferred.push(w) } }, parseLookupQuery('NVDA'), true) as Row
+  assertEquals(out.stored.refreshing, true)
+  assertEquals(out.stored.builtAt, built)
+  assertEquals(calls, [], 'the answer did not wait for the rebuild')
+  await Promise.all(deferred)
+  assertEquals(calls, ['shared-cache'], 'the rebuild ran behind the answer')
+  assertEquals(answers.kept, ['q:nvda'])
+  assertEquals(answers.map.get('q:nvda')!.builtAt, new Date(NOW).toISOString())
+})
+
+Deno.test('stored answer: too old, or not a found answer, is assembled again now', async () => {
+  const old = await lookupRwa(deps(fakeDb(tables()), { 'shared-cache': cacheHit }).d, parseLookupQuery('NVDA'), true)
+  for (const kept of [
+    { body: old as Row, builtAt: new Date(NOW - ANSWER_SERVE_MAX_MS - 1).toISOString() },
+    { body: { ...(old as Row), state: 'not_found' }, builtAt: new Date(NOW - 1_000).toISOString() },
+    { body: old as Row, builtAt: 'not a time' },
+  ]) {
+    const answers = memoryAnswers({ 'q:nvda': kept })
+    const { d, calls } = deps(fakeDb(tables()), { 'shared-cache': cacheHit })
+    const out = await answerLookup({ ...d, answers: answers.store }, parseLookupQuery('NVDA'), true) as Row
+    assertEquals(out.stored, undefined)
+    assertEquals(calls, ['shared-cache'])
+  }
+  // An unreadable store is no store.
+  const broken: AnswerStore = { read: () => Promise.reject(new Error('down')), keep: () => Promise.reject(new Error('down')) }
+  const out = await answerLookup({ ...deps(fakeDb(tables()), { 'shared-cache': cacheHit }).d, answers: broken }, parseLookupQuery('NVDA'), true)
+  assertEquals(out.state, 'found')
+})
+
+Deno.test('stored answer: reserveAnswer leaves a figure that made no call as it was, apart from its age', () => {
+  const body = { state: 'found', servedAt: '2026-10-05T11:00:00.000Z', figures: {
+    identity: { value: {}, receipt: { served: 'capture', capturedAt: '2026-10-05T11:00:00.000Z', ageSeconds: 0, creditCount: 1, curl: 'x', curlMeaning: 'same_request' } },
+    quote: null,
+  } }
+  const out = reserveAnswer(body, '2026-10-05T11:59:00.000Z', NOW, false) as Row
+  assertEquals(out.figures.identity.receipt, { served: 'capture', capturedAt: '2026-10-05T11:00:00.000Z', ageSeconds: 3600, creditCount: 1, curl: 'x', curlMeaning: 'same_request' })
+  assertEquals(out.figures.quote, null)
+  assertEquals(out.stored.ageSeconds, 60)
+})
+
+Deno.test('handler: every answer says where its time went (Server-Timing), readable cross-origin', async () => {
+  const h = handlerDeps(fakeDb(tables()), { 'shared-cache': cacheHit })
+  let clock = 0
+  const res = await handleLookup(post({ q: 'NVDA' }, '3.3.3.3'), { ...h, timer: () => phaseTimer(() => (clock += 5)) })
+  assertEquals(res.status, 200)
+  const timing = res.headers.get('server-timing')!
+  for (const phase of ['limit', 'resolve', 'quote', 'total']) assert(timing.includes(`${phase};dur=`), timing)
+  assertEquals(res.headers.get('timing-allow-origin'), '*')
+  assert(res.headers.get('access-control-expose-headers')!.includes('Server-Timing'))
+  const research = await handleLookup(post({ capability: 'rwaList', params: { start: 1, limit: 25 } }, '3.3.3.3'), h)
+  assert(research.headers.get('server-timing')!.includes('research;dur='))
 })

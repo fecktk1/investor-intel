@@ -1,10 +1,13 @@
 // Investor Intel: the public demo's daily snapshot builder.
 //
-// POST {op:'build'} (optionally {cursor, force, maxEntries}) computes the
-// response bodies the real Investor Intel pages receive for a declared list of
-// requests and writes them to the public `intel-demo` bucket, latest.json last.
-// See _shared/intel/demo-snapshot-builder.ts for what is built and the bounds,
-// and _shared/intel/demo-snapshot-plan.ts for which requests.
+// POST {op:'build'} (optionally {cursor, force, refresh, maxEntries}) computes
+// the response bodies the real Investor Intel pages receive for a declared list
+// of requests and writes them to the public `intel-demo` bucket, latest.json last.
+// {refresh:true} is the afternoon and evening tick: it rebuilds a day that is
+// already built, staged so the served copy never changes until the new one is
+// complete. See _shared/intel/demo-snapshot-builder.ts for what is built, the
+// bounds and the same-day generations, and _shared/intel/demo-snapshot-plan.ts
+// for which requests.
 //
 // AUTHENTICATION, exactly like intel-capture's capture half: the operational
 // `x-cron-secret` (pg_cron), or a signed-in super admin by hand. The work itself
@@ -12,7 +15,7 @@
 // token for, any user, and it never calls a provider.
 
 import { createClient } from 'npm:@supabase/supabase-js@2'
-import { buildDemoSnapshot, DEMO_BUCKET, type DemoStorage } from '../_shared/intel/demo-snapshot-builder.ts'
+import { buildDemoSnapshot, DEMO_BUCKET, nextHopBody, type DemoStorage } from '../_shared/intel/demo-snapshot-builder.ts'
 import { planDemoRequests } from '../_shared/intel/demo-snapshot-plan.ts'
 import { cacheOnlyResearchReader } from '../_shared/intel/demo-snapshot-research.ts'
 import { serviceRoleRestReplay, sharedFunctionReaders } from '../_shared/intel/demo-snapshot-shared.ts'
@@ -95,23 +98,27 @@ export async function handleDemoSnapshot(req: Request, clientFactory = createCli
       trigger: cronOk ? 'cron' : 'super_admin',
       cursor: Number.isFinite(Number(body.cursor)) && body.cursor != null ? Number(body.cursor) : null,
       force: body.force === true && !cronOk,
+      refresh: body.refresh === true,
+      generation: typeof body.generation === 'string' ? body.generation.slice(0, 40) : null,
       maxEntries: Number.isFinite(Number(body.maxEntries)) ? Number(body.maxEntries) : undefined,
       budgetMs: BUDGET_MS,
     })
     // A partial run hands on to the next invocation itself, so one trigger (the
-    // cron tick or a super admin) builds the whole day. Bounded by a hop count.
+    // cron tick or a super admin) builds the whole day. Bounded by a hop count,
+    // tagged with the generation, and never from a super admin stepping by hand.
     const hop = Number.isFinite(Number(body.hop)) ? Number(body.hop) : 0
-    if (result.status === 'partial' && result.cursor != null && hop < MAX_HOPS && cronSecret) {
+    const nextBody = cronSecret ? nextHopBody(result, { cronOk, manualCursor: body.cursor != null, hop, maxHops: MAX_HOPS }) : null
+    if (nextBody && cronSecret) {
       const next = fetch(`${supabaseUrl}/functions/v1/intel-demo-snapshot`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')}`, 'x-cron-secret': cronSecret },
-        body: JSON.stringify({ op: 'build', cursor: result.cursor, hop: hop + 1 }),
+        body: JSON.stringify(nextBody),
       }).then((r) => r.body?.cancel()).catch((e) => console.error('intel_demo_snapshot_handoff_failed', String(e?.message || e)))
       // deno-lint-ignore no-explicit-any
       const runtime = (globalThis as any).EdgeRuntime
       if (runtime?.waitUntil) runtime.waitUntil(next)
     }
-    console.info('intel_demo_snapshot_run', { date: result.date, status: result.status, planned: result.planned, written: result.written, skipped: result.skipped, failed: result.failed, cursor: result.cursor, latestWritten: result.latestWritten, durationMs: result.durationMs })
+    console.info('intel_demo_snapshot_run', { date: result.date, status: result.status, generation: result.generation, staged: result.staged, planned: result.planned, written: result.written, committed: result.committed, skipped: result.skipped, failed: result.failed, cursor: result.cursor, latestWritten: result.latestWritten, durationMs: result.durationMs })
     return json({ ok: result.status !== 'failed', ...result, errors: result.errors.slice(0, 20) }, result.status === 'failed' ? 500 : 200)
   } catch (e) {
     return json({ error: (e as Error)?.message || 'intel_demo_snapshot_failed' }, 500)

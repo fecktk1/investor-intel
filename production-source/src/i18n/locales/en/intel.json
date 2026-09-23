@@ -2969,7 +2969,23 @@
     "column_price": "Price (USD)",
     "column_tokenized_price": "Tokenized price (USD)",
     "column_quote_observed": "Quote observed",
-    "free_shared_kept": "A kept copy from {{date}}: the live read did not answer ({{reason}})."
+    "free_shared_kept": "A kept copy from {{date}}: the live read did not answer ({{reason}}).",
+    "free_shared_not_read_reason": "This record could not be read just now. {{why}}",
+    "free_shared_not_read_plain": "This record has not been read yet today.",
+    "rwa_type_empty_government_security": "CoinMarketCap's RWA list has no government securities today.",
+    "rwa_type_empty_real_estate": "CoinMarketCap's RWA list has no real estate today.",
+    "rwa_type_empty": "CoinMarketCap's RWA list has no assets of this type today.",
+    "rwa_type_elsewhere_government_security": "We cover tokenised treasury funds through their own net asset value feeds, with each fund's advertised yield beside the yield its NAV history actually delivered.",
+    "rwa_type_elsewhere_government_security_link": "Treasury fund yield and NAV on Market structure",
+    "read_timeout": "This read did not answer within 30 seconds, so it was stopped.",
+    "pairs_instead_eyebrow": "What we have instead",
+    "pairs_instead_loading": "Reading the stored pool depth of this asset's tokens…",
+    "pairs_instead_failed": "The stored pool depth could not be read just now: {{why}}",
+    "pairs_instead_none": "The daily pool lane has not recorded on-chain pools for this asset's tokens, so there is no stored depth to show here.",
+    "pairs_instead_depth": "Stored on-chain depth of each token representation, from the daily pool lane. No provider call is made for this.",
+    "pairs_instead_as_of": "Captured {{time}}.",
+    "pairs_instead_board": "Every tokenised asset's DEX pools on Market structure",
+    "pairs_instead_profile": "The asset profile at the top of this drawer and the token prices above come from stored captures and do not depend on market pairs."
   },
   "settings": {
     "beginner": "Beginner Protection: stronger risk warnings and simpler explanations.",
@@ -4305,7 +4321,10 @@
     "profile_website": "Open the official site",
     "profile_expand": "Read the full description",
     "profile_collapse": "Show less",
-    "profile_scope": "Published by {{provider}} and captured on {{capturedAt}}. Where a filer number is shown it is the SEC filer number of the underlying listed company as the provider states it, not of the firm that issued the token."
+    "profile_scope": "Published by {{provider}} and captured on {{capturedAt}}. Where a filer number is shown it is the SEC filer number of the underlying listed company as the provider states it, not of the firm that issued the token.",
+    "profile_loading": "Reading the stored profile of this asset…",
+    "profile_failed": "The stored profile could not be read just now: {{why}} Prices, token representations and issuer research below do not depend on it.",
+    "profile_empty_meaning": "CoinMarketCap publishes a descriptive profile (description, website, industry, rank) for many tokenised assets. We copy those profiles a batch at a time each day and have not reached this asset yet, so there is no description to show. Prices, token representations and issuer research below do not depend on it."
   },
   "receipt_cost": {
     "calls_one": "{{count}} provider call",
@@ -4440,7 +4459,9 @@
     "state_derivative_reference": "Derivative price, not a wrapper",
     "reason_derivative_not_a_wrapper": "The provider lists this derivative price among the asset's tokens. It is not a token anyone holds or redeems, so it is shown for comparison and never enters the anchor, the widest premium or discount, or the picks.",
     "as_of_label": "Wrapper capture",
-    "prices_observed_label": "Prices last updated by CoinMarketCap"
+    "prices_observed_label": "Prices last updated by CoinMarketCap",
+    "reason_reinvested_dividends_not_adjusted": "This wrapper reinvests the share's dividends into its own price and no multiplier from its issuer could be applied, so its gap includes reinvested dividends and is not adjusted. It is shown as an accrual, not a premium, and is kept out of the anchor.",
+    "summary_adjusted": "Compared at a per-share price after the issuer's own dividend multiplier: {{count}}."
   },
   "table_csv": {
     "download": "Download CSV",
@@ -4682,7 +4703,7 @@
     "note_last_session": "Outside the regular session this is the feed's last update from when the market was open, not a live price.",
     "anchor_within": "The anchor is within the feed's {{band}}% update band of the stock, so the two are not distinguishable.",
     "anchor_gap": "The anchor sits {{value}} against the stock.",
-    "caveat": "A gap to the stock compares one token with one share. It does not adjust for dividends a wrapper may have reinvested, and it is not a tradable arbitrage.",
+    "caveat": "A gap to the stock compares one share's worth of a wrapper with one share. A wrapper that reinvests dividends into its price is divided by its issuer's published multiplier first where one could be read, and is labelled where not. It is not a tradable arbitrage.",
     "within_band": "Within the feed's {{band}}% update band, not distinguishable",
     "measured": "Measured {{value}}",
     "col_vs_stock": "vs stock",
@@ -4704,6 +4725,29 @@
     "reason_wrapper_observation_time_unknown": "The provider gave no time for the wrapper prices, so there is no moment to read the stock at.",
     "reason_stale_in_session": "The feed had not updated within its heartbeat while the market was open, so it was not used.",
     "reason_stale_off_session": "The feed's last update is older than any scheduled market closure explains, so it was not used."
+  },
+  "accrual": {
+    "source_ondo_solana_scaled_ui": "Ondo on-chain multiplier",
+    "adjusted_note": "Adjusted for reinvested dividends (x{{multiplier}}, {{source}}, as of {{date}}).",
+    "adjusted_note_undated": "Adjusted for reinvested dividends (x{{multiplier}}, {{source}}, unchanged since the token was issued).",
+    "not_adjusted": "Includes reinvested dividends, not adjusted.",
+    "raw": "Before the multiplier: {{value}}",
+    "scope": "Some wrappers reinvest the share's dividends inside the token, so one token is worth more than one share and its price drifts above the stock for reasons that are not a premium. Where the issuer publishes that token's multiplier on chain, the wrapper's price is divided by the multiplier in effect when the prices were observed before it is compared with its siblings or the stock, and the row names the multiplier, its source and its date. Where no multiplier could be read, nothing is guessed: the gap is shown as including reinvested dividends, not adjusted, and the wrapper is kept out of the anchor and the cheapest route.",
+    "attribution": "Dividend multipliers: the issuer's own on-chain figures, read from its Solana token accounts through a public RPC.",
+    "pick_note": "Premium after this wrapper's own dividend multiplier (x{{multiplier}}).",
+    "reason_no_multiplier_source": "Its issuer's multiplier for this token is not read here yet.",
+    "reason_no_multiplier_address": "No token account for this wrapper's multiplier is recorded yet.",
+    "reason_multiplier_read_failed": "The multiplier could not be read over its public RPC in this capture.",
+    "reason_multiplier_not_read": "The multiplier was not read in this capture.",
+    "reason_multiplier_changed_after_observation": "The multiplier changed after the prices were observed, so the one in effect at that moment is not on chain.",
+    "reason_mint_identity_not_proved": "The token account did not prove it is this token, so its multiplier was not used.",
+    "reason_multiplier_authority_changed": "The multiplier is no longer set by the issuer's recorded authority, so it was not used.",
+    "reason_no_published_multiplier": "The token account publishes no multiplier.",
+    "reason_multiplier_out_of_range": "The published multiplier is outside any plausible range, so it was not used.",
+    "reason_multiplier_time_unreadable": "The date the multiplier took effect could not be read, so it was not used.",
+    "reason_account_not_found": "The token account was not found.",
+    "reason_not_token_2022": "The token account is not held by the expected token program, so its multiplier was not used.",
+    "reason_wrapper_observation_time_unknown": "The provider gave no time for the wrapper prices, so the multiplier in effect then is not known."
   },
   "intel_demo": {
     "banner_label": "Demo notice",
@@ -4808,7 +4852,10 @@
     "example_gold": "gold",
     "derivative_label": "Derivative price, not a wrapper you can hold. Shown for comparison, never part of the anchor.",
     "credits_cache_origin_one": "none for this lookup; the original call reported {{count}} credit",
-    "credits_cache_origin_other": "none for this lookup; the original call reported {{count}} credits"
+    "credits_cache_origin_other": "none for this lookup; the original call reported {{count}} credits",
+    "stored_answer": "This answer was assembled {{age}} ago. Each figure keeps its own capture time.",
+    "stored_answer_refreshing": "This answer was assembled {{age}} ago and a newer one is being assembled now. Each figure keeps its own capture time.",
+    "age_under_minute": "less than a minute"
   },
   "receipt_proof": {
     "reproduce_cache_fill": "Reproduce the call that filled the cache",
