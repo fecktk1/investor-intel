@@ -23,14 +23,14 @@ The wrapper-premium lane asks for quotes on the assets it is pricing
 const quotes = await deps.request('rwaQuotes', { rwa_id: candidates.join(',') }, ctx).catch(() => null)
 ```
 
-`deps.request` is `requestCmc` in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts`. Before any request goes out, it looks the capability up in a reviewed registry (`cmc-capabilities.ts`, line 75), checks the plan allows it, checks the shared cache, and reserves the estimated credits in the database. Only then does it make the call (lines 231 to 232):
+`deps.request` is `requestCmc` in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts`. Before any request goes out, it looks the capability up in a reviewed registry (`cmc-capabilities.ts`, line 81 for `rwaQuotes`), checks the plan allows it, checks the shared cache, and reserves the estimated credits in the database. Only then does it make the call (lines 232 to 233):
 
 ```ts
 const res=await fetch(`${BASE}${spec.path}${post?'':`?${query}`}`,{method:post?'POST':'GET',headers:{'X-CMC_PRO_API_KEY':key,Accept:'application/json',...(post?{'Content-Type':'application/json'}:{})},
   ...(post?{body:JSON.stringify(cmcRequestBody(name,params))}:{}),signal:AbortSignal.timeout(8000),redirect:'error'})
 ```
 
-After the response arrives, the transport reconciles the reservation against the provider's own `status.credit_count` (line 251) and writes a receipt. That receipt (capability, endpoint, parameters, HTTP status, credits, elapsed time, cache age) is what the product shows next to each figure.
+After the response arrives, the transport reconciles the reservation against the provider's own `status.credit_count` (line 252) and writes a receipt. That receipt (capability, endpoint, parameters, HTTP status, credits, elapsed time, cache age) is what the product shows next to each figure.
 
 The key is read from the server environment and travels only in the request header. It never appears in a response, a receipt, a log or this repository.
 

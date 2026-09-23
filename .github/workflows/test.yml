@@ -1,0 +1,51 @@
+# Runs every test in this repository on each push and pull request, offline.
+#
+# No secrets are used and no CoinMarketCap call is made:
+# - the demo runs in fixture mode (CMC_MODE=fixture, no key), and its tests
+#   inject synthetic responses;
+# - the production-source Deno tests run without --allow-net, so any network
+#   call from a test would fail rather than reach a provider.
+# The only downloads are the npm packages in package-lock.json and the Deno
+# standard-library modules the tests import.
+name: test
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    env:
+      CMC_MODE: fixture
+      CMC_API_KEY: ''
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6.5.0
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install (exact lockfile)
+        run: npm ci
+
+      - name: Demo tests (node --test, fixture mode)
+        run: npm test
+
+      - name: Demo build
+        run: npm run build
+
+      - uses: denoland/setup-deno@22d081ff2d3a40755e97629de92e3bcbfa7cf2ed # v2.0.5
+        with:
+          deno-version: v2.8.2
+
+      # --no-check runs the tests without a TypeScript type-check pass, the same
+      # way the private repository runs these modules' tests.
+      - name: Production-source tests (Deno, no network permission)
+        run: deno test --allow-read --allow-env --no-check production-source/supabase

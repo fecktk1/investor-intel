@@ -4,5 +4,4 @@ dist/
 .env
 .env.local
 *.log
-production-source/
 deno.lock
