@@ -4398,7 +4398,9 @@
     "chart_x_log": "Gerapporteerd 24-uursvolume (USD, logaritmische schaal)",
     "chart_log_note": "Het volume staat op een logaritmische schaal: elke rasterlijn is tien keer de vorige. Een wrapper zonder gerapporteerd volume staat aan de linkerrand.",
     "legend_anchor": "Ankert de referentie: het volume ligt boven de drempel",
-    "legend_thin": "Te dun om te ankeren: getoond, maar buiten het anker gelaten"
+    "legend_thin": "Te dun om te ankeren: getoond, maar buiten het anker gelaten",
+    "state_derivative_reference": "Derivatenprijs, geen wrapper",
+    "reason_derivative_not_a_wrapper": "De aanbieder vermeldt deze derivatenprijs tussen de tokens van het asset. Het is geen token dat iemand aanhoudt of inwisselt, dus hij wordt alleen ter vergelijking getoond en telt nooit mee voor het anker, de grootste premie of korting of de keuzes."
   },
   "table_csv": {
     "download": "CSV downloaden",
@@ -4724,6 +4726,7 @@
     "reason_no_quote_captured": "No quote for this asset has been captured yet.",
     "example_nvda": "Nvidia",
     "example_sgov": "a Treasury bill fund",
-    "example_gold": "gold"
+    "example_gold": "gold",
+    "derivative_label": "Derivatenprijs, geen wrapper die je kunt aanhouden. Ter vergelijking getoond, nooit onderdeel van het anker."
   }
 }

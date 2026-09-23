@@ -377,3 +377,35 @@ Deno.test('a list endpoint zero beside a reported token value is the disagreemen
   eq(reconcileTokenValue({ listMarketCap: null, tokenMarketCapSum: 10 }).reason, 'list_value_not_reported')
   eq(reconcileTokenValue({ listMarketCap: 10, tokenMarketCapSum: null }).reason, 'no_wrapper_reported_a_value')
 })
+
+Deno.test('a derivative price among the tokens is labelled, kept, and never a wrapper, an anchor member or the widest gap', async () => {
+  const { isDerivativeReference, CMC_DERIVATIVES_ISSUER_ID } = await import('./rwa-wrapper-spread.ts')
+  const tok = (cryptoId: string, price: number, volume24h: number, extra: Record<string, unknown> = {}) =>
+    ({ cryptoId, symbol: 'NVDA' + cryptoId, name: `NVIDIA tokenized stock ${cryptoId}`, issuerId: 'i' + cryptoId, issuerName: 'Issuer ' + cryptoId, price, marketCap: 1_000_000, volume24h, ...extra })
+  const asset = {
+    rwaId: '2', symbol: 'NVDA', name: 'Nvidia Corp', assetType: 'stock', rwaRank: 1,
+    averageTokenizedPrice: 228.4, tokenizedMarketCap: 1e8, tokenizedVolume24h: 1e8, observedAt: '2026-09-23T00:00:00Z',
+    tokens: [
+      tok('1', 228.0, 5_000_000), tok('2', 228.2, 5_000_000), tok('3', 228.4, 5_000_000),
+      // The derivative: a high price and the largest volume, which would drag the median and win "widest premium".
+      tok('9', 240.0, 50_000_000, { name: 'NVIDIA (Derivatives)', issuerName: 'NA (Derivatives)', issuerId: CMC_DERIVATIVES_ISSUER_ID, marketCap: 0 }),
+    ],
+  }
+  // deno-lint-ignore no-explicit-any
+  const spread = wrapperSpread(asset as any)
+  const d = spread.tokens.find((r) => r.cryptoId === '9')!
+  eq(d.state, 'derivative_reference')
+  eq(d.reason, 'derivative_not_a_wrapper')
+  eq(d.inAnchor, false)
+  assert(d.premiumBps != null && d.premiumBps > 0, 'the gap is kept for information')
+  eq(spread.wrapperCount, 3)
+  eq(spread.anchorMembers, 3)
+  assert(spread.anchorPrice! > 227.9 && spread.anchorPrice! < 228.5, `anchor ${spread.anchorPrice} must ignore the derivative`)
+  assert(spread.widestPremiumCryptoId !== '9')
+  assert(spread.cheapestCryptoId !== '9')
+  // Recognised by issuer id, issuer name or token name.
+  eq(isDerivativeReference({ issuerId: CMC_DERIVATIVES_ISSUER_ID }), true)
+  eq(isDerivativeReference({ issuerName: 'NA (Derivatives)' }), true)
+  eq(isDerivativeReference({ name: 'MicroStrategy Inc (Derivatives)' }), true)
+  eq(isDerivativeReference({ name: 'NVIDIA tokenized stock (xStock)', issuerName: 'Backed Assets' }), false)
+})

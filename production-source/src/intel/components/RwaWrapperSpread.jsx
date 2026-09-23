@@ -194,6 +194,7 @@ const REASONS = {
   below_volume_floor: 'Too thin to anchor: its reported 24 hour volume is below the floor, so it is shown but excluded from the anchor.',
   volume_not_reported: 'The provider reported no 24 hour volume for this wrapper, so it is excluded from the anchor.',
   accrues_in_price: 'This wrapper accrues its yield inside the token price, so its gap to the anchor is an accrual and not a premium.',
+  derivative_not_a_wrapper: 'The provider lists this derivative price among the asset\'s tokens. It is not a token anyone holds or redeems, so it is shown for comparison and never enters the anchor, the widest premium or discount, or the picks.',
   accrual_name_mismatch: 'This wrapper is recorded as accruing under a different name, so the accrual exemption was not applied and its gap is reported as a premium.',
   price_matches_no_known_weight_unit: 'Unit not established: the price matches neither the asset\'s unit nor a troy ounce to gram conversion, so no premium is reported.',
   price_far_from_peers: 'Unit not established: the price sits too far from the other wrappers of this asset to be the same unit, so no premium is reported.',
@@ -262,6 +263,7 @@ const STATE_LABELS = {
   no_price: 'No price reported',
   unit_not_established: 'Unit not established',
   accrues_in_price: 'Accrues in price',
+  derivative_reference: 'Derivative price, not a wrapper',
 }
 const UNIT_LABELS = {
   consistent: 'Same unit as its peers',

@@ -4398,7 +4398,9 @@
     "chart_x_log": "Reported 24h volume (USD, log scale)",
     "chart_log_note": "Volume is on a log scale: each gridline is ten times the one before. A wrapper with no reported volume sits on the left edge.",
     "legend_anchor": "Anchors the reference: its volume clears the floor",
-    "legend_thin": "Too thin to anchor: shown, left out of the anchor"
+    "legend_thin": "Too thin to anchor: shown, left out of the anchor",
+    "state_derivative_reference": "Derivative price, not a wrapper",
+    "reason_derivative_not_a_wrapper": "The provider lists this derivative price among the asset's tokens. It is not a token anyone holds or redeems, so it is shown for comparison and never enters the anchor, the widest premium or discount, or the picks."
   },
   "table_csv": {
     "download": "Download CSV",
@@ -4724,6 +4726,7 @@
     "reason_no_quote_captured": "No quote for this asset has been captured yet.",
     "example_nvda": "Nvidia",
     "example_sgov": "a Treasury bill fund",
-    "example_gold": "gold"
+    "example_gold": "gold",
+    "derivative_label": "Derivative price, not a wrapper you can hold. Shown for comparison, never part of the anchor."
   }
 }

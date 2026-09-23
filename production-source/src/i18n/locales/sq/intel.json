@@ -4398,7 +4398,9 @@
     "chart_x_log": "Volumi 24-orësh i raportuar (USD, shkallë logaritmike)",
     "chart_log_note": "Volumi është në shkallë logaritmike: çdo vijë e rrjetës është dhjetë herë sa e mëparshmja. Një mbulës pa volum të raportuar qëndron në skajin e majtë.",
     "legend_anchor": "Spirancon referencën: volumi i tij kalon kufirin",
-    "legend_thin": "Tepër i hollë për të spirancuar: shfaqet, por mbetet jashtë spirancës"
+    "legend_thin": "Tepër i hollë për të spirancuar: shfaqet, por mbetet jashtë spirancës",
+    "state_derivative_reference": "Çmim derivati, jo wrapper",
+    "reason_derivative_not_a_wrapper": "Ofruesi e rendit këtë çmim derivati mes tokenëve të asetit. Nuk është token që dikush e mban ose e shlyen, prandaj shfaqet vetëm për krahasim dhe nuk hyn kurrë në ankorim, në primin ose zbritjen më të madhe apo në zgjedhjet."
   },
   "table_csv": {
     "download": "Shkarko CSV",
@@ -4724,6 +4726,7 @@
     "reason_no_quote_captured": "No quote for this asset has been captured yet.",
     "example_nvda": "Nvidia",
     "example_sgov": "a Treasury bill fund",
-    "example_gold": "gold"
+    "example_gold": "gold",
+    "derivative_label": "Çmim derivati, jo wrapper që mund ta mbash. Shfaqet për krahasim, kurrë pjesë e ankorimit."
   }
 }

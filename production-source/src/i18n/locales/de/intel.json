@@ -4398,7 +4398,9 @@
     "chart_x_log": "Gemeldetes 24-Stunden-Volumen (USD, logarithmisch)",
     "chart_log_note": "Das Volumen ist logarithmisch dargestellt: Jede Gitterlinie ist das Zehnfache der vorigen. Eine Hülle ohne gemeldetes Volumen sitzt am linken Rand.",
     "legend_anchor": "Ankert die Referenz: Ihr Volumen liegt über der Untergrenze",
-    "legend_thin": "Zu dünn zum Ankern: gezeigt, aber nicht Teil des Ankers"
+    "legend_thin": "Zu dünn zum Ankern: gezeigt, aber nicht Teil des Ankers",
+    "state_derivative_reference": "Derivatpreis, kein Wrapper",
+    "reason_derivative_not_a_wrapper": "Der Anbieter führt diesen Derivatpreis unter den Token des Assets. Es ist kein Token, den jemand hält oder einlöst. Er wird daher nur zum Vergleich gezeigt und fließt nie in den Anker, die größte Prämie oder den größten Abschlag oder die Auswahl ein."
   },
   "table_csv": {
     "download": "CSV herunterladen",
@@ -4724,6 +4726,7 @@
     "reason_no_quote_captured": "No quote for this asset has been captured yet.",
     "example_nvda": "Nvidia",
     "example_sgov": "a Treasury bill fund",
-    "example_gold": "gold"
+    "example_gold": "gold",
+    "derivative_label": "Derivatpreis, kein Wrapper, den du halten kannst. Nur zum Vergleich gezeigt, nie Teil des Ankers."
   }
 }

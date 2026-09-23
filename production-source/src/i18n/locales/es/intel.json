@@ -4398,7 +4398,9 @@
     "chart_x_log": "Volumen declarado de 24 h (USD, escala logarítmica)",
     "chart_log_note": "El volumen está en escala logarítmica: cada línea de la cuadrícula es diez veces la anterior. Un envoltorio sin volumen declarado queda en el borde izquierdo.",
     "legend_anchor": "Ancla la referencia: su volumen supera el umbral",
-    "legend_thin": "Demasiado fino para anclar: se muestra, pero queda fuera del ancla"
+    "legend_thin": "Demasiado fino para anclar: se muestra, pero queda fuera del ancla",
+    "state_derivative_reference": "Precio de derivado, no es un wrapper",
+    "reason_derivative_not_a_wrapper": "El proveedor incluye este precio de derivado entre los tokens del activo. No es un token que alguien tenga o reembolse, así que se muestra solo para comparar y nunca entra en el ancla, la mayor prima o descuento ni en las selecciones."
   },
   "table_csv": {
     "download": "Descargar CSV",
@@ -4724,6 +4726,7 @@
     "reason_no_quote_captured": "No quote for this asset has been captured yet.",
     "example_nvda": "Nvidia",
     "example_sgov": "a Treasury bill fund",
-    "example_gold": "gold"
+    "example_gold": "gold",
+    "derivative_label": "Precio de derivado, no es un wrapper que puedas tener. Se muestra para comparar y nunca forma parte del ancla."
   }
 }

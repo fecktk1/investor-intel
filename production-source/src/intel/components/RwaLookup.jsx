@@ -115,6 +115,8 @@ function Answer({ answer, onPick }) {
   const wrappers = Array.isArray(f.wrappers?.value) ? f.wrappers.value : []
   const premium = f.premium?.value || null
   const anyPremium = wrappers.some((w) => w.premiumBps != null)
+  // Derivative prices ride along in the provider's token list but are not wrappers.
+  const wrapperCount = wrappers.filter((w) => !w.derivative).length
   return (
     <div className="space-y-3" data-testid="rwa-lookup-answer">
       <div>
@@ -135,7 +137,7 @@ function Answer({ answer, onPick }) {
       )}
       {wrappers.length > 0 && (
         <table className="w-full text-[12px]">
-          <caption className="text-left text-[13px] font-medium pb-1">{t('rwa_lookup.wrappers_title', { count: wrappers.length, defaultValue: 'Wrappers ({{count}})' })}</caption>
+          <caption className="text-left text-[13px] font-medium pb-1">{t('rwa_lookup.wrappers_title', { count: wrapperCount, defaultValue: 'Wrappers ({{count}})' })}</caption>
           <thead>
             <tr className="text-left text-[var(--fg-4)]">
               <th scope="col" className={cell}>{t('rwa_lookup.col_token', { defaultValue: 'Token' })}</th>
@@ -148,7 +150,8 @@ function Answer({ answer, onPick }) {
           <tbody>
             {wrappers.map((w, i) => (
               <tr key={`${w.cryptoId || w.symbol}-${i}`}>
-                <td className={cell}>{w.symbol}<span className="text-[var(--fg-4)]"> {w.name && w.name !== w.symbol ? w.name : ''}</span></td>
+                <td className={cell}>{w.symbol}<span className="text-[var(--fg-4)]"> {w.name && w.name !== w.symbol ? w.name : ''}</span>
+                  {w.derivative && <span className="block text-[11px] text-[var(--fg-4)]" data-derivative="">{t('rwa_lookup.derivative_label', { defaultValue: 'Derivative price, not a wrapper you can hold. Shown for comparison, never part of the anchor.' })}</span>}</td>
                 <td className={cell}>{w.issuerName || '—'}</td>
                 <td className={`${cell} text-right tabular-nums`}>{w.price == null ? '—' : fmtPrice(w.price)}</td>
                 <td className={`${cell} text-right tabular-nums`}>{w.marketCap == null ? '—' : fmtVol(w.marketCap)}</td>

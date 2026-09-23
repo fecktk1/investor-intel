@@ -99,9 +99,27 @@ export type AnchorKind = typeof ANCHOR_KINDS[number]
 
 export const WRAPPER_STATES = [
   'liquid', 'too_thin_to_anchor', 'volume_not_reported', 'no_price',
-  'unit_not_established', 'accrues_in_price',
+  'unit_not_established', 'accrues_in_price', 'derivative_reference',
 ] as const
 export type WrapperState = typeof WRAPPER_STATES[number]
+
+/**
+ * CoinMarketCap lists a DERIVATIVE price among an asset's tokens: issuer "NA
+ * (Derivatives)" (one issuer id for all of them), a name ending "(Derivatives)"
+ * and a market cap of 0. It is a perpetual or index price, not a token anyone
+ * holds or redeems, so it is never a wrapper. On 2026-09-23 the capture held 41
+ * of them, and 5 were anchor members (MSTR, SNDK, INTC, NVDA, HOOD), pulling the
+ * liquid-wrapper median toward a contract price. Such a row is kept and labelled,
+ * with its gap to the anchor for information, and is never an anchor member, a
+ * widest premium or discount, a pick, a dispersion input or a wrapper count.
+ */
+export const CMC_DERIVATIVES_ISSUER_ID = '695e11f774b54210f3b95dc3'
+export function isDerivativeReference(token: { issuerId?: unknown; issuerName?: unknown; name?: unknown } | null | undefined): boolean {
+  if (!token) return false
+  if (String(token.issuerId ?? '') === CMC_DERIVATIVES_ISSUER_ID) return true
+  if (/\(derivatives\)\s*$/i.test(String(token.issuerName ?? '').trim())) return true
+  return /\(derivatives\)\s*$/i.test(String(token.name ?? '').trim())
+}
 
 export const UNIT_STATES = ['consistent', 'normalised_troy_ounce', 'normalised_gram', 'not_established', 'not_assessed'] as const
 export type UnitState = typeof UNIT_STATES[number]
@@ -514,6 +532,7 @@ export function wrapperSpread(
     let reason: string | null = null
     if (token.price == null) { state = 'no_price'; reason = 'price_not_reported' }
     else if (unit.state === 'not_established') { state = 'unit_not_established'; reason = unit.reason }
+    else if (isDerivativeReference(token)) { state = 'derivative_reference'; reason = 'derivative_not_a_wrapper' }
     else if (accrual.accruing) { state = 'accrues_in_price'; reason = 'accrues_in_price' }
     else if (token.volume24h == null) { state = 'volume_not_reported'; reason = 'volume_not_reported' }
     else if (token.volume24h < floor) { state = 'too_thin_to_anchor'; reason = 'below_volume_floor' }
@@ -569,7 +588,8 @@ export function wrapperSpread(
     }
   }
 
-  const premiums = rows.filter((row) => row.premiumBps != null)
+  // A derivative price is shown with its gap but is never the widest premium or discount.
+  const premiums = rows.filter((row) => row.premiumBps != null && row.state !== 'derivative_reference')
   const dearest = premiums.reduce<WrapperRow | null>((best, row) => (best == null || row.premiumBps! > best.premiumBps! ? row : best), null)
   const cheapest = premiums.reduce<WrapperRow | null>((best, row) => (best == null || row.premiumBps! < best.premiumBps! ? row : best), null)
   // The cheapest ROUTE is only ever a wrapper someone could actually reach: it
@@ -592,7 +612,9 @@ export function wrapperSpread(
   return {
     rwaId: asset.rwaId, symbol: asset.symbol, name: asset.name, assetType: asset.assetType, rwaRank: asset.rwaRank,
     anchorKind, anchorPrice, anchorFeedKey, anchorObservedAt, anchorReason, anchorMembers,
-    wrapperCount: rows.length,
+    // Wrappers only: a derivative price is not a wrapper, so it never makes a
+    // single-wrapper asset look like a multi-wrapper one.
+    wrapperCount: rows.filter((row) => row.state !== 'derivative_reference').length,
     liquidCount: rows.filter((row) => row.state === 'liquid').length,
     thinCount: rows.filter((row) => row.state === 'too_thin_to_anchor' || row.state === 'volume_not_reported').length,
     widestPremiumBps: dearest?.premiumBps ?? null,

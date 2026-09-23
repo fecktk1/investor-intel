@@ -27,6 +27,7 @@
 // reproduce line carries only the literal shell variable $CMC_API_KEY, and the
 // finished body is scrubbed against the configured key before it is sent.
 
+import { isDerivativeReference } from './rwa-wrapper-spread.ts'
 import { CMC_CAPABILITIES } from '../market-assets/cmc-capabilities.ts'
 import { cmcReproduceCommand } from '../market-assets/cmc-reproduce.ts'
 import { freeRwaRead, freeRwaSnapshotUsable, RWA_FREE_CAPABILITIES as FREE_CAPS, type FreeRwaClaim, type FreeRwaPlan, type ResearchSnapshot } from './rwa-free-read.ts'
@@ -390,8 +391,11 @@ export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate
         // The premium is the capture hour's measurement, never recomputed here
         // against a price from another clock.
         premiumBps: cap ? num(cap.premium_bps) : null, wrapperState: cap ? str(cap.wrapper_state, 40) : null,
+        // A derivative price (issuer "NA (Derivatives)") is not a wrapper anyone
+        // holds: flagged here and listed after the wrappers, never dropped.
+        derivative: isDerivativeReference({ issuerId: t.issuer_id, issuerName: t.issuer_name, name: t.name }) || cap?.wrapper_state === 'derivative_reference',
       }
-    }),
+    }).sort((x, y) => Number(x.derivative) - Number(y.derivative)),
     receipt: tokensSource.receipt,
   } : null
 

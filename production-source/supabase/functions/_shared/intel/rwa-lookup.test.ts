@@ -159,7 +159,7 @@ Deno.test('cache first: a shared cache hit answers with no claim and no live pas
   assertEquals(q.receipt.curlMeaning, 'same_request')
   assert(q.receipt.curl!.includes('$CMC_API_KEY') && q.receipt.curl!.includes("'rwa_id=2'"))
   // Wrappers come from the quote, the premium from the capture hour, each its own receipt.
-  assertEquals(out.figures!.wrappers!.value[0], { cryptoId: '36992', symbol: 'NVDAX', name: 'NVIDIA xStock', issuerName: 'Backed Assets', price: 228.68, marketCap: 42015407.81, volume24h: 38764552.79, premiumBps: 7.7, wrapperState: 'liquid' })
+  assertEquals(out.figures!.wrappers!.value[0], { cryptoId: '36992', symbol: 'NVDAX', name: 'NVIDIA xStock', issuerName: 'Backed Assets', price: 228.68, marketCap: 42015407.81, volume24h: 38764552.79, premiumBps: 7.7, wrapperState: 'liquid', derivative: false })
   // A reported zero market cap stays zero.
   assertEquals(out.figures!.wrappers!.value[1].marketCap, 0)
   assertEquals(out.figures!.premium!.value.widestPremiumBps, 7.7)
