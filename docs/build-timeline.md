@@ -1,19 +1,39 @@
 # Build timeline
 
-This public repository is a single-commit extract of a private product, so its own history cannot show when the work was done. This page records it instead. Dates and commit counts come from the private repository's `main` branch. Counts cover commits touching the Investor Intel frontend, its Edge Functions and the shared CoinMarketCap and Intel modules.
+This repository carries the real development history of Investor Intel. Run `git log -- production-source` to see every commit that touched its source, with its original date and message. The table below summarises that history by day. Counts are commits in this repository's history, by author date as recorded (UTC-5).
 
-Submissions opened on 2026-09-09. The first CoinMarketCap-specific commit in the product is dated 2026-09-14.
+Submissions opened on 2026-09-09. The first commit of the hackathon CoinMarketCap integration (the capability registry and the governed transport) is dated 2026-09-14. To see it, run `git log --reverse -- production-source/supabase/functions/_shared/market-assets/cmc-capabilities.ts`.
 
 | Date | Commits | What landed |
 |---|---|---|
-| Before 2026-09-09 | | Investor Intel existed from June 2026 (narrative radar, signals). Its only CoinMarketCap use was a narrow v1 listings and global-metrics adapter and v2 price helpers. |
+| 2026-05-08 to 2026-09-08 | 106 | Investor Intel before the event: wallet intelligence, then from June the narrative radar and signals. Its only CoinMarketCap use was a narrow v1 listings and global-metrics adapter and v2 price helpers. |
 | 2026-09-11 | 1 | Hackathon extraction started (the runnable demo). |
-| 2026-09-14 | 34 | CoinMarketCap foundations: the capability registry, the governed transport, credit reservation, the v3 and v5 consumers, the DEX validators, new-listing checks and the issuer review cycles. |
-| 2026-09-15 | 58 | First release: candles for every asset, DEX price carry-forward, launchpad lanes, and bounds on provider paging. |
-| 2026-09-16 | 68 | The RWA core: the issuer legitimacy graph from GLEIF, EDGAR and OFAC; the yield provenance engine and NAV integrity monitor; the CMC call receipt on every figure; and the recorded evidence artefact. |
+| 2026-09-14 | 51 | CoinMarketCap foundations: the capability registry, the governed transport, credit reservation, the v3 and v5 consumers, the DEX validators, new-listing checks and the issuer review cycles. |
+| 2026-09-15 | 72 | First release: candles for every asset, DEX price carry-forward, launchpad lanes, and bounds on provider paging. |
+| 2026-09-16 | 73 | The RWA core: the issuer legitimacy graph from GLEIF, EDGAR and OFAC; the yield provenance engine and NAV integrity monitor; the CMC call receipt on every figure; and the recorded evidence artefact. |
 | 2026-09-17 | 35 | Launchpad and meme lanes asked per documented request, and a 403 kept as a plan refusal. |
-| 2026-09-20 | 51 | The RWA workspace: wrapper premiums and dispersion, the two-endpoint reconciliation, on-chain depth with the recognised-pool rule, underlying SEC registrants from the CMC filer number, logos and source lines, and the workspace opened to free members. |
-| 2026-09-21 | 4 | Fixes. |
-| 2026-09-22 | | Public repository packaged. Best-wrapper picks, premium history with a one-off OHLCV reconstruction, exit capacity, the daily universe coverage lane with its changes feed and issuer concentration, CSV export, reproducible receipts, six more MCP tools, and a no-account demo served from a daily snapshot. |
+| 2026-09-20 | 56 | The RWA workspace: wrapper premiums and dispersion, the two-endpoint reconciliation, on-chain depth with the recognised-pool rule, underlying SEC registrants from the CMC filer number, logos and source lines, and the workspace opened to free members. |
+| 2026-09-21 | 8 | Fixes. |
+| 2026-09-22 | 14 | Public repository packaged. Best-wrapper picks, premium history with a one-off OHLCV reconstruction, exit capacity, the daily universe coverage lane with its changes feed and issuer concentration, CSV export, reproducible receipts, six more MCP tools, and a no-account demo served from a daily snapshot. |
 
-`SOURCE-MANIFEST.json` lists every file here with its path in the private repository and its SHA-256.
+Work after 2026-09-22 appears as ordinary commits on top of this history.
+
+## How this history was published
+
+The history was published on 2026-09-23. Until then, this repository held only four packaged commits, made on 2026-09-22 and 2026-09-23.
+
+- **How it was made.** It was made with `git filter-repo` from the private repository's `main` branch, and it joins this repository's own commits in a merge commit. The four earlier commits are kept.
+- **What it includes.** Every path that makes up Investor Intel:
+  - the frontend (`src/intel`);
+  - every `intel-*` Edge Function;
+  - the shared Intel and market-asset modules;
+  - the Intel migrations and translations;
+  - the packaging scripts;
+  - the runnable demo in this folder.
+- **Where it lives.** Those paths sit under `production-source/`, in the same layout as the private repository. The demo's own files sit at the top level, as they do here.
+- **What was left out.** Everything else in the private repository, environment files, and seven private working documents used to prepare the filing.
+- **What changed.** Author addresses were mapped to the owner's GitHub no-reply address, and one code comment's wording was changed in its historical versions (the current code already had the new wording). Dates, messages and all other content are as they were.
+- **Commit hashes.** They differ from the private repository's, because filtering rewrites them.
+- **Secret scan.** Before publication, every line added in the history was scanned for secret-shaped text, and none was found.
+
+`SOURCE-MANIFEST.json` lists every file at the top of the tree, with its path in the private repository and its SHA-256.

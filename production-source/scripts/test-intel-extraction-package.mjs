@@ -6,7 +6,7 @@ import { createRequire } from 'node:module'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import assert from 'node:assert/strict'
-import { PUBLIC_DOCS, PRIVATE_DOCS, DRAFT_MARKER, deniedPackagePaths, isBinaryPackagePath, findSecretShapes } from './intel-extraction-package-guards.mjs'
+import { PUBLIC_DOCS, PRIVATE_DOCS, DRAFT_MARKER, deniedPackagePaths, isBinaryPackagePath, findSecretShapes, findFullSourceSecretShapes } from './intel-extraction-package-guards.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const require=createRequire(import.meta.url)
 function run(args,cwd=root){const result=spawnSync(process.execPath,args,{cwd,windowsHide:true,encoding:'utf8',timeout:120000});if(result.error||result.status!==0)throw Error(result.error?.message||result.stderr||result.stdout);return result.stdout}
@@ -39,7 +39,12 @@ for(const file of evidence){
   assert.ok(artefact.probes.every(probe=>probe.providerStatus&&Number.isInteger(probe.httpStatus)),`${file} lacks a provider status or HTTP status`)
 }
 // The emitted bytes, not only the source tree, pass the secret-shape scan.
-const findings=packaged.filter(file=>!isBinaryPackagePath(file)).flatMap(file=>findSecretShapes(file,readFileSync(path.join(target,file),'utf8')))
+const fullSource=new Set(manifest.files.filter(f=>f.role==='full-source').map(f=>f.file))
+const findings=packaged.filter(file=>!isBinaryPackagePath(file)).flatMap(file=>(fullSource.has(file)?findFullSourceSecretShapes:findSecretShapes)(file,readFileSync(path.join(target,file),'utf8')))
+// The full Investor Intel source ships under production-source/, never outside it.
+assert.ok(fullSource.size>0,'the full Investor Intel source is missing from the package')
+assert.ok([...fullSource].every(file=>file.startsWith('production-source/')),'full-source files must stay under production-source/')
+assert.ok(packaged.includes('production-source/src/intel/demo/demo-fetch.js'),'the frontend source is missing from the full source')
 assert.deepEqual(findings,[],`secret-shaped text in the emitted package: ${findings.map(f=>`${f.file}:${f.line} (${f.pattern})`).join(', ')}`)
 // The public .gitignore must not ignore anything the package ships: a shipped
 // file that the public repository ignores is left out of its next commit.
@@ -87,7 +92,11 @@ for(const dir of productRoots){
 assert.ok(packaged.some(file=>file==='production-source/supabase/functions/_shared/market-assets/cmc-transport.ts'))
 assert.ok(packaged.some(file=>file==='production-source/supabase/functions/_shared/intel/rwa-wrapper-spread.ts'))
 for(const file of packaged.filter(file=>!isBinaryPackagePath(file)))assert.ok(!readFileSync(path.join(target,file),'utf8').includes(DRAFT_MARKER),`drafting marker in ${file}`)
-const deno=spawnSync('deno',['test','--allow-read','--allow-env','--no-check','-q','production-source/supabase'],{cwd:target,windowsHide:true,encoding:'utf8',timeout:600000,shell:process.platform==='win32'})
+// Only the standalone subset runs: the full source beside it imports the parent
+// platform and is there to read. The list is the one the public CI runs.
+const standaloneTests=readFileSync(path.join(target,'production-source/standalone-tests.txt'),'utf8').split(/\r?\n/).filter(Boolean)
+assert.ok(standaloneTests.length>0&&standaloneTests.every(file=>packaged.includes(file)),'standalone-tests.txt lists a file the package lacks')
+const deno=spawnSync('deno',['test','--allow-read','--allow-env','--no-check','-q',...standaloneTests],{cwd:target,windowsHide:true,encoding:'utf8',timeout:600000,shell:process.platform==='win32'})
 if(deno.error||deno.status!==0)throw Error(`production-source tests failed: ${deno.error?.message||(deno.stdout+deno.stderr).slice(-2000)}`)
 console.log((deno.stdout+deno.stderr).trim().split(/\r?\n/).pop())
 const vite=path.join(path.dirname(require.resolve('vite/package.json')),'bin/vite.js')

@@ -146,6 +146,33 @@ export function cmcDexPoolPage(data:unknown):{rows:any[]}|null {
  for(const key of ['pools','list','pairs'])if(Array.isArray(d[key]))return {rows:d[key] as any[]}
  return Object.keys(d).length?null:{rows:[]}
 }
+/**
+ * WHY a /v1/dex/token/pools page was refused, for the diagnostic log: the page
+ * size, and the FIRST refused row's index, which rule it broke, its key names
+ * and its two legs' address and symbol. Public market data only, bounded, never
+ * a key. The 800-character body sample cut off before the refused row on the
+ * 2026-09-20 and 2026-09-21 depth runs (PAXG, XAUM, MSTRx on Ethereum), so the
+ * cause could not be read from it.
+ */
+// deno-lint-ignore no-explicit-any
+export function cmcDexPoolRefusal(body:any,params:Record<string,unknown>):Record<string,unknown> {
+ const network=cmcDexNetwork(params.platform??params.platformName)
+ const address=params.address??params.tokenAddress
+ const page=cmcDexPoolPage(body?.data)
+ if(!network)return {rule:'unknown_platform'}
+ if(!page)return {rule:'not_a_page',shape:cmcShapeSummary(body?.data)}
+ if(page.rows.length>CMC_DEX_POOL_PAGE_CEILING)return {rule:'over_ceiling',rows:page.rows.length}
+ const leg=(l:any)=>l&&typeof l==='object'?{addr:String(l.addr??'').slice(0,80),sym:String(l.sym??'').slice(0,20)}:null
+ for(let i=0;i<page.rows.length;i++){
+  const r=page.rows[i]
+  const idOk=cmcDexPoolId(r?.addr)
+  const legOk=cmcDexSameAddress(r?.t0?.addr,address,network.platform)||cmcDexSameAddress(r?.t1?.addr,address,network.platform)
+  if(idOk&&legOk)continue
+  return {rows:page.rows.length,index:i,rule:idOk?'asked_contract_not_a_leg':'pool_id',poolId:String(r?.addr??'').slice(0,120),
+   keys:r&&typeof r==='object'?Object.keys(r).slice(0,30):typeof r,t0:leg(r?.t0),t1:leg(r?.t1),exn:String(r?.exn??'').slice(0,60)}
+ }
+ return {rows:page.rows.length,rule:'none_found'}
+}
 /** A bounded description of a response's SHAPE for a diagnostic log: top-level
  * keys, the type of each and the length of every array. NEVER a value, never an
  * address, never a body. It exists because the empty-pool shape cannot be

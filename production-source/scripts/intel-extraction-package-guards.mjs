@@ -39,8 +39,10 @@ export const PRIVATE_DOCS = Object.freeze([
   'docs/licence-options.md',
 ])
 
-/** An unresolved drafting marker is never published. */
-export const DRAFT_MARKER = '[[VERIFY-AFTER-MERGE'
+/** An unresolved drafting marker is never published. It is assembled from two
+ * parts because this file now ships in the full source, and the literal marker
+ * would make the package refuse this very file. */
+export const DRAFT_MARKER = ['[[VERIFY', 'AFTER-MERGE'].join('-')
 
 const privateNames = new Set(PRIVATE_DOCS.map(file => path.posix.basename(file).toLowerCase()))
 
@@ -120,7 +122,43 @@ export function findSecretShapes(file, text) {
   return findings
 }
 
-/** Throws with file, line and pattern names when any guard fails. */
+/**
+ * The full Investor Intel source (production-source/ beyond the standalone
+ * subset) ships for reading and for its history, and it carries test fixtures.
+ * Two more kinds of value are cleared there, and only there: obviously synthetic
+ * UUIDs (one repeated digit, or a digit followed by seven zeros, as in the
+ * fixtures' 10000000-0000-4000-8000-000000000001 counters) and the exact values
+ * below, each read in place on 2026-09-23. Every credential pattern still applies.
+ */
+export const SYNTHETIC_UUID = /\b(?:([0-9a-f])\1{7}|[0-9a-f]0{7})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\b/gi
+
+export const REVIEWED_FULL_SOURCE_VALUES = Object.freeze([
+  // Fixture ids and one quoted request trace id. None is a key.
+  'c161e12e-5a3d-43f3-a280-64eacc4a36f5', // alert-explanation-receipt.test.ts: event id
+  'd204aaf9-ef74-4f93-a1c3-936d2c4be4f1', // chart-structure.test.ts: drawing id
+  'd407b24f-c2d5-4e3a-9d96-79109903bcfe', // chart-outcome.test.ts: drawing id
+  '6144432d-22f1-4d8a-91c7-d2ec5ebf76eb', // contract-identity-route.test.ts: trace id quoted in a comment
+  'a1bcd8b7-9287-4b26-ad64-70d2304a6a23', // investigation-receipt.test.ts: operation id
+  'c1bcd8b7-9287-4b26-ad64-70d2304a6a23', // stress-scenario.test.ts: thesis id
+  // The public logo mirror: a public storage bucket that the product's own pages load.
+  'andrimdaxlxcqgqdqrbz.supabase.co/storage/v1/object/public/',
+  // Placeholder addresses: localized examples in intel.json, reserved or made-up domains in tests and a migration comment.
+  'du@beispiel.de', 'tu@ejemplo.com', 'vous@exemple.fr', 'tu@esempio.it', 'jij@voorbeeld.nl', 'voce@exemplo.com', 'ti@shembull.com',
+  'you@example.com', 'a@b.co', 'ops@issuer.example.com',
+])
+
+/** findSecretShapes for a full-source file, after the full-source clearances above. */
+export function findFullSourceSecretShapes(file, text) {
+  const cleared = String(text).split(/\r?\n/)
+    .map(line => REVIEWED_FULL_SOURCE_VALUES.reduce((rest, value) => rest.split(value).join(''), line).replace(SYNTHETIC_UUID, ''))
+    .join('\n')
+  return findSecretShapes(file, cleared)
+}
+
+/**
+ * Throws with file, line and pattern names when any guard fails. An entry
+ * flagged fullSource is scanned with findFullSourceSecretShapes.
+ */
 export function assertPublishable(entries) {
   const denied = deniedPackagePaths(entries.map(entry => entry.file))
   if (denied.length) throw Error(`Private document refused by the package denylist: ${denied.join(', ')}`)
@@ -128,7 +166,7 @@ export function assertPublishable(entries) {
   if (drafts.length) throw Error(`Unresolved drafting marker; nothing was packaged: ${drafts.join(', ')}`)
   const findings = entries
     .filter(entry => !isBinaryPackagePath(entry.file))
-    .flatMap(entry => findSecretShapes(entry.file, entry.text))
+    .flatMap(entry => (entry.fullSource ? findFullSourceSecretShapes : findSecretShapes)(entry.file, entry.text))
   if (findings.length) {
     throw Error(`Secret-shaped text found; nothing was packaged: ${findings.map(f => `${f.file}:${f.line} (${f.pattern})`).join(', ')}`)
   }

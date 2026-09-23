@@ -27,7 +27,7 @@ All calls go through one reviewed registry (`production-source/supabase/function
 
 | Endpoint | What it feeds |
 |---|---|
-| `/v5/real-world-assets/map` | The RWA universe by asset type (7,811 assets, 791 with tokens) and the daily tradability census |
+| `/v5/real-world-assets/map` | The RWA universe by asset type (7,811 assets on 2026-09-20, 791 with tokens) and the daily tradability census |
 | `/v5/real-world-assets/assets/list` | Listings with tokenised price, value and 24-hour volume |
 | `/v5/real-world-assets/info` | Asset profiles, including the underlying company's SEC `cik` |
 | `/v5/real-world-assets/quotes/latest` | Every wrapper of an asset, with its issuer: the input to wrapper premiums and picks |
@@ -87,12 +87,12 @@ One call returns every wrapper of the asset with its issuer. Against CMC's own `
 
 ## Check it yourself
 
-Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call: `npm ci`, `npm test` (26 demo tests in fixture mode), `npm run build`, and the production-source Deno tests (473 tests) without network permission. The same commands work locally with Node.js 24 and Deno 2:
+Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call: `npm ci`, `npm test` (26 demo tests in fixture mode), `npm run build`, and the standalone production-source Deno tests (475 tests, listed in `production-source/standalone-tests.txt`) without network permission. The same commands work locally with Node.js 24 and Deno 2:
 
 ```bash
 npm ci
 npm test
-deno test --allow-read --allow-env --no-check production-source/supabase
+deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)
 ```
 
 `--no-check` runs the tests without a TypeScript type-check pass, the same way the private repository runs these modules' tests.
@@ -113,13 +113,15 @@ Also in the product: CSV export of each table (provider figures are left blank u
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | A read-only copy of the production modules behind the live RWA lane and the CMC transport: wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts. Kept under its original paths. | `deno test --allow-read --allow-env --no-check production-source/supabase` (473 tests, no key, no network permission) |
+| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Inside it, a standalone subset runs on its own: the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts). | `deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)` (475 tests, no key, no network permission) |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm ci`, `npm test`, `npm run dev` (see Quick start) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |
 | `.github/workflows/test.yml` | The offline test workflow described above. | |
 
-`production-source/` is a snapshot of the private product, not the whole of it. Authentication, org authorization, the free-tier access gate, the Edge Function entry points and the database services are deliberately left out. Every module in the snapshot imports only other modules in the snapshot, which is why its tests run on their own. The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
+`production-source/` holds all of Investor Intel: the React frontend (`src/intel`), every Intel Edge Function, the shared Intel and market-asset modules, the Intel migrations and the Intel translations. Its git history is the real history of those paths in the private repository, from the first commit on 2026-05-08 (see [`docs/build-timeline.md`](docs/build-timeline.md) for how it was published).
+
+The standalone subset listed in `production-source/standalone-tests.txt` imports only other modules in that subset, which is why its tests run on their own. The rest of Investor Intel imports the parent platform (authentication, the Supabase client and shared helpers), which is not included, so it is there to read rather than to run. The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
 
 ## What the API made possible, and where it got in the way
 
@@ -141,11 +143,11 @@ Also in the product: CSV export of each table (provider figures are left blank u
 
 ## Pre-existing work and what is new
 
-Investor Intel has been part of TheContentForge since June 2026 (narrative radar and signals). Before the event, the product had a narrow v1 listing and global-metrics adapter and v2 quote and map price helpers. **Everything CMC-specific in `production-source/` was built during the event: the first commit was 2026-09-14, after submissions opened on 2026-09-09.** That covers the capability registry, credit reservation and receipts, the v3 and v5 consumers, the whole RWA lane (universe, wrappers, depth, issuers, underlyings, yield) and the DEX lanes. The runnable demo was also written for the event. The shared chart code it reuses contains both older and changed code, so including it is not a claim that every line is new. [`docs/build-timeline.md`](docs/build-timeline.md) records the build by day.
+Investor Intel has been part of TheContentForge since June 2026 (narrative radar and signals). Before the event, the product had a narrow v1 listing and global-metrics adapter (`coinmarketcap-provider.ts`) and v2 quote and map price helpers; both are in `production-source/` and in its history. **The hackathon CMC integration was built during the event: its first commit was 2026-09-14, after submissions opened on 2026-09-09.** That covers the capability registry, credit reservation and receipts, the v3 and v5 consumers, the whole RWA lane (universe, wrappers, depth, issuers, underlyings, yield) and the DEX lanes. The history shows it: `git log --since=2026-09-09 -- production-source/supabase/functions/_shared/market-assets`. The runnable demo was also written for the event. The shared chart code it reuses contains both older and changed code, so including it is not a claim that every line is new. [`docs/build-timeline.md`](docs/build-timeline.md) records the build by day.
 
 ## Licence
 
-Copyright 2026 TheContentForge. All rights reserved. This repository is public so the hackathon judges and CoinMarketCap can read, clone and run it. No licence to reuse, modify or redistribute it is granted. CoinMarketCap may feature and showcase the entry under the hackathon rules. Third-party files keep their own licences: TradingView Lightweight Charts (Apache-2.0, `product/src/intel/vendor/`) and the bundled fonts (SIL OFL 1.1, `public/fonts/`, `public/vsx-fonts/`). CoinMarketCap data is not covered by any licence here. Data provided by CoinMarketCap.com.
+Copyright 2026 TheContentForge. All rights reserved. This repository is public so the hackathon judges and CoinMarketCap can read, clone and run it. No licence to reuse, modify or redistribute it is granted. CoinMarketCap may feature and showcase the entry under the hackathon rules. Third-party files keep their own licences: TradingView Lightweight Charts (Apache-2.0, `product/src/intel/vendor/` and `production-source/src/intel/vendor/`) and the bundled fonts (SIL OFL 1.1, `public/fonts/`, `public/vsx-fonts/`). CoinMarketCap data is not covered by any licence here. Data provided by CoinMarketCap.com.
 
 No API key is committed. The demo reads `CMC_API_KEY` from a local `.env` that `.gitignore` excludes, and the packaging script refuses to build if any file contains a key-shaped string.
 
@@ -167,10 +169,10 @@ Open http://127.0.0.1:5187. The demo has three modes, set in a local `.env` (cop
 | **Live, with your own key** | `CMC_MODE=live`, `CMC_API_KEY=<your key>` and, for a hackathon Startup key, `CMC_VERIFIED_PLAN=startup` | **Real RWA listings, profiles, quotes and issuers** from `/v5/real-world-assets/*`, plus live quotes, OHLCV (Startup) and derivatives. The server spends at most 20 credits a month by default (`CMC_DEMO_CREDIT_LIMIT`) and never sends the key to the browser. |
 | Keyless | `CMC_MODE=keyless` | CoinMarketCap's anonymous public API, no key at all. It does not cover the RWA family, and the shared pool refuses bursts (HTTP 429). Caveat, verbatim: keyless commercial terms are unstated; keep it to the demo until reviewed. |
 
-The production modules have their own tests (Deno 2):
+The standalone production modules have their own tests (Deno 2):
 
 ```bash
-deno test --allow-read --allow-env --no-check production-source/supabase
+deno test --allow-read --allow-env --no-check $(cat production-source/standalone-tests.txt)
 ```
 
 ## More detail
