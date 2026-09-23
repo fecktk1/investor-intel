@@ -41,6 +41,23 @@ for(const file of evidence){
 // The emitted bytes, not only the source tree, pass the secret-shape scan.
 const findings=packaged.filter(file=>!isBinaryPackagePath(file)).flatMap(file=>findSecretShapes(file,readFileSync(path.join(target,file),'utf8')))
 assert.deepEqual(findings,[],`secret-shaped text in the emitted package: ${findings.map(f=>`${f.file}:${f.line} (${f.pattern})`).join(', ')}`)
+// The public .gitignore must not ignore anything the package ships: a shipped
+// file that the public repository ignores is left out of its next commit.
+const gitignore=readFileSync(path.join(target,'.gitignore'),'utf8').split(/\r?\n/).map(line=>line.trim()).filter(line=>line&&!line.startsWith('#'))
+const ignoredShipped=packaged.filter(file=>{const parts=file.split('/');return gitignore.some(rule=>rule.endsWith('/')?parts.slice(0,-1).includes(rule.slice(0,-1)):rule.startsWith('*.')?file.endsWith(rule.slice(1)):parts.includes(rule))})
+assert.deepEqual(ignoredShipped,[],'the public .gitignore ignores packaged files')
+// The offline test workflow ships and needs no secrets.
+assert.ok(packaged.includes('.github/workflows/test.yml'),'the test workflow is missing from the package')
+assert.ok(!/\bsecrets\./.test(readFileSync(path.join(target,'.github/workflows/test.yml'),'utf8')),'the test workflow must not read secrets')
+// Code excerpts the README cites by file and line match those lines exactly
+// (ignoring indentation), so a repackage cannot leave a stale citation.
+const readmeText=readFileSync(path.join(target,'README.md'),'utf8').replace(/\r\n/g,'\n')
+const citations=[...readmeText.matchAll(/`(production-source\/[^`]+?\.ts)` lines? (\d+)(?: to (\d+))?:\n\n```ts\n([\s\S]*?)\n```/g)]
+assert.ok(citations.length>=2,'the README should cite the real-call code by file and line')
+for(const [,file,from,to,excerpt] of citations){
+  const lines=readFileSync(path.join(target,file),'utf8').split(/\r?\n/).slice(Number(from)-1,Number(to||from))
+  assert.deepEqual(excerpt.split('\n').map(line=>line.trim()),lines.map(line=>line.trim()),`README excerpt does not match ${file} line ${from}`)
+}
 // The keyless demo mode ships with the extraction and its tests.
 assert.ok(manifest.files.some(f=>f.file==='server/keyless.mjs'))
 assert.ok(manifest.files.some(f=>f.file==='tests/keyless.test.mjs'))

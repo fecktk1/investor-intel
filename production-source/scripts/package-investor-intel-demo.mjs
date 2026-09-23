@@ -110,15 +110,23 @@ const shared=[...chartSources.map(file=>[adapters[file]||file,`product/${file}`]
   ...productionSources.map(file=>[file,`production-source/${file}`]),
 ]
 for(const [source,dest] of shared){const target=path.join(example,dest);mkdirSync(path.dirname(target),{recursive:true});copyFileSync(path.join(root,source),target)}
-const files=['package.json','package-lock.json','.gitignore','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest)]
+// Package paths whose bytes come from a different file in the example folder.
+// The example's own .gitignore ignores production-source/ because that folder
+// is a generated copy inside the private repository. Shipping that file made the
+// public repository ignore its own production-source/, so files added in a later
+// package were silently left out of the public commit and its tests failed on a
+// fresh clone. The public repository gets public.gitignore instead.
+const PACKAGE_SOURCE_OVERRIDES=Object.freeze({'.gitignore':'public.gitignore'})
+const exampleSource=file=>path.join(example,PACKAGE_SOURCE_OVERRIDES[file]||file)
+const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest)]
 // Fail closed before anything is written: the private-document denylist and the
 // secret-shape scan run over every file this package would contain.
-assertPublishable(files.map(file=>({file,text:readFileSync(path.join(example,file),'utf8')})))
+assertPublishable(files.map(file=>({file,text:readFileSync(exampleSource(file),'utf8')})))
 // Validate the entire emitted dependency graph, including the server and tests.
 // A browser-only build cannot detect an omitted server capability dependency.
 const emittedFiles=new Set(files)
 for(const file of files.filter(file=>/\.(?:[cm]?js|jsx|tsx?)$/.test(file))){
- const code=readFileSync(path.join(example,file),'utf8')
+ const code=readFileSync(exampleSource(file),'utf8')
  for(const match of code.matchAll(/(?:from\s*|import\s*\(|import\s+|new URL\s*\()\s*['"](\.[^'"]+)['"]/g)){
   const base=path.resolve(example,path.dirname(file),match[1])
   const dependency=extensions.map(ext=>path.relative(example,base+ext).replaceAll('\\','/')).find(ref=>emittedFiles.has(ref))
@@ -129,7 +137,7 @@ if(process.argv.includes('--sync-only')){console.log(`Synchronized ${chartSource
 const target=path.join(root,'artifacts',`investor-intel-hackathon-${new Date().toISOString().replace(/[:.]/g,'-')}`)
 mkdirSync(target,{recursive:true})
 const manifest=[]
-for(const file of files){if(file.includes('..')||path.isAbsolute(file)||(!file.endsWith('.example')&&/^\.env/.test(file)))throw Error('Unsafe package path');const bytes=readFileSync(path.join(example,file));const dest=path.join(target,file);mkdirSync(path.dirname(dest),{recursive:true});writeFileSync(dest,bytes);manifest.push({file,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})}
+for(const file of files){if(file.includes('..')||path.isAbsolute(file)||(!file.endsWith('.example')&&/^\.env/.test(file)))throw Error('Unsafe package path');const bytes=readFileSync(exampleSource(file));const dest=path.join(target,file);mkdirSync(path.dirname(dest),{recursive:true});writeFileSync(dest,bytes);manifest.push({file,bytes:bytes.length,sha256:createHash('sha256').update(bytes).digest('hex')})}
 writeFileSync(path.join(target,'SOURCE-MANIFEST.json'),JSON.stringify({createdAt:new Date().toISOString(),sourceFiles:shared.map(([source,extracted])=>({source,extracted})),files:manifest},null,2)+'\n')
 console.log(target)
 console.log(`Packaged ${manifest.length} allowed source files (${manifest.reduce((sum,f)=>sum+f.bytes,0)} bytes). Publication remains separately gated.`)
