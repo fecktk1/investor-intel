@@ -41,7 +41,8 @@
       "lower_on": "Más bajo en",
       "net_est": "Neto est."
     },
-    "stale": "desactualizado"
+    "stale": "desactualizado",
+    "figures_as_of": "Variación 24h, volumen y capitalización de mercado {{asOf}}"
   },
   "markets": {
     "title": "Mercados crypto",
@@ -4365,7 +4366,7 @@
     "collapse": "Ocultar envoltorios",
     "expand": "Mostrar envoltorios",
     "eyebrow": "Nuestro cálculo",
-    "intro": "Un activo del mundo real suele estar envuelto por varios tokens de varios emisores y a varios precios. Cada prima o descuento de abajo es nuestro propio cálculo frente al ancla que nombra esa misma fila: o el valor liquidativo publicado por el propio fondo, o la mediana ponderada por volumen de los envoltorios que superaron un umbral de {{floor}} de volumen declarado en 24 horas. Un envoltorio por debajo de ese umbral se sigue mostrando, se marca como demasiado fino para anclar y se deja fuera del ancla. Una prima no es un arbitraje negociable.",
+    "intro": "Un activo del mundo real suele estar envuelto por varios tokens de varios emisores y a varios precios. Cada prima o descuento de abajo es nuestro propio cálculo frente al ancla que nombra esa misma fila. Hoy esa ancla es siempre la mediana ponderada por volumen de los envoltorios que superaron un umbral de {{floor}} de volumen declarado en 24 horas: ningún activo de aquí tiene todavía asignado el valor liquidativo publicado por su propio fondo, y uno que lo tenga se medirá frente a ese valor. Un envoltorio por debajo de ese umbral se sigue mostrando, se marca como demasiado fino para anclar y se deja fuera del ancla. Una prima no es un arbitraje negociable.",
     "issuer_unreported": "Emisor no informado",
     "loading": "Leyendo los precios de envoltorios capturados…",
     "no_chain": "El proveedor no indica ninguna cadena en la fila de un envoltorio. Abre un envoltorio para leer su red en su página de activo.",
@@ -4437,7 +4438,9 @@
     "legend_anchor": "Ancla la referencia: su volumen supera el umbral",
     "legend_thin": "Demasiado fino para anclar: se muestra, pero queda fuera del ancla",
     "state_derivative_reference": "Precio de derivado, no es un wrapper",
-    "reason_derivative_not_a_wrapper": "El proveedor incluye este precio de derivado entre los tokens del activo. No es un token que alguien tenga o reembolse, así que se muestra solo para comparar y nunca entra en el ancla, la mayor prima o descuento ni en las selecciones."
+    "reason_derivative_not_a_wrapper": "El proveedor incluye este precio de derivado entre los tokens del activo. No es un token que alguien tenga o reembolse, así que se muestra solo para comparar y nunca entra en el ancla, la mayor prima o descuento ni en las selecciones.",
+    "as_of_label": "Captura de envoltorios",
+    "prices_observed_label": "Precios actualizados por última vez por CoinMarketCap"
   },
   "table_csv": {
     "download": "Descargar CSV",
@@ -4666,9 +4669,45 @@
     "value_accrual": "Diferencia por acumulación (no es una prima)",
     "value_premium": "Prima frente al ancla"
   },
+  "underlying_ref": {
+    "short": "Subyacente {{ticker}}: {{price}}",
+    "none": "Todavía no hay referencia bursátil para este ticker.",
+    "refused_short": "Sin referencia bursátil: no se pudo confirmar el ticker como la cotización en EE. UU.",
+    "refused": "Sin referencia bursátil: no se pudo confirmar que el ticker del proveedor para este activo sea la cotización en EE. UU. de la empresa, así que no se compara ningún precio de la acción.",
+    "unavailable_short": "Referencia bursátil no disponible en esta captura.",
+    "unavailable": "Referencia bursátil no disponible en esta captura. {{reason}} No se informa ninguna diferencia frente a la acción.",
+    "line": "Subyacente {{ticker}}: {{price}}, Chainlink {{feed}} en {{network}}, actualizado {{age}} antes de que se observaran los precios de los envoltorios a las {{at}}, {{session}}.",
+    "band": "El feed se actualiza con un movimiento del {{band}} %, así que las diferencias por debajo de {{band_bps}} no son distinguibles.",
+    "note_24_5": "Este feed también sigue la negociación ampliada y nocturna en días laborables.",
+    "note_last_session": "Fuera de la sesión regular, esta es la última actualización del feed de cuando el mercado estaba abierto, no un precio en vivo.",
+    "anchor_within": "El ancla está dentro de la banda de actualización del {{band}} % del feed respecto a la acción, así que no son distinguibles.",
+    "anchor_gap": "El ancla se sitúa {{value}} frente a la acción.",
+    "caveat": "Una diferencia frente a la acción compara un token con una acción. No ajusta los dividendos que un envoltorio pueda haber reinvertido y no es un arbitraje negociable.",
+    "within_band": "Dentro de la banda de actualización del {{band}} % del feed, no distinguible",
+    "measured": "Medido {{value}}",
+    "col_vs_stock": "vs. acción",
+    "source": "Referencia bursátil: feeds de precios on-chain de Chainlink, leídos a través de RPC públicos.",
+    "age_minutes": "{{value}} min",
+    "age_hours": "{{value}} h",
+    "age_days": "{{value}} d",
+    "session_regular": "sesión regular",
+    "session_pre_market": "premercado",
+    "session_after_hours": "después del cierre",
+    "session_closed": "mercado cerrado",
+    "session_weekend": "fin de semana, mercado cerrado",
+    "session_holiday": "festivo de la NYSE, mercado cerrado",
+    "session_unknown": "sesión desconocida",
+    "reason_feed_read_failed": "No se pudo leer el feed a través de su RPC público.",
+    "reason_feed_identity_not_proved": "El feed no demostró su identidad on-chain, así que no se usó su precio.",
+    "reason_feed_round_unusable": "El feed no devolvió un precio utilizable.",
+    "reason_round_at_observation_not_read": "No se pudo leer el precio del feed vigente cuando se observaron los precios de los envoltorios.",
+    "reason_wrapper_observation_time_unknown": "El proveedor no indicó la hora de los precios de los envoltorios, así que no hay un momento en el que leer la acción.",
+    "reason_stale_in_session": "El feed no se actualizó dentro de su heartbeat con el mercado abierto, así que no se usó.",
+    "reason_stale_off_session": "La última actualización del feed es más antigua de lo que explica cualquier cierre programado del mercado, así que no se usó."
+  },
   "intel_demo": {
     "banner_label": "Aviso de demostración",
-    "banner_snapshot": "Demo en vivo: una instantánea de Investor Intel del {{when}}.",
+    "banner_snapshot": "Demo en vivo de Investor Intel, abierta desde una instantánea creada el {{when}}. Cada sección indica la hora de sus propios datos y muestra una captura guardada más reciente cuando la hay.",
     "banner_loading": "Demo en vivo de Investor Intel.",
     "banner_no_snapshot": "Demo en vivo de Investor Intel. La instantánea de hoy aún no está disponible.",
     "banner_nothing_saved": "Nada de lo que hagas aquí se guarda.",

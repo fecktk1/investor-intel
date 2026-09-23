@@ -28,6 +28,7 @@ production-source/supabase/functions/_shared/intel/rwa-sources/ofac.test.ts
 production-source/supabase/functions/_shared/intel/rwa-sources/sourcify.test.ts
 production-source/supabase/functions/_shared/intel/chainlink-nav.test.ts
 production-source/supabase/functions/_shared/intel/sec-nmfp-yield.test.ts
+production-source/supabase/functions/_shared/intel/underlying-reference.test.ts
 production-source/supabase/functions/_shared/intel/rwa-wrapper-picks.test.ts
 production-source/supabase/functions/_shared/intel/rwa-coverage.test.ts
 production-source/supabase/functions/_shared/intel/capture-rwa-coverage.test.ts

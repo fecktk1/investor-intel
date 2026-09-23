@@ -106,6 +106,10 @@ export const REVIEWED_PUBLIC_VALUES = Object.freeze([
   '11111111-2222-3333-4444-555555555555',
   // A made-up reservation id in the reproduce-command test (cmc-reproduce.test.ts).
   '3f2c9a1e-8b7d-4c6e-9f00-1a2b3c4d5e6f',
+  // The public, no-account MCP demo endpoint, published in the README on purpose
+  // (reviewed 2026-09-23). Exactly this path: any other URL on the project host
+  // still stops packaging.
+  'andrimdaxlxcqgqdqrbz.supabase.co/functions/v1/intel-mcp-demo',
 ])
 
 /**

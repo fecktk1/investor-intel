@@ -3,7 +3,10 @@ import {
   captureRwaWrappers, candidateSeed, rankCandidates, assetRow, tokenRows, lanePolicy,
   RWA_WRAPPER_CAPTURE_OPS, RWA_WRAPPER_CAPTURE_SCHEDULE, RWA_WRAPPER_ASSET_CAP, RWA_WRAPPER_MAX_TYPES,
   RWA_WRAPPER_DEFAULT_TYPES, RWA_WRAPPER_CADENCE_SECONDS, ASSET_TABLE, TOKEN_TABLE, UNIVERSE_TABLE,
+  REFERENCE_TABLE, captureUnderlyingReferenceForLatest,
 } from './capture-rwa-wrappers.ts'
+import { PROFILE_TABLE, REGISTRANT_TABLE } from './capture-rwa-underlyings.ts'
+import type { ReferenceReading, UnderlyingReferenceSource } from './underlying-reference.ts'
 import { wrapperAssetFromQuote, assetListFigures, wrapperSpread, LIQUIDITY_FLOOR_USD } from './rwa-wrapper-spread.ts'
 import { cmcRows } from '../market-assets/cmc-capabilities.ts'
 import { CATALOGUE_TABLE, readRwaWrappers, premiumPoints, rankAssets, underlyingFallbackLogo, cmcCoinLogo } from './capture-rwa-wrappers-read.ts'
@@ -358,7 +361,9 @@ Deno.test('the list endpoint zero survives the whole lane as a stated disagreeme
 })
 
 Deno.test('the lane is registered under its own op name and its cron matches the migration', async () => {
-  eq(Object.keys(RWA_WRAPPER_CAPTURE_OPS), ['rwa_wrappers'])
+  // The scheduled lane, and the unscheduled one-off fill of its newest capture's
+  // stock reference (zero credits).
+  eq(Object.keys(RWA_WRAPPER_CAPTURE_OPS), ['rwa_wrappers', 'rwa_wrapper_reference'])
   const result = await RWA_WRAPPER_CAPTURE_OPS.rwa_wrappers(
     fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }), ctxFor, NOW, 'startup', { request: fakeRequest(handler()).request },
   )
@@ -562,4 +567,181 @@ Deno.test('a stock with no provider logo borrows its largest wrapper image, a co
   eq(cmcCoinLogo('5176'), 'https://s2.coinmarketcap.com/static/img/coins/64x64/5176.png')
   eq(cmcCoinLogo('0'), null)
   eq(cmcCoinLogo('../x'), null)
+})
+
+// ─── The underlying stock reference ───────────────────────────────────────────
+
+/** A stand-in reference source: NVDA at a fixed price, or a failed read. It
+ * records every instant it was asked for, so the clock rule is checked. */
+function fakeReference(options: { price?: number; fail?: boolean } = {}) {
+  const asked: { ticker: string; asOfMs: number }[] = []
+  const source: UnderlyingReferenceSource = {
+    id: 'chainlink',
+    covers: (ticker) => (ticker === 'NVDA' ? { assetType: 'stock' } : null),
+    readAsOf(requests) {
+      asked.push(...requests)
+      return Promise.resolve(new Map(requests.map((r) => {
+        const reading: ReferenceReading = {
+          source: 'chainlink', ticker: r.ticker, state: options.fail ? 'unavailable' : 'observed',
+          reason: options.fail ? 'feed_read_failed' : null, detail: options.fail ? 'rpc_http_503' : null,
+          network: 'arbitrum', address: '0x4881a4418b5f2460b21d6f08cd5aa0678a7f262f', feed: 'NVDA / USD', onChainDescription: 'NVDA / USD',
+          decimals: 8, deviationPct: 0.5, heartbeatSeconds: 86400, hours: 'nyse_regular',
+          roundId: options.fail ? null : '36893488147419103232', price: options.fail ? null : (options.price ?? 176),
+          roundUpdatedAt: options.fail ? null : new Date(r.asOfMs - 1800_000).toISOString(), ageSeconds: options.fail ? null : 1800,
+          comparedAt: new Date(r.asOfMs).toISOString(), session: 'regular', roundsRead: 1,
+        }
+        return [`${r.ticker}@${r.asOfMs}`, reading] as const
+      })))
+    },
+  }
+  return { source, asked }
+}
+
+const NVDA_TOKENS = [
+  token(70001, 'NVDAX', 'Nvidia xStock', 'backed', 176.2, 134448519.41406974, 900_000),
+  token(70002, 'NVDAon', 'NVIDIA (Ondo Tokenized)', 'ondo', 176.9, 50_000_000, 2_000_000),
+]
+const stockHandler = () => {
+  const base = handler()
+  return (name: string, params: Record<string, unknown>) => {
+    if (name !== 'rwaQuotes') return base(name, params)
+    return { payload: { data: { rwa_assets: [
+      quoteRow(1, 'GOLD', 'Gold', 'commodity', 4706435873.737661, GOLD_TOKENS),
+      { ...quoteRow(2, 'NVDA', 'Nvidia Corp', 'stock', 184448519, NVDA_TOKENS), tradfi_markets: [{ ticker: 'NVDA', exchange: { name: 'Binance' } }] },
+    ] } } }
+  }
+}
+
+Deno.test('reference: the lane stores the stock beside the anchor, read at the wrapper prices own clock', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const ref = fakeReference({ price: 176 })
+  const result = await captureRwaWrappers(
+    fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR), [PROFILE_TABLE]: [{ rwa_id: 2, primary_exchange: 'Nasdaq' }], [REGISTRANT_TABLE]: [{ rwa_id: 2, tickers: ['NVDA'] }] }, writes),
+    ctxFor, NOW, { request: fakeRequest(stockHandler()).request, referenceSource: ref.source },
+  )
+  // Zero credits for the reference: the lane's own ceiling is unchanged.
+  assert(result.credits <= 5)
+  // deno-lint-ignore no-explicit-any
+  const reference = result.reference as any
+  eq(reference.stockAssets, 1)
+  eq(reference.observed, 1)
+  eq(reference.stored, 1)
+  // Read at the provider's quote clock, never at the capture hour.
+  eq(ref.asked, [{ ticker: 'NVDA', asOfMs: Date.parse('2026-09-20T14:25:00.000Z') }])
+  // deno-lint-ignore no-explicit-any
+  const assets = writes[ASSET_TABLE] as any[]
+  const nvda = assets.find((row) => row.rwa_id === '2')
+  const gold = assets.find((row) => row.rwa_id === '1')
+  eq(nvda.anchor_kind, 'liquid_wrapper_median')
+  eq(nvda.underlying_ref_state, 'observed')
+  eq(nvda.underlying_ref_price, 176)
+  eq(nvda.underlying_ref_feed, 'NVDA / USD')
+  eq(typeof nvda.underlying_ref_anchor_bps, 'number')
+  eq(gold.underlying_ref_state, null)
+  // deno-lint-ignore no-explicit-any
+  const tokens = writes[TOKEN_TABLE] as any[]
+  const dear = tokens.find((row) => row.crypto_id === '70002')
+  // 176.9 against 176 is 51.1 bps: just outside the 0.5% band.
+  eq(Math.round(dear.underlying_ref_bps * 10) / 10, 51.1)
+  eq(dear.underlying_ref_within_band, false)
+  const close = tokens.find((row) => row.crypto_id === '70001')
+  eq(close.underlying_ref_within_band, true)
+  // The premium to the anchor is untouched by the reference.
+  assert(close.premium_bps != null)
+  assert(tokens.filter((row) => row.rwa_id === '1').every((row) => row.underlying_ref_bps === null))
+  // deno-lint-ignore no-explicit-any
+  const obs = writes[REFERENCE_TABLE] as any[]
+  eq(obs.length, 1)
+  eq(obs[0].ticker, 'NVDA')
+  eq(obs[0].capture_op, 'rwa_wrappers')
+  eq(obs[0].captured_at, HOUR)
+  eq(obs[0].read_state, 'observed')
+})
+
+Deno.test('reference: a failed feed read is a stated reason and never fails the wrapper capture', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const result = await captureRwaWrappers(
+    fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, writes), ctxFor, NOW,
+    { request: fakeRequest(stockHandler()).request, referenceSource: fakeReference({ fail: true }).source },
+  )
+  eq(result.error, undefined)
+  // deno-lint-ignore no-explicit-any
+  const nvda = (writes[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '2')
+  eq(nvda.underlying_ref_state, 'unavailable')
+  eq(nvda.underlying_ref_reason, 'feed_read_failed')
+  eq(nvda.underlying_ref_price, null)
+  eq(nvda.underlying_ref_anchor_bps, null)
+  // deno-lint-ignore no-explicit-any
+  assert((writes[TOKEN_TABLE] as any[]).every((row) => row.underlying_ref_bps === null && row.underlying_ref_price === null))
+  // deno-lint-ignore no-explicit-any
+  const obs = (writes[REFERENCE_TABLE] as any[])[0]
+  eq(obs.read_state, 'unavailable')
+  eq(obs.price, null)
+  // A source that throws outright is caught too, and switched off means untouched.
+  const thrower: UnderlyingReferenceSource = { id: 'chainlink', covers: () => ({ assetType: 'stock' }), readAsOf: () => Promise.reject(new Error('boom')) }
+  const thrown = await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, {}), ctxFor, NOW, { request: fakeRequest(stockHandler()).request, referenceSource: thrower })
+  eq(thrown.error, undefined)
+  // deno-lint-ignore no-explicit-any
+  eq((thrown.reference as any).error, 'boom')
+  const off: Record<string, unknown[]> = {}
+  await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, off), ctxFor, NOW, { request: fakeRequest(stockHandler()).request, referenceSource: false })
+  // deno-lint-ignore no-explicit-any
+  assert(!('underlying_ref_state' in (off[ASSET_TABLE] as any[])[0]))
+  eq(off[REFERENCE_TABLE], undefined)
+})
+
+Deno.test('reference: a non-US listing refuses the mapping and reads nothing', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const ref = fakeReference()
+  await captureRwaWrappers(
+    fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR), [PROFILE_TABLE]: [{ rwa_id: 2, primary_exchange: 'London Stock Exchange' }] }, writes),
+    ctxFor, NOW, { request: fakeRequest(stockHandler()).request, referenceSource: ref.source },
+  )
+  eq(ref.asked, [])
+  // deno-lint-ignore no-explicit-any
+  const nvda = (writes[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '2')
+  eq(nvda.underlying_ref_state, 'mapping_refused')
+  eq(nvda.underlying_ref_reason, 'not_a_us_listing')
+  eq(writes[REFERENCE_TABLE], undefined)
+})
+
+Deno.test('reference: the one-off step fills the newest stored capture and the read passes it through', async () => {
+  // A capture the lane wrote with the step switched off, as every capture before this feature was.
+  const stored: Record<string, unknown[]> = {}
+  await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, stored), ctxFor, NOW, { request: fakeRequest(stockHandler()).request, referenceSource: false })
+  const tables: Record<string, unknown[]> = { [ASSET_TABLE]: stored[ASSET_TABLE], [TOKEN_TABLE]: stored[TOKEN_TABLE] }
+  const writes: Record<string, unknown[]> = {}
+  const ref = fakeReference({ price: 176 })
+  const later = new Date(NOW.getTime() + 5 * 3_600_000)
+  const result = await captureUnderlyingReferenceForLatest(fakeDb(tables, writes), later, { request: () => Promise.reject(new Error('no provider call')), referenceSource: ref.source })
+  eq(result.credits, 0)
+  eq(result.capturedAt, HOUR)
+  // Still read at the stored quote clock, five hours before the step ran.
+  eq(ref.asked[0].asOfMs, Date.parse('2026-09-20T14:25:00.000Z'))
+  // deno-lint-ignore no-explicit-any
+  const nvda = (writes[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '2')
+  eq(nvda.underlying_ref_state, 'observed')
+  eq(nvda.anchor_kind, 'liquid_wrapper_median')
+  // deno-lint-ignore no-explicit-any
+  eq((writes[REFERENCE_TABLE] as any[])[0].capture_op, 'rwa_wrapper_reference')
+  // Too old a capture is refused rather than filled.
+  const stale = await captureUnderlyingReferenceForLatest(fakeDb(tables, {}), new Date(NOW.getTime() + 14 * 3_600_000), { request: () => Promise.reject(new Error('x')), referenceSource: ref.source })
+  eq(stale.skipped, 'newest_capture_too_old')
+
+  // The board reads the filled rows back with the reference on the asset and on each wrapper.
+  const board = await readRwaWrappers(fakeDb({ [ASSET_TABLE]: writes[ASSET_TABLE], [TOKEN_TABLE]: writes[TOKEN_TABLE] }), {}, later)
+  // deno-lint-ignore no-explicit-any
+  const row = (board.rows as any[]).find((r) => r.rwaId === '2')
+  eq(row.underlyingReference.state, 'observed')
+  eq(row.underlyingReference.price, 176)
+  eq(row.underlyingReference.networkLabel, 'Arbitrum')
+  eq(row.underlyingReference.deviationPct, 0.5)
+  // deno-lint-ignore no-explicit-any
+  const wrapper = row.tokens.find((t: any) => t.cryptoId === '70001')
+  eq(wrapper.underlyingRefWithinBand, true)
+  eq(typeof wrapper.underlyingRefBps, 'number')
+  eq(typeof board.referenceScope, 'string')
+  // A commodity row has no reference object at all.
+  // deno-lint-ignore no-explicit-any
+  eq((board.rows as any[]).find((r) => r.rwaId === '1').underlyingReference, null)
 })

@@ -5,6 +5,8 @@ import BoardTableHeader from './BoardTableHeader'
 import SortableHeader, { StaticHeader } from './SortableHeader'
 import TokenAvatar from './TokenAvatar'
 import FigureProvenance from './FigureProvenance'
+import AsOfTime from './AsOfTime'
+import { formatUtcTime } from '../lib/as-of'
 import { Scatter } from '../charts'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -99,6 +101,10 @@ export const TOKEN_SORTS = {
   issuer: token => token?.issuerName || null,
   price: token => num(token?.normalisedPrice) ?? num(token?.price),
   premium: token => num(token?.premiumBps),
+  // The measured gap to the listed share, including one inside the feed's band:
+  // the cell says "not distinguishable" for those, and the order still follows
+  // the measured figure so the column reads top to bottom without jumps.
+  vs_stock: token => num(token?.underlyingRefBps),
   token_volume: token => num(token?.volume24h),
 }
 /** Columns whose first click should read low-to-high. A name reads A to Z first;
@@ -273,12 +279,132 @@ const UNIT_LABELS = {
   not_assessed: 'Unit not assessed',
 }
 
+// ── The underlying stock reference ──────────────────────────────────────────
+// BESIDE the anchor, never instead of it: the listed share's own price from a
+// Chainlink on-chain feed, read at the moment the wrapper prices were observed
+// (underlying-reference.ts). The feed only writes a new price after a move of
+// its stated band, so a gap inside that band is said to be not distinguishable
+// rather than printed as a premium.
+
+/** The US session at the moment the prices were compared. */
+const SESSION_LABELS = {
+  regular: 'regular session',
+  pre_market: 'pre-market',
+  after_hours: 'after-hours',
+  closed: 'market closed',
+  weekend: 'weekend, market closed',
+  holiday: 'NYSE holiday, market closed',
+  unknown: 'session not known',
+}
+/** Why a stock reference was not used, in words. */
+const REFERENCE_REASONS = {
+  feed_read_failed: 'The feed could not be read over its public RPC.',
+  feed_identity_not_proved: 'The feed did not prove its identity on chain, so its price was not used.',
+  feed_round_unusable: 'The feed returned no usable price.',
+  round_at_observation_not_read: 'The feed price in effect when the wrapper prices were observed could not be read.',
+  wrapper_observation_time_unknown: 'The provider gave no time for the wrapper prices, so there is no moment to read the stock at.',
+  stale_in_session: 'The feed had not updated within its heartbeat while the market was open, so it was not used.',
+  stale_off_session: 'The feed\'s last update is older than any scheduled market closure explains, so it was not used.',
+}
+
+/** How long before the comparison the feed last moved, in the largest whole unit. */
+export function referenceAge(t, seconds) {
+  const s = num(seconds)
+  if (s == null || s < 0) return null
+  if (s < 5400) return t('underlying_ref.age_minutes', { value: Math.max(1, Math.round(s / 60)), defaultValue: '{{value}} min' })
+  if (s < 172800) return t('underlying_ref.age_hours', { value: Math.round(s / 3600), defaultValue: '{{value}} h' })
+  return t('underlying_ref.age_days', { value: Math.round(s / 86400), defaultValue: '{{value}} d' })
+}
+
+/** A feed's deviation band as a percent figure, e.g. 0.5 or 0.3. */
+export const bandLabel = value => {
+  const n = num(value)
+  return n == null ? null : n.toLocaleString(undefined, { maximumFractionDigits: 2 })
+}
+
+export function sessionLabel(t, session) {
+  const key = String(session || 'unknown')
+  return t(`underlying_ref.session_${key}`, { defaultValue: SESSION_LABELS[key] || key })
+}
+
+/** The one line under an asset's name on the board. Null for an asset the
+ * reference does not apply to (a commodity) or a capture from before it existed. */
+export function referenceShort(t, ref) {
+  if (!ref || typeof ref !== 'object') return null
+  if (ref.state === 'observed') {
+    return t('underlying_ref.short', { ticker: ref.ticker, price: formatPrice(ref.price), defaultValue: 'Underlying {{ticker}}: {{price}}' })
+  }
+  if (ref.state === 'no_reference') return t('underlying_ref.none', { defaultValue: 'No stock reference for this ticker yet.' })
+  if (ref.state === 'mapping_refused') return t('underlying_ref.refused_short', { defaultValue: 'No stock reference: the ticker could not be confirmed as the US listing.' })
+  return t('underlying_ref.unavailable_short', { defaultValue: 'Stock reference unavailable in this capture.' })
+}
+
+/** The full statement for an opened asset: the price, the feed, its age and
+ * session, its band, and the anchor against it. Plain text, no chips. */
+export function UnderlyingReferenceNote({ reference: ref, t, bps = 'bps' }) {
+  if (!ref || typeof ref !== 'object') return null
+  const muted = 'text-[11px] text-[var(--fg-4)] max-w-[80ch] mt-1'
+  if (ref.state === 'no_reference') return <p className={muted}>{t('underlying_ref.none', { defaultValue: 'No stock reference for this ticker yet.' })}</p>
+  if (ref.state === 'mapping_refused') {
+    return <p className={muted}>{t('underlying_ref.refused', { defaultValue: 'No stock reference: the provider\'s ticker for this asset could not be confirmed as the company\'s US listing, so no stock price is compared.' })}</p>
+  }
+  if (ref.state !== 'observed') {
+    const why = REFERENCE_REASONS[ref.reason] ? t(`underlying_ref.reason_${ref.reason}`, { defaultValue: REFERENCE_REASONS[ref.reason] }) : (ref.reason || '')
+    return <p className={muted}>{t('underlying_ref.unavailable', { reason: why, defaultValue: 'Stock reference unavailable in this capture. {{reason}} No gap to the stock is reported.' })}</p>
+  }
+  const band = bandLabel(ref.deviationPct)
+  const outsideRegular = ref.session && ref.session !== 'regular'
+  const extended = ref.hours === 'us_equities_24_5'
+  const extendedSession = ['pre_market', 'after_hours', 'closed'].includes(ref.session)
+  return (
+    <p className={muted}>
+      {t('underlying_ref.line', {
+        ticker: ref.ticker,
+        price: formatPrice(ref.price),
+        feed: ref.feed || '',
+        network: ref.networkLabel || ref.network || '',
+        age: referenceAge(t, ref.ageSeconds) || '—',
+        at: utcMinute(ref.comparedAt) || '—',
+        session: sessionLabel(t, ref.session),
+        defaultValue: 'Underlying {{ticker}}: {{price}}, Chainlink {{feed}} on {{network}}, updated {{age}} before the wrapper prices were observed at {{at}}, {{session}}.',
+      })}
+      {band != null && ` ${t('underlying_ref.band', {
+        band,
+        band_bps: widthLabel(num(ref.deviationPct) * 100, bps),
+        defaultValue: 'The feed updates on a {{band}}% move, so gaps under {{band_bps}} are not distinguishable.',
+      })}`}
+      {extended && ` ${t('underlying_ref.note_24_5', { defaultValue: 'This feed also follows extended and overnight trading on weekdays.' })}`}
+      {outsideRegular && !(extended && extendedSession) && ` ${t('underlying_ref.note_last_session', { defaultValue: 'Outside the regular session this is the feed\'s last update from when the market was open, not a live price.' })}`}
+      {num(ref.anchorBps) != null && ` ${ref.anchorWithinBand === true
+        ? t('underlying_ref.anchor_within', { band, defaultValue: 'The anchor is within the feed\'s {{band}}% update band of the stock, so the two are not distinguishable.' })
+        : t('underlying_ref.anchor_gap', { value: bpsLabel(ref.anchorBps, bps), defaultValue: 'The anchor sits {{value}} against the stock.' })}`}
+      {` ${t('underlying_ref.caveat', { defaultValue: 'A gap to the stock compares one token with one share. It does not adjust for dividends a wrapper may have reinvested, and it is not a tradable arbitrage.' })}`}
+    </p>
+  )
+}
+
+/** One wrapper against the stock. Inside the feed's band the figure is not a
+ * premium, so the words lead and the measured gap follows in small type. */
+export function VsStockCell({ token, band, t, bps = 'bps' }) {
+  const value = num(token?.underlyingRefBps)
+  if (value == null) return '—'
+  if (token.underlyingRefWithinBand === true) {
+    return (
+      <span>
+        {t('underlying_ref.within_band', { band, defaultValue: 'Within the feed\'s {{band}}% update band, not distinguishable' })}
+        <span className="block text-[11px] text-[var(--fg-4)]">{t('underlying_ref.measured', { value: bpsLabel(value, bps), defaultValue: 'Measured {{value}}' })}</span>
+      </span>
+    )
+  }
+  return bpsLabel(value, bps)
+}
+
 /** `showHeading` is false when a PAGE already carries the eyebrow, the title and
  * the intro in its own header (RwaWrapperPage does), so the reader is not shown
  * the same three things twice. It stays true by default: embedded in a section of
  * another page, the figure has to name itself. */
 export default function RwaWrapperSpread({ showHeading = true }) {
-  const { t } = useTranslation('intel', { useSuspense: false })
+  const { t, i18n } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   // Service-role capture tables: the read travels on the reader's own
   // authenticated client, never the anonymous one.
@@ -412,6 +538,11 @@ export default function RwaWrapperSpread({ showHeading = true }) {
     { key: null, id: 'coverage', align: 'left', label: t('rwa_wrapper_coverage.col', { defaultValue: 'Coverage' }) },
     { key: null, id: 'state', align: 'left', label: t('rwa_wrappers.col_note', { defaultValue: 'State' }) },
   ]
+  // The gap to the listed share sits right after the premium to the anchor, and
+  // only on an asset whose stock reference was observed in this capture.
+  const vsStockColumn = { key: 'vs_stock', align: 'right', label: t('underlying_ref.col_vs_stock', { defaultValue: 'vs stock' }) }
+  const hasReference = row => row?.underlyingReference?.state === 'observed'
+  const tokenColumnsFor = row => (hasReference(row) ? [...tokenColumns.slice(0, 4), vsStockColumn, ...tokenColumns.slice(4)] : tokenColumns)
 
   return (
     <section className="intel-rwa-wrappers space-y-6" aria-label={t('rwa_wrappers.title', { defaultValue: 'Wrapper premium and dispersion' })}>
@@ -422,7 +553,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
           <p className="text-[11px] leading-relaxed text-[var(--fg-4)] mt-1 max-w-[80ch]">
             {t('rwa_wrappers.intro', {
               floor: formatUsd(floor),
-              defaultValue: 'One real-world asset is often wrapped by several tokens from several issuers, at several prices. Each premium or discount below is our own calculation against the anchor named on that row: either the fund\'s own published net asset value, or the volume-weighted median of the wrappers that cleared a {{floor}} floor on reported 24 hour volume. A wrapper under that floor is still shown, marked as too thin to anchor, and left out of the anchor. A premium is not a tradable arbitrage.',
+              defaultValue: 'One real-world asset is often wrapped by several tokens from several issuers, at several prices. Each premium or discount below is our own calculation against the anchor named on that row. Today that anchor is always the volume-weighted median of the wrappers that cleared a {{floor}} floor on reported 24 hour volume: no asset here is mapped to a fund\'s own published net asset value yet, and one that is will be measured against that value instead. A wrapper under that floor is still shown, marked as too thin to anchor, and left out of the anchor. A premium is not a tradable arbitrage.',
             })}
           </p>
         </div>
@@ -441,6 +572,19 @@ export default function RwaWrapperSpread({ showHeading = true }) {
 
       {read.status === 'ready' && (
         <>
+          {/* The board's own data time, stated like every section's: the capture
+              every row below was read from, in UTC with its age. */}
+          {payload.asOf && (
+            <p className="text-[12px] text-[var(--fg-3)]" data-testid="rwa-wrappers-as-of">
+              CoinMarketCap · {t('rwa_wrappers.as_of_label', { defaultValue: 'Wrapper capture' })} · <AsOfTime value={payload.asOf} />
+              {/* The quotes' own last_updated. CoinMarketCap refreshes RWA quotes
+                  less often than the lane runs, so a capture can hold older prices. */}
+              {payload.pricesObservedAt && payload.pricesObservedAt !== payload.asOf && (
+                <> · {t('rwa_wrappers.prices_observed_label', { defaultValue: 'Prices last updated by CoinMarketCap' })} · <AsOfTime value={payload.pricesObservedAt} /></>
+              )}
+            </p>
+          )}
+
           {payload.reason && (
             <p role="status" className="text-[12px]">
               {t('rwa_wrappers.partial', { reason: payload.reason, defaultValue: 'Part of this read did not answer ({{reason}}). What did load is shown, and nothing was replaced with a zero.' })}
@@ -529,7 +673,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                 <table className="intel-rwa-wrapper-table w-full text-[12px]">
                   <caption className="text-left text-[11px] text-[var(--fg-4)] pb-2">
                     {t('rwa_wrappers.table_caption', {
-                      at: utcMinute(payload.asOf) || '—',
+                      at: formatUtcTime(payload.asOf, i18n?.language) || '—',
                       defaultValue: 'Widest dispersion first, from the capture of {{at}}. Open a row to read its wrappers.',
                     })}
                     {' '}
@@ -567,6 +711,9 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                   <span className="block text-[11px] text-[var(--fg-4)]">
                                     {[row.symbol, row.assetType ? String(row.assetType).replaceAll('_', ' ') : null].filter(Boolean).join(' · ')}
                                   </span>
+                                  {referenceShort(t, row.underlyingReference) && (
+                                    <span className="block text-[11px] text-[var(--fg-4)]">{referenceShort(t, row.underlyingReference)}</span>
+                                  )}
                                 </span>
                               </span>
                             </th>
@@ -621,6 +768,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                   {row.anchorMeaning}
                                   {row.anchorReason ? ` ${reasonText(t, row.anchorReason)}` : ''}
                                 </p>
+                                <UnderlyingReferenceNote reference={row.underlyingReference} t={t} bps={bps} />
                                 {overTimeHref(location, row.rwaId) && (
                                   <p className="text-[11px] mt-1">
                                     <Link className="intel-text-link" to={overTimeHref(location, row.rwaId)}>
@@ -640,7 +788,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                   <table className="w-full text-[12px]">
                                     <thead>
                                       <tr>
-                                        {tokenColumns.map(column => (!column.key
+                                        {tokenColumnsFor(row).map(column => (!column.key
                                           ? <StaticHeader key={column.id} label={column.label} align="left" />
                                           : column.align === 'right'
                                             ? <SortableHeader key={column.key} sortKey={column.key} label={column.label} sort={tokenSort.sort} dir={tokenSort.dir} onToggle={tokenSort.toggle} align="right" />
@@ -678,6 +826,11 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                                 ? <span>{t('rwa_wrappers.accrual', { value: bpsLabel(token.accrualGapBps, bps), defaultValue: '{{value}} accrual' })}</span>
                                                 : '—'}
                                           </td>
+                                          {hasReference(row) && (
+                                            <td className={numCell}>
+                                              <VsStockCell token={token} band={bandLabel(row.underlyingReference.deviationPct)} t={t} bps={bps} />
+                                            </td>
+                                          )}
                                           <td className={numCell}>{token.volume24h == null ? '—' : formatUsd(token.volume24h)}</td>
                                           <td className={cell}>
                                             {coverageLabel(token.coverageState)}
@@ -722,7 +875,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                 {t('rwa_wrappers.provenance', {
                   quotes: '/v5/real-world-assets/quotes/latest',
                   list: '/v5/real-world-assets/assets/list',
-                  at: utcMinute(payload.asOf) || '—',
+                  at: formatUtcTime(payload.asOf, i18n?.language) || '—',
                   defaultValue: 'Wrapper prices, volumes and issuers come from {{quotes}}. Each asset\'s own reported value comes from {{list}}. Both were read in the capture of {{at}}; the premium, the anchor and the dispersion are our calculation over those two reads.',
                 })}
               </p>
@@ -803,6 +956,9 @@ export default function RwaWrapperSpread({ showHeading = true }) {
 
           {/* Attribution, plain text, always rendered once the read succeeded. */}
           <p className="text-[11px] text-[var(--fg-4)]">{t('rwa_wrappers.source', { defaultValue: 'Data: CoinMarketCap' })}</p>
+          {rows.some(hasReference) && (
+            <p className="text-[11px] text-[var(--fg-4)]">{t('underlying_ref.source', { defaultValue: 'Stock reference: Chainlink on-chain price feeds, read through public RPCs.' })}</p>
+          )}
         </>
       )}
     </section>

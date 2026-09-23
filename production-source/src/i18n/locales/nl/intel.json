@@ -41,7 +41,8 @@
       "lower_on": "Lager op",
       "net_est": "Geschat netto"
     },
-    "stale": "verouderd"
+    "stale": "verouderd",
+    "figures_as_of": "24h-verandering, volume en marktkapitalisatie: {{asOf}}"
   },
   "markets": {
     "title": "Cryptomarkten",
@@ -4365,7 +4366,7 @@
     "collapse": "Wrappers verbergen",
     "expand": "Wrappers tonen",
     "eyebrow": "Onze berekening",
-    "intro": "Één activum uit de echte wereld wordt vaak door meerdere tokens van meerdere uitgevers en tegen meerdere prijzen verpakt. Elke premie of korting hieronder is onze eigen berekening ten opzichte van het anker dat op die rij wordt genoemd: of de door het fonds zelf gepubliceerde intrinsieke waarde, of de volumegewogen mediaan van de wrappers die een drempel van {{floor}} aan gerapporteerd 24-uursvolume haalden. Een wrapper onder die drempel wordt nog steeds getoond, gemarkeerd als te dun om te ankeren, en buiten het anker gelaten. Een premie is geen verhandelbare arbitrage.",
+    "intro": "Één activum uit de echte wereld wordt vaak door meerdere tokens van meerdere uitgevers en tegen meerdere prijzen verpakt. Elke premie of korting hieronder is onze eigen berekening ten opzichte van het anker dat op die rij wordt genoemd. Vandaag is dat anker altijd de volumegewogen mediaan van de wrappers die een drempel van {{floor}} aan gerapporteerd 24-uursvolume haalden: nog geen enkel activum hier is gekoppeld aan de door het eigen fonds gepubliceerde intrinsieke waarde, en een activum waarbij dat wel zo is, wordt tegen die waarde gemeten. Een wrapper onder die drempel wordt nog steeds getoond, gemarkeerd als te dun om te ankeren, en buiten het anker gelaten. Een premie is geen verhandelbare arbitrage.",
     "issuer_unreported": "Uitgever niet gerapporteerd",
     "loading": "Vastgelegde wrapperprijzen lezen…",
     "no_chain": "De aanbieder noemt geen chain op de rij van een wrapper. Open een wrapper om het netwerk op de activumpagina te lezen.",
@@ -4437,7 +4438,9 @@
     "legend_anchor": "Ankert de referentie: het volume ligt boven de drempel",
     "legend_thin": "Te dun om te ankeren: getoond, maar buiten het anker gelaten",
     "state_derivative_reference": "Derivatenprijs, geen wrapper",
-    "reason_derivative_not_a_wrapper": "De aanbieder vermeldt deze derivatenprijs tussen de tokens van het asset. Het is geen token dat iemand aanhoudt of inwisselt, dus hij wordt alleen ter vergelijking getoond en telt nooit mee voor het anker, de grootste premie of korting of de keuzes."
+    "reason_derivative_not_a_wrapper": "De aanbieder vermeldt deze derivatenprijs tussen de tokens van het asset. Het is geen token dat iemand aanhoudt of inwisselt, dus hij wordt alleen ter vergelijking getoond en telt nooit mee voor het anker, de grootste premie of korting of de keuzes.",
+    "as_of_label": "Wrapper-vastlegging",
+    "prices_observed_label": "Prijzen het laatst bijgewerkt door CoinMarketCap"
   },
   "table_csv": {
     "download": "CSV downloaden",
@@ -4666,9 +4669,45 @@
     "value_accrual": "Opbouwverschil (geen premie)",
     "value_premium": "Premie ten opzichte van het anker"
   },
+  "underlying_ref": {
+    "short": "Onderliggend {{ticker}}: {{price}}",
+    "none": "Nog geen aandelenreferentie voor deze ticker.",
+    "refused_short": "Geen aandelenreferentie: de ticker kon niet worden bevestigd als de Amerikaanse notering.",
+    "refused": "Geen aandelenreferentie: de ticker van de aanbieder voor deze asset kon niet worden bevestigd als de Amerikaanse notering van het bedrijf, dus er wordt geen aandelenkoers vergeleken.",
+    "unavailable_short": "Aandelenreferentie niet beschikbaar in deze vastlegging.",
+    "unavailable": "Aandelenreferentie niet beschikbaar in deze vastlegging. {{reason}} Er wordt geen verschil met het aandeel gerapporteerd.",
+    "line": "Onderliggend {{ticker}}: {{price}}, Chainlink {{feed}} op {{network}}, bijgewerkt {{age}} voordat de wrapperprijzen om {{at}} werden waargenomen, {{session}}.",
+    "band": "De feed werkt bij na een beweging van {{band}}%, dus verschillen onder {{band_bps}} zijn niet te onderscheiden.",
+    "note_24_5": "Deze feed volgt op werkdagen ook de handel buiten de reguliere uren en 's nachts.",
+    "note_last_session": "Buiten de reguliere sessie is dit de laatste update van de feed van toen de markt open was, geen live koers.",
+    "anchor_within": "Het anker ligt binnen de updateband van {{band}}% van de feed rond het aandeel, dus de twee zijn niet te onderscheiden.",
+    "anchor_gap": "Het anker ligt {{value}} ten opzichte van het aandeel.",
+    "caveat": "Een verschil met het aandeel vergelijkt één token met één aandeel. Het houdt geen rekening met dividenden die een wrapper mogelijk heeft herbelegd en is geen verhandelbare arbitrage.",
+    "within_band": "Binnen de updateband van {{band}}% van de feed, niet te onderscheiden",
+    "measured": "Gemeten {{value}}",
+    "col_vs_stock": "t.o.v. aandeel",
+    "source": "Aandelenreferentie: on-chain prijsfeeds van Chainlink, gelezen via publieke RPC's.",
+    "age_minutes": "{{value}} min",
+    "age_hours": "{{value}} h",
+    "age_days": "{{value}} d",
+    "session_regular": "reguliere sessie",
+    "session_pre_market": "voorbeurs",
+    "session_after_hours": "nabeurs",
+    "session_closed": "markt gesloten",
+    "session_weekend": "weekend, markt gesloten",
+    "session_holiday": "NYSE-feestdag, markt gesloten",
+    "session_unknown": "sessie onbekend",
+    "reason_feed_read_failed": "De feed kon niet via zijn publieke RPC worden gelezen.",
+    "reason_feed_identity_not_proved": "De feed heeft zijn identiteit on-chain niet bewezen, dus de koers is niet gebruikt.",
+    "reason_feed_round_unusable": "De feed gaf geen bruikbare koers.",
+    "reason_round_at_observation_not_read": "De feedkoers die gold toen de wrapperprijzen werden waargenomen, kon niet worden gelezen.",
+    "reason_wrapper_observation_time_unknown": "De aanbieder gaf geen tijd voor de wrapperprijzen, dus er is geen moment om het aandeel op te lezen.",
+    "reason_stale_in_session": "De feed werd niet binnen zijn heartbeat bijgewerkt terwijl de markt open was, dus hij is niet gebruikt.",
+    "reason_stale_off_session": "De laatste update van de feed is ouder dan een geplande marktsluiting verklaart, dus hij is niet gebruikt."
+  },
   "intel_demo": {
     "banner_label": "Demomelding",
-    "banner_snapshot": "Live demo: een momentopname van Investor Intel van {{when}}.",
+    "banner_snapshot": "Live demo van Investor Intel, geopend vanuit een momentopname van {{when}}. Elke sectie vermeldt de tijd van haar eigen gegevens en toont een nieuwere opgeslagen vastlegging zodra die er is.",
     "banner_loading": "Live demo van Investor Intel.",
     "banner_no_snapshot": "Live demo van Investor Intel. De momentopname van vandaag is nog niet beschikbaar.",
     "banner_nothing_saved": "Niets wat je hier doet wordt opgeslagen.",

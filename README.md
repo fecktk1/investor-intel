@@ -12,7 +12,7 @@ A tokenised stock, fund or commodity is a wrapper. Investor Intel answers the qu
 
 | Question | Answer in the product | Where |
 |---|---|---|
-| Which wrapper of this asset should I hold? | Premium or discount of every wrapper against an anchor: a fresh published NAV where one exists, otherwise the volume-weighted median of the liquid wrappers. Picks for cheapest to the anchor, closest to it and most traded, with every wrapper left out and why. A wrapper that sets the median is flagged rather than presented as closest. | Wrapper premiums (`/intel/rwa/wrappers`) |
+| Which wrapper of this asset should I hold? | Premium or discount of every wrapper against an anchor. Today every anchor is the volume-weighted median of the liquid wrappers, and each row says so. The reason: none of the assets in CoinMarketCap's RWA data is a fund whose own published NAV feed we can map to it (checked 2026-09-20, `rwa-wrapper-spread.ts` lines 173 to 188). A published-NAV anchor is built and tested (`rwa-wrapper-spread.ts` line 551, `rwa-wrapper-spread.test.ts` line 284) but switches on only for a fund mapped to its own feed, so it has not run in production. For tokenised stocks and ETFs, every wrapper is also compared with the listed share itself: the price from a Chainlink on-chain feed (12 tickers verified today, no key and no CMC credits), with the feed's age, its update band and the US market session when the wrapper price was observed. A gap inside the feed's band is labelled not distinguishable rather than shown as a premium. CoinMarketCap's RWA data names the ticker but carries no stock price. Picks for cheapest to the anchor, closest to it and most traded, with every wrapper left out and why. A wrapper that sets the median is flagged rather than presented as closest. | Wrapper premiums (`/intel/rwa/wrappers`) |
 | Has that premium held? | Each wrapper's premium from every six-hourly capture, plus up to 90 days before that rebuilt from daily OHLCV closes through the same unit, accrual and liquidity rules, labelled as reconstructed, with weekends and exchange holidays shaded. | Wrapper premiums, history panel below the board |
 | Does it trade at all? | A daily census of every tokenised asset in the RWA map: a wrapper that trades, priced but not traded, or listed only, and what changed since the day before. On 2026-09-22, 526 of 791 had no wrapper with reported trading. | Real-world assets (`/intel/rwa`), RWA universe coverage |
 | Who holds the value? | Issuer concentration (HHI, effective number of issuers, top-five share) and the chains wrappers are deployed on, with value attributed to a chain only for single-chain tokens. | Structure figures (`/intel/structure`) |
@@ -40,7 +40,7 @@ The other endpoints the product calls (markets, derivatives, DEX lanes) are list
 
 ## One real call, with the code that made it
 
-A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-premium lane asks for quotes on the assets it is pricing, in `production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts` line 411:
+A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-premium lane asks for quotes on the assets it is pricing, in `production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts` line 553:
 
 ```ts
 const quotes = await deps.request('rwaQuotes', { rwa_id: candidates.join(',') }, ctx).catch(() => null)
@@ -89,7 +89,7 @@ One call returns every wrapper of the asset with its issuer. Against CMC's own `
 
 Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call:
 - `npm ci`, then `npm test` (26 demo tests in fixture mode), then `npm run build`;
-- **2,185 Deno tests from 238 of the 279 test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission.
+- **2,238 Deno tests from 241 of the 283 test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission.
 
 The other 41 files (406 tests) are listed with the reason each can't run here in `production-source/excluded-tests.md`. Most import a module of the private parent platform. For the ones that only need such a module to load, `test-support/deno.json` maps it to a TEST STAND-IN in `test-support/stand-ins/`. A stand-in has no behaviour: every export throws, and any use fails the run.
 
@@ -117,11 +117,61 @@ deno test --config test-support/deno.json --cached-only --allow-read --allow-env
 
 Also in the product: CSV export of each table (provider figures are left blank unless the data licence allows export), and a hosted MCP server with 28 tools covering all of the above. 24 of them are grounded read tools. The other 4 write, each needing a scoped, revocable token: adding to a watchlist, saving a research note, and proposing a price alert that a person must approve before `write_run` makes it. The demo video shows 21 tools because it was recorded before 7 were added on 2026-09-22.
 
+### Try the MCP server (no account)
+
+A public, read-only copy of the MCP server needs no account, no token and no key:
+
+```
+https://andrimdaxlxcqgqdqrbz.supabase.co/functions/v1/intel-mcp-demo
+```
+
+- **What it serves.** 18 of the 28 tools: the read tools that answer from stored captures. That is `search_assets`, `get_asset`, `market_regime`, `market_structure`, `new_listings`, `meme_graduations` and twelve `rwa_` tools.
+- **What it spends.** Nothing. Every answer comes from data the capture lanes already stored, so the demo never calls CoinMarketCap or any other provider. Every result carries a `demo` block that says it is read-only demo data and gives its `as_of`.
+- **Which assets.** A tool that names one asset answers only for assets a capture lane observed in the last seven days. Anything else comes back as `not_tracked_in_demo`: a fact about the demo, not about the asset.
+- **What needs an account.** Writes, watchlists, alerts, research notes, `whoami`, `data_budget` and `rwa_issuer_terms` are refused by name. The full 28 tools need an Investor Intel account (Starter plan or above) and an agent token.
+- **Limits.** 30 tool calls a minute and 300 a day per address. A `429` says when to retry.
+
+```bash
+MCP=https://andrimdaxlxcqgqdqrbz.supabase.co/functions/v1/intel-mcp-demo
+
+# Handshake: serverInfo.name is investor-intel-demo
+curl -s $MCP -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}'
+
+# The 18 tools
+curl -s $MCP -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/list"}'
+
+# Wrapper premiums from the newest stored six-hourly capture
+curl -s $MCP -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"rwa_wrapper_premiums","arguments":{"limit":5}}}'
+```
+
+To connect an agent, give it the URL with no header. Claude Code:
+
+```bash
+claude mcp add --transport http investor-intel-demo https://andrimdaxlxcqgqdqrbz.supabase.co/functions/v1/intel-mcp-demo
+```
+
+Cursor, or any client whose config takes a URL:
+
+```json
+{ "mcpServers": { "investor-intel-demo": { "url": "https://andrimdaxlxcqgqdqrbz.supabase.co/functions/v1/intel-mcp-demo" } } }
+```
+
+Claude Desktop, through the `mcp-remote` bridge (Node required), under Settings, then Developer, then Edit Config:
+
+```json
+{ "mcpServers": { "investor-intel-demo": { "command": "npx", "args": ["-y", "mcp-remote", "https://andrimdaxlxcqgqdqrbz.supabase.co/functions/v1/intel-mcp-demo", "--transport", "http-only"] } } }
+```
+
+The server's source is `production-source/supabase/functions/intel-mcp-demo/`. It reuses the full server's protocol module and tool code unchanged, and its tests cover the tool allowlist, the no-provider guarantee, the tracked-asset rule and the limits.
+
 ## What is in this repository
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,185 tests from `production-source/runnable-tests.txt`, no key, no network permission. `test-support/` holds the config and the stand-ins those commands use. |
+| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,238 tests from `production-source/runnable-tests.txt`, no key, no network permission. `test-support/` holds the config and the stand-ins those commands use. |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm ci`, `npm test`, `npm run dev` (see Quick start) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |
@@ -132,7 +182,7 @@ Also in the product: CSV export of each table (provider figures are left blank u
 Some Investor Intel modules import the private parent platform (authentication, the Supabase client and shared provider helpers), which is not in this repository.
 - **Tests that still run.** Where a test only needs such a module to load, it runs here against a stand-in that has no behaviour.
 - **Tests that don't.** Where it needs the module to work, it is listed in `production-source/excluded-tests.md` with the reason.
-- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 483 tests behind the RWA lane and the CMC transport.
+- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 502 tests behind the RWA lane and the CMC transport.
 
 The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
 
@@ -150,6 +200,7 @@ The product itself runs on Supabase (Postgres and Deno Edge Functions), with Rea
 - The RWA `cik` belongs to the underlying listed company, not the token issuer. The docs don't say which it is, and treating it as the issuer would be a serious mistake. Issuer identity comes from separate, dated evidence (GLEIF, EDGAR, OFAC).
 - Gold wrappers under the same asset are priced per gram and per troy ounce. We added a unit guard that converts them to one unit before comparing them.
 - None of the tokenised treasury funds we track carry a NAV from CMC, so NAV comes from each fund's Chainlink feed.
+- RWA quotes carry `tradfi_markets` with the listed share's ticker but no stock price, so the stock comparison reads a Chainlink feed instead. The quotes also refresh less often than our six-hourly lane: in the 22 and 23 September captures, `last_updated` moved only at 08:45:59 and 20:45:59 UTC. The board therefore shows both the capture time and the time CoinMarketCap last updated the prices, and the stock price is read as it stood at that second time.
 - `/v1/dex/token/pools` returns no `data` field at all for a token with zero pools. Our generic guard read that as malformed, and three permissioned funds were charged for refused reads before we special-cased it.
 - Some refusals are not JSON: `/v1/dex/meme/list` without `platformIds` answers with an HTML 403 from a gateway, which hid the real reason until the transport started trusting the HTTP status over the body. With `platformIds`, it returns empty lists for every documented request body on Startup.
 - The keyless public API answers a small burst and then returns 429 with error 1022, so it can't be relied on for a replayable demo.
@@ -182,7 +233,7 @@ Open http://127.0.0.1:5187. The demo has three modes, set in a local `.env` (cop
 | **Live, with your own key** | `CMC_MODE=live`, `CMC_API_KEY=<your key>` and, for a hackathon Startup key, `CMC_VERIFIED_PLAN=startup` | **Real RWA listings, profiles, quotes and issuers** from `/v5/real-world-assets/*`, plus live quotes, OHLCV (Startup) and derivatives. The server spends at most 20 credits a month by default (`CMC_DEMO_CREDIT_LIMIT`) and never sends the key to the browser. |
 | Keyless | `CMC_MODE=keyless` | CoinMarketCap's anonymous public API, no key at all. It does not cover the RWA family, and the shared pool refuses bursts (HTTP 429). Caveat, verbatim: keyless commercial terms are unstated; keep it to the demo until reviewed. |
 
-The production modules have their own tests (Deno 2). This runs the same 2,185 tests as CI:
+The production modules have their own tests (Deno 2). This runs the same 2,238 tests as CI:
 
 ```bash
 deno cache --config test-support/deno.json $(cat production-source/runnable-tests.txt)

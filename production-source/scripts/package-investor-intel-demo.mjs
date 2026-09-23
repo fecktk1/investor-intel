@@ -39,7 +39,7 @@ const adapters={
 // Discovery validates this explicit list; it never authorizes new copies.
 const chartSources=[...Object.keys(adapters),
   ...['TokenChart','TokenChartFallback','JournalMarkerReceipt','ChartReplayControls','ResponsiveChartTools','EvidenceMarkerContext','PriceWorkstation','ChartDrawings','ChartLayoutLibrary','ChartAssetNavigator','TokenAvatar','ChartSnapshotSave','ChartAlertEditor','ChartStructurePanel','ChartOutcomePanel','InvestigationTable','ChartReadPanel','ChartPatternPanel','ChartTimeframePanel','deferred-panel','deferred-tool','ChartDrawingEditor','ChartDrawingSurface','ChartDrawingToolbar','ChartDrawingOptions','ChartDrawingMorePanel','ChartIndicatorDialog','ChartIndicatorMenu','ChartIndicatorPanel','ChartLayoutLaunch','ChartWatermark','ChartCandleProvenance','FigureProvenance','SourceCallReceipt','ReceiptCostLine'].map(name=>`src/intel/components/${name}.jsx`),
-  ...['chart-history','chart-event-changes','useChartAlertHistory','chart-workspace-api','chart-replay','chart-renderer-data','useChartStudies','chart-study.worker','chart-drawings','chains','useChartStructure','chart-structure.worker','chart-drawing-snap','chart-drawing-tools','chart-size','chart-watermark','chart-indicators','source-receipt','stored-series-caption','chart-source-label'].map(name=>`src/intel/lib/${name}.js`),
+  ...['chart-history','chart-event-changes','useChartAlertHistory','chart-workspace-api','chart-replay','chart-renderer-data','useChartStudies','chart-study.worker','chart-drawings','chains','useChartStructure','chart-structure.worker','chart-drawing-snap','chart-drawing-tools','chart-size','chart-watermark','chart-indicators','source-receipt','stored-series-caption','chart-source-label','as-of'].map(name=>`src/intel/lib/${name}.js`),
   ...['chart-workspace-contract','chart-analysis','chart-outcome-contract','chart-drawing-geometry','chart-outcome','chart-read','chart-levels','chart-structure','chart-patterns','chart-timeframes'].map(name=>`supabase/functions/_shared/intel/${name}.ts`),
   'src/intel/vendor/lightweight-charts-5.2.0/renderer.mjs',
   // The receipt's reproduce line builds its curl from the capability registry.
@@ -57,7 +57,7 @@ const productionSources=[
   ...['admission-drift','benchmark-rates','counter-leg','issuer-aliases','issuer-evidence','legitimacy','nav-integrity','portfolio-exposure','terms','wrapper-spread','yield-realized','yield-register'].map(name=>`rwa-${name}.ts`),
   ...['admission-drift','benchmark-rates','counter-leg','issuer-aliases','issuer-review-cycles','legitimacy','nav-integrity','portfolio-exposure','terms','wrapper-spread','yield-realized','yield-register'].map(name=>`rwa-${name}.test.ts`),
   ...['blockscout','edgar-agent','edgar','gleif','http','ofac','sourcify'].flatMap(name=>[`rwa-sources/${name}.ts`,`rwa-sources/${name}.test.ts`]),'rwa-sources/test-support.ts',
-  ...['chainlink-nav','sec-nmfp-yield'].flatMap(name=>[`${name}.ts`,`${name}.test.ts`]),
+  ...['chainlink-nav','sec-nmfp-yield','underlying-reference'].flatMap(name=>[`${name}.ts`,`${name}.test.ts`]),
   ...['rwa-wrapper-picks','rwa-coverage','capture-rwa-coverage','capture-rwa-coverage-read','capture-rwa-wrapper-backfill','capture-rwa-wrapper-history-read',].flatMap(name=>[`${name}.ts`,`${name}.test.ts`]),'rwa-exit-capacity.ts','capture-rwa-coverage.fixtures.ts','capture-rwa-wrappers-read.test.ts',
   'cmc-chart.ts',
   'chart-analysis.ts',

@@ -75,6 +75,7 @@ const ProfilePanel = deferredPanel(() => import('../components/ProfilePanel'), {
 const ContractChartEvidenceStatus = deferredPanel(() => import('../components/ContractChartEvidenceStatus'), { label: 'Contract chart evidence' })
 import TokenRiskBadge from '../components/TokenRiskBadge'
 import FigureProvenance from '../components/FigureProvenance'
+import AsOfTime from '../components/AsOfTime'
 import MetricAgreementChip from '../components/MetricAgreementChip'
 import { IntelHeroRead, IntelMetricCard, IntelPageShell } from '../components/IntelPrimitives'
 import DemoNotInSnapshot, { DemoNotTracked, isDemoUntrackedReason } from '../demo/DemoNotInSnapshot'
@@ -355,7 +356,13 @@ export default function MarketAssetPage() {
               is the literal word "contract" — not the name of a source. The
               answering source's own label rides in the response, so a DEX quote
               is credited to "DEX Screener" and never to "contract". */}
-          {d.quoteProvider&&<p className="intel-event-meta">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteSourceLabel||d.quoteProvider} · {d.asOf&&<time dateTime={d.asOf}>{new Date(d.asOf).toLocaleTimeString()}</time>}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{d.sourceFreshness&&d.sourceFreshness!=='fresh'&&d.sourceFreshness!=='cached'?` · ${d.sourceFreshness}`:''}</p>}
+          {/* The quote's own time, stated like every section's (AsOfTime: UTC and
+              its age). The age says how old a price is, so the line never needs
+              the word "stale"; only a quote with no time at all says it has none. */}
+          {d.quoteProvider&&<p className="intel-event-meta" data-testid="asset-quote-as-of">{d.quoteProvider==='coinmarketcap'?'CoinMarketCap':d.quoteProvider==='coingecko'?'CoinGecko':d.quoteSourceLabel||d.quoteProvider}{d.asOf?<> · <AsOfTime value={d.asOf} /></>:null}{d.quoteRefreshSeconds?` · Quotes checked every ${d.quoteRefreshSeconds===60?'minute':'5 minutes'}`:''}{!d.asOf&&d.sourceFreshness==='unavailable'?` · ${d.sourceFreshness}`:''}</p>}
+          {/* When the price came from the stored quote tape, the 24h change, volume
+              and market cap are the newest stored quote's, with their own time. */}
+          {d.figuresAsOf&&Math.abs(Date.parse(d.figuresAsOf)-Date.parse(d.asOf||''))>600000&&<p className="intel-event-meta" data-testid="asset-figures-as-of"><AsOfTime value={d.figuresAsOf} render={(asOf)=>t('market.figures_as_of',{asOf,defaultValue:'24h change, volume and market cap {{asOf}}'})} /></p>}
           {/* Play 1 and 7: what answered the quote (the minute refresh replaces
               these with its own receipts) and what the price does not mean. */}
           <FigureProvenance envelope={d.quoteProvenance?.price} receipts={d.quoteReceipts} />

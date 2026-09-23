@@ -41,7 +41,8 @@
       "lower_on": "Mais baixo em",
       "net_est": "Líq. est."
     },
-    "stale": "desatualizado"
+    "stale": "desatualizado",
+    "figures_as_of": "Variação 24h, volume e capitalização: {{asOf}}"
   },
   "markets": {
     "title": "Mercados Cripto",
@@ -4365,7 +4366,7 @@
     "collapse": "Ocultar invólucros",
     "expand": "Mostrar invólucros",
     "eyebrow": "Nosso cálculo",
-    "intro": "Um ativo do mundo real costuma ser envolvido por vários tokens de vários emissores e a vários preços. Cada prêmio ou desconto abaixo é o nosso próprio cálculo em relação à âncora nomeada na mesma linha: ou o valor patrimonial líquido publicado pelo próprio fundo, ou a mediana ponderada por volume dos invólucros que superaram um piso de {{floor}} de volume declarado em 24 horas. Um invólucro abaixo desse piso continua visível, marcado como fino demais para ancorar, e fica fora da âncora. Um prêmio não é uma arbitragem negociável.",
+    "intro": "Um ativo do mundo real costuma ser envolvido por vários tokens de vários emissores e a vários preços. Cada prêmio ou desconto abaixo é o nosso próprio cálculo em relação à âncora nomeada na mesma linha. Hoje essa âncora é sempre a mediana ponderada por volume dos invólucros que superaram um piso de {{floor}} de volume declarado em 24 horas: nenhum ativo aqui está ligado ainda ao valor patrimonial líquido publicado pelo próprio fundo, e um que estiver será medido contra esse valor. Um invólucro abaixo desse piso continua visível, marcado como fino demais para ancorar, e fica fora da âncora. Um prêmio não é uma arbitragem negociável.",
     "issuer_unreported": "Emissor não informado",
     "loading": "Lendo os preços de invólucros capturados…",
     "no_chain": "O provedor não informa nenhuma chain na linha de um invólucro. Abra um invólucro para ler sua rede na página do ativo.",
@@ -4437,7 +4438,9 @@
     "legend_anchor": "Ancora a referência: o volume supera o piso",
     "legend_thin": "Fino demais para ancorar: aparece, mas fica fora da âncora",
     "state_derivative_reference": "Preço de derivativo, não é um wrapper",
-    "reason_derivative_not_a_wrapper": "O provedor lista este preço de derivativo entre os tokens do ativo. Não é um token que alguém detém ou resgata, então ele aparece só para comparação e nunca entra na âncora, no maior prêmio ou desconto nem nas escolhas."
+    "reason_derivative_not_a_wrapper": "O provedor lista este preço de derivativo entre os tokens do ativo. Não é um token que alguém detém ou resgata, então ele aparece só para comparação e nunca entra na âncora, no maior prêmio ou desconto nem nas escolhas.",
+    "as_of_label": "Captura dos invólucros",
+    "prices_observed_label": "Preços atualizados pela última vez pela CoinMarketCap"
   },
   "table_csv": {
     "download": "Baixar CSV",
@@ -4666,9 +4669,45 @@
     "value_accrual": "Diferença de acumulação (não é um prêmio)",
     "value_premium": "Prêmio em relação à âncora"
   },
+  "underlying_ref": {
+    "short": "Subjacente {{ticker}}: {{price}}",
+    "none": "Ainda não há referência de ação para este ticker.",
+    "refused_short": "Sem referência de ação: o ticker não pôde ser confirmado como a listagem nos EUA.",
+    "refused": "Sem referência de ação: não foi possível confirmar o ticker do provedor para este ativo como a listagem da empresa nos EUA, portanto nenhum preço da ação é comparado.",
+    "unavailable_short": "Referência de ação indisponível nesta captura.",
+    "unavailable": "Referência de ação indisponível nesta captura. {{reason}} Nenhuma diferença em relação à ação é informada.",
+    "line": "Subjacente {{ticker}}: {{price}}, Chainlink {{feed}} em {{network}}, atualizado {{age}} antes de os preços dos invólucros serem observados às {{at}}, {{session}}.",
+    "band": "O feed se atualiza com um movimento de {{band}}%, portanto diferenças abaixo de {{band_bps}} não são distinguíveis.",
+    "note_24_5": "Este feed também acompanha a negociação estendida e noturna nos dias úteis.",
+    "note_last_session": "Fora da sessão regular, esta é a última atualização do feed de quando o mercado estava aberto, não um preço ao vivo.",
+    "anchor_within": "A âncora está dentro da faixa de atualização de {{band}}% do feed em relação à ação, portanto as duas não são distinguíveis.",
+    "anchor_gap": "A âncora está {{value}} em relação à ação.",
+    "caveat": "Uma diferença em relação à ação compara um token com uma ação. Ela não ajusta dividendos que um invólucro possa ter reinvestido e não é uma arbitragem negociável.",
+    "within_band": "Dentro da faixa de atualização de {{band}}% do feed, não distinguível",
+    "measured": "Medido {{value}}",
+    "col_vs_stock": "vs. ação",
+    "source": "Referência de ação: feeds de preço on-chain da Chainlink, lidos por RPCs públicos.",
+    "age_minutes": "{{value}} min",
+    "age_hours": "{{value}} h",
+    "age_days": "{{value}} d",
+    "session_regular": "sessão regular",
+    "session_pre_market": "pré-mercado",
+    "session_after_hours": "pós-mercado",
+    "session_closed": "mercado fechado",
+    "session_weekend": "fim de semana, mercado fechado",
+    "session_holiday": "feriado da NYSE, mercado fechado",
+    "session_unknown": "sessão desconhecida",
+    "reason_feed_read_failed": "Não foi possível ler o feed pelo seu RPC público.",
+    "reason_feed_identity_not_proved": "O feed não comprovou sua identidade on-chain, portanto seu preço não foi usado.",
+    "reason_feed_round_unusable": "O feed não retornou um preço utilizável.",
+    "reason_round_at_observation_not_read": "Não foi possível ler o preço do feed vigente quando os preços dos invólucros foram observados.",
+    "reason_wrapper_observation_time_unknown": "O provedor não informou o horário dos preços dos invólucros, portanto não há um momento em que ler a ação.",
+    "reason_stale_in_session": "O feed não se atualizou dentro do seu heartbeat com o mercado aberto, portanto não foi usado.",
+    "reason_stale_off_session": "A última atualização do feed é mais antiga do que qualquer fechamento programado do mercado explica, portanto não foi usada."
+  },
   "intel_demo": {
     "banner_label": "Aviso de demonstração",
-    "banner_snapshot": "Demo ao vivo: um retrato do Investor Intel de {{when}}.",
+    "banner_snapshot": "Demo ao vivo do Investor Intel, aberta a partir de um retrato gerado em {{when}}. Cada seção informa o horário dos próprios dados e mostra uma captura armazenada mais recente quando houver.",
     "banner_loading": "Demo ao vivo do Investor Intel.",
     "banner_no_snapshot": "Demo ao vivo do Investor Intel. O retrato de hoje ainda não está disponível.",
     "banner_nothing_saved": "Nada do que você faz aqui é salvo.",

@@ -41,7 +41,8 @@
       "lower_on": "Më i ulët në",
       "net_est": "Neto e vlerësuar"
     },
-    "stale": "i vjetruar"
+    "stale": "i vjetruar",
+    "figures_as_of": "Ndryshimi 24h, vëllimi dhe kapitalizimi i tregut: {{asOf}}"
   },
   "markets": {
     "title": "Tregjet kripto",
@@ -4365,7 +4366,7 @@
     "collapse": "Fshih mbulësësit",
     "expand": "Shfaq mbulësësit",
     "eyebrow": "Llogaritja jonë",
-    "intro": "Një aktiv i botës reale shpesh mbulohet nga disa tokenë të disa emetuesve, me disa çmime. Secili prim ose skonto më poshtë është llogaritja jonë ndaj spirancës të emërtuar në të njëjtën rresht: ose vlera neto e aktiveve e publikuar nga fondi vetë, ose mesorja e pondëruar me volum e mbulësësve që kaluan një kufi prej {{floor}} në volumin 24-orësh të raportuar. Një mbulës nën atë kufi vazhdon të shfaqet, shënohet si tepër i hollët për të spirancuar dhe lëshohet jashtë spirancës. Një prim nuk është arbitrazh i tregtueshëm.",
+    "intro": "Një aktiv i botës reale shpesh mbulohet nga disa tokenë të disa emetuesve, me disa çmime. Secili prim ose skonto më poshtë është llogaritja jonë ndaj spirancës të emërtuar në të njëjtën rresht. Sot ajo spirancë është gjithmonë mesorja e pondëruar me volum e mbulësësve që kaluan një kufi prej {{floor}} në volumin 24-orësh të raportuar: asnjë aktiv këtu nuk është lidhur ende me vlerën neto të aktiveve të publikuar nga vetë fondi i tij, dhe një aktiv që lidhet do të matet ndaj asaj vlere. Një mbulës nën atë kufi vazhdon të shfaqet, shënohet si tepër i hollët për të spirancuar dhe lëshohet jashtë spirancës. Një prim nuk është arbitrazh i tregtueshëm.",
     "issuer_unreported": "Emetuesi nuk është raportuar",
     "loading": "Po lexohen çmimet e regjistruara të mbulesësve…",
     "no_chain": "Ofruesi nuk raporton asnjë chain në rreshtin e një mbulësi. Hap një mbulës për të lexuar rrjetin e tij në faqen e aktivit.",
@@ -4437,7 +4438,9 @@
     "legend_anchor": "Spirancon referencën: volumi i tij kalon kufirin",
     "legend_thin": "Tepër i hollë për të spirancuar: shfaqet, por mbetet jashtë spirancës",
     "state_derivative_reference": "Çmim derivati, jo wrapper",
-    "reason_derivative_not_a_wrapper": "Ofruesi e rendit këtë çmim derivati mes tokenëve të asetit. Nuk është token që dikush e mban ose e shlyen, prandaj shfaqet vetëm për krahasim dhe nuk hyn kurrë në ankorim, në primin ose zbritjen më të madhe apo në zgjedhjet."
+    "reason_derivative_not_a_wrapper": "Ofruesi e rendit këtë çmim derivati mes tokenëve të asetit. Nuk është token që dikush e mban ose e shlyen, prandaj shfaqet vetëm për krahasim dhe nuk hyn kurrë në ankorim, në primin ose zbritjen më të madhe apo në zgjedhjet.",
+    "as_of_label": "Regjistrimi i mbulesësve",
+    "prices_observed_label": "Çmimet u përditësuan së fundi nga CoinMarketCap"
   },
   "table_csv": {
     "download": "Shkarko CSV",
@@ -4666,9 +4669,45 @@
     "value_accrual": "Diferencë grumbullimi (jo prim)",
     "value_premium": "Primi ndaj spirancës"
   },
+  "underlying_ref": {
+    "short": "Aktivi bazë {{ticker}}: {{price}}",
+    "none": "Ende nuk ka referencë aksioni për këtë ticker.",
+    "refused_short": "Pa referencë aksioni: tickeri nuk u konfirmua si listimi në SHBA.",
+    "refused": "Pa referencë aksioni: tickeri i ofruesit për këtë aktiv nuk u konfirmua si listimi i kompanisë në SHBA, prandaj nuk krahasohet asnjë çmim aksioni.",
+    "unavailable_short": "Referenca e aksionit nuk është e disponueshme në këtë kapje.",
+    "unavailable": "Referenca e aksionit nuk është e disponueshme në këtë kapje. {{reason}} Nuk raportohet asnjë diferencë ndaj aksionit.",
+    "line": "Aktivi bazë {{ticker}}: {{price}}, Chainlink {{feed}} në {{network}}, përditësuar {{age}} përpara se të vëzhgoheshin çmimet e mbulësve në {{at}}, {{session}}.",
+    "band": "Feed-i përditësohet pas një lëvizjeje prej {{band}}%, prandaj diferencat nën {{band_bps}} nuk dallohen.",
+    "note_24_5": "Ky feed ndjek edhe tregtimin e zgjatur dhe atë të natës në ditët e punës.",
+    "note_last_session": "Jashtë seancës së rregullt, ky është përditësimi i fundit i feed-it nga koha kur tregu ishte i hapur, jo një çmim i drejtpërdrejtë.",
+    "anchor_within": "Spiranca është brenda brezit të përditësimit prej {{band}}% të feed-it ndaj aksionit, prandaj të dyja nuk dallohen.",
+    "anchor_gap": "Spiranca qëndron {{value}} ndaj aksionit.",
+    "caveat": "Një diferencë ndaj aksionit krahason një token me një aksion. Ajo nuk rregullon dividendët që një mbulës mund të ketë riinvestuar dhe nuk është arbitrazh i tregtueshëm.",
+    "within_band": "Brenda brezit të përditësimit prej {{band}}% të feed-it, nuk dallohet",
+    "measured": "Matur {{value}}",
+    "col_vs_stock": "ndaj aksionit",
+    "source": "Referenca e aksionit: feed-e çmimesh on-chain të Chainlink, të lexuara përmes RPC publike.",
+    "age_minutes": "{{value}} min",
+    "age_hours": "{{value}} h",
+    "age_days": "{{value}} d",
+    "session_regular": "seancë e rregullt",
+    "session_pre_market": "para hapjes së tregut",
+    "session_after_hours": "pas mbylljes së tregut",
+    "session_closed": "tregu i mbyllur",
+    "session_weekend": "fundjavë, tregu i mbyllur",
+    "session_holiday": "festë e NYSE, tregu i mbyllur",
+    "session_unknown": "seancë e panjohur",
+    "reason_feed_read_failed": "Feed-i nuk mund të lexohej përmes RPC-së së tij publike.",
+    "reason_feed_identity_not_proved": "Feed-i nuk e provoi identitetin e tij on-chain, prandaj çmimi i tij nuk u përdor.",
+    "reason_feed_round_unusable": "Feed-i nuk ktheu asnjë çmim të përdorshëm.",
+    "reason_round_at_observation_not_read": "Çmimi i feed-it në fuqi kur u vëzhguan çmimet e mbulësve nuk mund të lexohej.",
+    "reason_wrapper_observation_time_unknown": "Ofruesi nuk dha kohë për çmimet e mbulësve, prandaj nuk ka një moment për të lexuar aksionin.",
+    "reason_stale_in_session": "Feed-i nuk u përditësua brenda heartbeat-it të tij ndërsa tregu ishte i hapur, prandaj nuk u përdor.",
+    "reason_stale_off_session": "Përditësimi i fundit i feed-it është më i vjetër se sa shpjegon çdo mbyllje e planifikuar e tregut, prandaj nuk u përdor."
+  },
   "intel_demo": {
     "banner_label": "Njoftim demo",
-    "banner_snapshot": "Demo e drejtpërdrejtë: një pamje e Investor Intel nga {{when}}.",
+    "banner_snapshot": "Demo e drejtpërdrejtë e Investor Intel, e hapur nga një pamje e krijuar më {{when}}. Çdo seksion tregon kohën e të dhënave të veta dhe shfaq një regjistrim të ruajtur më të ri kur ka një të tillë.",
     "banner_loading": "Demo e drejtpërdrejtë e Investor Intel.",
     "banner_no_snapshot": "Demo e drejtpërdrejtë e Investor Intel. Pamja e sotme nuk është ende e disponueshme.",
     "banner_nothing_saved": "Asgjë që bën këtu nuk ruhet.",

@@ -1,9 +1,12 @@
 import React,{useEffect,useRef,useState} from 'react'
 import {useTranslation} from 'react-i18next'
+import i18next from 'i18next'
+import { formatDataTime } from '../lib/as-of'
 import {receiptFreshness,providerLabel,receiptCost,receiptProof} from '../lib/source-receipt'
 import {cmcReproduceCommand,cmcReproduceRequest} from '../../../supabase/functions/_shared/market-assets/cmc-reproduce.ts'
 import ReceiptCostLine from './ReceiptCostLine'
-const time=v=>v&&Number.isFinite(Date.parse(v))?new Date(v).toLocaleString():null
+// Every time in a receipt in the one format (../lib/as-of.js): UTC and its age.
+const time=v=>formatDataTime(v,{language:i18next.language})
 const FRESHNESS_DEFAULTS={fresh:'Fresh: a provider call answered this read',cached:'Cached: inside its refresh limit',stale:'Stale: past its refresh limit',unavailable:'Unavailable: nothing usable answered this read'}
 const CALL_DEFAULTS={live:'Live provider call',cache:'Shared cache','negative-cache':'Shared failure record',error:'Failed call'}
 // What the command reproduces, so a cached figure's command is never called "this call".

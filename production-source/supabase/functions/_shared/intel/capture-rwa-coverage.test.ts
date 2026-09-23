@@ -74,6 +74,20 @@ Deno.test('disabled policy and within-cadence both skip without a provider call'
   eq(fake.calls.length, 0)
 })
 
+Deno.test('cadence is keyed on the snapshot date: an evening run yesterday does not skip today', async () => {
+  // 23 Sep 2026: a manual run at 19:20 UTC made the cron eight hours later skip
+  // on elapsed time, so no second snapshot existed to diff against.
+  const fake = fakeRequest((_name, params) => quotesFor(params))
+  const lateYesterday = fakeDb({ [MAP_TABLE]: mapRows(3), [COVERAGE_ASSET_TABLE]: [{ snapshot_date: '2026-09-21', captured_at: '2026-09-21T19:20:00.000Z', rwa_id: '1' }] })
+  const result = await captureRwaCoverage(lateYesterday, ctxFor, NOW, { request: fake.request })
+  eq(result.skipped, undefined)
+  eq(fake.calls.length, 1)
+  // A weekly policy still waits a week of snapshot dates.
+  const weekly = fakeDb({ [MAP_TABLE]: mapRows(3), [COVERAGE_ASSET_TABLE]: [{ snapshot_date: '2026-09-17', captured_at: '2026-09-17T03:19:00.000Z', rwa_id: '1' }] })
+  const held = await captureRwaCoverage(weekly, ctxFor, NOW, { request: fake.request, policy: [{ provider: 'coinmarketcap', feature: 'rwa_coverage', cadence_seconds: 604800, enabled: true }] })
+  eq(held.skipped, 'within_cadence')
+})
+
 Deno.test('first run: batches of 100, one credit each, states classified, failed batch not_returned, no events', async () => {
   const db = fakeDb({
     // 250 fresh ids, one stale id and one known to lack tokens: neither is asked about.

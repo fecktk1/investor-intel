@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createClient } from '@supabase/supabase-js'
-import { createDemoFetch, DEMO_MISS_CODE, demoAccountAccess, researchCopyPastWindow } from '../../demo/demo-fetch'
+import { createDemoFetch, DEMO_MISS_CODE, demoAccountAccess, demoScreenFor, demoViewFor, researchCopyPastWindow } from '../../demo/demo-fetch'
 import { createDemoStore } from '../../demo/demo-store'
 import { createSnapshotReader, publicObjectUrl } from '../../demo/demo-snapshot'
 import { DEMO_ORG_ID, DEMO_USER_ID } from '../../demo/demo-identity'
@@ -425,5 +425,76 @@ describe('demoFetch and the public read endpoint (a visitor search)', () => {
     const history = await client.functions.invoke('intel-chart-workspace', { body: { orgId: DEMO_ORG_ID, operation: 'alert_history', asset: 'bip122:native:BTC', from: 1, to: 2 } })
     expect(history.data).toEqual({ rows: [], nextCursor: null })
     expect(forwarded).toEqual([])
+  })
+})
+
+describe('demoFetch and a stored read newer than the snapshot copy (one freshness story)', () => {
+  const NOW = Date.parse('2026-09-23T17:51:00.000Z')
+  const board = (asOf, extra = {}) => ({ view: 'rwa_wrappers', asOf, rows: [{ rwaId: 1017, symbol: 'NVDA', wrappers: [{ cryptoId: 36992, referencePrice: 181.2 }] }], sourcePolicy: { exportAllowed: false }, ...extra })
+  const screen = (lastUpdated) => ({ rows: [{ symbol: 'BTC', sourceProvider: 'coinmarketcap', providerId: '1' }], total: 1, lastUpdated, snapshot: { lastUpdated }, catalog: { provider: 'coinmarketcap' } })
+  const json = (body, status = 200) => new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })
+  function client(entries, endpoint, clock = () => NOW) {
+    const net = bucket(entries)
+    const reader = createSnapshotReader({ supabaseUrl: URL_BASE, fetchImpl: net.network })
+    const forwarded = []
+    const forwardPublic = vi.fn(async (body, fn) => { forwarded.push({ fn, body }); return endpoint(body, fn) })
+    const demoFetch = createDemoFetch({ supabaseUrl: URL_BASE, reader, store: createDemoStore(), forwardPublic, now: clock })
+    const c = createClient(URL_BASE, 'anon-key', { auth: { persistSession: false, autoRefreshToken: false, detectSessionInUrl: false }, global: { fetch: demoFetch } })
+    return { client: c, forwarded }
+  }
+
+  it('the wrapper board past its six-hour cadence is read again as a shared view, and the newer capture answers whole', async () => {
+    const live = board('2026-09-23T14:00:00.000Z', { demoRead: { served: 'stored_capture', providerCalls: 0 } })
+    const { client: c, forwarded } = client({ [captureKey('rwa_wrappers')]: board('2026-09-23T08:00:00.000Z') }, () => json(live))
+    const read = await readCaptureView('rwa_wrappers', {}, { orgId: DEMO_ORG_ID, supabase: c })
+    expect(read.asOf).toBe('2026-09-23T14:00:00.000Z')
+    // Rows pass through whole: a field a later lane adds reaches the page.
+    expect(read.rows[0].wrappers[0].referencePrice).toBe(181.2)
+    expect(forwarded).toEqual([{ fn: 'intel-demo-read', body: { read: 'view', view: 'rwa_wrappers', params: {} } }])
+    // Read again within the check window: answered from the same check.
+    await readCaptureView('rwa_wrappers', {}, { orgId: DEMO_ORG_ID, supabase: c })
+    expect(forwarded).toHaveLength(1)
+  })
+
+  it('crosses with the page parameters only, never orgId, op or anything unlisted', async () => {
+    const { client: c, forwarded } = client({ [captureKey('venue_share', { days: 90, kind: 'spot' })]: { view: 'venue_share', asOf: '2026-09-21T00:00:00.000Z' } }, () => json({ view: 'venue_share', asOf: '2026-09-23T00:00:00.000Z' }))
+    await readCaptureView('venue_share', { days: 90, kind: 'spot' }, { orgId: DEMO_ORG_ID, supabase: c })
+    expect(forwarded[0].body).toEqual({ read: 'view', view: 'venue_share', params: { days: 90, kind: 'spot' } })
+    expect(demoViewFor({ op: 'read', view: 'rwa_wrappers', surprise: 1 })).toBeNull()
+    expect(demoViewFor({ op: 'read', view: 'rwa_asset_logos', rwaIds: [1] })).toBeNull()
+    expect(demoViewFor({ op: 'read', view: 'rwa_token_depth', cryptoId: '39306' })).toEqual({ read: 'capture', view: 'rwa_token_depth', cryptoId: '39306' })
+  })
+
+  it('a copy inside its cadence is served from the snapshot and nothing is forwarded', async () => {
+    const { client: c, forwarded } = client({ [captureKey('rwa_wrappers')]: board('2026-09-23T14:00:00.000Z') }, () => json(board('2026-09-23T14:00:00.000Z')))
+    expect((await readCaptureView('rwa_wrappers', {}, { orgId: DEMO_ORG_ID, supabase: c })).asOf).toBe('2026-09-23T14:00:00.000Z')
+    expect(forwarded).toEqual([])
+  })
+
+  it('an older, failed, rate-limited or unreachable answer leaves the snapshot copy, still dated', async () => {
+    for (const endpoint of [
+      () => json(board('2026-09-23T08:00:00.000Z')),
+      () => json({ error: 'rate_limited', reason: 'rate_limited', retryAfter: 30 }, 429),
+      () => json({ error: 'demo_read_unavailable' }, 503),
+      () => { throw new Error('offline') },
+    ]) {
+      const { client: c, forwarded } = client({ [captureKey('rwa_wrappers')]: board('2026-09-23T08:00:00.000Z') }, endpoint)
+      expect((await readCaptureView('rwa_wrappers', {}, { orgId: DEMO_ORG_ID, supabase: c })).asOf).toBe('2026-09-23T08:00:00.000Z')
+      expect(forwarded).toHaveLength(1)
+    }
+  })
+
+  it('the unsearched Markets screen older than the catalogue window is read again, and the newer page answers', async () => {
+    const params = { provider: 'auto', sort: 'market_cap', dir: 'desc', chain: '', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: 50 }
+    const key = demoSnapshotKey('intel-markets', params)
+    const { client: c, forwarded } = client({ [key]: screen('2026-09-23T04:13:00.000Z') }, () => json(screen('2026-09-23T17:48:00.000Z')))
+    const { loadMarkets } = await import('../markets-api')
+    const data = await loadMarkets(c, DEMO_ORG_ID, params)
+    expect(data.lastUpdated).toBe('2026-09-23T17:48:00.000Z')
+    expect(forwarded).toEqual([{ fn: 'intel-demo-read', body: { read: 'screen', query: { provider: 'auto', sort: 'market_cap', dir: 'desc', page: 0, limit: 50, search: '' } } }])
+    // A watchlist screen or a search is never refreshed this way.
+    expect(demoScreenFor({ ...params, watchlistOnly: true })).toBeNull()
+    expect(demoScreenFor({ ...params, op: 'suggest' })).toBeNull()
+    expect(demoScreenFor({ ...params, symbol: 'BTC' })).toBeNull()
   })
 })

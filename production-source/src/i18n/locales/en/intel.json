@@ -41,7 +41,8 @@
       "lower_on": "Lower on",
       "net_est": "Est. net"
     },
-    "stale": "stale"
+    "stale": "stale",
+    "figures_as_of": "24h change, volume and market cap {{asOf}}"
   },
   "markets": {
     "title": "Crypto Markets",
@@ -4365,7 +4366,7 @@
     "collapse": "Hide wrappers",
     "expand": "Show wrappers",
     "eyebrow": "Our calculation",
-    "intro": "One real-world asset is often wrapped by several tokens from several issuers, at several prices. Each premium or discount below is our own calculation against the anchor named on that row: either the fund's own published net asset value, or the volume-weighted median of the wrappers that cleared a {{floor}} floor on reported 24 hour volume. A wrapper under that floor is still shown, marked as too thin to anchor, and left out of the anchor. A premium is not a tradable arbitrage.",
+    "intro": "One real-world asset is often wrapped by several tokens from several issuers, at several prices. Each premium or discount below is our own calculation against the anchor named on that row. Today that anchor is always the volume-weighted median of the wrappers that cleared a {{floor}} floor on reported 24 hour volume: no asset here is mapped to a fund's own published net asset value yet, and one that is will be measured against that value instead. A wrapper under that floor is still shown, marked as too thin to anchor, and left out of the anchor. A premium is not a tradable arbitrage.",
     "issuer_unreported": "Issuer not reported",
     "loading": "Reading the captured wrapper prices…",
     "no_chain": "The provider reports no chain on a wrapper row. Open a wrapper to read its network on its asset page.",
@@ -4437,7 +4438,9 @@
     "legend_anchor": "Anchors the reference: its volume clears the floor",
     "legend_thin": "Too thin to anchor: shown, left out of the anchor",
     "state_derivative_reference": "Derivative price, not a wrapper",
-    "reason_derivative_not_a_wrapper": "The provider lists this derivative price among the asset's tokens. It is not a token anyone holds or redeems, so it is shown for comparison and never enters the anchor, the widest premium or discount, or the picks."
+    "reason_derivative_not_a_wrapper": "The provider lists this derivative price among the asset's tokens. It is not a token anyone holds or redeems, so it is shown for comparison and never enters the anchor, the widest premium or discount, or the picks.",
+    "as_of_label": "Wrapper capture",
+    "prices_observed_label": "Prices last updated by CoinMarketCap"
   },
   "table_csv": {
     "download": "Download CSV",
@@ -4666,9 +4669,45 @@
     "value_accrual": "Accrual gap (not a premium)",
     "value_premium": "Premium against the anchor"
   },
+  "underlying_ref": {
+    "short": "Underlying {{ticker}}: {{price}}",
+    "none": "No stock reference for this ticker yet.",
+    "refused_short": "No stock reference: the ticker could not be confirmed as the US listing.",
+    "refused": "No stock reference: the provider's ticker for this asset could not be confirmed as the company's US listing, so no stock price is compared.",
+    "unavailable_short": "Stock reference unavailable in this capture.",
+    "unavailable": "Stock reference unavailable in this capture. {{reason}} No gap to the stock is reported.",
+    "line": "Underlying {{ticker}}: {{price}}, Chainlink {{feed}} on {{network}}, updated {{age}} before the wrapper prices were observed at {{at}}, {{session}}.",
+    "band": "The feed updates on a {{band}}% move, so gaps under {{band_bps}} are not distinguishable.",
+    "note_24_5": "This feed also follows extended and overnight trading on weekdays.",
+    "note_last_session": "Outside the regular session this is the feed's last update from when the market was open, not a live price.",
+    "anchor_within": "The anchor is within the feed's {{band}}% update band of the stock, so the two are not distinguishable.",
+    "anchor_gap": "The anchor sits {{value}} against the stock.",
+    "caveat": "A gap to the stock compares one token with one share. It does not adjust for dividends a wrapper may have reinvested, and it is not a tradable arbitrage.",
+    "within_band": "Within the feed's {{band}}% update band, not distinguishable",
+    "measured": "Measured {{value}}",
+    "col_vs_stock": "vs stock",
+    "source": "Stock reference: Chainlink on-chain price feeds, read through public RPCs.",
+    "age_minutes": "{{value}} min",
+    "age_hours": "{{value}} h",
+    "age_days": "{{value}} d",
+    "session_regular": "regular session",
+    "session_pre_market": "pre-market",
+    "session_after_hours": "after-hours",
+    "session_closed": "market closed",
+    "session_weekend": "weekend, market closed",
+    "session_holiday": "NYSE holiday, market closed",
+    "session_unknown": "session not known",
+    "reason_feed_read_failed": "The feed could not be read over its public RPC.",
+    "reason_feed_identity_not_proved": "The feed did not prove its identity on chain, so its price was not used.",
+    "reason_feed_round_unusable": "The feed returned no usable price.",
+    "reason_round_at_observation_not_read": "The feed price in effect when the wrapper prices were observed could not be read.",
+    "reason_wrapper_observation_time_unknown": "The provider gave no time for the wrapper prices, so there is no moment to read the stock at.",
+    "reason_stale_in_session": "The feed had not updated within its heartbeat while the market was open, so it was not used.",
+    "reason_stale_off_session": "The feed's last update is older than any scheduled market closure explains, so it was not used."
+  },
   "intel_demo": {
     "banner_label": "Demo notice",
-    "banner_snapshot": "Live demo: a snapshot of Investor Intel from {{when}}.",
+    "banner_snapshot": "Live demo of Investor Intel, opened from a snapshot built {{when}}. Each section states the time of its own data, and shows a newer stored capture when there is one.",
     "banner_loading": "Live demo of Investor Intel.",
     "banner_no_snapshot": "Live demo of Investor Intel. Today's snapshot is not available yet.",
     "banner_nothing_saved": "Nothing you do here is saved.",

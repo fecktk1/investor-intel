@@ -17,7 +17,8 @@
 //      ids from `intel_rwa_asset_map` (the rwaMap lane, 03:11 UTC) that are not
 //      known to lack tokens and were seen by today's complete map run (or, when
 //      today's run is missing or truncated, in the last 36 hours); this lane's own
-//      newest snapshot (cadence guard) and previous snapshot (the diff).
+//      newest snapshot date (cadence guard: one snapshot per UTC day) and previous
+//      snapshot (the diff).
 //   2. `/v5/real-world-assets/quotes/latest` in batches of 100 rwa_ids. The
 //      endpoint bills ceil(n/250), so each batch is 1 credit. Measured 2026-09-22:
 //      791 eligible ids, so 8 batches and 8 CREDITS A DAY. The per-run ceiling is
@@ -70,7 +71,6 @@ export const MAP_FRESH_HOURS = 36
 export const MAP_ID_CAP = 3000
 const PAGE = 1000
 const CADENCE_SECONDS = 86_400
-const CADENCE_GRACE = 0.9
 const MAX_UPSERT_ROWS = 500
 
 const num = (v: unknown): number | null => { if (v == null || v === '' || typeof v === 'boolean') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
@@ -198,12 +198,18 @@ export async function captureRwaCoverage(
     const policy = lanePolicy(deps)
     if (!policy.enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
 
-    // ── Cadence guard, on this lane's own newest capture. ──
+    // ── Cadence guard, on this lane's own newest SNAPSHOT DATE. ──
+    // Keyed on calendar days, not elapsed time: a snapshot is one UTC day, so a
+    // daily lane skips only when today's snapshot already exists. The elapsed-time
+    // guard it replaces skipped the 23 Sep 03:19 cron because a manual run had
+    // landed at 19:20 the evening before, leaving no second snapshot to diff.
     const newest = await readRows(() => admin.from(COVERAGE_ASSET_TABLE).select('snapshot_date,captured_at')
-      .order('captured_at', { ascending: false }).limit(1))
+      .order('snapshot_date', { ascending: false }).order('captured_at', { ascending: false }).limit(1))
     const newestAt = text(newest.rows[0]?.captured_at, 40)
-    const newestMs = newestAt ? Date.parse(newestAt) : NaN
-    if (Number.isFinite(newestMs) && now.getTime() - newestMs < policy.cadenceSeconds * 1000 * CADENCE_GRACE) {
+    const newestDate = text(newest.rows[0]?.snapshot_date, 10)
+    const cadenceDays = Math.max(1, Math.round(policy.cadenceSeconds / CADENCE_SECONDS))
+    const daysSince = newestDate ? Math.round((Date.parse(`${snapshotDate}T00:00:00Z`) - Date.parse(`${newestDate}T00:00:00Z`)) / 86_400_000) : NaN
+    if (Number.isFinite(daysSince) && daysSince < cadenceDays) {
       return { job, rows: 0, credits: 0, skipped: 'within_cadence', newestAt }
     }
 

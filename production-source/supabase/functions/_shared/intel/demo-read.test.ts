@@ -132,7 +132,7 @@ Deno.test('requests are rebuilt from allowed fields: extras, org ids, bad values
   const refused = (body: unknown, code: string) => assertThrows(() => parseDemoRead(body), DemoReadRefusal, code)
   refused({ read: 'detail', symbol: 'BTC', sourceProvider: 'coinmarketcap', providerId: '1', orgId: 'x' }, 'invalid_request')
   refused({ read: 'suggest', q: 'BTC', token: 'x' }, 'invalid_request')
-  refused({ read: 'screen', query: { search: '' } }, 'invalid_search')
+  refused({ read: 'screen', query: { search: 'x'.repeat(101) } }, 'invalid_search')
   refused({ read: 'screen', query: { search: 'BTC', watchlistOnly: true } }, 'invalid_request')
   refused({ read: 'screen', query: { search: 'BTC', sort: 'drop table' } }, 'invalid_sort')
   refused({ read: 'detail', symbol: 'BTC', timeframe: '9Y' }, 'invalid_chart_range')
@@ -185,4 +185,45 @@ Deno.test('handler: a reader failure is a 503 with no secret in it', async () =>
   assertEquals(failed.status, 503)
   const text = await failed.text()
   assertEquals(text.includes('service-role-secret-value'), false)
+})
+
+Deno.test('a shared capture view is read again from the capture tables, rebuilt from its allowed parameters', async () => {
+  const bodies: Record<string, unknown>[] = []
+  const { deps, calls } = fakes({
+    capture: (body) => { bodies.push(body); return Promise.resolve({ status: 200, body: { view: body.view, asOf: '2026-09-23T14:00:00.000Z', rows: [{ rwaId: 1, extraFieldFromALaterLane: true }] } }) },
+  })
+  const board = await answer({ read: 'view', view: 'rwa_wrappers' }, deps)
+  assertEquals(board.status, 200)
+  // The whole body passes through (new fields on a row reach the page), stamped as stored.
+  assertEquals(board.body.rows, [{ rwaId: 1, extraFieldFromALaterLane: true }])
+  assertEquals(board.body.demoRead, { served: 'stored_capture', providerCalls: 0 })
+  await answer({ read: 'view', view: 'venue_share', params: { days: '90', kind: 'spot' } }, deps)
+  await answer({ read: 'view', view: 'liquidations', params: { providerIds: [1, 1027] } }, deps)
+  // op and view are set last: no parameter can rewrite which view is read.
+  assertEquals(bodies, [
+    { op: 'read', view: 'rwa_wrappers' },
+    { days: 90, kind: 'spot', op: 'read', view: 'venue_share' },
+    { providerIds: ['1', '1027'], op: 'read', view: 'liquidations' },
+  ])
+  // No asset identity is involved, so the tracked allowlist is not consulted.
+  assertEquals(calls.includes('tracked'), false)
+  const refused = (body: unknown, code: string) => assertThrows(() => parseDemoRead(body), DemoReadRefusal, code)
+  refused({ read: 'view', view: 'rwa_wrappers', orgId: 'x' }, 'invalid_request')
+  refused({ read: 'view', view: 'rwa_wrappers', params: { op: 'write' } }, 'invalid_view_params')
+  refused({ read: 'view', view: 'attention', params: { providerId: '1' } }, 'invalid_view')
+  refused({ read: 'view', view: 'rank_map', params: { limit: 1000 } }, 'invalid_view_params')
+  // A failed read passes through as it is, with no stamp.
+  const failed = await answer({ read: 'view', view: 'rwa_wrappers' }, fakes({ capture: () => Promise.resolve({ status: 400, body: { error: 'unsupported_view' } }) }).deps)
+  assertEquals([failed.status, failed.body.demoRead], [400, undefined])
+})
+
+Deno.test('the unsearched screen is the stored catalogue page: no suggestions, and an empty page is not "untracked"', async () => {
+  const { deps, calls } = fakes({ screen: (query) => { calls.push('screen'); return Promise.resolve({ rows: query.category === 'none' ? [] : [{ symbol: 'BTC' }], total: 1, lastUpdated: '2026-09-23T18:54:00.000Z' }) } })
+  const page = await answer({ read: 'screen', query: { provider: 'auto', sort: 'market_cap', dir: 'desc', chain: '', search: '', category: '', signalDirection: '', watchlistOnly: false, view: '', page: 0, limit: 50 } }, deps)
+  assertEquals([page.status, page.body.lastUpdated, page.body.demoReason, page.body.demoSuggestions], [200, '2026-09-23T18:54:00.000Z', undefined, undefined])
+  const empty = await answer({ read: 'screen', query: { category: 'none' } }, deps)
+  assertEquals([empty.status, empty.body.rows, empty.body.demoReason], [200, [], undefined])
+  assertEquals(calls, ['screen', 'screen'])
+  // A watchlist screen is still refused: the visitor has none on the server.
+  assertThrows(() => parseDemoRead({ read: 'screen', query: { watchlistOnly: true } }), DemoReadRefusal, 'invalid_request')
 })

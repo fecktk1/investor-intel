@@ -2,22 +2,15 @@ import React, { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { getDemoManifest } from './demo-runtime'
 import { exitIntelDemo, DEMO_SIGNUP_PATH } from './demo-mode'
+import { formatDataTime, formatUtcTime, useMinuteClock } from '../lib/as-of'
 
 // The persistent line at the top of every demo page. House style: a hairline
 // bar with text links, never a pill, chip, badge or card.
 
-/** "22 Sep 2026, 04:13 UTC" in the reader's language, always in UTC. */
+/** "22 Sep 2026, 04:13 UTC" in the reader's language, always in UTC: the one
+ * time format every demo section uses (../lib/as-of.js). */
 export function formatSnapshotTime(iso, language) {
-  const ms = Date.parse(String(iso || ''))
-  if (!Number.isFinite(ms)) return null
-  try {
-    const text = new Intl.DateTimeFormat(language || 'en', {
-      day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'UTC',
-    }).format(new Date(ms))
-    return `${text} UTC`
-  } catch {
-    return `${new Date(ms).toISOString().slice(0, 16).replace('T', ' ')} UTC`
-  }
+  return formatUtcTime(iso, language)
 }
 
 export default function IntelDemoBanner({ manifestLoader = getDemoManifest }) {
@@ -31,9 +24,15 @@ export default function IntelDemoBanner({ manifestLoader = getDemoManifest }) {
     return () => { live = false }
   }, [manifestLoader])
 
-  const when = formatSnapshotTime(manifest?.capturedAt || (manifest?.date ? `${manifest.date}T00:00:00Z` : null), i18n?.language)
+  // When the snapshot was BUILT, with its age, and no more: each section below
+  // states the time of its own data (AsOfTime), and a capture view or a quote
+  // with a newer stored copy shows that copy, so the build time is not the age
+  // of everything on the page and the line does not say it is.
+  const builtAt = manifest?.capturedAt || (manifest?.date ? `${manifest.date}T00:00:00Z` : null)
+  const now = useMinuteClock(!!builtAt)
+  const when = formatDataTime(builtAt, { language: i18n?.language, now })
   const lead = when
-    ? t('intel_demo.banner_snapshot', { defaultValue: 'Live demo: a snapshot of Investor Intel from {{when}}.', when })
+    ? t('intel_demo.banner_snapshot', { defaultValue: 'Live demo of Investor Intel, opened from a snapshot built {{when}}. Each section states the time of its own data, and shows a newer stored capture when there is one.', when })
     : loaded
       ? t('intel_demo.banner_no_snapshot', { defaultValue: 'Live demo of Investor Intel. Today\'s snapshot is not available yet.' })
       : t('intel_demo.banner_loading', { defaultValue: 'Live demo of Investor Intel.' })

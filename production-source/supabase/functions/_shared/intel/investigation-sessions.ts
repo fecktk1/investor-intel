@@ -54,6 +54,42 @@ export function nyseClosedDays(fromMs: number, toMs: number): { date: string; ki
   }
   return out
 }
+/** The US equity session a wall-clock instant falls in, from the same fixed NYSE
+ * calendar as above (full-day holidays and 13:00 early closes, 2026-2028).
+ *
+ *   regular      09:30-16:00 America/New_York (09:30-13:00 on an early close)
+ *   pre_market   04:00-09:30
+ *   after_hours  16:00-20:00 (13:00-17:00 on an early close, when the NYSE
+ *                late session ends at 17:00)
+ *   closed       a weekday outside all three, i.e. overnight
+ *   weekend      Saturday or Sunday in New York
+ *   holiday      a scheduled NYSE full-day holiday
+ *   unknown      a weekday in a year the holiday list does not cover: a holiday
+ *                cannot be ruled out, so no session is asserted
+ *
+ * Scheduled hours only. An emergency closure or a halt is not modelled. */
+export const US_EQUITY_SESSIONS = ['regular', 'pre_market', 'after_hours', 'closed', 'weekend', 'holiday', 'unknown'] as const
+export type UsEquitySession = typeof US_EQUITY_SESSIONS[number]
+export function usEquitySessionAt(ms: number): { session: UsEquitySession; date: string | null; earlyClose: boolean } {
+  if (!Number.isFinite(ms)) return { session: 'unknown', date: null, earlyClose: false }
+  const p = parts(ms)
+  const date = `${p.year}-${p.month}-${p.day}`
+  const weekday = new Date(`${date}T12:00:00Z`).getUTCDay()
+  if (weekday === 0 || weekday === 6) return { session: 'weekend', date, earlyClose: false }
+  const year = +p.year
+  if (year < NYSE_HOLIDAY_YEARS.from || year > NYSE_HOLIDAY_YEARS.to) return { session: 'unknown', date, earlyClose: false }
+  if (holidays.has(date)) return { session: 'holiday', date, earlyClose: false }
+  const earlyClose = early.has(date)
+  const minute = (+p.hour) * 60 + (+p.minute)
+  const close = earlyClose ? 13 * 60 : 16 * 60
+  const lateEnd = earlyClose ? 17 * 60 : 20 * 60
+  const session: UsEquitySession = minute < 4 * 60 ? 'closed'
+    : minute < 9 * 60 + 30 ? 'pre_market'
+    : minute < close ? 'regular'
+    : minute < lateEnd ? 'after_hours'
+    : 'closed'
+  return { session, date, earlyClose }
+}
 /** Published conventional Ondo sessions, never live trading/redemption status.
  * Holiday/early-close exceptions and per-asset off-hours are not inferred. */
 export function ondoConventionalSession(asOf:number) {

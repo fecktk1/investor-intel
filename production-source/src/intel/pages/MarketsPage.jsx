@@ -33,6 +33,7 @@ import RecentlyDiscovered from '../components/RecentlyDiscovered'
 import UnusualForThisAsset from '../components/UnusualForThisAsset'
 import FigureProvenance from '../components/FigureProvenance'
 import FigureSourceLine from '../components/FigureSourceLine'
+import { asOfText, formatDataTime, useMinuteClock } from '../lib/as-of'
 import { IntelMetricCard, IntelPageHeader, IntelPageShell, IntelTabs } from '../components/IntelPrimitives'
 
 // Markets mode: canonical top-1000 by market cap + CEX/DEX enrichment.
@@ -81,12 +82,8 @@ const loadResolver = async () => {
 // view (canonical market-cap universe + CEX/DEX enrichment) and a separate
 // multi-chain Degen memecoin terminal. All data is read from cached tables via
 // edge functions — never a live provider call on render.
-/** The Markets snapshot's as-of time: date, minutes and the viewer's time zone,
- * so "as of" can never be read in the wrong zone. */
-export const SNAPSHOT_AS_OF_FORMAT = Object.freeze({ year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit', timeZoneName: 'short' })
-
 export default function MarketsPage() {
-  const { t } = useTranslation('intel', { useSuspense: false })
+  const { t, i18n } = useTranslation('intel', { useSuspense: false })
   const { org } = useProfile()
   const { supabase, user } = useSupabase()
   const navigate = useNavigate()
@@ -292,12 +289,15 @@ export default function MarketsPage() {
 
   const snap = marketsData?.snapshot || {}
   // When the shared market snapshot shown was captured: its catalogue receipt's
-  // clock, else the newest row time the screen reported (the same value).
-  const snapshotAsOf = useMemo(() => {
+  // clock, else the newest row time the screen reported (the same value). Stated
+  // like every other section's time: in UTC with its age (../lib/as-of.js), so
+  // "as of" can never be read in the wrong zone and the times on one page compare.
+  const snapshotAt = useMemo(() => {
     const at = marketsData?.receipt?.capturedAt ?? marketsData?.receipt?.fetchedAt ?? marketsData?.snapshot?.lastUpdated ?? marketsData?.lastUpdated
-    const ms = Date.parse(String(at ?? ''))
-    return Number.isFinite(ms) ? new Date(ms).toLocaleString(undefined, SNAPSHOT_AS_OF_FORMAT) : null
+    return Number.isFinite(Date.parse(String(at ?? ''))) ? String(at) : null
   }, [marketsData])
+  const asOfNow = useMinuteClock(!!snapshotAt)
+  const snapshotAsOf = snapshotAt ? asOfText(t, snapshotAt, { language: i18n?.language, now: asOfNow }) : null
   const rows = marketsData?.rows || []
   const degraded = (marketsData?.providerStatus || []).some((p) => p.degraded)
   const spreads = marketsData?.crossExchangeSpreads || []
@@ -354,7 +354,7 @@ export default function MarketsPage() {
               {/* The as-of time is the capture time of the stored snapshot these rows
                   come from (the catalogue receipt's clock), so a snapshot read hours
                   later still says when it was taken. Plain text, like the rest of the line. */}
-              {marketsData?.catalog && <span data-testid="markets-snapshot-line">{marketsData.catalog.provider==='coinmarketcap'?'CoinMarketCap':'CoinGecko'} · {t('markets.sharedSnapshot', {defaultValue:'Shared market snapshot'})}{snapshotAsOf ? ' · '+t('markets.sharedSnapshotAsOf', {date: snapshotAsOf, defaultValue:'as of {{date}}'}) : ''}{marketsData.catalog.fallback ? ' · '+t('markets.catalogueFallback', {defaultValue:'CMC catalogue is not current; showing CoinGecko'}) : ''}</span>}
+              {marketsData?.catalog && <span data-testid="markets-snapshot-line">{marketsData.catalog.provider==='coinmarketcap'?'CoinMarketCap':'CoinGecko'} · {t('markets.sharedSnapshot', {defaultValue:'Shared market snapshot'})}{snapshotAsOf ? ' · '+snapshotAsOf : ''}{marketsData.catalog.fallback ? ' · '+t('markets.catalogueFallback', {defaultValue:'CMC catalogue is not current; showing CoinGecko'}) : ''}</span>}
             </div>
             {/* search · sort · category · watchlist — one row, search flexes to fill */}
             <div className="intel-market-filter-toolbar">
@@ -535,7 +535,7 @@ export default function MarketsPage() {
                       {p.change_24h != null && <span className={`text-[12px] font-semibold flex items-center gap-0.5 ${pctClass(p.change_24h)}`}>{p.change_24h >= 0 ? <TrendingUp className="h-3 w-3" /> : <TrendingDown className="h-3 w-3" />}{formatPct(p.change_24h)}</span>}
                     </div>
                     <div className="text-[11px] text-[var(--fg-4)] mt-0.5">{p.symbol}{p.price != null ? ` · ${formatPrice(p.price)}` : ''}</div>
-                    <div className="text-[10px] text-[var(--fg-4)]">{p.source === 'coinmarketcap' ? 'CoinMarketCap' : 'CoinGecko'} · <time dateTime={p.as_of}>{new Date(p.as_of).toLocaleTimeString([], {hour:'numeric',minute:'2-digit'})}</time>{p.stale ? ' · '+t('market.stale', {defaultValue:'stale'}) : ''}</div>
+                    <div className="text-[10px] text-[var(--fg-4)]">{p.source === 'coinmarketcap' ? 'CoinMarketCap' : 'CoinGecko'} · <time dateTime={p.as_of}>{formatDataTime(p.as_of, { language: i18n?.language, now: asOfNow }) || ''}</time></div>
                   </Link>
                 ))}
               </div>

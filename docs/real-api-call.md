@@ -17,7 +17,7 @@ Capability `rwaQuotes`, endpoint `GET /v5/real-world-assets/quotes/latest`, para
 ## The code that made it
 
 The wrapper-premium lane asks for quotes on the assets it is pricing
-(`production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts`, line 411):
+(`production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts`, line 553):
 
 ```ts
 const quotes = await deps.request('rwaQuotes', { rwa_id: candidates.join(',') }, ctx).catch(() => null)
@@ -102,7 +102,7 @@ The key is read from the server environment and travels only in the request head
 
 ## What the product does with it
 
-One call returns every wrapper of one asset, along with each wrapper's issuer. The wrapper page (`/intel/rwa/wrappers`) measures each wrapper against an anchor and shows the premium or discount in basis points. The anchor is the volume-weighted median of the wrappers that pass a liquidity floor, or a fresh published NAV where a fund has one (`rwa-wrapper-spread.ts`). For comparison, against CMC's own `average_tokenized_price` in this response, xStock sits 11.1 bp above and Ondo 13.2 bp above. The Dinari wrapper has no price, so it is labelled `no_price`: it stays on the page but is kept out of the anchor and never counted as zero. The `issuer_id` on each token starts the issuer lane, which reads SEC EDGAR, GLEIF and OFAC (`capture-rwa-issuer.ts`, `rwa-sources/`).
+One call returns every wrapper of one asset, along with each wrapper's issuer. The wrapper page (`/intel/rwa/wrappers`) measures each wrapper against an anchor and shows the premium or discount in basis points. The anchor is the volume-weighted median of the wrappers that pass a liquidity floor (`rwa-wrapper-spread.ts`). A published-NAV anchor is also built and tested, but none of the assets in CoinMarketCap's RWA data is a fund with a NAV feed we can map, so in production every anchor today is the median. For comparison, against CMC's own `average_tokenized_price` in this response, xStock sits 11.1 bp above and Ondo 13.2 bp above. The Dinari wrapper has no price, so it is labelled `no_price`: it stays on the page but is kept out of the anchor and never counted as zero. The `issuer_id` on each token starts the issuer lane, which reads SEC EDGAR, GLEIF and OFAC (`capture-rwa-issuer.ts`, `rwa-sources/`).
 
 ## Reproduce it
 

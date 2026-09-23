@@ -1,8 +1,11 @@
 import React from 'react'
 import { useTranslation } from 'react-i18next'
+import i18next from 'i18next'
+import { formatDataTime } from '../lib/as-of'
 import { providerLabel } from '../lib/source-receipt'
 
-const time = v => (v && Number.isFinite(Date.parse(v)) ? new Date(v).toLocaleString() : null)
+// Observation and capture times in the one format (../lib/as-of.js): UTC and its age.
+const time = v => formatDataTime(v, { language: i18next.language })
 
 /** The plain, always-visible source line for a section whose figures do not come
  * through a receipt envelope. It is the small twin of FigureProvenance: one

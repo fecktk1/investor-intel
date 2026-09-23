@@ -41,7 +41,8 @@
       "lower_on": "Plus bas sur",
       "net_est": "Net est."
     },
-    "stale": "périmé"
+    "stale": "périmé",
+    "figures_as_of": "Variation 24h, volume et capitalisation {{asOf}}"
   },
   "markets": {
     "title": "Marchés crypto",
@@ -4365,7 +4366,7 @@
     "collapse": "Masquer les enveloppes",
     "expand": "Afficher les enveloppes",
     "eyebrow": "Notre calcul",
-    "intro": "Un actif du monde réel est souvent enveloppé par plusieurs jetons de plusieurs émetteurs, à plusieurs prix. Chaque prime ou décote ci-dessous est notre propre calcul face à l’ancre nommée sur la même ligne : soit la valeur liquidative publiée par le fonds lui-même, soit la médiane pondérée par le volume des enveloppes ayant franchi un seuil de {{floor}} de volume déclaré sur 24 heures. Une enveloppe sous ce seuil reste affichée, marquée comme trop étroite pour ancrer, et exclue de l’ancre. Une prime n’est pas un arbitrage négociable.",
+    "intro": "Un actif du monde réel est souvent enveloppé par plusieurs jetons de plusieurs émetteurs, à plusieurs prix. Chaque prime ou décote ci-dessous est notre propre calcul face à l’ancre nommée sur la même ligne. Aujourd’hui, cette ancre est toujours la médiane pondérée par le volume des enveloppes ayant franchi un seuil de {{floor}} de volume déclaré sur 24 heures : aucun actif ici n’est encore relié à la valeur liquidative publiée par son propre fonds, et un actif qui le sera sera mesuré face à cette valeur. Une enveloppe sous ce seuil reste affichée, marquée comme trop étroite pour ancrer, et exclue de l’ancre. Une prime n’est pas un arbitrage négociable.",
     "issuer_unreported": "Émetteur non communiqué",
     "loading": "Lecture des prix d’enveloppes capturés…",
     "no_chain": "Le fournisseur n’indique aucune chaîne sur la ligne d’une enveloppe. Ouvre une enveloppe pour lire son réseau sur sa page d’actif.",
@@ -4437,7 +4438,9 @@
     "legend_anchor": "Ancre la référence : son volume dépasse le seuil",
     "legend_thin": "Trop étroite pour ancrer : affichée, mais exclue de l’ancre",
     "state_derivative_reference": "Prix d'un dérivé, pas un wrapper",
-    "reason_derivative_not_a_wrapper": "Le fournisseur liste ce prix de dérivé parmi les tokens de l'actif. Ce n'est pas un token que l'on détient ou que l'on rachète : il est affiché pour comparaison et n'entre jamais dans l'ancre, la plus forte prime ou décote, ni dans les choix."
+    "reason_derivative_not_a_wrapper": "Le fournisseur liste ce prix de dérivé parmi les tokens de l'actif. Ce n'est pas un token que l'on détient ou que l'on rachète : il est affiché pour comparaison et n'entre jamais dans l'ancre, la plus forte prime ou décote, ni dans les choix.",
+    "as_of_label": "Capture des enveloppes",
+    "prices_observed_label": "Prix mis à jour pour la dernière fois par CoinMarketCap"
   },
   "table_csv": {
     "download": "Télécharger le CSV",
@@ -4666,9 +4669,45 @@
     "value_accrual": "Écart d’accumulation (pas une prime)",
     "value_premium": "Prime face à l’ancre"
   },
+  "underlying_ref": {
+    "short": "Sous-jacent {{ticker}} : {{price}}",
+    "none": "Pas encore de référence boursière pour ce ticker.",
+    "refused_short": "Pas de référence boursière : le ticker n’a pas pu être confirmé comme la cotation américaine.",
+    "refused": "Pas de référence boursière : le ticker du fournisseur pour cet actif n’a pas pu être confirmé comme la cotation américaine de la société, aucun cours de l’action n’est donc comparé.",
+    "unavailable_short": "Référence boursière indisponible dans cette capture.",
+    "unavailable": "Référence boursière indisponible dans cette capture. {{reason}} Aucun écart à l’action n’est indiqué.",
+    "line": "Sous-jacent {{ticker}} : {{price}}, Chainlink {{feed}} sur {{network}}, mis à jour {{age}} avant l’observation des prix des enveloppes à {{at}}, {{session}}.",
+    "band": "Le flux se met à jour sur un mouvement de {{band}} %, donc les écarts inférieurs à {{band_bps}} ne sont pas distinguables.",
+    "note_24_5": "Ce flux suit aussi les séances étendues et de nuit en semaine.",
+    "note_last_session": "En dehors de la séance régulière, il s’agit de la dernière mise à jour du flux faite marché ouvert, pas d’un cours en direct.",
+    "anchor_within": "L’ancre se situe dans la bande de mise à jour de {{band}} % du flux autour de l’action, les deux ne sont donc pas distinguables.",
+    "anchor_gap": "L’ancre se situe à {{value}} de l’action.",
+    "caveat": "Un écart à l’action compare un jeton à une action. Il ne tient pas compte des dividendes qu’une enveloppe a pu réinvestir et ce n’est pas un arbitrage négociable.",
+    "within_band": "Dans la bande de mise à jour de {{band}} % du flux, non distinguable",
+    "measured": "Mesuré {{value}}",
+    "col_vs_stock": "vs action",
+    "source": "Référence boursière : flux de prix on-chain Chainlink, lus via des RPC publics.",
+    "age_minutes": "{{value}} min",
+    "age_hours": "{{value}} h",
+    "age_days": "{{value}} j",
+    "session_regular": "séance régulière",
+    "session_pre_market": "pré-ouverture",
+    "session_after_hours": "après-clôture",
+    "session_closed": "marché fermé",
+    "session_weekend": "week-end, marché fermé",
+    "session_holiday": "jour férié du NYSE, marché fermé",
+    "session_unknown": "séance inconnue",
+    "reason_feed_read_failed": "Le flux n’a pas pu être lu via son RPC public.",
+    "reason_feed_identity_not_proved": "Le flux n’a pas prouvé son identité on-chain, son prix n’a donc pas été utilisé.",
+    "reason_feed_round_unusable": "Le flux n’a renvoyé aucun prix utilisable.",
+    "reason_round_at_observation_not_read": "Le prix du flux en vigueur lors de l’observation des prix des enveloppes n’a pas pu être lu.",
+    "reason_wrapper_observation_time_unknown": "Le fournisseur n’a donné aucune heure pour les prix des enveloppes, il n’y a donc aucun instant auquel lire l’action.",
+    "reason_stale_in_session": "Le flux ne s’est pas mis à jour dans son heartbeat pendant que le marché était ouvert, il n’a donc pas été utilisé.",
+    "reason_stale_off_session": "La dernière mise à jour du flux est plus ancienne que ce qu’explique toute fermeture de marché prévue, elle n’a donc pas été utilisée."
+  },
   "intel_demo": {
     "banner_label": "Avis de démonstration",
-    "banner_snapshot": "Démo en direct : un instantané d'Investor Intel du {{when}}.",
+    "banner_snapshot": "Démo en direct d'Investor Intel, ouverte à partir d'un instantané créé le {{when}}. Chaque section indique l'heure de ses propres données et affiche une capture enregistrée plus récente lorsqu'il y en a une.",
     "banner_loading": "Démo en direct d'Investor Intel.",
     "banner_no_snapshot": "Démo en direct d'Investor Intel. L'instantané du jour n'est pas encore disponible.",
     "banner_nothing_saved": "Rien de ce que vous faites ici n'est enregistré.",

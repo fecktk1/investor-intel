@@ -2,8 +2,7 @@ import React from 'react'
 import { useTranslation } from 'react-i18next'
 import { envelopeKind, envelopeFreshness, providerLabel } from '../lib/source-receipt'
 import SourceCallReceipt from './SourceCallReceipt'
-
-const time = v => (v && Number.isFinite(Date.parse(v)) ? new Date(v).toLocaleString() : null)
+import { asOfText, formatDataTime, useMinuteClock } from '../lib/as-of'
 const FRESHNESS_DEFAULTS = {
   fresh: 'Fresh: a provider call answered this read',
   cached: 'Cached: inside its refresh limit',
@@ -20,7 +19,10 @@ const FRESHNESS_DEFAULTS = {
  * label and never as a current figure. An unknown kind draws nothing rather than
  * an unfounded claim. Optional `receipts` render beneath as source call receipts. */
 export default function FigureProvenance({ envelope, receipts = [] }) {
-  const { t } = useTranslation('intel', { useSuspense: false })
+  const { t, i18n } = useTranslation('intel', { useSuspense: false })
+  // The capture time and its age, in the one as-of format (../lib/as-of.js).
+  const now = useMinuteClock(!!envelope?.fetchedAt)
+  const clock = { language: i18n?.language, now }
   const kind = envelopeKind(envelope)
   const list = (Array.isArray(receipts) ? receipts : []).filter(Boolean)
   if (!kind) return list.length ? <>{list.map((r, i) => <SourceCallReceipt key={i} receipt={r} />)}</> : null
@@ -33,8 +35,9 @@ export default function FigureProvenance({ envelope, receipts = [] }) {
   // the drawer. A 'stored' or 'curated' envelope is a precomputed capture that
   // everyone reads from one row, so it costs a reader nothing; a 'live' envelope
   // was answered by a call, and its own receipts below state that call's credits.
-  // The capture time is already reported as fetchedAt, so the line names it.
-  const captured = envelope.fetchedAt && Number.isFinite(Date.parse(envelope.fetchedAt)) ? new Date(envelope.fetchedAt).toLocaleString() : null
+  // The capture time is already reported as fetchedAt, so the line states it as
+  // the figure's as-of time, with its age.
+  const captured = asOfText(t, envelope.fetchedAt, clock)
   const shared = kind !== 'live'
   // A curated record is a reviewed record, not a capture, so it gets its own noun.
   // Both cost a reader nothing, which is the claim the line is actually making.
@@ -42,7 +45,7 @@ export default function FigureProvenance({ envelope, receipts = [] }) {
     ? t('receipt_cost.shared_curated', { defaultValue: 'Shared record, no per-reader provider cost' })
     : t('receipt_cost.shared', { defaultValue: 'Shared capture, no per-reader provider cost' })
   const costText = shared
-    ? [sharedText, captured ? t('receipt_cost.captured_at', { date: captured, defaultValue: 'captured {{date}}' }) : null].filter(Boolean).join(' · ')
+    ? [sharedText, captured].filter(Boolean).join(' · ')
     : t('receipt_cost.answered_live', { defaultValue: 'A provider call answered this read' })
   return (
     <details className="intel-source-call-receipt" data-envelope={kind} data-freshness={freshness || 'unmeasured'} data-served={shared ? 'shared' : 'live'}>
@@ -54,7 +57,7 @@ export default function FigureProvenance({ envelope, receipts = [] }) {
       <dl className="intel-event-facts">
         <dt>{t('receipt_state.source', { defaultValue: 'Source' })}</dt><dd>{providerLabel(envelope.source, t)}</dd>
         <dt>{t('research.fetched', { defaultValue: 'Retrieved' })}</dt>
-        <dd>{envelope.fetchedAt ? <time dateTime={envelope.fetchedAt}>{time(envelope.fetchedAt)}</time> : t('receipt.not_reported', { defaultValue: 'not reported' })}</dd>
+        <dd>{envelope.fetchedAt ? <time dateTime={envelope.fetchedAt}>{formatDataTime(envelope.fetchedAt, clock) || String(envelope.fetchedAt)}</time> : t('receipt.not_reported', { defaultValue: 'not reported' })}</dd>
         <dt>{t('receipt_state.freshness', { defaultValue: 'Freshness' })}</dt><dd>{freshnessText}</dd>
       </dl>
       {scope && <p className="intel-analysis-caption">{scope}</p>}

@@ -28,6 +28,7 @@ import {
   type AnchorKind,
 } from './rwa-wrapper-spread.ts'
 import { wrapperPicks, PICK_RULES } from './rwa-wrapper-picks.ts'
+import { REFERENCE_CHAINS, REFERENCE_SCOPE } from './underlying-reference.ts'
 
 /** One capture hour holds at most RWA_WRAPPER_ASSET_CAP assets, so 200 asset
  * rows spans several hours and always contains the newest one whole. */
@@ -73,12 +74,20 @@ const ASSET_COLUMNS = [
   'list_captured_at', 'list_observed_at', 'token_market_cap_sum', 'token_market_cap_reported',
   'reconcile_state', 'reconcile_ratio', 'reconcile_gap_usd', 'reconcile_reason',
   'reconcile_band_low', 'reconcile_band_high', 'fetched_at', 'scope',
+  // The underlying stock reference (migration 20260923193000), all nullable.
+  'underlying_ref_state', 'underlying_ref_reason', 'underlying_ref_ticker', 'underlying_ref_source',
+  'underlying_ref_price', 'underlying_ref_feed', 'underlying_ref_network', 'underlying_ref_address',
+  'underlying_ref_deviation_pct', 'underlying_ref_heartbeat_s', 'underlying_ref_hours',
+  'underlying_ref_observed_at', 'underlying_ref_compared_at', 'underlying_ref_age_s', 'underlying_ref_session',
+  'underlying_ref_anchor_bps', 'underlying_ref_anchor_within_band', 'underlying_ref_fetched_at',
 ].join(',')
 
 const TOKEN_COLUMNS = [
   'rwa_id', 'crypto_id', 'captured_at', 'symbol', 'name', 'issuer_id', 'issuer_name',
   'price', 'normalised_price', 'market_cap', 'volume_24h',
   'unit_state', 'unit_factor', 'wrapper_state', 'premium_bps', 'accrual_gap_bps', 'in_anchor', 'state_reason',
+  'underlying_ref_price', 'underlying_ref_bps', 'underlying_ref_within_band', 'underlying_ref_session',
+  'underlying_ref_observed_at', 'underlying_ref_source',
 ].join(',')
 
 /** The catalogue table the wrapper TOKEN logos come from, and the profile table
@@ -185,6 +194,49 @@ export function wrapperRow(row: Record<string, any>, logo: Logo | null = null) {
     premiumBps: num(row?.premium_bps), accrualGapBps: num(row?.accrual_gap_bps),
     inAnchor: bool(row?.in_anchor) ?? false,
     reason: str(row?.state_reason, 120),
+    // This wrapper against the listed share (underlying-reference.ts). Null on
+    // every row the reference does not apply to or could not be read for.
+    // `underlyingRefWithinBand` true means the gap is inside the feed's own
+    // update band and is NOT distinguishable from zero.
+    underlyingRefPrice: num(row?.underlying_ref_price),
+    underlyingRefBps: num(row?.underlying_ref_bps),
+    underlyingRefWithinBand: bool(row?.underlying_ref_within_band),
+    underlyingRefSession: str(row?.underlying_ref_session, 20),
+    underlyingRefObservedAt: str(row?.underlying_ref_observed_at, 40),
+    underlyingRefSource: str(row?.underlying_ref_source, 20),
+  }
+}
+
+/** The listed share's own price for one asset row, or null where no reference
+ * applies (a commodity, or a row captured before the reference existed). Every
+ * state but `observed` carries its reason, and nothing here is a zero. */
+// deno-lint-ignore no-explicit-any
+export function underlyingReferenceRow(row: Record<string, any>) {
+  const state = str(row?.underlying_ref_state, 40)
+  if (!state) return null
+  const network = str(row?.underlying_ref_network, 20)
+  return {
+    state,
+    reason: str(row?.underlying_ref_reason, 120),
+    ticker: str(row?.underlying_ref_ticker, 12),
+    source: str(row?.underlying_ref_source, 20),
+    price: num(row?.underlying_ref_price),
+    feed: str(row?.underlying_ref_feed, 120),
+    network,
+    networkLabel: network && Object.hasOwn(REFERENCE_CHAINS, network) ? REFERENCE_CHAINS[network as keyof typeof REFERENCE_CHAINS].label : network,
+    address: str(row?.underlying_ref_address, 42),
+    deviationPct: num(row?.underlying_ref_deviation_pct),
+    heartbeatSeconds: num(row?.underlying_ref_heartbeat_s),
+    hours: str(row?.underlying_ref_hours, 20),
+    // The round's own update time, the instant it is compared at (when the
+    // wrapper prices were observed), and the age between the two.
+    observedAt: str(row?.underlying_ref_observed_at, 40),
+    comparedAt: str(row?.underlying_ref_compared_at, 40),
+    ageSeconds: num(row?.underlying_ref_age_s),
+    session: str(row?.underlying_ref_session, 20),
+    anchorBps: num(row?.underlying_ref_anchor_bps),
+    anchorWithinBand: bool(row?.underlying_ref_anchor_within_band),
+    fetchedAt: str(row?.underlying_ref_fetched_at, 40),
   }
 }
 
@@ -241,6 +293,8 @@ export function wrapperAssetRow(row: Record<string, any>, tokens: ReturnType<typ
     reconcileReason: str(row?.reconcile_reason, 120),
     scope: str(row?.scope, 800),
     fetchedAt: str(row?.fetched_at, 40),
+    // BESIDE the anchor, never in place of it.
+    underlyingReference: underlyingReferenceRow(row),
     tokens,
   }
 }
@@ -310,7 +364,7 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
     return {
       view: 'rwa_wrappers', rows: [], points: [], reconciliation: [],
       summary: { assets: 0, wrappers: 0, anchored: 0, navAnchored: 0, medianAnchored: 0, thin: 0, accruing: 0, unitNormalised: 0, unitRefused: 0, reconcileAgree: 0, reconcileOutside: 0, reconcileNotComparable: 0 },
-      settings, scope: WRAPPER_SPREAD_SCOPE, anchorMeaning: ANCHOR_MEANING,
+      settings, scope: WRAPPER_SPREAD_SCOPE, anchorMeaning: ANCHOR_MEANING, referenceScope: REFERENCE_SCOPE,
       // Nothing captured yet: when the lane runs, so the panel can say so rather
       // than drawing an empty table.
       schedule: RWA_WRAPPER_CAPTURE_SCHEDULE,
@@ -437,6 +491,8 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
       reconcileNotComparable: rows.filter((row) => row.reconcileState === 'not_comparable').length,
     },
     settings, scope: WRAPPER_SPREAD_SCOPE, anchorMeaning: ANCHOR_MEANING,
+    // What the stock reference is and is not, stated once for the whole board.
+    referenceScope: REFERENCE_SCOPE,
     pickRules: PICK_RULES,
     // Null when every wrapper's market coverage was assessed. A failed catalogue
     // read leaves each wrapper's coverage null with a reason, and says so here.
@@ -449,6 +505,11 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
       { capability: 'rwaList', path: '/v5/real-world-assets/assets/list', supplies: 'asset_level_value' },
     ],
     asOf,
+    // CoinMarketCap's own last_updated on the quotes this capture read. The RWA
+    // quotes refresh less often than the lane runs (twice a day in the 22 and 23
+    // Sep 2026 captures, at 08:45:59 and 20:45:59 UTC), so the 14:00 capture can
+    // hold prices observed at 08:45. The surface states both times.
+    pricesObservedAt: rows.map((row) => row.observedAt).filter((v): v is string => !!v).sort().at(-1) ?? null,
     coverage: { from: stamps[0] ?? null, to: asOf, count: rows.length, truncated: assetRead.rows.length >= ASSET_CAP || tokenRead.rows.length >= TOKEN_CAP || all.length > rows.length },
     reason: assetRead.reason || tokenRead.reason,
     generatedAt: new Date(at(now)).toISOString(),
@@ -491,6 +552,8 @@ export async function readRwaWrapperPicks(db: any, params: { rwaId?: unknown; cr
       anchorKind: row.anchorKind, anchorPrice: row.anchorPrice, anchorReason: row.anchorReason,
       anchorMeaning: row.anchorMeaning, anchorObservedAt: row.anchorObservedAt,
       observedAt: row.observedAt, wrapperCount: row.wrapperCount,
+      // The listed share's price beside the anchor, where one applies.
+      underlyingReference: row.underlyingReference,
     },
     picks: row.picks,
     endpoints: board.endpoints,

@@ -70,7 +70,10 @@ export const FORWARD_TABLE_CONTRACT={
   table:'intel_rwa_wrapper_tokens',
   capturedAtColumn:'captured_at',
   subjectColumn:'crypto_id',
-  columns:['rwa_id','crypto_id','symbol','name','issuer_name','price','normalised_price','market_cap','volume_24h','unit_state','wrapper_state','premium_bps','accrual_gap_bps','in_anchor','state_reason','captured_at','fetched_at'],
+  // The underlying_ref_* columns (migration 20260923193000) are the wrapper
+  // against the listed share's Chainlink price; within_band true means the gap
+  // is inside the feed's update band and is not distinguishable from zero.
+  columns:['rwa_id','crypto_id','symbol','name','issuer_name','price','normalised_price','market_cap','volume_24h','unit_state','wrapper_state','premium_bps','accrual_gap_bps','in_anchor','state_reason','captured_at','fetched_at','underlying_ref_price','underlying_ref_bps','underlying_ref_within_band','underlying_ref_session','underlying_ref_observed_at','underlying_ref_source'],
  },
  // One row per token per day (capture-rwa-depth.ts). Provider figures only; the
  // exitability sizes are computed on read in the app and are not stored.

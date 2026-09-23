@@ -41,7 +41,8 @@
       "lower_on": "Niedriger bei",
       "net_est": "Gesch. netto"
     },
-    "stale": "veraltet"
+    "stale": "veraltet",
+    "figures_as_of": "24h-Änderung, Volumen und Marktkapitalisierung: {{asOf}}"
   },
   "markets": {
     "title": "Crypto-Märkte",
@@ -4365,7 +4366,7 @@
     "collapse": "Hüllen ausblenden",
     "expand": "Hüllen anzeigen",
     "eyebrow": "Unsere Berechnung",
-    "intro": "Ein realer Vermögenswert wird oft von mehreren Token mehrerer Emittenten zu mehreren Preisen abgebildet. Jeder Auf- oder Abschlag unten ist unsere eigene Berechnung gegenüber dem Anker, der in derselben Zeile genannt wird: entweder dem vom Fonds selbst veröffentlichten Nettoinventarwert oder dem volumengewichteten Median der Hüllen, die eine Untergrenze von {{floor}} beim gemeldeten 24-Stunden-Volumen überschritten haben. Eine Hülle unter dieser Grenze wird weiterhin gezeigt, als zu dünn zum Ankern gekennzeichnet und aus dem Anker herausgelassen. Ein Aufschlag ist keine handelbare Arbitrage.",
+    "intro": "Ein realer Vermögenswert wird oft von mehreren Token mehrerer Emittenten zu mehreren Preisen abgebildet. Jeder Auf- oder Abschlag unten ist unsere eigene Berechnung gegenüber dem Anker, der in derselben Zeile genannt wird. Heute ist dieser Anker immer der volumengewichtete Median der Hüllen, die eine Untergrenze von {{floor}} beim gemeldeten 24-Stunden-Volumen überschritten haben: Noch keinem Vermögenswert hier ist ein vom Fonds selbst veröffentlichter Nettoinventarwert zugeordnet, und ein zugeordneter würde stattdessen an diesem Wert gemessen. Eine Hülle unter dieser Grenze wird weiterhin gezeigt, als zu dünn zum Ankern gekennzeichnet und aus dem Anker herausgelassen. Ein Aufschlag ist keine handelbare Arbitrage.",
     "issuer_unreported": "Emittent nicht gemeldet",
     "loading": "Erfasste Hüllenpreise werden gelesen…",
     "no_chain": "Der Anbieter nennt in einer Hüllenzeile keine Chain. Öffne eine Hülle, um ihr Netzwerk auf ihrer Vermögenswertseite zu lesen.",
@@ -4437,7 +4438,9 @@
     "legend_anchor": "Ankert die Referenz: Ihr Volumen liegt über der Untergrenze",
     "legend_thin": "Zu dünn zum Ankern: gezeigt, aber nicht Teil des Ankers",
     "state_derivative_reference": "Derivatpreis, kein Wrapper",
-    "reason_derivative_not_a_wrapper": "Der Anbieter führt diesen Derivatpreis unter den Token des Assets. Es ist kein Token, den jemand hält oder einlöst. Er wird daher nur zum Vergleich gezeigt und fließt nie in den Anker, die größte Prämie oder den größten Abschlag oder die Auswahl ein."
+    "reason_derivative_not_a_wrapper": "Der Anbieter führt diesen Derivatpreis unter den Token des Assets. Es ist kein Token, den jemand hält oder einlöst. Er wird daher nur zum Vergleich gezeigt und fließt nie in den Anker, die größte Prämie oder den größten Abschlag oder die Auswahl ein.",
+    "as_of_label": "Hüllen-Erfassung",
+    "prices_observed_label": "Preise zuletzt von CoinMarketCap aktualisiert"
   },
   "table_csv": {
     "download": "CSV herunterladen",
@@ -4666,9 +4669,45 @@
     "value_accrual": "Ansammlungslücke (kein Aufschlag)",
     "value_premium": "Aufschlag gegenüber dem Anker"
   },
+  "underlying_ref": {
+    "short": "Basiswert {{ticker}}: {{price}}",
+    "none": "Für diesen Ticker gibt es noch keine Aktienreferenz.",
+    "refused_short": "Keine Aktienreferenz: Der Ticker ließ sich nicht als US-Notierung bestätigen.",
+    "refused": "Keine Aktienreferenz: Der Ticker des Anbieters für diesen Wert ließ sich nicht als US-Notierung des Unternehmens bestätigen, daher wird kein Aktienkurs verglichen.",
+    "unavailable_short": "Aktienreferenz in dieser Erfassung nicht verfügbar.",
+    "unavailable": "Aktienreferenz in dieser Erfassung nicht verfügbar. {{reason}} Es wird keine Differenz zur Aktie ausgewiesen.",
+    "line": "Basiswert {{ticker}}: {{price}}, Chainlink {{feed}} auf {{network}}, zuletzt {{age}} vor der Beobachtung der Hüllenpreise um {{at}} aktualisiert, {{session}}.",
+    "band": "Der Feed aktualisiert sich bei einer Bewegung von {{band}} %, daher sind Differenzen unter {{band_bps}} nicht unterscheidbar.",
+    "note_24_5": "Dieser Feed folgt werktags auch dem vor- und nachbörslichen sowie dem nächtlichen Handel.",
+    "note_last_session": "Außerhalb der regulären Handelszeit ist dies die letzte Aktualisierung des Feeds aus der Zeit, als der Markt offen war, kein Live-Kurs.",
+    "anchor_within": "Der Anker liegt innerhalb des Aktualisierungsbands des Feeds von {{band}} % um die Aktie, daher sind beide nicht unterscheidbar.",
+    "anchor_gap": "Der Anker liegt {{value}} gegenüber der Aktie.",
+    "caveat": "Eine Differenz zur Aktie vergleicht einen Token mit einer Aktie. Sie berücksichtigt keine Dividenden, die eine Hülle reinvestiert haben kann, und ist keine handelbare Arbitrage.",
+    "within_band": "Innerhalb des Aktualisierungsbands des Feeds von {{band}} %, nicht unterscheidbar",
+    "measured": "Gemessen {{value}}",
+    "col_vs_stock": "ggü. Aktie",
+    "source": "Aktienreferenz: Chainlink-On-Chain-Preisfeeds, gelesen über öffentliche RPCs.",
+    "age_minutes": "{{value}} Min.",
+    "age_hours": "{{value}} h",
+    "age_days": "{{value}} T",
+    "session_regular": "reguläre Handelszeit",
+    "session_pre_market": "vorbörslich",
+    "session_after_hours": "nachbörslich",
+    "session_closed": "Markt geschlossen",
+    "session_weekend": "Wochenende, Markt geschlossen",
+    "session_holiday": "NYSE-Feiertag, Markt geschlossen",
+    "session_unknown": "Handelszeit unbekannt",
+    "reason_feed_read_failed": "Der Feed konnte über seinen öffentlichen RPC nicht gelesen werden.",
+    "reason_feed_identity_not_proved": "Der Feed hat seine Identität on-chain nicht nachgewiesen, daher wurde sein Kurs nicht verwendet.",
+    "reason_feed_round_unusable": "Der Feed lieferte keinen verwendbaren Kurs.",
+    "reason_round_at_observation_not_read": "Der Feed-Kurs, der bei der Beobachtung der Hüllenpreise galt, konnte nicht gelesen werden.",
+    "reason_wrapper_observation_time_unknown": "Der Anbieter nannte keine Zeit für die Hüllenpreise, daher gibt es keinen Zeitpunkt, zu dem die Aktie gelesen werden kann.",
+    "reason_stale_in_session": "Der Feed wurde bei geöffnetem Markt nicht innerhalb seines Heartbeats aktualisiert und daher nicht verwendet.",
+    "reason_stale_off_session": "Die letzte Aktualisierung des Feeds ist älter, als jede geplante Marktschließung erklärt, und wurde daher nicht verwendet."
+  },
   "intel_demo": {
     "banner_label": "Demo-Hinweis",
-    "banner_snapshot": "Live-Demo: ein Schnappschuss von Investor Intel vom {{when}}.",
+    "banner_snapshot": "Live-Demo von Investor Intel, geöffnet aus einem Schnappschuss vom {{when}}. Jeder Abschnitt nennt die Zeit seiner eigenen Daten und zeigt eine neuere gespeicherte Erfassung, sobald es eine gibt.",
     "banner_loading": "Live-Demo von Investor Intel.",
     "banner_no_snapshot": "Live-Demo von Investor Intel. Der heutige Schnappschuss ist noch nicht verfügbar.",
     "banner_nothing_saved": "Nichts, was du hier tust, wird gespeichert.",

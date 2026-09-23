@@ -197,9 +197,11 @@ describe('the Markets table says when its shared snapshot was captured', () => {
     const line = host.querySelector('[data-testid="markets-snapshot-line"]')
     expect(line).not.toBeNull()
     const body = entries[demoRequestKey(marketsScreenRequest())]
-    const { SNAPSHOT_AS_OF_FORMAT } = await import('../../pages/MarketsPage')
-    const captured = new Date(body.snapshot.lastUpdated).toLocaleString(undefined, SNAPSHOT_AS_OF_FORMAT)
-    expect(line.textContent).toBe(`CoinMarketCap · Shared market snapshot · as of ${captured}`)
+    // The one as-of format every section uses: UTC, then the age in words.
+    const { formatUtcTime } = await import('../as-of')
+    const captured = formatUtcTime(body.snapshot.lastUpdated, 'en')
+    expect(line.textContent.startsWith(`CoinMarketCap · Shared market snapshot · as of ${captured} (`)).toBe(true)
+    expect(line.textContent).toMatch(/UTC \((\d+ (minutes?|hours?|days?) ago|yesterday|now)\)$/)
     // Plain text on the existing line: no pill, chip, badge, card or tile.
     expect(line.tagName).toBe('SPAN')
     expect(line.outerHTML).not.toMatch(/class="[^"]*\b(pill|chip|badge|card|tile)\b/)

@@ -1,6 +1,7 @@
 import React from 'react'
 import {useTranslation} from 'react-i18next'
 import {receiptCost} from '../lib/source-receipt'
+import {asOfText} from '../lib/as-of'
 
 /** What one read cost, in one line a reader sees WITHOUT opening the receipt
  * drawer. Every number comes from the receipt the response already carries
@@ -13,14 +14,14 @@ import {receiptCost} from '../lib/source-receipt'
  *   cache   "No provider call · served from the shared cache · original call 1 credit"
  *           (the last part only when the receipt carries the original call's
  *           own reported charge, receipt.proof.creditCount)
- *   shared  "Shared capture, no per-reader provider cost · captured <time>"
+ *   shared  "Shared capture, no per-reader provider cost · as of <time> (<age>)"
  *   failed  "No provider call · a remembered failure answered this read"
  *
  * `as` lets the line render inside a <summary> (a <span>) or on its own (a <p>).
  * Returns null for a receipt that did not say how it was served, so a cost claim
  * is never invented. */
 export default function ReceiptCostLine({receipt,as:Tag='span',className=''}){
- const {t}=useTranslation('intel',{useSuspense:false})
+ const {t,i18n}=useTranslation('intel',{useSuspense:false})
  const cost=receiptCost(receipt)
  if(!cost)return null
  // A reported 0 is a real charge of zero and reads as 0; only a genuinely absent
@@ -29,7 +30,7 @@ export default function ReceiptCostLine({receipt,as:Tag='span',className=''}){
   ?t('receipt_cost.credits_not_reported',{defaultValue:'credits not reported'})
   :t('receipt_cost.credits',{count:cost.credits,defaultValue:'{{count}} credit'})
  const captured=receipt?.capturedAt||receipt?.fetchedAt||null
- const capturedText=captured&&Number.isFinite(Date.parse(captured))?new Date(captured).toLocaleString():null
+ const capturedText=asOfText(t,captured,{language:i18n?.language})
  let text
  if(cost.served==='live'){
   text=`${t('receipt_cost.calls',{count:cost.calls,defaultValue:'{{count}} provider call'})} · ${credits} · ${t('receipt_cost.live',{defaultValue:'live'})}`
@@ -43,7 +44,7 @@ export default function ReceiptCostLine({receipt,as:Tag='span',className=''}){
   // it is stated as the run's cost and never as this reader's.
   const run=cost.runCalls==null?null:t('receipt_cost.run_calls',{count:cost.runCalls,defaultValue:'the capture run made {{count}} call to this endpoint'})
   text=[t('receipt_cost.shared',{defaultValue:'Shared capture, no per-reader provider cost'}),
-   capturedText?t('receipt_cost.captured_at',{date:capturedText,defaultValue:'captured {{date}}'}):null,run].filter(Boolean).join(' · ')
+   capturedText,run].filter(Boolean).join(' · ')
  }else{
   text=`${t('receipt_cost.no_call',{defaultValue:'No provider call'})} · ${t('receipt_cost.failed',{defaultValue:'a remembered failure answered this read'})}`
  }

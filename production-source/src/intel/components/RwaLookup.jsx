@@ -1,5 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18next from 'i18next'
+import { formatDataTime } from '../lib/as-of'
 import { fmtPrice, fmtVol } from '../lib/market-format'
 import { lookupRwaAsset, normaliseLookupQuery, RWA_LOOKUP_EXAMPLES, RWA_LOOKUP_PATTERN } from '../lib/rwa-lookup-api'
 
@@ -65,7 +67,9 @@ export function whyText(t, receipt) {
   return parts.length ? parts.join(' ') : null
 }
 
-const time = (v) => (v && Number.isFinite(Date.parse(v)) ? new Date(v).toLocaleString() : null)
+// Quote and capture times in the one format every demo section uses
+// (../lib/as-of.js): UTC and its age.
+const time = (v) => formatDataTime(v, { language: i18next.language })
 const bps = (v) => { const n = num(v); return n == null ? '—' : `${n > 0 ? '+' : ''}${n.toFixed(1)} bps` }
 
 function servedText(t, receipt) {

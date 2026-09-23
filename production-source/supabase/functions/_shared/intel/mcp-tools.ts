@@ -1033,7 +1033,7 @@ export const MCP_TOOLS:ToolSpec[]=[
  {
   name:'rwa_wrapper_premiums',
   title:'Wrapper premium or discount',
-  description:'Premium or discount, in basis points, of each wrapper token against its asset anchor (published NAV where one exists, otherwise the volume-weighted median of the liquid wrappers). A wrapper that accrues yield inside its price carries accrual_gap_bps and no premium. wrapper_state says whether a wrapper was liquid enough to count. An empty result is missing coverage, NOT the absence of a premium.',
+  description:'Premium or discount, in basis points, of each wrapper token against its asset anchor: the volume-weighted median of the liquid wrappers (anchor_kind liquid_wrapper_median). A published_nav anchor is used only for a fund mapped to its own NAV feed; no asset has one mapped today, so expect the median. A wrapper that accrues yield inside its price carries accrual_gap_bps and no premium. wrapper_state says whether a wrapper was liquid enough to count. An empty result is missing coverage, NOT the absence of a premium. For a tokenized stock or ETF, underlying_ref_bps is the same wrapper against the listed share\'s Chainlink price when the wrapper prices were observed (underlying_ref_price, underlying_ref_observed_at, underlying_ref_session), and underlying_ref_within_band true means that gap is inside the feed\'s own update band, so it is not distinguishable from zero and is not a premium.',
   schema:object({
    subject:{type:'string',maxLength:80,pattern:'^[A-Za-z0-9:._-]{1,80}$',description:'The CoinMarketCap crypto id of one wrapper token, digits only. Omit for every wrapper.'},
    limit:LIMIT_PROPERTY(50,25,'Rows to return, at most 50.'),

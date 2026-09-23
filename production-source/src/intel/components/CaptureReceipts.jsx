@@ -1,11 +1,14 @@
 import React, { useCallback, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import i18next from 'i18next'
+import { formatDataTime } from '../lib/as-of'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
 import { readCaptureView, captureUnavailable, captureReasonText } from '../lib/capture-api'
 import SourceCallReceipt from './SourceCallReceipt'
 
-const time = v => (v && Number.isFinite(Date.parse(v)) ? new Date(v).toLocaleString() : null)
+// Capture times in the one format (../lib/as-of.js): UTC and its age.
+const time = v => formatDataTime(v, { language: i18next.language })
 const FRESHNESS_DEFAULTS = {
   fresh: 'Fresh: a provider call answered this read',
   cached: 'Cached: inside its refresh limit',

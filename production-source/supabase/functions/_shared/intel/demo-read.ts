@@ -9,6 +9,13 @@
 // of that exact identity in the last seven days) and refuses everything else
 // with the calm reason 'demo_untracked'.
 //
+// Two reads are not searches, and involve no asset identity: 'view', a SHARED
+// capture view (the wrapper board, the market structure panels), and 'screen'
+// with no search text, the Markets catalogue page. The browser asks for them
+// only when the snapshot's copy is older than its lane's cadence, so the page
+// shows the newest stored capture, not the one the snapshot happened to hold
+// (./demo-capture-views.ts names the views and their parameters).
+//
 // Pure (no Deno, no DOM, no client): the Edge Function wires the readers in, and
 // the tests drive this module with fakes. Every request is REBUILT here from its
 // allowed fields; an unknown field, a bad value or an unknown read is refused
@@ -20,6 +27,7 @@
 
 import { CHART_INTERVALS, CHART_WINDOWS } from './cmc-chart.ts'
 import { MARKET_SORTS, MARKET_VIEWS, MARKETS_PAGE_SIZE } from './demo-snapshot-requests.ts'
+import { DemoViewRefusal, parseDemoView } from './demo-capture-views.ts'
 
 export const DEMO_UNTRACKED = 'demo_untracked'
 /** The calm sentence that goes with the refusal. The page renders its own
@@ -33,7 +41,7 @@ export const DEMO_UNTRACKED_TEXT = 'Not among the assets this demo tracks. Creat
 export const DEMO_READ_RATE = { limit: 60, windowSeconds: 60 }
 export const DEMO_READ_HOURLY = { limit: 1200, windowSeconds: 3600 }
 
-export const DEMO_READS = ['suggest', 'screen', 'detail', 'history', 'facts', 'cohorts', 'profile', 'capture', 'venue', 'news', 'resolve', 'evidence'] as const
+export const DEMO_READS = ['suggest', 'screen', 'detail', 'history', 'facts', 'cohorts', 'profile', 'capture', 'venue', 'news', 'resolve', 'evidence', 'view'] as const
 export type DemoReadKind = typeof DEMO_READS[number]
 
 export const DEMO_PROVIDERS = ['coinmarketcap', 'coingecko'] as const
@@ -64,6 +72,7 @@ export type DemoRead =
   | { read: 'news'; table: typeof DEMO_NEWS_TABLES[number]; terms: string[] }
   | { read: 'resolve'; query: string; identity: Identity }
   | { read: 'evidence'; subject: string; from: number; to: number; limit: number; metrics: string[] | null; cursor: { time: string; id: string } | null; identity: Identity }
+  | { read: 'view'; view: string; params: Record<string, unknown> }
 
 const refuse = (code: string): never => { throw new DemoReadRefusal(code) }
 const isObject = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v)
@@ -131,9 +140,10 @@ export function parseDemoRead(body: unknown): DemoRead {
       if (!isObject(b.query)) refuse('invalid_request')
       const q = b.query as Record<string, unknown>
       only(q, ['provider', 'sort', 'dir', 'chain', 'search', 'category', 'signalDirection', 'watchlistOnly', 'view', 'page', 'limit'])
-      // Only a SEARCH is read here; every other screen is the day's snapshot.
-      const search = text(q.search, 100, 'invalid_search', { required: true })
-      if (search.length < 1) refuse('invalid_search')
+      // A SEARCH, or the unsearched screen the snapshot holds when its copy is
+      // older than the catalogue's own refresh (the browser asks only then):
+      // the same stored catalogue read either way, never a provider.
+      const search = text(q.search, 100, 'invalid_search')
       if (q.watchlistOnly != null && q.watchlistOnly !== false && q.watchlistOnly !== 'false') refuse('invalid_request')
       const chain = text(q.chain, 40, 'invalid_chain')
       if (chain && !/^[a-z0-9-]+$/.test(chain)) refuse('invalid_chain')
@@ -233,6 +243,19 @@ export function parseDemoRead(body: unknown): DemoRead {
         identity: parseIdentity(b.sourceProvider, b.providerId, { required: true })!,
       }
     }
+    case 'view': {
+      // A SHARED capture view the snapshot holds, read again from the capture
+      // tables because a newer capture may exist (./demo-capture-views.ts). No
+      // asset identity: these are the boards every visitor sees alike.
+      only(b, ['read', 'view', 'params'])
+      try {
+        const parsed = parseDemoView(b.view, b.params)
+        return { read, view: parsed.view, params: parsed.params }
+      } catch (e) {
+        if (e instanceof DemoViewRefusal) refuse(e.code)
+        throw e
+      }
+    }
     case 'news': {
       only(b, ['read', 'table', 'terms'])
       const table = oneOf(b.table, DEMO_NEWS_TABLES, undefined as unknown as 'intel_curated_news', 'invalid_table')
@@ -275,6 +298,9 @@ export interface DemoReadDeps {
 }
 
 export interface DemoReadAnswer { status: number; body: Any }
+
+/** Stamped on a view answer: read back from the capture tables, no provider asked. */
+export const DEMO_VIEW_SERVED = Object.freeze({ served: 'stored_capture', providerCalls: 0 })
 
 export const untracked = (): DemoReadAnswer => ({
   status: 403,
@@ -325,7 +351,13 @@ export async function answerDemoRead(read: DemoRead, deps: DemoReadDeps): Promis
       // searchable: the tracked suggestions for the same text ride along as
       // demoSuggestions, and only a search that names no tracked asset at all
       // says why with 'demo_untracked'.
+      // An unsearched screen is the catalogue page itself: nothing to suggest,
+      // and an empty page (a chain or category with no rows) is not "untracked".
       const search = String(read.query.search || '')
+      if (!search) {
+        const screen = await deps.screen(read.query)
+        return screen ? { status: 200, body: screen } : { status: 503, body: { error: 'market_snapshot_unavailable' } }
+      }
       const [screen, suggested] = await Promise.all([
         deps.screen(read.query),
         search.length >= 2 ? trackedSuggestions(deps, search, 8).catch(() => null) : Promise.resolve(null),
@@ -380,6 +412,13 @@ export async function answerDemoRead(read: DemoRead, deps: DemoReadDeps): Promis
       if ('answer' in found) return found.answer
       if (!deps.evidenceSubjects(found.asset).includes(read.subject)) return untracked()
       return deps.evidence(read)
+    }
+    case 'view': {
+      // The same body intel-capture reads for a member, op and view last so no
+      // parameter can rewrite them. captureReadEnvelope reads stored rows only.
+      const answer = await deps.capture({ ...read.params, op: 'read', view: read.view })
+      if (answer.status !== 200 || !answer.body || typeof answer.body !== 'object') return answer
+      return { status: 200, body: { ...answer.body, demoRead: DEMO_VIEW_SERVED } }
     }
     case 'news': {
       const rows = await deps.news(read.table, read.terms)

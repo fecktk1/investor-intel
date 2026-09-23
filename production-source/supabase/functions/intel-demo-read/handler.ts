@@ -14,7 +14,9 @@
 //      (public.intel_demo_tracked_assets): an asset no capture lane observed in
 //      the last seven days is refused with 403 'demo_untracked', whatever the
 //      browser sent.
-//   4. Stored and cache-only readers only (_shared/intel/demo-market-read.ts).
+//   4. Stored and cache-only readers only (_shared/intel/demo-market-read.ts),
+//      and for read 'view' the capture tables through the same envelope
+//      intel-capture uses (_shared/intel/demo-capture-views.ts lists the views).
 //
 // Kept free of the Supabase client so its tests run without it; ./index.ts wires
 // the production readers.

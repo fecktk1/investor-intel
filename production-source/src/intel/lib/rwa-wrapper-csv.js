@@ -61,4 +61,17 @@ export const WRAPPER_CSV_COLUMNS = [
   { key: 'market_coverage', label: 'Market coverage', value: r => r.token?.coverageState ?? null },
   { key: 'market_coverage_reason', label: 'Market coverage reason', value: r => r.token?.coverageReason ?? null },
   { key: 'market_pairs', label: 'Market pairs', cmcRaw: true, value: r => num(r.token?.marketPairs) },
+  // The listed share's price from a Chainlink on-chain feed, not a CoinMarketCap
+  // figure, and the gap to it is our arithmetic, so none of these is gated.
+  // A gap inside the feed's band is flagged: it is not distinguishable from zero.
+  { key: 'underlying_ticker', label: 'Underlying ticker', value: r => r.asset?.underlyingReference?.ticker ?? null },
+  { key: 'underlying_ref_state', label: 'Stock reference state', value: r => r.asset?.underlyingReference?.state ?? null },
+  { key: 'underlying_ref_price_usd', label: 'Stock reference price (USD, Chainlink)', value: r => num(r.asset?.underlyingReference?.price) },
+  { key: 'underlying_ref_feed', label: 'Stock reference feed', value: r => r.asset?.underlyingReference?.feed ?? null },
+  { key: 'underlying_ref_network', label: 'Stock reference network', value: r => r.asset?.underlyingReference?.network ?? null },
+  { key: 'underlying_ref_band_pct', label: 'Feed update band (%)', value: r => num(r.asset?.underlyingReference?.deviationPct) },
+  { key: 'underlying_ref_observed_at', label: 'Stock reference updated at', value: r => r.asset?.underlyingReference?.observedAt ?? null },
+  { key: 'underlying_ref_session', label: 'US session when compared', value: r => r.asset?.underlyingReference?.session ?? null },
+  { key: 'vs_stock_bps', label: 'Gap to stock (bps)', value: r => num(r.token?.underlyingRefBps) },
+  { key: 'vs_stock_within_band', label: 'Gap inside feed band', value: r => flag(r.token?.underlyingRefWithinBand) },
 ]

@@ -11,7 +11,11 @@
 //                     requestCmc with kind 'render', maxCalls 0 and noDemand (it
 //                     cannot reach the provider and stamps no demand); for a
 //                     tokenised real-world asset token that only the RWA lanes
-//                     capture, the newest captured wrapper or coverage row.
+//                     capture, the newest captured wrapper or coverage row. The
+//                     NEWEST of these answers (demoQuoteRead), and the price is
+//                     then taken from the stored quote tape (intel_quote_tape,
+//                     filled every minute from the CoinMarketCap observations)
+//                     when the tape holds a later price than all of them.
 //   chart candles     STORED PRICES FIRST (stored-candles.ts): intraday candles
 //                     built from the CoinMarketCap quotes the observation lanes
 //                     store (or the CoinGecko catalogue snapshots), the RWA wrapper
@@ -52,7 +56,9 @@ import { archiveSeries } from './candle-archive.ts'
 import { CANDLE_RANGE_MS } from './candle-ladder.ts'
 import { chartSeriesResponse } from './chart-series-contract.ts'
 import { loadStoredCandles, storedIdentity, storedRpc, dailyRows, intradayBars } from './stored-candles.ts'
-import { quoteProvenance, chartProvenance, venueProvenance, curatedNewsWithEnvelopes } from './market-provenance.ts'
+import { quoteProvenance, chartProvenance, venueProvenance, curatedNewsWithEnvelopes, CATALOGUE_REFRESH_SECONDS } from './market-provenance.ts'
+import { storedReceipt, receiptFreshness, type SourceReceipt } from './source-receipt.ts'
+import { figureEnvelope, figureScope, type FigureEnvelope } from './market-figure-scope.ts'
 import { readMetricAgreement } from './metric-agreement-read.ts'
 import { metricAgreementReceipt } from './metric-agreement.ts'
 import { assembleEcosystemNarrativeState, assembleCatalystNewsState, assemblePublicOnchainState, assembleTokenUnlockState } from './market-enrichment.ts'
@@ -239,13 +245,119 @@ function dexEnrichment(row: Record<string, unknown>, chain: string): Record<stri
   }
 }
 
-const FRESH_MS = 5 * 60_000, STALE_MS = 60 * 60_000
-function freshness(asOf: string | null): 'fresh' | 'stale' | 'degraded' | 'unavailable' {
+// A stored quote is 'fresh' for fifteen minutes: the observation lanes store a
+// price every two to five minutes for assets in use and the tape copies them
+// every minute, so a price a few minutes old is the newest one we hold, and
+// calling it stale would say something untrue about it.
+const FRESH_MS = 15 * 60_000, STALE_MS = 60 * 60_000
+function freshness(asOf: string | null, now = Date.now()): 'fresh' | 'stale' | 'degraded' | 'unavailable' {
   if (!asOf) return 'unavailable'
-  const age = Date.now() - new Date(asOf).getTime()
+  const age = now - new Date(asOf).getTime()
+  if (!Number.isFinite(age)) return 'unavailable'
   if (age <= FRESH_MS) return 'fresh'
   if (age <= STALE_MS) return 'stale'
   return 'degraded'
+}
+
+/** How often the quote tape can hold a newer price: the observation lanes store
+ * one every two to five minutes and the tape copies them every minute. Ten
+ * minutes, so a receipt inside one and a half cadences is 'cached', not 'stale'. */
+export const QUOTE_TAPE_REFRESH_SECONDS = 600
+
+export interface TapePoint { price: number; observedAt: string }
+
+/** The newest stored price on the quote tape for one CoinMarketCap id, or null.
+ * One index-only read of the tape's primary key; never a provider. */
+export async function readQuoteTape(db: Db, cmcId: string | null, now = Date.now()): Promise<TapePoint | null> {
+  if (!cmcId || !/^[1-9][0-9]{0,11}$/.test(cmcId)) return null
+  try {
+    const { data, error } = await db.from('intel_quote_tape').select('price,observed_at')
+      .eq('subject', `market:coinmarketcap:${cmcId}`).order('observed_at', { ascending: false }).limit(1)
+    if (error || !Array.isArray(data) || !data[0]) return null
+    const price = Number(data[0].price), at = Date.parse(String(data[0].observed_at ?? ''))
+    if (!(price > 0) || !Number.isFinite(price) || !Number.isFinite(at) || at > now + 60_000) return null
+    return { price, observedAt: new Date(at).toISOString() }
+  } catch { return null }
+}
+
+const timeOf = (value: unknown): number => { const t = Date.parse(String(value ?? '')); return Number.isFinite(t) ? t : -Infinity }
+
+/** How often each stored catalogue can hold a newer quote. The CoinMarketCap
+ * rows are rewritten from the same observations the tape copies (every two to
+ * five minutes for assets in use), the CoinGecko catalogue every 30 minutes. */
+const STORED_QUOTE_REFRESH: Record<string, number> = { coinmarketcap: QUOTE_TAPE_REFRESH_SECONDS, coingecko: 1800 }
+
+/** The store a resolved row came from: the catalogue, or one of the two RWA
+ * capture tables rwaTokenRow reads (six-hourly and daily). */
+function storedQuoteSource(asset: Any, provider: string): { capability: string; refreshSeconds: number } {
+  const label = String(asset?.source_label || '')
+  if (/RWA wrapper capture/.test(label)) return { capability: 'intel_rwa_wrapper_tokens', refreshSeconds: 21_600 }
+  if (/RWA coverage capture/.test(label)) return { capability: 'intel_rwa_coverage_tokens', refreshSeconds: 86_400 }
+  return { capability: 'market_assets', refreshSeconds: STORED_QUOTE_REFRESH[provider] ?? CATALOGUE_REFRESH_SECONDS }
+}
+
+/** Receipt and envelopes for a quote a stored row answered, judged against that
+ * store's own refresh, so a price minutes old reads 'cached', never 'stale'. */
+function storedQuoteRead(quote: Any, asset: Any, now: number): { receipts: SourceReceipt[]; figureProvenance: Record<string, FigureEnvelope> } {
+  const provider = String(quote?.quoteProvider || 'unknown')
+  const fetchedAt = quote?.provenance?.fetchedAt ?? quote?.asOf ?? null
+  const source = storedQuoteSource(asset, provider)
+  const receipt = storedReceipt({
+    provider, capability: source.capability, origin: 'stored', fetchedAt, refreshSeconds: source.refreshSeconds,
+    state: quote?.sourceFreshness === 'unavailable' || !quote?.asOf ? 'unavailable' : null,
+  }, now)
+  const freshness = receiptFreshness(receipt, now)
+  const envelope = (scope: string) => figureEnvelope('stored', provider, fetchedAt, freshness, figureScope(scope))
+  return { receipts: [receipt], figureProvenance: { price: envelope('price'), price_change: envelope('price_change'), market_cap: envelope('market_cap'), volume_24h: envelope('volume_24h') } }
+}
+
+export interface DemoQuoteRead {
+  quote: Any
+  receipts: SourceReceipt[]
+  figureProvenance: Record<string, FigureEnvelope>
+  /** Which store answered the price: 'quote_tape', 'catalogue' or 'cache'. */
+  priceSource: 'quote_tape' | 'catalogue' | 'cache' | null
+  /** When the price came from the tape: the time of the other figures (the 24h
+   * change, volume and market cap), which the tape does not hold. Else null. */
+  figuresAsOf: string | null
+}
+
+/**
+ * The demo quote: the NEWEST stored answer, never an older one because of the
+ * order of a ladder. intel-markets prefers the shared CoinMarketCap cache to the
+ * catalogue row, which is right for a member whose read refreshes that cache;
+ * the demo never refreshes it, so the cache can sit hours behind the catalogue
+ * row the observation lane rewrote minutes ago. Then, when the quote tape holds
+ * a later price than that answer, the price and its time come from the tape and
+ * every other figure keeps its own time, said in `figuresAsOf`. Pure.
+ */
+export function demoQuoteRead(asset: Any, cmc: Any, cmcReceipts: unknown[], tape: TapePoint | null, now = Date.now()): DemoQuoteRead {
+  const cached = assetMarketRead(asset, cmc)
+  const row = cmc ? assetMarketRead(asset, null) : cached
+  const rowNewer = row !== cached && timeOf(row.asOf) > timeOf(cached.asOf)
+  const base = rowNewer ? row : cached
+  const answeredByCache = !rowNewer && !!cmc && cached.price != null && cached.price === cmc?.current_price && String(cmc?.provider_id) === String(cached.quoteProviderId)
+  // The shared cache's own receipts describe a cache answer; a catalogue answer
+  // gets a receipt for the stored row it came from.
+  const baseRead = answeredByCache ? quoteProvenance(base, Array.isArray(cmcReceipts) ? cmcReceipts : [], now) : storedQuoteRead(base, asset, now)
+  const baseSource = answeredByCache ? 'cache' : base.price != null ? 'catalogue' : null
+  if (!tape || !(timeOf(tape.observedAt) > timeOf(base.asOf))) {
+    return { quote: { ...base, sourceFreshness: base.sourceFreshness || freshness(base.asOf, now) }, receipts: baseRead.receipts, figureProvenance: baseRead.figureProvenance, priceSource: baseSource, figuresAsOf: null }
+  }
+  const receipt = storedReceipt({ provider: 'coinmarketcap', capability: 'intel_quote_tape', origin: 'stored', fetchedAt: tape.observedAt, capturedAt: tape.observedAt, refreshSeconds: QUOTE_TAPE_REFRESH_SECONDS }, now)
+  const quote = {
+    ...base,
+    price: tape.price, asOf: tape.observedAt, quoteProvider: 'coinmarketcap',
+    provenance: { provider: 'coinmarketcap', observedAt: tape.observedAt, fetchedAt: tape.observedAt, store: 'intel_quote_tape' },
+    sourceFreshness: freshness(tape.observedAt, now),
+  }
+  return {
+    quote,
+    receipts: [receipt],
+    figureProvenance: { ...baseRead.figureProvenance, price: figureEnvelope('stored', 'coinmarketcap', tape.observedAt, receiptFreshness(receipt, now), figureScope('price')) },
+    priceSource: 'quote_tape',
+    figuresAsOf: base.asOf ?? null,
+  }
 }
 
 export interface DemoDetailInput {
@@ -275,11 +387,16 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
   if (resolved.error) return { status: 503, body: { error: 'identity_unavailable' } }
   if (!resolved.data) return { status: 404, body: { error: 'asset_not_found', symbol: sym } }
   const cmcId = marketCmcIdentity(resolved.data)
-  const cmc = cmcId && !input.candlesOnly ? await cacheOnlyResolveCmc(db, cmcId) : null
-  const quote = assetMarketRead(resolved.data, cmc?.data)
-  const quoteReason = cmc?.error || resolved.data.quote_reason || null
-  const quoteRead = quoteProvenance(quote, cmc?.receipts || [])
-  if (input.quotesOnly) return { status: 200, body: { ...quote, sourceProvider: resolved.data.source_provider, providerId: resolved.data.provider_id, quoteReason, quoteReceipts: quoteRead.receipts, quoteProvenance: quoteRead.figureProvenance } }
+  const [cmc, tape] = cmcId && !input.candlesOnly
+    ? await Promise.all([cacheOnlyResolveCmc(db, cmcId), readQuoteTape(db, cmcId)])
+    : [null, null]
+  const read = demoQuoteRead(resolved.data, cmc?.data, cmc?.receipts || [], tape)
+  const quote = read.quote
+  // A cache read that answered nothing is no reason when a stored price did.
+  const quoteReason = read.priceSource === 'quote_tape' || read.priceSource === 'catalogue' ? null : cmc?.error || resolved.data.quote_reason || null
+  const quoteRead = { receipts: read.receipts, figureProvenance: read.figureProvenance }
+  const priceRead = { priceSource: read.priceSource, figuresAsOf: read.figuresAsOf }
+  if (input.quotesOnly) return { status: 200, body: { ...quote, sourceProvider: resolved.data.source_provider, providerId: resolved.data.provider_id, quoteReason, quoteReceipts: quoteRead.receipts, quoteProvenance: quoteRead.figureProvenance, ...priceRead } }
   sym = String(resolved.data.normalized_symbol || resolved.data.symbol || sym).toUpperCase()
   const verifiedIdentity = async (): Promise<boolean> => {
     const [identityProfile, identityMapping, claimants] = await Promise.all([
@@ -361,7 +478,7 @@ export async function demoMarketDetail(db: Db, input: DemoDetailInput, resolvedA
     profile: prof ? { liquidityScore: prof.liquidity_score, retailRelevanceScore: prof.retail_relevance_score, marketQualityScore: prof.market_quality_score, trendScore: prof.trend_score, bestGlobalPair: prof.best_global_pair, bestUsRetailPair: prof.best_us_retail_pair } : null,
     ...marketCanonicalIdentity(canonical),
     identityChoices: marketIdentityChoices(canonical),
-    sourceFreshness: quote.sourceFreshness || freshness(quote.asOf), quoteReason,
+    sourceFreshness: quote.sourceFreshness || freshness(quote.asOf), quoteReason, ...priceRead,
     cexCoverage: cexVerified && providers.length ? 'available' : 'unverified',
     depthQuotes: positionDepthQuotes(canonical, cexVerified, bookR.data || [], tickR.data || []),
     spread: cexVerified && usableSpread(sprR.data) ? sprR.data : null, orderbook, rollups, providers, dex,

@@ -41,7 +41,7 @@ import { hourBucket, iso, CAPTURE_PROVIDER, type CaptureDeps, type JobResult, ty
 import type { MarketAssetsContext } from '../market-assets/types.ts'
 import {
   NAV_DIRECTORY_URL, NAV_RPC_URL, NAV_RPC_TIMEOUT_MS, navDirectoryRows, validateNavFeed, readNavRounds,
-  type NavRpc, type NavFeedCandidate,
+  liveNavRpcCall, type NavRpc, type NavFeedCandidate,
 } from './chainlink-nav.ts'
 import {
   RWA_YIELD_FEEDS, RWA_ADVERTISED_ONLY, benchmarkForFeed, benchmarkMatchesCurrency,
@@ -113,18 +113,8 @@ const liveFetchWithHeaders: FetchTextWithHeaders = async (url, headers, timeoutM
   } catch { return null } finally { clearTimeout(timer) }
 }
 
-const liveRpcCall: NavRpc = async (url, body, timeoutMs) => {
-  const controller = new AbortController()
-  const timer = setTimeout(() => controller.abort(), timeoutMs)
-  try {
-    const res = await fetch(url, {
-      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' },
-      body: JSON.stringify(body), signal: controller.signal,
-    })
-    if (!res.ok) throw new Error(`rpc_http_${res.status}`)
-    return await res.json()
-  } finally { clearTimeout(timer) }
-}
+/** Shared with the equity reference reader; defined once in chainlink-nav.ts. */
+const liveRpcCall: NavRpc = liveNavRpcCall
 
 // ─── Small helpers, copied from the neighbouring lanes ────────────────────────
 

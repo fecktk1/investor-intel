@@ -36,6 +36,23 @@ export const NAV_DIRECTORY_URL = 'https://reference-data-directory.vercel.app/fe
 export const NAV_RPC_URL = 'https://ethereum-rpc.publicnode.com'
 export const NAV_RPC_TIMEOUT_MS = 8000
 
+/** The live `NavRpc`: one JSON-RPC POST (a single call or a batch), aborted at
+ * `timeoutMs`. A non-2xx answer throws `rpc_http_<status>`, which every caller
+ * turns into a stated refusal rather than a figure. Shared by the NAV lane and
+ * the equity reference reader (`underlying-reference.ts`) so neither forks it. */
+export const liveNavRpcCall: NavRpc = async (url, body, timeoutMs) => {
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), timeoutMs)
+  try {
+    const res = await fetch(url, {
+      method: 'POST', headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(body), signal: controller.signal,
+    })
+    if (!res.ok) throw new Error(`rpc_http_${res.status}`)
+    return await res.json()
+  } finally { clearTimeout(timer) }
+}
+
 /** AggregatorV3Interface selectors. Each was exercised live on 2026-09-16
  * against the 23 NAV proxies the mirror lists. */
 const SELECTOR = {

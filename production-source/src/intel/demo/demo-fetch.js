@@ -34,7 +34,19 @@
 //         day, so its copies age through the day, while the endpoint serves the
 //         shared copy the warm lane keeps inside its window. The newer of the two
 //         answers; an unreachable or older answer leaves the snapshot copy;
-//       - DEMO_READ_FUNCTION (intel-demo-read), for a SNAPSHOT MISS of a
+//       - DEMO_READ_FUNCTION (intel-demo-read), for a snapshot copy of a
+//         SHARED CAPTURE VIEW (the wrapper board, the market structure panels,
+//         every intel-capture read the snapshot holds) that is past its lane's
+//         cadence (captureCopyPastWindow in
+//         supabase/functions/_shared/intel/demo-capture-views.ts): the endpoint
+//         reads the same view from the capture tables, as intel-capture does for
+//         a member, and the NEWER capture answers; an older, refused or
+//         unreachable answer leaves the snapshot copy, which states its own
+//         time. Each view is checked at most once every CAPTURE_CHECK_TTL_MS.
+//         The unsearched Markets screen is refreshed the same way (read
+//         'screen' with no search) once its copy is older than the catalogue's
+//         window (screenCopyPastWindow).
+//         The same endpoint answers a SNAPSHOT MISS of a
 //         visitor's own search and the asset it opens (demoReadFor below): the
 //         Markets search and typeahead, the workspace search, and the asset
 //         page's detail, candles, quote, history, facts, profile, venue,
@@ -55,6 +67,9 @@ import {
 import { EntityResolveRefusal, normalizeEntity } from '../../../supabase/functions/_shared/entity-resolver.ts'
 import { RWA_FREE_CAPABILITIES } from '../../../supabase/functions/_shared/intel/rwa-free-read.ts'
 import { cmcDexIdentity } from '../../../supabase/functions/_shared/market-assets/cmc-dex.ts'
+import {
+  captureCopyPastWindow, DEMO_CAPTURE_VIEWS, isNewerCapture, isNewerScreen, screenCopyPastWindow,
+} from '../../../supabase/functions/_shared/intel/demo-capture-views.ts'
 import {
   DEMO_ORG, DEMO_ORG_ID, DEMO_PROFILE, DEMO_TIER, DEMO_USER, DEMO_USER_ID, demoMembershipRow,
 } from './demo-identity.js'
@@ -232,6 +247,44 @@ const identityOf = (body) => (present(body?.sourceProvider) && present(body?.pro
 const symbolOf = (body) => (typeof body?.symbol === 'string' && body.symbol.trim() ? { symbol: body.symbol.trim().slice(0, 120) } : {})
 const SCREEN_FIELDS = ['provider', 'sort', 'dir', 'chain', 'search', 'category', 'signalDirection', 'view', 'page', 'limit']
 
+/** How long one check of a capture view against the capture tables is kept in
+ * memory: a page that reads the same view again within it is answered from the
+ * same check, and the endpoint is asked at most once per view in that time. */
+export const CAPTURE_CHECK_TTL_MS = 120_000
+
+/**
+ * The intel-demo-read body that reads a snapshotted capture view again from the
+ * capture tables, or null when the view is not one the demo refreshes. A shared
+ * board crosses as read 'view' with its allowed parameters only; a per-asset read
+ * (token depth, attention) as read 'capture', which the endpoint answers for a
+ * tracked asset only. A body carrying any parameter the view does not list is
+ * not forwarded at all, so a rebuilt request can never read a different view.
+ */
+export function demoViewFor(body) {
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {}
+  if (b.op !== 'read' || typeof b.view !== 'string') return null
+  if (Object.hasOwn(DEMO_CAPTURE_VIEWS, b.view)) {
+    const allowed = Object.keys(DEMO_CAPTURE_VIEWS[b.view].params)
+    const extra = Object.keys(b).filter((key) => !['op', 'view', 'orgId', 'org_id'].includes(key) && !allowed.includes(key))
+    if (extra.length) return null
+    return { read: 'view', view: b.view, params: pick(b, allowed) }
+  }
+  if (b.view === 'rwa_token_depth' || b.view === 'attention') return demoReadFor('intel-capture', b)
+  return null
+}
+
+/** The intel-demo-read body that reads a snapshotted, UNSEARCHED Markets screen
+ * again from the stored catalogue, or null for any other intel-markets body. */
+export function demoScreenFor(body) {
+  const b = body && typeof body === 'object' && !Array.isArray(body) ? body : {}
+  if (b.op != null || b.history === true || symbolOf(b).symbol || present(b.sourceProvider) || present(b.providerId)) return null
+  if (b.watchlistOnly === true || b.watchlistOnly === 'true') return null
+  if (typeof b.search === 'string' && b.search.trim()) return null
+  const extra = Object.keys(b).filter((key) => !['orgId', 'org_id', 'watchlistOnly', ...SCREEN_FIELDS].includes(key))
+  if (extra.length) return null
+  return { read: 'screen', query: { ...pick(b, SCREEN_FIELDS), search: '' } }
+}
+
 /** The tables the asset page's news panel reads (src/intel/lib/asset-news.js). */
 export const DEMO_NEWS_TABLES = Object.freeze(['intel_curated_news', 'intel_global_news'])
 
@@ -373,6 +426,42 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     return response
   }
 
+  // A snapshotted stored read past its lane's cadence (a capture view, or the
+  // unsearched Markets screen), read again from the store: the newer body, or
+  // null to keep the snapshot copy. One check per key per CAPTURE_CHECK_TTL_MS,
+  // shared by concurrent reads.
+  const storedChecks = new Map()
+  async function fresherStored(key, forwarded, stored, isNewer) {
+    const held = storedChecks.get(key)
+    if (!held || now() - held.at >= CAPTURE_CHECK_TTL_MS) {
+      const check = (async () => {
+        let response
+        try { response = await forwardPublic(forwarded, DEMO_READ_FUNCTION) } catch { return null }
+        if (!response || !response.ok) return null
+        let answer
+        try { answer = await response.json() } catch { return null }
+        return isNewer(answer, stored) ? answer : null
+      })()
+      storedChecks.set(key, { at: now(), check })
+    }
+    const fresh = await storedChecks.get(key).check
+    return fresh ? respond(fresh) : null
+  }
+  async function fresherCapture(name, body, key, entry) {
+    if (typeof forwardPublic !== 'function' || (Number(entry?.status) || 200) !== 200) return null
+    if (name === 'intel-capture') {
+      const forwarded = demoViewFor(body)
+      if (!forwarded || !captureCopyPastWindow(body.view, entry.body, now())) return null
+      return fresherStored(key, forwarded, entry.body, isNewerCapture)
+    }
+    if (name === 'intel-markets') {
+      const forwarded = demoScreenFor(body)
+      if (!forwarded || !screenCopyPastWindow(entry.body, now())) return null
+      return fresherStored(key, forwarded, entry.body, isNewerScreen)
+    }
+    return null
+  }
+
   async function functions(name, input, init) {
     const text = await readBody(input, init)
     const body = parseJson(text)
@@ -387,7 +476,7 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
     let entry = null
     try { entry = reader ? await reader.entry(key) : null } catch { entry = null }
     if (entry && entry.body !== undefined) {
-      const fresher = await fresherResearch(name, body, entry.body)
+      const fresher = await fresherResearch(name, body, entry.body) || await fresherCapture(name, body, key, entry)
       if (fresher) return fresher
       return respond(entry.body, Number(entry.status) || 200)
     }

@@ -99,6 +99,7 @@ production-source/supabase/functions/_shared/intel/contract-research.test.ts
 production-source/supabase/functions/_shared/intel/coverage.test.ts
 production-source/supabase/functions/_shared/intel/dashboard-picture.test.ts
 production-source/supabase/functions/_shared/intel/dashboard-reads.test.ts
+production-source/supabase/functions/_shared/intel/demo-capture-views.test.ts
 production-source/supabase/functions/_shared/intel/demo-read.test.ts
 production-source/supabase/functions/_shared/intel/demo-snapshot-key.test.ts
 production-source/supabase/functions/_shared/intel/dex-cohort-service.test.ts
@@ -210,6 +211,7 @@ production-source/supabase/functions/_shared/intel/thesis-condition-sources.test
 production-source/supabase/functions/_shared/intel/thesis-monitor-context.test.ts
 production-source/supabase/functions/_shared/intel/thesis-save-evidence.test.ts
 production-source/supabase/functions/_shared/intel/token-risk.test.ts
+production-source/supabase/functions/_shared/intel/underlying-reference.test.ts
 production-source/supabase/functions/_shared/intel/unusual-moves.test.ts
 production-source/supabase/functions/_shared/intel/venue-context.test.ts
 production-source/supabase/functions/_shared/market-assets/cmc-cache-read-failure.test.ts
@@ -233,6 +235,7 @@ production-source/supabase/functions/_shared/market-assets/logo-cache.test.ts
 production-source/supabase/functions/_shared/market-assets/market-macro-policy.test.ts
 production-source/supabase/functions/intel-data-budget/index.test.ts
 production-source/supabase/functions/intel-health/health.test.ts
+production-source/supabase/functions/intel-mcp-demo/handler.test.ts
 production-source/supabase/functions/intel-portfolio/valuation-receipts.test.ts
 production-source/supabase/functions/intel-research/index.test.ts
 production-source/supabase/functions/intel-tweet-embed/index.test.ts

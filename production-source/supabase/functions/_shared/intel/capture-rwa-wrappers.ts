@@ -25,6 +25,13 @@
 //      comma-joined. The endpoint bills ceil(n/250) and the set is capped at
 //      RWA_WRAPPER_ASSET_CAP = 60, so this is exactly 1 credit.
 //
+//   6. For each tokenised STOCK or ETF, the listed share's own price from a
+//      Chainlink on-chain feed (`underlying-reference.ts`), read at the instant
+//      the wrapper prices were observed. Two zero-credit database reads for the
+//      ticker-mapping evidence, then at most two public RPC requests per
+//      registry ticker. Zero provider credits. Stored beside the anchor, never
+//      in place of it.
+//
 //   Upper bound: 6 calls and 5 credits per run. At the six-hourly cadence below
 //   that is 20 credits a day, against a Startup allowance measured in hundreds
 //   of thousands a month.
@@ -56,6 +63,11 @@ import {
   RECONCILE_BAND_LOW, RECONCILE_BAND_HIGH,
   type AssetListFigures, type NavAnchorInput, type WrapperSpread,
 } from './rwa-wrapper-spread.ts'
+import { PROFILE_TABLE, REGISTRANT_TABLE } from './capture-rwa-underlyings.ts'
+import {
+  chainlinkReferenceSource, resolveUnderlyingReferences, assetReferenceColumns, tokenReferenceColumns,
+  observationRow, tradfiTickers, type UnderlyingReferenceSource, type ReferenceEvidence,
+} from './underlying-reference.ts'
 
 /** The pg_cron job that runs this lane (UTC), from migration
  * 20260920150000_intel_rwa_wrapper_spread.sql. Every six hours at minute 47,
@@ -74,6 +86,9 @@ export const ASSET_TABLE = 'intel_rwa_wrapper_assets'
 export const TOKEN_TABLE = 'intel_rwa_wrapper_tokens'
 export const UNIVERSE_TABLE = 'intel_rwa_universe_snapshots'
 export const NAV_TABLE = 'intel_rwa_nav_observations'
+/** The underlying stock reference, one row per asset per capture a feed read
+ * was attempted for (migration 20260923193000). */
+export const REFERENCE_TABLE = 'intel_rwa_underlying_reference_observations'
 
 /** How many rwa_ids one quotes call carries. The endpoint bills ceil(n/250), so
  * anything up to 250 is one credit; 60 keeps the response bounded and still
@@ -95,6 +110,10 @@ const UNIVERSE_ROWS = 14
 export interface RwaWrapperDeps extends CaptureDeps {
   /** Overrides the volume floor for a test or a one-off operator run. */
   liquidityFloorUsd?: number
+  /** Where the underlying stock's price comes from. Defaults to the committed
+   * Chainlink registry read through public RPCs; a test injects a fake, and
+   * `false` switches the step off without touching the wrapper capture. */
+  referenceSource?: UnderlyingReferenceSource | false
 }
 
 const num = (v: unknown): number | null => { if (v == null || v === '' || typeof v === 'boolean') return null; const n = Number(v); return Number.isFinite(n) ? n : null }
@@ -302,6 +321,129 @@ export function tokenRows(spread: WrapperSpread, context: { capturedAt: string; 
   }))
 }
 
+// ─── The underlying stock reference ───────────────────────────────────────────
+
+export interface ReferenceStepResult {
+  /** Stock and ETF assets in the capture: the only ones a reference applies to. */
+  stockAssets: number
+  mapped: number
+  observed: number
+  withinBand: number
+  unavailable: number
+  noReference: number
+  refused: number
+  /** Distinct feed reads attempted (RPC, never a provider credit). */
+  reads: number
+  observations: Record<string, unknown>[]
+  /** A failed evidence read narrows the mapping to symbol and type; said here. */
+  partial: string | null
+}
+
+/** Add the underlying stock reference to rows the lane is about to write.
+ *
+ * Mutates `assetRows` and `wrapperRows` in place, adding the `underlying_ref_*`
+ * columns, and returns the observation rows to store beside them. Nothing it
+ * does can fail the wrapper capture: the only network it touches is the public
+ * RPC, every read is bounded and timed, and a failed read is a row with a
+ * reason. Two zero-credit database reads supply the mapping evidence (the
+ * profile's primary exchange and the SEC registrant's tickers). */
+export async function attachUnderlyingReferences(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  assetRows: Record<string, unknown>[],
+  wrapperRows: Record<string, unknown>[],
+  context: { tradfi: Map<string, string[] | null>; capturedAt: string; fetchedAt: string; op: 'rwa_wrappers' | 'rwa_wrapper_reference' },
+  source: UnderlyingReferenceSource,
+): Promise<ReferenceStepResult> {
+  const stock = assetRows.filter((row) => row.asset_type === 'stock' || row.asset_type === 'etf')
+  const ids = [...new Set(stock.map((row) => rwaId(row.rwa_id)).filter((v): v is string => !!v))]
+  const [profiles, registrants] = ids.length
+    ? await Promise.all([
+        readRows(() => admin.from(PROFILE_TABLE).select('rwa_id,primary_exchange').in('rwa_id', ids).limit(ids.length)),
+        readRows(() => admin.from(REGISTRANT_TABLE).select('rwa_id,tickers').in('rwa_id', ids).limit(ids.length)),
+      ])
+    : [{ rows: [], reason: null }, { rows: [], reason: null }]
+  const evidence = new Map<string, ReferenceEvidence>()
+  for (const id of ids) evidence.set(id, { tradfiTickers: context.tradfi.get(id) ?? null })
+  for (const row of profiles.rows) {
+    const id = rwaId(row?.rwa_id)
+    if (id && evidence.has(id)) evidence.get(id)!.primaryExchange = text(row?.primary_exchange, 120)
+  }
+  for (const row of registrants.rows) {
+    const id = rwaId(row?.rwa_id)
+    if (id && evidence.has(id)) evidence.get(id)!.registrantTickers = Array.isArray(row?.tickers) ? row.tickers : null
+  }
+
+  const { outcomes, reads } = await resolveUnderlyingReferences(
+    stock.map((row) => ({
+      rwaId: String(row.rwa_id), symbol: text(row.symbol, 50), assetType: text(row.asset_type, 40),
+      // The provider's clock for the wrapper prices, so the stock is read at the
+      // same instant the wrappers were priced.
+      observedAt: text(row.source_observed_at, 40),
+    })),
+    evidence, source,
+  )
+
+  // Columns are computed first and applied last, so nothing is half-written.
+  const assetColumns = assetRows.map((row) => assetReferenceColumns(outcomes.get(String(row.rwa_id)) ?? null, num(row.anchor_price), context.fetchedAt))
+  const tokenColumns = wrapperRows.map((row) => tokenReferenceColumns(row, outcomes.get(String(row.rwa_id)) ?? null))
+  assetRows.forEach((row, i) => Object.assign(row, assetColumns[i]))
+  wrapperRows.forEach((row, i) => Object.assign(row, tokenColumns[i]))
+
+  const observations: Record<string, unknown>[] = []
+  let mapped = 0, observed = 0, unavailable = 0, noReference = 0, refused = 0
+  for (const id of ids) {
+    const outcome = outcomes.get(id) ?? null
+    const state = outcome?.mapping.state
+    if (state === 'mapped') {
+      mapped += 1
+      if (outcome?.reading?.state === 'observed') observed += 1
+      else unavailable += 1
+    } else if (state === 'mapping_refused') refused += 1
+    else if (state === 'no_reference') noReference += 1
+    const observation = observationRow(id, outcome, context)
+    if (observation) observations.push(observation)
+  }
+  return {
+    stockAssets: ids.length, mapped, observed, unavailable, noReference, refused, reads, observations,
+    withinBand: assetRows.filter((row) => row.underlying_ref_anchor_within_band === true).length,
+    partial: profiles.reason ? 'profile_read_failed' : registrants.reason ? 'registrant_read_failed' : null,
+  }
+}
+
+const NO_REFERENCE: ReferenceStepResult = {
+  stockAssets: 0, mapped: 0, observed: 0, withinBand: 0, unavailable: 0, noReference: 0, refused: 0, reads: 0, observations: [], partial: null,
+}
+
+/** The reference step as the lane runs it: switched off by `referenceSource:
+ * false`, and a throw from anywhere inside it is caught and reported, leaving
+ * the wrapper rows exactly as the spread built them. */
+async function referenceStep(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  assetRows: Record<string, unknown>[],
+  wrapperRows: Record<string, unknown>[],
+  context: { tradfi: Map<string, string[] | null>; capturedAt: string; fetchedAt: string; op: 'rwa_wrappers' | 'rwa_wrapper_reference' },
+  deps: RwaWrapperDeps,
+): Promise<ReferenceStepResult & { error?: string }> {
+  if (deps.referenceSource === false) return { ...NO_REFERENCE, partial: 'reference_switched_off' }
+  try {
+    return await attachUnderlyingReferences(admin, assetRows, wrapperRows, context, deps.referenceSource || chainlinkReferenceSource())
+  } catch (e) {
+    return { ...NO_REFERENCE, error: ((e as Error)?.message || 'reference_failed').slice(0, 120) }
+  }
+}
+
+function referenceSummary(step: ReferenceStepResult & { error?: string }, write: { rows: number; error?: string }) {
+  return {
+    stockAssets: step.stockAssets, mapped: step.mapped, observed: step.observed, withinBand: step.withinBand,
+    unavailable: step.unavailable, noReference: step.noReference, refused: step.refused, reads: step.reads,
+    stored: write.rows,
+    ...(step.partial ? { partial: step.partial } : {}),
+    ...(step.error || write.error ? { error: (step.error || write.error) as string } : {}),
+  }
+}
+
 // ─── The lane ─────────────────────────────────────────────────────────────────
 
 /** Capture the wrapper spread and the two-endpoint reconciliation for a bounded
@@ -441,10 +583,14 @@ export async function captureRwaWrappers(
 
     const assetRows: Record<string, unknown>[] = []
     const wrapperRows: Record<string, unknown>[] = []
+    // The quotes payload's own `tradfi_markets` tickers: a free cross-check for
+    // the stock reference's ticker mapping (no extra call).
+    const tradfi = new Map<string, string[] | null>()
     let multi = 0, anchored = 0, outsideBand = 0
     for (const row of cmcRows('rwaQuotes', quotes.payload).rows) {
       const asset = wrapperAssetFromQuote(row)
       if (!asset) continue
+      tradfi.set(asset.rwaId, tradfiTickers(row))
       const mapped = RWA_NAV_ANCHORS[asset.rwaId]
       const spread = wrapperSpread(asset, { nav: mapped ? navByFeed.get(mapped.feedKey) ?? null : null, liquidityFloorUsd: floor })
       // The whole surface is about assets wrapped MORE THAN ONCE. A single-token
@@ -467,10 +613,17 @@ export async function captureRwaWrappers(
       }
     }
 
+    // ── The underlying stock's own price, BESIDE the anchor. RPC reads only,
+    //    zero credits, and unable to fail the capture it sits in.
+    const reference = await referenceStep(admin, assetRows, wrapperRows, { tradfi, capturedAt, fetchedAt, op: 'rwa_wrappers' }, deps)
+
     // The WRAPPERS go first. The cadence guard above reads the ASSET table, so
     // writing it last means a partial write can never make the next run believe
     // the hour was captured before the evidence behind it landed.
     const tokenWrite = await upsert(admin, TOKEN_TABLE, wrapperRows, 'provider,rwa_id,crypto_id,captured_at')
+    const referenceWrite = tokenWrite.error || !reference.observations.length
+      ? { rows: 0 } as { rows: number; error?: string }
+      : await upsert(admin, REFERENCE_TABLE, reference.observations, 'rwa_id,captured_at,source')
     const assetWrite = tokenWrite.error ? { rows: 0 } as { rows: number; error?: string } : await upsert(admin, ASSET_TABLE, assetRows, 'provider,rwa_id,captured_at')
 
     return {
@@ -478,11 +631,70 @@ export async function captureRwaWrappers(
       assetTypes: seed.assetTypes.length, candidates: candidates.length,
       assets: assetRows.length, wrappers: wrapperRows.length,
       multiWrapper: multi, anchored, outsideBand,
+      reference: referenceSummary(reference, referenceWrite),
       ...(partial ? { partial } : {}),
       ...(tokenWrite.error || assetWrite.error ? { error: (tokenWrite.error || assetWrite.error) as string } : {}),
     }
   } catch (e) {
     return { job, rows: 0, credits, capturedAt, error: ((e as Error)?.message || 'rwa_wrapper_capture_failed').slice(0, 200) }
+  }
+}
+
+/** How old the newest wrapper capture may be for the one-off reference step.
+ * The round walk behind a reading is bounded, and the step exists only to fill
+ * the NEWEST capture before the next scheduled run writes its own. */
+export const REFERENCE_BACKFILL_MAX_AGE_MS = 13 * 3_600_000
+
+/** Run ONLY the underlying reference step over the newest wrapper capture, and
+ * write its columns and observations back onto the rows already stored.
+ *
+ * Zero CoinMarketCap calls: two reads of this lane's own rows, the two evidence
+ * reads, and the bounded feed reads. The stock is read at each asset's stored
+ * `source_observed_at`, so a reference filled in hours after the capture is
+ * still the price in effect when the wrappers were priced. Idempotent: a second
+ * run rewrites the same rows. Not scheduled; an operator runs it by hand. */
+export async function captureUnderlyingReferenceForLatest(
+  // deno-lint-ignore no-explicit-any
+  admin: any,
+  now: Date,
+  deps: RwaWrapperDeps,
+): Promise<JobResult> {
+  const job = 'rwa_wrapper_reference'
+  const fetchedAt = new Date(now instanceof Date ? now.getTime() : now).toISOString()
+  try {
+    if (!lanePolicy(deps).enabled) return { job, rows: 0, credits: 0, skipped: 'policy_disabled' }
+    if (deps.referenceSource === false) return { job, rows: 0, credits: 0, skipped: 'reference_switched_off' }
+    const newest = await readRows(() => admin.from(ASSET_TABLE).select('captured_at').order('captured_at', { ascending: false }).limit(1))
+    if (newest.reason) return { job, rows: 0, credits: 0, error: newest.reason }
+    const capturedAt = text(newest.rows[0]?.captured_at, 40)
+    if (!capturedAt) return { job, rows: 0, credits: 0, skipped: 'no_wrapper_capture' }
+    const capturedMs = Date.parse(capturedAt)
+    if (!Number.isFinite(capturedMs) || now.getTime() - capturedMs > REFERENCE_BACKFILL_MAX_AGE_MS) {
+      return { job, rows: 0, credits: 0, skipped: 'newest_capture_too_old', capturedAt }
+    }
+    const [assets, tokens] = await Promise.all([
+      readRows(() => admin.from(ASSET_TABLE).select('*').eq('captured_at', capturedAt).limit(RWA_WRAPPER_ASSET_CAP * 2)),
+      readRows(() => admin.from(TOKEN_TABLE).select('*').eq('captured_at', capturedAt).limit(MAX_UPSERT_ROWS * 4)),
+    ])
+    if (assets.reason || tokens.reason) return { job, rows: 0, credits: 0, capturedAt, error: (assets.reason || tokens.reason) as string }
+    // `created_at` stays with the row that already holds it.
+    const strip = (row: Record<string, unknown>) => { const { created_at: _created, ...rest } = row; return rest }
+    const assetRows: Record<string, unknown>[] = assets.rows.map(strip)
+    const wrapperRows: Record<string, unknown>[] = tokens.rows.map(strip)
+    const reference = await referenceStep(admin, assetRows, wrapperRows, { tradfi: new Map(), capturedAt, fetchedAt, op: 'rwa_wrapper_reference' }, deps)
+    if (reference.error) return { job, rows: 0, credits: 0, capturedAt, error: reference.error }
+    const tokenWrite = await upsert(admin, TOKEN_TABLE, wrapperRows, 'provider,rwa_id,crypto_id,captured_at')
+    const referenceWrite = tokenWrite.error || !reference.observations.length
+      ? { rows: 0 } as { rows: number; error?: string }
+      : await upsert(admin, REFERENCE_TABLE, reference.observations, 'rwa_id,captured_at,source')
+    const assetWrite = tokenWrite.error ? { rows: 0 } as { rows: number; error?: string } : await upsert(admin, ASSET_TABLE, assetRows, 'provider,rwa_id,captured_at')
+    return {
+      job, rows: tokenWrite.rows + referenceWrite.rows + assetWrite.rows, credits: 0, capturedAt,
+      reference: referenceSummary(reference, referenceWrite),
+      ...(tokenWrite.error || assetWrite.error ? { error: (tokenWrite.error || assetWrite.error) as string } : {}),
+    }
+  } catch (e) {
+    return { job, rows: 0, credits: 0, error: ((e as Error)?.message || 'rwa_wrapper_reference_failed').slice(0, 200) }
   }
 }
 
@@ -494,4 +706,7 @@ export const RWA_WRAPPER_CAPTURE_OPS: Record<string, (
   admin: any, ctxFor: (name: string, maxCalls: number) => MarketAssetsContext, now: Date, plan: string, deps: CaptureDeps, body?: Record<string, unknown>
 ) => Promise<JobResult>> = {
   rwa_wrappers: (admin, ctxFor, now, _plan, deps) => captureRwaWrappers(admin, ctxFor, now, deps as RwaWrapperDeps),
+  // Not scheduled: an operator's one-off fill of the newest capture's stock
+  // reference. Zero credits (captureUnderlyingReferenceForLatest).
+  rwa_wrapper_reference: (admin, _ctxFor, now, _plan, deps) => captureUnderlyingReferenceForLatest(admin, now, deps as RwaWrapperDeps),
 }
