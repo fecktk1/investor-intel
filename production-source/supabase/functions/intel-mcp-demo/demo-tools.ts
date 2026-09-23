@@ -41,6 +41,7 @@ import {
  type McpToolDefinition,type McpToolResult,type McpResourceContents,type McpPromptResult,
 } from '../_shared/intel/mcp-protocol.ts'
 import {parseToolArguments,SchemaError} from '../_shared/intel/mcp-schema.ts'
+import {withTimeLabels} from '../_shared/intel/mcp-time-labels.ts'
 import {AgentAuthError,type AgentContext} from '../_shared/intel/agent-token.ts'
 import {suggestMarketAssets,SUGGEST_MAX_LIMIT} from '../_shared/intel/market-asset-suggest.ts'
 
@@ -105,6 +106,8 @@ export const DEMO_INSTRUCTIONS=[
  `TRACKED ASSETS ONLY. A tool that names one asset answers only for assets a capture lane observed in the last ${TRACKED_WINDOW_DAYS} days. Anything else comes back with state ${NOT_TRACKED}, which is a fact about this demo and not evidence about the asset.`,
  '',
  'GROUNDING. Every result carries demo (read only, stored data, and the as_of), as_of (the capture time the answer rests on), source and calculated_by. When calculated_by is "investor_intel" the figure is OURS, not the provider\'s: say so when you quote it. as_of can be null, which means nothing has been captured yet; never substitute the current time for it.',
+ '',
+ 'TIME. Every timestamp is ISO 8601 in UTC. time_labels maps each one in a result to a readable label with its weekday (for example "Tue 22 Sep 2026, 16:58:36 UTC"): quote those labels rather than working out a weekday yourself.',
  '',
  'NOT HERE. Watchlists, alerts, research notes, write proposals, whoami, data_budget and rwa_issuer_terms need an Investor Intel account (Starter plan or above) and an agent token on the full server.',
  '',
@@ -438,7 +441,7 @@ export async function callDemoTool(ctx:ToolContext,tracked:TrackedReaders,name:s
   let payload=await tool.handler(ctx,decision.args)
   if(name==='search_assets')payload=await trackedMatches(payload,Number(parsed.limit),tracked)
   if(decision.note)payload={...payload,note:[payload.note,decision.note].filter(Boolean).join(' ')}
-  return {result:jsonToolResult(marked(payload,ctx.now)),outcome:'served',reasonCode:null}
+  return {result:jsonToolResult(withTimeLabels(marked(payload,ctx.now))),outcome:'served',reasonCode:null}
  }catch(error){
   if(error instanceof AgentAuthError){
    return {result:refusal(error.code,error.message,ctx.now,{tool:name}),outcome:'refused',reasonCode:error.code}

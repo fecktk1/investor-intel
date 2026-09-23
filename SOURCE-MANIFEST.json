@@ -1,5 +1,5 @@
 {
-  "createdAt": "2026-09-23T20:19:22.677Z",
+  "createdAt": "2026-09-23T20:30:47.810Z",
   "sourceFiles": [
     {
       "source": "examples/investor-intel-hackathon/adapters/ChartWatchlistAdd.jsx",
@@ -4170,6 +4170,14 @@
       "extracted": "production-source/supabase/functions/_shared/intel/mcp-size.ts"
     },
     {
+      "source": "supabase/functions/_shared/intel/mcp-time-labels.test.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/mcp-time-labels.test.ts"
+    },
+    {
+      "source": "supabase/functions/_shared/intel/mcp-time-labels.ts",
+      "extracted": "production-source/supabase/functions/_shared/intel/mcp-time-labels.ts"
+    },
+    {
       "source": "supabase/functions/_shared/intel/mcp-tools.test.ts",
       "extracted": "production-source/supabase/functions/_shared/intel/mcp-tools.test.ts"
     },
@@ -6007,7 +6015,7 @@
     {
       "file": "README.md",
       "bytes": 23870,
-      "sha256": "d5006b92030551993aead9264c1cc181f3ef30371aa38a317e4b2e6246bb56f6"
+      "sha256": "84c4ecfab6c5e7a1db360bcf842b079b848b82772ae72aa92985e67decba92c9"
     },
     {
       "file": "LICENSE.md",
@@ -12167,6 +12175,18 @@
       "role": "full-source"
     },
     {
+      "file": "production-source/supabase/functions/_shared/intel/mcp-time-labels.test.ts",
+      "bytes": 2822,
+      "sha256": "7a924c1bf95143c0996a77ab556f0a8eb3c70b514c4ec7a70c71356bc60ac396",
+      "role": "full-source"
+    },
+    {
+      "file": "production-source/supabase/functions/_shared/intel/mcp-time-labels.ts",
+      "bytes": 3673,
+      "sha256": "23f1ae72d2386fa49259c1be143e9a91d0d1e8ec0c59e513f86cd25423ec0740",
+      "role": "full-source"
+    },
+    {
       "file": "production-source/supabase/functions/_shared/intel/mcp-tools.test.ts",
       "bytes": 47204,
       "sha256": "9a3e12859e2c6372a6c15da90d3c8d003b40173437f591fd4dce9fbb35e5b638",
@@ -12174,8 +12194,8 @@
     },
     {
       "file": "production-source/supabase/functions/_shared/intel/mcp-tools.ts",
-      "bytes": 92457,
-      "sha256": "cf800693e1c1342b5d0a07bca98c4ab1bfefa3af2ef224927a899bf1a048fefa",
+      "bytes": 92761,
+      "sha256": "9c951cefc1a0ea208b44501c8eca6f53f2b5bb64af9b734a3de614b216ec461f",
       "role": "full-source"
     },
     {
@@ -13230,8 +13250,8 @@
     },
     {
       "file": "production-source/supabase/functions/intel-mcp-demo/demo-tools.ts",
-      "bytes": 26256,
-      "sha256": "08266044bd6d10f0286e6cb7aea99f8ba4dcc6fa73c7a7e6c52f822ef74a7549",
+      "bytes": 26575,
+      "sha256": "70541863695c0ea68c977b4aa13e9e20ba6c7c098d3c6e5d2f53ac8eb02dd520",
       "role": "full-source"
     },
     {
@@ -14885,13 +14905,13 @@
     },
     {
       "file": "production-source/runnable-tests.txt",
-      "bytes": 18796,
-      "sha256": "81abb4236c28b76ef08cd095090eeb697a141413eaa086686873a7cb4f70aa4b"
+      "bytes": 18871,
+      "sha256": "763ccf86e3dd329177e37b8ab6d710f5790bfe1392115af2ade3a95e2fbac991"
     },
     {
       "file": "production-source/excluded-tests.md",
       "bytes": 10113,
-      "sha256": "a1665073e003f2f6293988f4434c1b03c6cb7095430e96271883af2245f6cbde"
+      "sha256": "f2e96ca8c4649ff7d0c10afac8f4f3a83e9ba52dfb1d0ee33ac8b01e1b17ddc1"
     },
     {
       "file": "test-support/deno.json",

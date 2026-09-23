@@ -143,6 +143,7 @@ production-source/supabase/functions/_shared/intel/markets-screen.test.ts
 production-source/supabase/functions/_shared/intel/mcp-protocol.test.ts
 production-source/supabase/functions/_shared/intel/mcp-readings.test.ts
 production-source/supabase/functions/_shared/intel/mcp-schema.test.ts
+production-source/supabase/functions/_shared/intel/mcp-time-labels.test.ts
 production-source/supabase/functions/_shared/intel/mcp-tools.test.ts
 production-source/supabase/functions/_shared/intel/metadata-drift.test.ts
 production-source/supabase/functions/_shared/intel/narrative-brief-read.test.ts

@@ -61,6 +61,7 @@ import {metricAgreementReceipt} from './metric-agreement.ts'
 import {rwaTermsProjection} from './rwa-terms.ts'
 import {COINGECKO_ATTRIBUTION} from './launchpad-registry.ts'
 import {SERIES_TOTAL_CAP,perGroupCap,trimSeries,trimNote,notes} from './mcp-size.ts'
+import {withTimeLabels} from './mcp-time-labels.ts'
 import {rwaCoverage,rwaUniverseChanges,rwaIssuerConcentration,rwaPremiumHistory,rwaExitCapacity,marketStructure,MARKET_FIGURE_NAMES,HISTORY_WRAPPER_CAP} from './mcp-readings.ts'
 
 // deno-lint-ignore no-explicit-any
@@ -1288,7 +1289,7 @@ export async function callMcpTool(ctx:ToolContext,name:string,args:Record<string
   }
  }
  try{
-  return {result:jsonToolResult(await tool.handler(ctx,parsed)),outcome:'served',reasonCode:null,tierLocked:false}
+  return {result:jsonToolResult(withTimeLabels(await tool.handler(ctx,parsed))),outcome:'served',reasonCode:null,tierLocked:false}
  }catch(error){
   if(error instanceof AgentAuthError){
    return {result:errorToolResult(error.code,error.message,{tool:name}),outcome:'refused',reasonCode:error.code,tierLocked:false}
@@ -1309,6 +1310,8 @@ export const SERVER_INSTRUCTIONS=[
  'CALL whoami FIRST when anything refuses. It lists this token\'s scopes, the member\'s plan, every tool that is available and every tool that is refused with the reason.',
  '',
  'GROUNDING. Every result carries as_of (the capture time the answer rests on), source (provider, endpoint family and our own store), and calculated_by. When calculated_by is "investor_intel" the figure is OURS, not the provider\'s, and inputs says what it was made from: say so when you quote it. as_of can be null, which means nothing has been captured yet; never substitute the current time for it.',
+ '',
+ 'TIME. Every timestamp is ISO 8601 in UTC. time_labels maps each one in a result to a readable label with its weekday (for example "Tue 22 Sep 2026, 16:58:36 UTC"): quote those labels rather than working out a weekday yourself.',
  '',
  'NOTHING HERE SPENDS A PROVIDER CREDIT. Every read comes from a precomputed capture or a retained observation, so a stale as_of means the capture is stale, not that you should retry. Reading again will return the same reading.',
  '',
