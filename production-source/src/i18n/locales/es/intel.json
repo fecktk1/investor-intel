@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "No se pudo leer la fecha en que entró en vigor el multiplicador, así que no se usó.",
     "reason_account_not_found": "No se encontró la cuenta de token.",
     "reason_not_token_2022": "La cuenta de token no pertenece al programa de tokens esperado, así que no se usó su multiplicador.",
-    "reason_wrapper_observation_time_unknown": "El proveedor no indicó la hora de los precios de los envoltorios, así que no se conoce el multiplicador vigente entonces."
+    "reason_wrapper_observation_time_unknown": "El proveedor no indicó la hora de los precios de los envoltorios, así que no se conoce el multiplicador vigente entonces.",
+    "source_xstocks_solana_scaled_ui": "multiplicador on-chain de xStocks",
+    "not_adjusted_mixed": "Puede incluir dividendos reinvertidos, sin ajustar.",
+    "reason_multiplier_update_pending": "Un nuevo multiplicador entra en vigor después de que se observaron los precios, y desde cuándo rige el actual no está on-chain, así que no se usó.",
+    "reason_quote_unit_mixed": "Su multiplicador de xStocks es mayor que uno, y su precio cotizado mezcla plataformas que cotizan una acción con pools on-chain que cotizan un token en bruto, que incluye el multiplicador. Qué parte es cuál no se puede leer en la cotización, así que no se divide por el multiplicador. Su diferencia se muestra como acumulación, no como prima, y queda fuera del ancla y de la ruta líquida más barata.",
+    "scope_xstocks": "xStocks mantiene fijo cada token en bruto on-chain y sube un multiplicador publicado por dividendos y divisiones de acciones, así que un token en bruto vale el multiplicador en acciones. Un xStock envuelto (wrapped) vale siempre exactamente ese multiplicador en acciones, así que su precio se divide por él. La cotización del propio xStock mezcla plataformas que cotizan una acción con pools que cotizan un token en bruto, así que un xStock con un multiplicador mayor que uno se etiqueta en lugar de dividirse, y uno cuyo multiplicador sigue siendo uno se compara tal cual."
   },
   "intel_demo": {
     "banner_label": "Aviso de demostración",

@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "La date d’entrée en vigueur du multiplicateur n’a pas pu être lue : il n’a pas été utilisé.",
     "reason_account_not_found": "Le compte de jeton est introuvable.",
     "reason_not_token_2022": "Le compte de jeton ne relève pas du programme de jetons attendu : son multiplicateur n’a pas été utilisé.",
-    "reason_wrapper_observation_time_unknown": "Le fournisseur n’a donné aucune heure pour les prix des enveloppes : le multiplicateur alors en vigueur n’est pas connu."
+    "reason_wrapper_observation_time_unknown": "Le fournisseur n’a donné aucune heure pour les prix des enveloppes : le multiplicateur alors en vigueur n’est pas connu.",
+    "source_xstocks_solana_scaled_ui": "multiplicateur on-chain de xStocks",
+    "not_adjusted_mixed": "Peut inclure des dividendes réinvestis, non ajusté.",
+    "reason_multiplier_update_pending": "Un nouveau multiplicateur entre en vigueur après l’observation des prix, et la date d’entrée en vigueur de l’actuel n’est pas on-chain : il n’a pas été utilisé.",
+    "reason_quote_unit_mixed": "Son multiplicateur xStocks est supérieur à un, et son prix coté mélange des places qui cotent une action et des pools on-chain qui cotent un jeton brut, lequel inclut le multiplicateur. La part de chacun ne peut pas se lire dans la cotation : il n’est donc pas divisé par le multiplicateur. Son écart est affiché comme une accumulation, pas comme une prime, et il reste hors de l’ancre et de la route liquide la moins chère.",
+    "scope_xstocks": "Les xStocks gardent chaque jeton brut on-chain fixe et relèvent un multiplicateur publié pour les dividendes et les divisions d’actions : un jeton brut vaut donc le multiplicateur en actions. Un xStock enveloppé (wrapped) vaut toujours exactement ce multiplicateur en actions : son prix est donc divisé par lui. La cotation d’un xStock lui-même mélange des places qui cotent une action et des pools qui cotent un jeton brut : un xStock dont le multiplicateur dépasse un est donc signalé plutôt que divisé, et celui dont le multiplicateur vaut encore un est comparé tel quel."
   },
   "intel_demo": {
     "banner_label": "Avis de démonstration",

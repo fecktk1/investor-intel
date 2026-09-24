@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "Das Datum, ab dem der Multiplikator gilt, konnte nicht gelesen werden, daher wurde er nicht verwendet.",
     "reason_account_not_found": "Das Token-Konto wurde nicht gefunden.",
     "reason_not_token_2022": "Das Token-Konto gehört nicht zum erwarteten Token-Programm, daher wurde sein Multiplikator nicht verwendet.",
-    "reason_wrapper_observation_time_unknown": "Der Anbieter hat keine Zeit für die Preise der Hüllen angegeben, daher ist der damals gültige Multiplikator unbekannt."
+    "reason_wrapper_observation_time_unknown": "Der Anbieter hat keine Zeit für die Preise der Hüllen angegeben, daher ist der damals gültige Multiplikator unbekannt.",
+    "source_xstocks_solana_scaled_ui": "On-Chain-Multiplikator von xStocks",
+    "not_adjusted_mixed": "Enthält möglicherweise reinvestierte Dividenden, nicht bereinigt.",
+    "reason_multiplier_update_pending": "Ein neuer Multiplikator gilt erst nach der Beobachtung der Preise, und seit wann der aktuelle gilt, steht nicht on-chain, daher wurde er nicht verwendet.",
+    "reason_quote_unit_mixed": "Ihr xStocks-Multiplikator liegt über eins, und ihr Kurs mischt Handelsplätze, die eine Aktie bepreisen, mit On-Chain-Pools, die einen Roh-Token bepreisen, der den Multiplikator enthält. Welcher Teil welcher ist, lässt sich am Kurs nicht ablesen, daher wird ihr Preis nicht durch den Multiplikator geteilt. Ihre Differenz wird als Ansammlung gezeigt, nicht als Aufschlag, und sie bleibt aus dem Anker und dem günstigsten liquiden Weg ausgeschlossen.",
+    "scope_xstocks": "xStocks halten jeden Roh-Token on-chain fest und erhöhen für Dividenden und Aktiensplits einen veröffentlichten Multiplikator, daher ist ein Roh-Token so viele Aktien wert, wie der Multiplikator angibt. Ein Wrapped xStock ist immer genau diesen Multiplikator an Aktien wert, daher wird sein Preis durch ihn geteilt. Der Kurs eines xStocks selbst mischt Handelsplätze, die eine Aktie bepreisen, mit Pools, die einen Roh-Token bepreisen. Ein xStock mit einem Multiplikator über eins wird daher gekennzeichnet statt geteilt, und einer, dessen Multiplikator noch eins ist, wird so verglichen, wie er ist."
   },
   "intel_demo": {
     "banner_label": "Demo-Hinweis",

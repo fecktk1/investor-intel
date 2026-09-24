@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "Non è stato possibile leggere la data di entrata in vigore del moltiplicatore, quindi non è stato usato.",
     "reason_account_not_found": "Il conto token non è stato trovato.",
     "reason_not_token_2022": "Il conto token non appartiene al programma token previsto, quindi il suo moltiplicatore non è stato usato.",
-    "reason_wrapper_observation_time_unknown": "Il fornitore non ha indicato l’ora dei prezzi degli involucri, quindi il moltiplicatore allora in vigore non è noto."
+    "reason_wrapper_observation_time_unknown": "Il fornitore non ha indicato l’ora dei prezzi degli involucri, quindi il moltiplicatore allora in vigore non è noto.",
+    "source_xstocks_solana_scaled_ui": "moltiplicatore on-chain di xStocks",
+    "not_adjusted_mixed": "Può includere dividendi reinvestiti, non rettificato.",
+    "reason_multiplier_update_pending": "Un nuovo moltiplicatore entra in vigore dopo l’osservazione dei prezzi, e da quando vale quello attuale non è on-chain, quindi non è stato usato.",
+    "reason_quote_unit_mixed": "Il suo moltiplicatore xStocks è maggiore di uno, e il suo prezzo quotato mescola sedi che quotano un’azione con pool on-chain che quotano un token grezzo, il quale include il moltiplicatore. Quale parte sia quale non si può leggere dalla quotazione, quindi non viene diviso per il moltiplicatore. Il suo scarto è mostrato come accumulo, non come premio, e resta fuori dall’ancora e dalla via liquida più economica.",
+    "scope_xstocks": "Gli xStocks mantengono fisso ogni token grezzo on-chain e alzano un moltiplicatore pubblicato per dividendi e frazionamenti, quindi un token grezzo vale il moltiplicatore in azioni. Uno xStock incapsulato (wrapped) vale sempre esattamente quel moltiplicatore in azioni, quindi il suo prezzo viene diviso per esso. La quotazione dello xStock stesso mescola sedi che quotano un’azione con pool che quotano un token grezzo, quindi uno xStock con moltiplicatore maggiore di uno viene segnalato invece che diviso, e uno con moltiplicatore ancora pari a uno viene confrontato così com’è."
   },
   "intel_demo": {
     "banner_label": "Avviso demo",

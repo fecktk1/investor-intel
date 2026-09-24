@@ -314,11 +314,14 @@ const REFERENCE_REASONS = {
 // that token's multiplier on chain, the premium and the gap to the stock are of
 // the price divided by it, and the row says so with the multiplier, its source
 // and its date; the unadjusted figure stays beside it. Where no multiplier could
-// be applied, the gap is labelled as including reinvested dividends.
+// be applied, the gap is labelled as including reinvested dividends. An xStock
+// whose multiplier is above one is labelled too, as MAY include them: its quote
+// blends per-share venues with on-chain pools priced per raw token.
 
 /** Where a multiplier came from, in words. */
 const ACCRUAL_SOURCE_LABELS = {
   ondo_solana_scaled_ui: 'Ondo on-chain multiplier',
+  xstocks_solana_scaled_ui: 'xStocks on-chain multiplier',
 }
 /** Why a reinvesting wrapper was not adjusted, in words. */
 const ACCRUAL_REASONS = {
@@ -335,6 +338,8 @@ const ACCRUAL_REASONS = {
   account_not_found: 'The token account was not found.',
   not_token_2022: 'The token account is not held by the expected token program, so its multiplier was not used.',
   wrapper_observation_time_unknown: 'The provider gave no time for the wrapper prices, so the multiplier in effect then is not known.',
+  multiplier_update_pending: 'A new multiplier takes effect after the prices were observed, and when the current one took effect is not on chain, so it was not used.',
+  quote_unit_mixed: 'Its xStocks multiplier is above one, and its quoted price blends venues that price one share with on-chain pools that price one raw token, which includes the multiplier. Which part is which cannot be read from the quote, so it is not divided by the multiplier. Its gap is shown as an accrual, not a premium, and it is kept out of the anchor and the cheapest route.',
 }
 
 /** A multiplier as the row prints it, x1.0095. Four decimals: a year of an
@@ -342,6 +347,14 @@ const ACCRUAL_REASONS = {
 export function multiplierLabel(value) {
   const n = num(value)
   return n == null ? null : n.toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })
+}
+
+/** The short label on a wrapper that was not adjusted. A mixed-unit xStock MAY
+ * include reinvested dividends; every other one does. */
+export function notAdjustedLabel(t, token) {
+  return token?.accrualReason === 'quote_unit_mixed'
+    ? t('accrual.not_adjusted_mixed', { defaultValue: 'May include reinvested dividends, not adjusted.' })
+    : t('accrual.not_adjusted', { defaultValue: 'Includes reinvested dividends, not adjusted.' })
 }
 
 export function accrualReasonText(t, code) {
@@ -454,7 +467,7 @@ export function VsStockCell({ token, band, t, bps = 'bps' }) {
       return (
         <span>
           {bpsLabel(raw, bps)}
-          <span className={small}>{t('accrual.not_adjusted', { defaultValue: 'Includes reinvested dividends, not adjusted.' })}</span>
+          <span className={small}>{notAdjustedLabel(t, token)}</span>
         </span>
       )
     }
@@ -863,6 +876,11 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                     {t('accrual.scope', { defaultValue: 'Some wrappers reinvest the share\'s dividends inside the token, so one token is worth more than one share and its price drifts above the stock for reasons that are not a premium. Where the issuer publishes that token\'s multiplier on chain, the wrapper\'s price is divided by the multiplier in effect when the prices were observed before it is compared with its siblings or the stock, and the row names the multiplier, its source and its date. Where no multiplier could be read, nothing is guessed: the gap is shown as including reinvested dividends, not adjusted, and the wrapper is kept out of the anchor and the cheapest route.' })}
                                   </p>
                                 )}
+                                {row.tokens.some(token => token.accrualSource === 'xstocks_solana_scaled_ui' || token.accrualReason === 'quote_unit_mixed') && (
+                                  <p className="text-[11px] text-[var(--fg-4)] max-w-[80ch] mt-1">
+                                    {t('accrual.scope_xstocks', { defaultValue: 'xStocks keep each on-chain raw token fixed and raise a published multiplier for dividends and splits, so one raw token is worth the multiplier in shares. A wrapped xStock is always worth exactly that multiplier in shares, so its price is divided by it. An xStock\'s own quote blends venues that price one share with pools that price one raw token, so an xStock whose multiplier is above one is labelled rather than divided, and one whose multiplier is still one is compared as it stands.' })}
+                                  </p>
+                                )}
                                 {overTimeHref(location, row.rwaId) && (
                                   <p className="text-[11px] mt-1">
                                     <Link className="intel-text-link" to={overTimeHref(location, row.rwaId)}>
@@ -926,7 +944,7 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                               <span className="block text-[11px] text-[var(--fg-4)]">{t('accrual.raw', { value: bpsLabel(token.rawPremiumBps, bps), defaultValue: 'Before the multiplier: {{value}}' })}</span>
                                             )}
                                             {token.premiumBps == null && token.accrualGapBps != null && token.accrualTreatment === 'not_adjusted' && (
-                                              <span className="block text-[11px] text-[var(--fg-4)]">{t('accrual.not_adjusted', { defaultValue: 'Includes reinvested dividends, not adjusted.' })}</span>
+                                              <span className="block text-[11px] text-[var(--fg-4)]">{notAdjustedLabel(t, token)}</span>
                                             )}
                                           </td>
                                           {hasReference(row) && (
@@ -951,7 +969,8 @@ export default function RwaWrapperSpread({ showHeading = true }) {
                                             {token.unitState !== 'consistent' && (
                                               <span className="block text-[11px] text-[var(--fg-4)]">{unitLabel(token.unitState)}</span>
                                             )}
-                                            {token.reason && (
+                                            {/* A mixed-unit xStock's own reason says all of it; the generic one would not fit it. */}
+                                            {token.reason && token.accrualReason !== 'quote_unit_mixed' && (
                                               <span className="block text-[11px] text-[var(--fg-4)]">{reasonText(t, token.reason)}</span>
                                             )}
                                             {token.accrualTreatment === 'not_adjusted' && accrualReasonText(t, token.accrualReason) && (

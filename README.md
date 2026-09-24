@@ -89,7 +89,7 @@ One call returns every wrapper of the asset with its issuer. Against CMC's own `
 
 Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call:
 - `npm ci`, then `npm test` (26 demo tests in fixture mode), then `npm run build`;
-- **2,274 Deno tests from 244 of the 286 Deno test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission;
+- **2,280 Deno tests from 244 of the 286 Deno test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission;
 - **32 Vitest tests from 5 of the 6 Vitest test files in `production-source/`**, the React frontend's, listed in `production-source/runnable-vitest-tests.txt`, with the network globals replaced by ones that fail the test.
 
 The other 42 Deno test files (421 tests) and 1 Vitest test file (31 tests) are listed with the reason each can't run here in `production-source/excluded-tests.md`. Most import a module of the private parent platform. For the ones that only need such a module to load, `test-support/deno.json` maps it to a TEST STAND-IN in `test-support/stand-ins/`, and the Vitest run applies the same map. A stand-in has no behaviour: every export throws, and any use fails the run.
@@ -175,7 +175,7 @@ The server's source is `production-source/supabase/functions/intel-mcp-demo/`. I
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,274 tests from `production-source/runnable-tests.txt`, no key, no network permission. `npm run test:vitest`: 32 tests from `production-source/runnable-vitest-tests.txt`. `test-support/` holds the configs and the stand-ins those commands use. |
+| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,280 tests from `production-source/runnable-tests.txt`, no key, no network permission. `npm run test:vitest`: 32 tests from `production-source/runnable-vitest-tests.txt`. `test-support/` holds the configs and the stand-ins those commands use. |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm ci`, `npm test`, `npm run dev` (see Quick start) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |
@@ -186,7 +186,7 @@ The server's source is `production-source/supabase/functions/intel-mcp-demo/`. I
 Some Investor Intel modules import the private parent platform (authentication, the Supabase client and shared provider helpers), which is not in this repository.
 - **Tests that still run.** Where a test only needs such a module to load, it runs here against a stand-in that has no behaviour.
 - **Tests that don't.** Where it needs the module to work, it is listed in `production-source/excluded-tests.md` with the reason.
-- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 519 tests behind the RWA lane and the CMC transport.
+- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 525 tests behind the RWA lane and the CMC transport.
 
 The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
 
@@ -244,7 +244,7 @@ Open http://127.0.0.1:5187. The demo has three modes, set in a local `.env` (cop
 | **Live, with your own key** | `CMC_MODE=live`, `CMC_API_KEY=<your key>` and, for a hackathon Startup key, `CMC_VERIFIED_PLAN=startup` | **Real RWA listings, profiles, quotes and issuers** from `/v5/real-world-assets/*`, plus live quotes, OHLCV (Startup) and derivatives. The server spends at most 20 credits a month by default (`CMC_DEMO_CREDIT_LIMIT`) and never sends the key to the browser. |
 | Keyless | `CMC_MODE=keyless` | CoinMarketCap's anonymous public API, no key at all. It does not cover the RWA family, and the shared pool refuses bursts (HTTP 429). Caveat, verbatim: keyless commercial terms are unstated; keep it to the demo until reviewed. |
 
-The production modules have their own tests (Deno 2, and Vitest for the React frontend). This runs the same 2,274 Deno tests and 32 Vitest tests as CI:
+The production modules have their own tests (Deno 2, and Vitest for the React frontend). This runs the same 2,280 Deno tests and 32 Vitest tests as CI:
 
 ```bash
 npm run test:vitest

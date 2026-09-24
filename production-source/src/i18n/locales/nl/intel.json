@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "De datum waarop de multiplier inging kon niet worden gelezen, dus hij is niet gebruikt.",
     "reason_account_not_found": "Het tokenaccount is niet gevonden.",
     "reason_not_token_2022": "Het tokenaccount valt niet onder het verwachte tokenprogramma, dus de multiplier is niet gebruikt.",
-    "reason_wrapper_observation_time_unknown": "De aanbieder gaf geen tijd voor de prijzen van de wrappers, dus de multiplier die toen gold is onbekend."
+    "reason_wrapper_observation_time_unknown": "De aanbieder gaf geen tijd voor de prijzen van de wrappers, dus de multiplier die toen gold is onbekend.",
+    "source_xstocks_solana_scaled_ui": "on-chain multiplier van xStocks",
+    "not_adjusted_mixed": "Kan herbelegde dividenden bevatten, niet gecorrigeerd.",
+    "reason_multiplier_update_pending": "Een nieuwe multiplier gaat pas in na het waarnemen van de prijzen, en sinds wanneer de huidige geldt staat niet on-chain, dus hij is niet gebruikt.",
+    "reason_quote_unit_mixed": "De xStocks-multiplier is groter dan één, en de genoteerde prijs mengt handelsplatformen die één aandeel prijzen met on-chain pools die één ruwe token prijzen, en die bevat de multiplier. Welk deel wat is, valt niet uit de notering af te lezen, dus er wordt niet door de multiplier gedeeld. Het verschil wordt getoond als opbouw, niet als premie, en de wrapper blijft buiten het anker en de goedkoopste liquide route.",
+    "scope_xstocks": "xStocks houden elke ruwe token on-chain vast en verhogen een gepubliceerde multiplier voor dividenden en aandelensplitsingen, dus één ruwe token is de multiplier aan aandelen waard. Een wrapped xStock is altijd precies die multiplier aan aandelen waard, dus de prijs wordt erdoor gedeeld. De notering van een xStock zelf mengt handelsplatformen die één aandeel prijzen met pools die één ruwe token prijzen, dus een xStock met een multiplier boven één wordt gemarkeerd in plaats van gedeeld, en een xStock waarvan de multiplier nog één is, wordt vergeleken zoals hij is."
   },
   "intel_demo": {
     "banner_label": "Demomelding",

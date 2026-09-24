@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "Não foi possível ler a data em que o multiplicador entrou em vigor, então ele não foi usado.",
     "reason_account_not_found": "A conta de token não foi encontrada.",
     "reason_not_token_2022": "A conta de token não pertence ao programa de tokens esperado, então seu multiplicador não foi usado.",
-    "reason_wrapper_observation_time_unknown": "O provedor não informou o horário dos preços dos invólucros, então o multiplicador vigente naquele momento não é conhecido."
+    "reason_wrapper_observation_time_unknown": "O provedor não informou o horário dos preços dos invólucros, então o multiplicador vigente naquele momento não é conhecido.",
+    "source_xstocks_solana_scaled_ui": "multiplicador on-chain da xStocks",
+    "not_adjusted_mixed": "Pode incluir dividendos reinvestidos, sem ajuste.",
+    "reason_multiplier_update_pending": "Um novo multiplicador entra em vigor depois que os preços foram observados, e desde quando o atual vale não está on-chain, então ele não foi usado.",
+    "reason_quote_unit_mixed": "O multiplicador xStocks dele é maior que um, e o preço cotado mistura plataformas que cotam uma ação com pools on-chain que cotam um token bruto, que inclui o multiplicador. Qual parte é qual não pode ser lido na cotação, então ele não é dividido pelo multiplicador. A diferença aparece como acumulação, não como prêmio, e ele fica fora da âncora e da rota líquida mais barata.",
+    "scope_xstocks": "A xStocks mantém fixo cada token bruto on-chain e eleva um multiplicador publicado para dividendos e desdobramentos, então um token bruto vale o multiplicador em ações. Um xStock encapsulado (wrapped) vale sempre exatamente esse multiplicador em ações, então seu preço é dividido por ele. A cotação do próprio xStock mistura plataformas que cotam uma ação com pools que cotam um token bruto, então um xStock com multiplicador acima de um é sinalizado em vez de dividido, e um cujo multiplicador ainda é um é comparado como está."
   },
   "intel_demo": {
     "banner_label": "Aviso de demonstração",

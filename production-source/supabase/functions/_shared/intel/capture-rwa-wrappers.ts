@@ -35,8 +35,8 @@
 //   7. Before any spread is computed, the dividend-reinvestment multiplier of
 //      every wrapper that reinvests dividends into its price
 //      (`accrual-multiplier.ts`): ONE batched keyless Solana RPC request for the
-//      Ondo mints, zero provider credits. A wrapper with a sourced multiplier is
-//      compared at its per-share price; one without is labelled, never guessed.
+//      Ondo and xStocks mints, zero provider credits. A sourced multiplier gives a
+//      per-share price; without one (or on a mixed-unit xStock) it is labelled.
 //
 //   Upper bound: 6 calls and 5 credits per run. At the six-hourly cadence below
 //   that is 20 credits a day, against a Startup allowance measured in hundreds
@@ -75,7 +75,7 @@ import {
   observationRow, tradfiTickers, type UnderlyingReferenceSource, type ReferenceEvidence, type ReferenceOp,
 } from './underlying-reference.ts'
 import {
-  resolveAccrual, ondoSolanaMultiplierSource, type AccrualMultiplierSource, type AccrualStepResult,
+  resolveAccrual, solanaScaledUiMultiplierSource, type AccrualMultiplierSource, type AccrualStepResult,
 } from './accrual-multiplier.ts'
 
 /** The pg_cron job that runs this lane (UTC), from migration
@@ -124,7 +124,7 @@ export interface RwaWrapperDeps extends CaptureDeps {
    * `false` switches the step off without touching the wrapper capture. */
   referenceSource?: UnderlyingReferenceSource | false
   /** Where a reinvesting wrapper's dividend multiplier comes from. Defaults to
-   * the Ondo Solana mints over a public RPC; a test injects a fake, and `false`
+   * the Ondo and xStocks Solana mints over a public RPC; a test injects a fake, and `false`
    * switches the READ off: the wrappers are then still found and labelled as
    * not adjusted, never reported as premiums. */
   accrualSource?: AccrualMultiplierSource | false
@@ -476,13 +476,13 @@ export async function accrualStep(
   const inputs = assets
     .filter((asset) => asset.tokens.filter((token) => !isDerivativeReference(token)).length >= 2)
     .map((asset) => ({ rwaId: asset.rwaId, observedAt: asset.observedAt, tokens: asset.tokens }))
-  const source = deps.accrualSource === false ? false : deps.accrualSource || ondoSolanaMultiplierSource()
+  const source = deps.accrualSource === false ? false : deps.accrualSource || solanaScaledUiMultiplierSource()
   try {
     return await resolveAccrual(inputs, source, readAt)
   } catch (e) {
     const message = ((e as Error)?.message || 'multiplier_read_failed').slice(0, 120)
     try {
-      const failing: AccrualMultiplierSource = { id: 'ondo_solana_scaled_ui', network: 'solana', read: () => Promise.reject(new Error(message)) }
+      const failing: AccrualMultiplierSource = { id: 'solana_scaled_ui', network: 'solana', read: () => Promise.reject(new Error(message)) }
       return await resolveAccrual(inputs, failing, readAt)
     } catch {
       return { verdicts: new Map(), reinvesting: 0, adjusted: 0, notAdjusted: 0, reads: 0, error: message }

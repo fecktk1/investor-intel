@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "Data kur shumëzuesi hyri në fuqi nuk mund të lexohej, prandaj ai nuk u përdor.",
     "reason_account_not_found": "Llogaria e tokenit nuk u gjet.",
     "reason_not_token_2022": "Llogaria e tokenit nuk i përket programit të pritur të tokenëve, prandaj shumëzuesi i saj nuk u përdor.",
-    "reason_wrapper_observation_time_unknown": "Ofruesi nuk dha kohë për çmimet e mbulësëve, prandaj shumëzuesi që ishte në fuqi atëherë nuk dihet."
+    "reason_wrapper_observation_time_unknown": "Ofruesi nuk dha kohë për çmimet e mbulësëve, prandaj shumëzuesi që ishte në fuqi atëherë nuk dihet.",
+    "source_xstocks_solana_scaled_ui": "shumëzuesi on-chain i xStocks",
+    "not_adjusted_mixed": "Mund të përfshijë dividendë të riinvestuar, i parregulluar.",
+    "reason_multiplier_update_pending": "Një shumëzues i ri hyn në fuqi pasi u vëzhguan çmimet, dhe se që kur vlen shumëzuesi aktual nuk është on-chain, prandaj nuk u përdor.",
+    "reason_quote_unit_mixed": "Shumëzuesi i tij xStocks është mbi një, dhe çmimi i kuotuar përzien vende tregtimi që kuotojnë një aksion me pool-e on-chain që kuotojnë një token të papërpunuar, i cili përfshin shumëzuesin. Cila pjesë është cila nuk mund të lexohet nga kuotimi, prandaj nuk pjesëtohet me shumëzuesin. Diferenca e tij shfaqet si grumbullim, jo si prim, dhe mbulësi mbetet jashtë spirancës dhe rrugës likuide më të lirë.",
+    "scope_xstocks": "xStocks e mbajnë të fiksuar çdo token të papërpunuar on-chain dhe rrisin një shumëzues të publikuar për dividendët dhe ndarjet e aksioneve, prandaj një token i papërpunuar vlen sa shumëzuesi në aksione. Një xStock i mbështjellë (wrapped) vlen gjithmonë saktësisht sa ai shumëzues në aksione, prandaj çmimi i tij pjesëtohet me të. Kuotimi i vetë xStock-ut përzien vende tregtimi që kuotojnë një aksion me pool-e që kuotojnë një token të papërpunuar, prandaj një xStock me shumëzues mbi një shënohet në vend që të pjesëtohet, dhe ai me shumëzues ende një krahasohet ashtu siç është."
   },
   "intel_demo": {
     "banner_label": "Njoftim demo",

@@ -4747,7 +4747,12 @@
     "reason_multiplier_time_unreadable": "The date the multiplier took effect could not be read, so it was not used.",
     "reason_account_not_found": "The token account was not found.",
     "reason_not_token_2022": "The token account is not held by the expected token program, so its multiplier was not used.",
-    "reason_wrapper_observation_time_unknown": "The provider gave no time for the wrapper prices, so the multiplier in effect then is not known."
+    "reason_wrapper_observation_time_unknown": "The provider gave no time for the wrapper prices, so the multiplier in effect then is not known.",
+    "source_xstocks_solana_scaled_ui": "xStocks on-chain multiplier",
+    "not_adjusted_mixed": "May include reinvested dividends, not adjusted.",
+    "reason_multiplier_update_pending": "A new multiplier takes effect after the prices were observed, and when the current one took effect is not on chain, so it was not used.",
+    "reason_quote_unit_mixed": "Its xStocks multiplier is above one, and its quoted price blends venues that price one share with on-chain pools that price one raw token, which includes the multiplier. Which part is which cannot be read from the quote, so it is not divided by the multiplier. Its gap is shown as an accrual, not a premium, and it is kept out of the anchor and the cheapest route.",
+    "scope_xstocks": "xStocks keep each on-chain raw token fixed and raise a published multiplier for dividends and splits, so one raw token is worth the multiplier in shares. A wrapped xStock is always worth exactly that multiplier in shares, so its price is divided by it. An xStock's own quote blends venues that price one share with pools that price one raw token, so an xStock whose multiplier is above one is labelled rather than divided, and one whose multiplier is still one is compared as it stands."
   },
   "intel_demo": {
     "banner_label": "Demo notice",

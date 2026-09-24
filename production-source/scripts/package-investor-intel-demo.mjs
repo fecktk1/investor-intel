@@ -71,7 +71,7 @@ const productionSources=[
   ['chains','provider-budget'].map(name=>`supabase/functions/_shared/${name}.ts`),
   'supabase/functions/_shared/memecoin/degen-gate.ts',
   // Three RWA tests assert against the schema that stores their output.
-  ['20260920150000_intel_rwa_wrapper_spread','20260920151000_intel_rwa_depth','20260920152000_intel_rwa_underlying_registrants','20260922100000_intel_rwa_wrapper_premium_backfill','20260922110000_intel_rwa_universe_coverage'].map(name=>`supabase/migrations/${name}.sql`),
+  ['20260920150000_intel_rwa_wrapper_spread','20260920151000_intel_rwa_depth','20260920152000_intel_rwa_underlying_registrants','20260922100000_intel_rwa_wrapper_premium_backfill','20260922110000_intel_rwa_universe_coverage','20260924000000_intel_rwa_wrapper_xstocks_multiplier'].map(name=>`supabase/migrations/${name}.sql`),
 )
 const productionSet=new Set(productionSources)
 for(const file of productionSources.filter(file=>file.endsWith('.ts'))){

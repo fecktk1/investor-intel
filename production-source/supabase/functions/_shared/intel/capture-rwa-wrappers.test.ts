@@ -761,6 +761,8 @@ const SPY_TOKENS = [
   { crypto_id: 41525, symbol: 'wSPYx', name: 'Wrapped SP500 Tokenized ETF (xStock)', issuer_id: '6878977dcbbf471de3366e85', issuer_name: 'Backed Assets', price: 772.072232628172, market_cap: 0, volume_24h: 98025.95433425 },
 ]
 const SPYON_MINT = 'k18WJUULWheRkSpSquYGdNNmtuE2Vbw1hpuUi92ondo'
+const SPYX_MINT = 'XsoCS1TfEyfFhfvj8EtZ528L3CaKBDBRqRapnBbDF2W'
+const XSTOCKS_AUTHORITY = 'S7vYFFWH6BjJyEsdrPQpqpYTqLTrPRK6KW3VwsJuRaS'
 const accrualHandler = () => {
   const base = handler()
   return (name: string, params: Record<string, unknown>) => {
@@ -772,20 +774,29 @@ const accrualHandler = () => {
   }
 }
 
-/** A stand-in multiplier source: SPYon's real 2026-09-23 reading, a later one,
- * or a failed read. Records what it was asked for. */
-function fakeAccrual(options: { fail?: boolean; effectiveAt?: number } = {}) {
-  const asked: { mint: string; symbol: string }[] = []
+/** A stand-in multiplier source: SPYon's and SPYx's real 2026-09-23 readings
+ * (SPYon's effective time may be moved), or a failed read. Records what it was
+ * asked for. */
+function fakeAccrual(options: { fail?: boolean; effectiveAt?: number; readAt?: string } = {}) {
+  const asked: { mint: string; symbol: string; authority?: string }[] = []
   const source: AccrualMultiplierSource = {
-    id: 'ondo_solana_scaled_ui', network: 'solana',
-    read(requests, readAt) {
+    id: 'solana_scaled_ui', network: 'solana',
+    read(requests, runReadAt) {
       asked.push(...requests)
+      // The lane's own clock is a week back from today, so a test that turns on
+      // when the chain was read pins it.
+      const readAt = options.readAt ?? runReadAt
       if (options.fail) return Promise.reject(new Error('rpc_http_503'))
-      return Promise.resolve(new Map(requests.map((r) => [r.mint, {
-        mint: r.mint, state: 'read' as const, reason: null, detail: null, onChainSymbol: r.symbol,
-        multiplier: 1.0094730727840426, newMultiplier: 1.0094730727840426,
-        effectiveAt: options.effectiveAt ?? 1789754055, readAt,
-      }])))
+      return Promise.resolve(new Map(requests.map((r) => [r.mint, r.mint === SPYX_MINT
+        ? {
+          mint: r.mint, state: 'read' as const, reason: null, detail: null, onChainSymbol: r.symbol,
+          multiplier: 1.003909240011759, newMultiplier: 1.005714560286254, effectiveAt: 1781755200, readAt,
+        }
+        : {
+          mint: r.mint, state: 'read' as const, reason: null, detail: null, onChainSymbol: r.symbol,
+          multiplier: 1.0094730727840426, newMultiplier: 1.0094730727840426,
+          effectiveAt: options.effectiveAt ?? 1789754055, readAt,
+        }])))
     },
   }
   return { source, asked }
@@ -798,9 +809,9 @@ Deno.test('accrual: the lane divides a reinvesting wrapper by its own multiplier
     { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: acc.source })
   // Zero credits: the provider calls are exactly what they were.
   assert(result.credits <= 5)
-  eq(result.accrual, { reinvesting: 2, adjusted: 1, notAdjusted: 1, reads: 1 })
-  // Only the registry mint is read, once.
-  eq(acc.asked, [{ mint: SPYON_MINT, symbol: 'SPYon' }])
+  eq(result.accrual, { reinvesting: 3, adjusted: 2, notAdjusted: 1, reads: 2 })
+  // Only the registry mints are read, once each: SPYX and wSPYx share SPYx's.
+  eq(acc.asked, [{ mint: SPYX_MINT, symbol: 'SPYx', authority: XSTOCKS_AUTHORITY }, { mint: SPYON_MINT, symbol: 'SPYon' }])
   // deno-lint-ignore no-explicit-any
   const tokens = writes[TOKEN_TABLE] as any[]
   const on = tokens.find((row) => row.crypto_id === '38067')
@@ -816,15 +827,28 @@ Deno.test('accrual: the lane divides a reinvesting wrapper by its own multiplier
   eq(on.wrapper_state, 'liquid')
   eq(Math.round(on.premium_bps * 10) / 10, 5.8)
   eq(Math.round(on.raw_premium_bps * 10) / 10, 100.6)
-  // The wrapped xStock is labelled, not guessed.
+  // The wrapped xStock is divided by SPYx's multiplier: one wrapped token is that many shares.
   const wrapped = tokens.find((row) => row.crypto_id === '41525')
-  eq(wrapped.wrapper_state, 'accrues_in_price')
-  eq(wrapped.state_reason, 'reinvested_dividends_not_adjusted')
-  eq(wrapped.accrual_treatment, 'not_adjusted')
-  eq(wrapped.accrual_reason, 'no_multiplier_source')
-  eq(wrapped.premium_bps, null)
-  eq(wrapped.accrual_multiplier, null)
-  assert(wrapped.accrual_gap_bps != null)
+  eq(wrapped.accrual_treatment, 'adjusted')
+  eq(wrapped.accrual_multiplier, 1.005714560286254)
+  eq(wrapped.accrual_multiplier_source, 'xstocks_solana_scaled_ui')
+  eq(wrapped.accrual_multiplier_as_of, '2026-06-18T04:00:00.000Z')
+  eq(wrapped.accrual_multiplier_address, SPYX_MINT)
+  eq(wrapped.wrapper_state, 'too_thin_to_anchor')
+  eq(Math.round(wrapped.premium_bps * 10) / 10, -3.7)
+  eq(Math.round(wrapped.raw_premium_bps * 10) / 10, 53.4)
+  // SPYX: its multiplier is proved and above 1, but its quote blends per-share
+  // venues with per-raw-unit pools, so it is labelled, not divided, and never anchors.
+  const spyx = tokens.find((row) => row.crypto_id === '37006')
+  eq(spyx.wrapper_state, 'accrues_in_price')
+  eq(spyx.state_reason, 'reinvested_dividends_not_adjusted')
+  eq(spyx.accrual_treatment, 'not_adjusted')
+  eq(spyx.accrual_reason, 'quote_unit_mixed')
+  eq(spyx.accrual_multiplier, null)
+  eq(spyx.adjusted_price, null)
+  eq(spyx.premium_bps, null)
+  eq(spyx.in_anchor, false)
+  eq(Math.round(spyx.accrual_gap_bps * 10) / 10, 34.6)
   // Every wrapper row carries every accrual key, so an upsert clears a stale one.
   for (const row of tokens) assert('accrual_treatment' in row && 'adjusted_price' in row && 'raw_premium_bps' in row)
   eq(tokens.find((row) => row.crypto_id === '40694').accrual_treatment, null)
@@ -832,8 +856,9 @@ Deno.test('accrual: the lane divides a reinvesting wrapper by its own multiplier
   assert(tokens.filter((row) => row.rwa_id === '2').every((row) => row.accrual_treatment === null))
   // deno-lint-ignore no-explicit-any
   const spy = (writes[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '86')
-  eq(spy.accrual_adjusted_count, 1)
+  eq(spy.accrual_adjusted_count, 2)
   eq(spy.accrual_count, 1)
+  // SPYX leaving the anchor does not move it here: the Robinhood token is the weighted median either way.
   eq(spy.anchor_price, 767.9687413290569)
 })
 
@@ -852,13 +877,37 @@ Deno.test('accrual: a failed or out-of-date multiplier labels the wrapper and ne
   eq(on.accrual_multiplier, null)
   eq(on.premium_bps, null)
   eq(on.in_anchor, false)
-  eq(Math.round(on.accrual_gap_bps * 10) / 10, 100.6)
+  // SPYX and wSPYx are labelled with the same reason: an xStock whose multiplier
+  // could not be read is never assumed to be at 1.
+  // deno-lint-ignore no-explicit-any
+  for (const id of ['37006', '41525']) {
+    // deno-lint-ignore no-explicit-any
+    const row = (failed[TOKEN_TABLE] as any[]).find((r) => r.crypto_id === id)
+    eq(row.accrual_reason, 'multiplier_read_failed')
+    eq(row.premium_bps, null)
+    eq(row.in_anchor, false)
+  }
+  // That leaves SPY one liquid wrapper, so it has no anchor and no gap at all:
+  // fewer figures, never a wrong one.
+  // deno-lint-ignore no-explicit-any
+  const spy = (failed[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '86')
+  eq(spy.anchor_price, null)
+  eq(spy.anchor_reason, 'not_enough_liquid_wrappers')
+  eq(on.accrual_gap_bps, null)
   // A multiplier that took effect after the prices were observed is not applied.
   const late: Record<string, unknown[]> = {}
   await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, late), ctxFor, NOW,
-    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: fakeAccrual({ effectiveAt: Date.parse('2026-09-21T00:00:00Z') / 1000 }).source })
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: fakeAccrual({ effectiveAt: Date.parse('2026-09-21T00:00:00Z') / 1000, readAt: '2026-09-23T21:30:00.000Z' }).source })
   // deno-lint-ignore no-explicit-any
   eq((late[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067').accrual_reason, 'multiplier_changed_after_observation')
+  // Still pending when the chain was read: a stated reason of its own, not applied either.
+  const pending: Record<string, unknown[]> = {}
+  await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, pending), ctxFor, NOW,
+    { request: fakeRequest(accrualHandler()).request, referenceSource: false, accrualSource: fakeAccrual({ effectiveAt: Date.parse('2026-09-21T00:00:00Z') / 1000, readAt: '2026-09-20T20:00:00.000Z' }).source })
+  // deno-lint-ignore no-explicit-any
+  const pendingRow = (pending[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067')
+  eq(pendingRow.accrual_reason, 'multiplier_update_pending')
+  eq(pendingRow.premium_bps, null)
   // The read switched off still labels, never reverts to a premium.
   const off: Record<string, unknown[]> = {}
   await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, off), ctxFor, NOW,
@@ -890,7 +939,7 @@ Deno.test('accrual: the one-off op recomputes the newest capture, re-reads the r
   eq(result.error, undefined)
   eq(result.capturedAt, HOUR)
   // deno-lint-ignore no-explicit-any
-  eq((result.accrual as any).adjusted, 1)
+  eq((result.accrual as any).adjusted, 2)
   // deno-lint-ignore no-explicit-any
   const on = (writes[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067')
   eq(on.accrual_treatment, 'adjusted')
@@ -901,7 +950,7 @@ Deno.test('accrual: the one-off op recomputes the newest capture, re-reads the r
   eq(on.fetched_at, (tables[TOKEN_TABLE] as any[]).find((row) => row.crypto_id === '38067').fetched_at)
   // deno-lint-ignore no-explicit-any
   const spy = (writes[ASSET_TABLE] as any[]).find((row) => row.rwa_id === '86')
-  eq(spy.accrual_adjusted_count, 1)
+  eq(spy.accrual_adjusted_count, 2)
   eq(spy.source_observed_at, '2026-09-20T14:25:00.000Z')
   // The reference is re-read at the stored quote clock, and tagged with this op.
   eq(ref.asked[0].asOfMs, Date.parse('2026-09-20T14:25:00.000Z'))
@@ -936,7 +985,7 @@ Deno.test('accrual: the one-off op recomputes the newest capture, re-reads the r
   const board = await readRwaWrappers(fakeDb({ [ASSET_TABLE]: writes[ASSET_TABLE], [TOKEN_TABLE]: writes[TOKEN_TABLE] }), {}, later)
   // deno-lint-ignore no-explicit-any
   const row = (board.rows as any[]).find((r) => r.rwaId === '86')
-  eq(row.accrualAdjustedCount, 1)
+  eq(row.accrualAdjustedCount, 2)
   // deno-lint-ignore no-explicit-any
   const wrapper = row.tokens.find((t: any) => t.cryptoId === '38067')
   eq(wrapper.accrualTreatment, 'adjusted')
@@ -946,12 +995,18 @@ Deno.test('accrual: the one-off op recomputes the newest capture, re-reads the r
   eq(Math.round(wrapper.rawPremiumBps * 10) / 10, 100.6)
   // deno-lint-ignore no-explicit-any
   const wrapped = row.tokens.find((t: any) => t.cryptoId === '41525')
-  eq(wrapped.accrualTreatment, 'not_adjusted')
-  eq(wrapped.accrualReason, 'no_multiplier_source')
+  eq(wrapped.accrualTreatment, 'adjusted')
+  eq(wrapped.accrualSource, 'xstocks_solana_scaled_ui')
+  eq(wrapped.accrualMultiplier, 1.005714560286254)
   // deno-lint-ignore no-explicit-any
-  eq((board.summary as any).accrualAdjusted, 1)
+  const spyx = row.tokens.find((t: any) => t.cryptoId === '37006')
+  eq(spyx.accrualTreatment, 'not_adjusted')
+  eq(spyx.accrualReason, 'quote_unit_mixed')
+  eq(spyx.premiumBps, null)
+  // deno-lint-ignore no-explicit-any
+  eq((board.summary as any).accrualAdjusted, 2)
   eq(typeof board.accrualScope, 'string')
   // deno-lint-ignore no-explicit-any
-  const excluded = row.picks.excluded.find((e: any) => e.cryptoId === '41525')
+  const excluded = row.picks.excluded.find((e: any) => e.cryptoId === '37006')
   eq(excluded.reason, 'reinvested_dividends_not_adjusted')
 })
