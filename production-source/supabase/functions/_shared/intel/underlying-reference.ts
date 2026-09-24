@@ -18,11 +18,12 @@
 // feed's band, and a gap inside the band is stated as NOT DISTINGUISHABLE rather
 // than presented as a premium (`referenceGap`).
 //
-// THE CLOCK IS THE WRAPPER PRICES' CLOCK, NOT OURS. Measured 2026-09-23: the
-// provider's RWA quotes refresh twice a day (`last_updated` 08:45:59 and
-// 20:45:59 UTC) and the 14:47 capture returned token prices identical to the
-// 08:47 one. Comparing those prices with the stock's price at 14:47 would put a
-// pre-market wrapper price against a mid-session stock price. So the reference
+// THE CLOCK IS THE WRAPPER PRICES' CLOCK, NOT OURS. A capture's prices carry
+// the provider's own `last_updated`, which can be earlier than the capture run
+// (until 2026-09-24 a stale shared copy made some runs store the previous run's
+// prices; the lane now waits for its live read, see capture-rwa-wrappers.ts).
+// Comparing a wrapper price with the stock's price at the run time would put
+// prices from two different moments side by side. So the reference
 // is the feed round IN EFFECT at the instant the wrapper prices were observed
 // (the asset's `source_observed_at`), found by walking back a bounded number of
 // rounds, and the session is named for that same instant.

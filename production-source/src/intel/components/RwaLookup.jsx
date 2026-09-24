@@ -4,13 +4,23 @@ import i18next from 'i18next'
 import { formatDataTime } from '../lib/as-of'
 import { fmtPrice, fmtVol } from '../lib/market-format'
 import { lookupRwaAsset, normaliseLookupQuery, RWA_LOOKUP_EXAMPLES, RWA_LOOKUP_PATTERN } from '../lib/rwa-lookup-api'
+import { lookupCostReceipt, lookupReasonText, quoteReadSentence } from '../lib/rwa-lookup-read'
+import ReceiptCostLine from './ReceiptCostLine'
+import ReceiptParameters from './ReceiptParameters'
 
-// "Look up any tokenised asset, now": one input and one answer, on /intel/rwa
-// for members and demo visitors alike. The answer names the asset, its price,
+// "Look up any tokenised asset": one input and one answer, on /intel/rwa for
+// members and demo visitors alike. The answer names the asset, its price,
 // tokenised value, wrappers and premium when present, and under "How this was
 // fetched" the proof for each figure: endpoint, parameters, cache or live with
 // its age, HTTP status, credits, the reproduce curl (never a key) and a trimmed
 // raw JSON excerpt.
+//
+// Live or stored is said per answer, in words, beside the quote: ONE real
+// CoinMarketCap call when the stored copy may be out of date (with its receipt,
+// "1 provider call · 1 credit · live"), otherwise the stored answer with its
+// retrieval time, CoinMarketCap's own last update and why no call was made.
+// "Check CoinMarketCap now" asks for the call directly, inside a small daily
+// allowance per visitor, and says why when that allowance is used up.
 //
 // House style: no pills, chips, badges, cards or tiles. A sentence, hairline
 // tables, text links and a <details> disclosure.
@@ -26,24 +36,6 @@ const SERVED_DEFAULTS = {
   retained: 'Kept copy, {{age}} old: the live read did not answer',
   capture: 'Recorded capture, {{age}} old, no call made for this lookup',
   unavailable: 'Nothing answered',
-}
-const REASON_DEFAULTS = {
-  provider_unavailable: 'CoinMarketCap did not answer the live read (for example a plan refusal or an outage).',
-  insufficient_entitlement: 'Our CoinMarketCap plan does not include this read right now.',
-  credential_unavailable: 'The live CoinMarketCap connection is not configured.',
-  quota_exhausted: 'The CoinMarketCap monthly allowance is used up.',
-  rate_limited: 'CoinMarketCap asked us to slow down.',
-  free_rwa_budget_exhausted: "Today's shared allowance of free live reads is used up.",
-  free_rwa_budget_unavailable: "The shared allowance of free live reads could not be checked, so no live read was made.",
-  free_rwa_lane_disabled: 'Free live reads are switched off for now.',
-  free_rwa_background_read: 'A background refresh never makes a live read.',
-  free_rwa_ip_hourly_limit: 'This address has used its live reads for the hour, so the newest copy is shown.',
-  refresh_required: 'The shared cache had no copy inside its window.',
-  live_read_unavailable: 'No live read was possible for this lookup.',
-  shared_cache_past_refresh: 'The shared copy is past its refresh window; it is shown with its age.',
-  call_log_not_retained: 'The call log for this capture is no longer kept, so its HTTP status and credits are not shown.',
-  wrapper_rows_unavailable: 'The wrapper rows of this capture could not be read.',
-  no_quote_captured: 'No quote for this asset has been captured yet.',
 }
 
 export function ageText(t, seconds) {
@@ -63,8 +55,7 @@ export function storedAgeText(t, seconds) {
 }
 
 export function reasonText(t, code) {
-  if (!code) return null
-  return t(`rwa_lookup.reason_${code}`, { defaultValue: REASON_DEFAULTS[code] || t('rwa_lookup.reason_other', { code, defaultValue: 'The live read did not answer ({{code}}).' }) })
+  return lookupReasonText(t, code)
 }
 
 /** Why a figure is what it is: the reason, and for a copy past its refresh
@@ -89,13 +80,16 @@ function FigureReceipt({ name, figure }) {
   const r = figure?.receipt
   if (!r) return null
   const absent = t('rwa_lookup.not_reported', { defaultValue: 'not reported' })
-  const params = Object.entries(r.params || {})
+  // The request this figure's curl reproduces (reproduceLine in rwa-lookup.ts
+  // builds it as a live keyed request), so the parameters shown are the ones
+  // that command sends, convert=USD included.
+  const request = { capability: r.capability, endpoint: r.endpoint, parameters: r.params || {}, origin: 'live', keyMode: 'keyed', provider: 'coinmarketcap' }
   return (
     <div className={`${rule} py-3`} data-figure={name}>
       <h4 className="text-[13px] font-medium">{t(`rwa_lookup.figure_${name}`, { defaultValue: FIGURE_DEFAULTS[name] })}</h4>
       <dl className="intel-event-facts">
         <dt>{t('rwa_lookup.endpoint', { defaultValue: 'Endpoint' })}</dt><dd className="break-all">{r.endpoint || absent}</dd>
-        <dt>{t('rwa_lookup.parameters', { defaultValue: 'Parameters' })}</dt><dd className="break-all">{params.length ? params.map(([k, v]) => `${k}=${v}`).join(' · ') : t('common.none', { defaultValue: 'None' })}</dd>
+        <dt>{t('rwa_lookup.parameters', { defaultValue: 'Parameters' })}</dt><dd className="break-all"><ReceiptParameters receipt={request} /></dd>
         <dt>{t('rwa_lookup.answered_by', { defaultValue: 'Answered by' })}</dt><dd data-served={r.served}>{servedText(t, r)}
           {/* The scheduled warm read: one call for many assets, named in the parameters above. */}
           {Number(r.batchSize) > 1 && <p className="intel-analysis-caption" data-testid="rwa-lookup-batch">{t('rwa_lookup.batch_note', { size: r.batchSize, defaultValue: 'This figure comes from one scheduled shared read of {{size}} assets, the request shown above; this lookup made no call.' })}</p>}</dd>
@@ -120,7 +114,26 @@ function FigureReceipt({ name, figure }) {
   )
 }
 
-function Answer({ answer, onPick }) {
+/** Live or stored, in words, beside the quote; the cost line of the read that
+ * answered it; and the visitor's own "Check CoinMarketCap now". */
+function QuoteRead({ answer, onCheck }) {
+  const { t, i18n } = useTranslation('intel', { useSuspense: false })
+  const read = answer.quoteRead
+  const sentence = quoteReadSentence(t, read, { language: i18n?.language || i18next.language })
+  const cost = lookupCostReceipt(answer.figures?.quote?.receipt)
+  return (
+    <div className="space-y-1" data-testid="rwa-lookup-read" data-mode={read?.mode || undefined}>
+      {sentence && <p className="text-[13px]" data-testid="rwa-lookup-read-sentence">{sentence}</p>}
+      {cost && <p className="text-[12px] text-[var(--fg-4)]"><ReceiptCostLine receipt={cost} /></p>}
+      {onCheck && <p className="text-[12px] text-[var(--fg-4)]">
+        <button type="button" className="btn btn--quiet btn--sm" onClick={onCheck} data-testid="rwa-lookup-check">{t('rwa_lookup.check_now', { defaultValue: 'Check CoinMarketCap now' })}</button>{' '}
+        {t('rwa_lookup.check_now_caption', { defaultValue: 'Makes one call to CoinMarketCap for this asset, within a small daily allowance for each visitor.' })}
+      </p>}
+    </div>
+  )
+}
+
+function Answer({ answer, onPick, onCheck }) {
   const { t } = useTranslation('intel', { useSuspense: false })
   if (answer.state === 'not_found' || answer.state === 'unavailable') {
     const cat = answer.catalogue || {}
@@ -152,6 +165,7 @@ function Answer({ answer, onPick }) {
           ? t('rwa_lookup.stored_answer_refreshing', { age: storedAgeText(t, answer.stored.ageSeconds), defaultValue: 'This answer was assembled {{age}} ago and a newer one is being assembled now. Each figure keeps its own capture time.' })
           : t('rwa_lookup.stored_answer', { age: storedAgeText(t, answer.stored.ageSeconds), defaultValue: 'This answer was assembled {{age}} ago. Each figure keeps its own capture time.' })}</p>}
       </div>
+      {(q || answer.quoteRead) && <QuoteRead answer={answer} onCheck={onCheck} />}
       {q ? (
         <dl className="intel-event-facts">
           <dt>{t('rwa_lookup.price', { defaultValue: 'Average tokenised price (USD)' })}</dt><dd>{q.averageTokenizedPrice == null ? t('rwa_lookup.not_reported', { defaultValue: 'not reported' }) : fmtPrice(q.averageTokenizedPrice)}</dd>
@@ -217,16 +231,16 @@ export default function RwaLookup({ lookup = lookupRwaAsset }) {
   const controller = useRef(null)
   useEffect(() => () => controller.current?.abort(), [])
 
-  const run = async (value) => {
+  const run = async (value, { check = false } = {}) => {
     const q = normaliseLookupQuery(value)
     setDraft(q)
     if (!RWA_LOOKUP_PATTERN.test(q)) { setRead({ status: 'error', answer: null, error: { code: 'invalid_query' } }); return }
     controller.current?.abort()
     const ctl = new AbortController()
     controller.current = ctl
-    setRead({ status: 'loading', answer: null, error: null })
+    setRead({ status: 'loading', answer: null, error: null, check })
     try {
-      const answer = await lookup(q, { signal: ctl.signal })
+      const answer = await lookup(q, check ? { signal: ctl.signal, check: true } : { signal: ctl.signal })
       if (!ctl.signal.aborted) setRead({ status: 'ready', answer, error: null })
     } catch (error) {
       if (ctl.signal.aborted || error?.name === 'AbortError') return
@@ -243,8 +257,9 @@ export default function RwaLookup({ lookup = lookupRwaAsset }) {
   return (
     <section className="intel-rwa-lookup space-y-3 border-b border-[var(--border-default)] pb-5" aria-labelledby="intel-rwa-lookup-title">
       <div>
-        <div className="eyebrow">{t('rwa_lookup.eyebrow', { defaultValue: 'Live lookup' })}</div>
-        <h3 id="intel-rwa-lookup-title" className="text-lg font-medium mt-1">{t('rwa_lookup.title', { defaultValue: 'Look up any tokenised asset, now' })}</h3>
+        {/* Not "Live lookup": whether an answer is live or stored is said with each answer. */}
+        <div className="eyebrow">{t('rwa_lookup.eyebrow', { defaultValue: 'Lookup' })}</div>
+        <h3 id="intel-rwa-lookup-title" className="text-lg font-medium mt-1">{t('rwa_lookup.title', { defaultValue: 'Look up any tokenised asset' })}</h3>
       </div>
       <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); run(draft) }}>
         <label className="text-xs flex flex-col gap-1">{t('rwa_lookup.label', { defaultValue: 'Ticker, name or rwa_id' })}
@@ -256,9 +271,12 @@ export default function RwaLookup({ lookup = lookupRwaAsset }) {
       <p className="text-[12px] text-[var(--fg-4)]">{t('rwa_lookup.try', { defaultValue: 'Try' })}{' '}
         {RWA_LOOKUP_EXAMPLES.map((ex, i) => <React.Fragment key={ex.q}>{i > 0 ? (i === RWA_LOOKUP_EXAMPLES.length - 1 ? ` ${t('rwa_lookup.or', { defaultValue: 'or' })} ` : ', ') : ''}<button type="button" className="intel-text-link" onClick={() => run(ex.q)}>{ex.q}</button> <span>({t(`rwa_lookup.${ex.key}`, { defaultValue: ex.label })})</span></React.Fragment>)}.
       </p>
-      {read.status === 'loading' && <p role="status" className="text-[13px]">{t('rwa_lookup.loading', { defaultValue: 'Asking our cache, and CoinMarketCap if the cache has nothing…' })}</p>}
+      {read.status === 'loading' && <p role="status" className="text-[13px]">{read.check
+        ? t('rwa_lookup.loading_check', { defaultValue: 'Asking CoinMarketCap now…' })
+        : t('rwa_lookup.loading', { defaultValue: 'Reading the stored answer, and asking CoinMarketCap if it may be out of date…' })}</p>}
       {read.status === 'error' && <p role="alert" className="text-[13px]">{errorText(read.error)}</p>}
-      {read.status === 'ready' && read.answer && <Answer answer={read.answer} onPick={run} />}
+      {read.status === 'ready' && read.answer && <Answer answer={read.answer} onPick={run}
+        onCheck={read.answer.asset ? () => run(read.answer.query || draft, { check: true }) : null} />}
       <p className="text-[11px] text-[var(--fg-4)]">{t('rwa_lookup.attribution', { defaultValue: 'Data provided by CoinMarketCap.com' })}</p>
     </section>
   )

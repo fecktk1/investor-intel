@@ -24,6 +24,11 @@ export const PUBLIC_DOCS = Object.freeze([
   'docs/real-api-call.md',
   'docs/build-timeline.md',
   'docs/demo-guide.md',
+  // The per-file record of what was built during the event and what existed
+  // before it, and its JSON twin. The packager writes both from git history on
+  // every package (scripts/intel-built-list.mjs); they are never edited by hand.
+  'docs/built-for-the-hackathon.md',
+  'docs/built-for-the-hackathon.json',
   // The full X post, because public embeds cut long posts short and hide its BUIDL link.
   'docs/x-post-2026-09-22.png',
 ])

@@ -1,10 +1,11 @@
-// Investor Intel: "Look up any tokenised asset, now".
+// Investor Intel: "Look up any tokenised asset".
 //
 // A PUBLIC, read-only answer for one real-world asset, by ticker, name or
 // rwa_id, served by the intel-rwa-lookup Edge Function to anyone, signed in or
 // not. It exists so a visitor (a hackathon judge on /intel/demo, or a member on
 // /intel/rwa) can type a ticker and watch a real CoinMarketCap-backed answer
-// arrive, with the proof for every figure beside it.
+// arrive, with the proof for every figure beside it, and a plain statement of
+// whether THIS answer's quote came from a live call or from the store.
 //
 // WHAT IT SPENDS. Nothing per visitor, except one bounded case:
 //
@@ -12,19 +13,17 @@
 //     rows (intel_rwa_asset_profiles, intel_rwa_wrapper_assets/_tokens,
 //     intel_rwa_coverage_assets) that scheduled lanes already paid for. Reading
 //     them is a database read.
-//   * The latest quote goes through the same free lane as the free RWA research
-//     surface (./rwa-free-read.ts): the shared response cache first with
-//     maxCalls 0, never a demand stamp, and a live call only when the cache had
-//     nothing usable AND intel_free_rwa_read_claim grants it from the daily
-//     platform-wide budget in cmc_free_rwa_policy. The function adds a per-IP
-//     hourly cap on top, so one visitor cannot spend the day's budget.
-//   * KEPT INSIDE ITS WINDOW (freeRwaReadFresh). A shared copy past its one-hour
-//     window is not simply served: the scheduled warm lane's ONE batched quotes
-//     read of every judge-path asset answers first when it is inside its window
-//     (capture-rwa-quote-warm.ts), with a receipt that names that batched
-//     request; otherwise the copy is refreshed once, through the same per-IP and
-//     daily gates as a miss. Only when that is refused does the old copy answer,
-//     still saying it is past its window and why it was not refreshed.
+//   * The latest quote: the newest shared copy (this asset's own, or the warm
+//     lane's ONE batched quotes read of every judge-path asset,
+//     capture-rwa-quote-warm.ts) answers while it is younger than the live rule
+//     allows (readLookupQuote, decideQuoteRead: ten minutes). Otherwise, or when
+//     the visitor presses "Check CoinMarketCap now", ONE live /v5 quotes call is
+//     made through the governed transport (reservation, receipt, proof), never a
+//     demand stamp, and only through every gate: the per-IP hourly allowance, the
+//     per-IP and everybody's UTC-day allowance (intel_rwa_lookup_live_take), and
+//     the 200 credit daily free RWA budget (intel_free_rwa_read_claim). When a
+//     gate refuses, the newest copy answers and the page says why no call was
+//     made. A rebuild behind a kept answer never calls.
 //
 // WHAT IT NEVER DOES. It never reads the caller's token, never writes demand,
 // never calls AI, and never returns "no data" for an asset we know: when a live
@@ -48,7 +47,7 @@
 import { isDerivativeReference } from './rwa-wrapper-spread.ts'
 import { CMC_CAPABILITIES } from '../market-assets/cmc-capabilities.ts'
 import { cmcReproduceCommand } from '../market-assets/cmc-reproduce.ts'
-import { freeRwaReadFresh, freeRwaSnapshotUsable, RWA_FREE_CAPABILITIES as FREE_CAPS, type FreeRwaClaim, type FreeRwaPlan, type ResearchSnapshot } from './rwa-free-read.ts'
+import { freeRwaInWindow, freeRwaReadFresh, freeRwaSnapshotUsable, newestUsable, RWA_FREE_CAPABILITIES as FREE_CAPS, type FreeRwaClaim, type FreeRwaPlan, type ResearchSnapshot } from './rwa-free-read.ts'
 import { warmPlanRefusal, type WarmState } from './capture-rwa-quote-warm.ts'
 import { NO_TIMER, type PhaseTimer } from './server-timing.ts'
 
@@ -61,6 +60,20 @@ export const LOOKUP_RATE = { limit: 30, windowSeconds: 60 }
  * each, one address can use at most a tenth of the 200 credit free day).
  * The daily free budget still bounds the total. */
 export const LOOKUP_LIVE_RATE = { limit: 20, windowSeconds: 3600 }
+/** Live calls per UTC day (public.intel_rwa_lookup_live_take), per address and
+ * for everybody together, on top of the hourly allowance above and the 200
+ * credit free RWA budget. 'auto' is the lookup's own live rule; 'check' is a
+ * visitor pressing "Check CoinMarketCap now". Tests lower them; production
+ * never does. Together they stay well inside the free budget, which the warm
+ * lane (about 47 credits a day) also draws on. */
+export const LOOKUP_DAILY_ALLOWANCE = { auto: { perIp: 30, all: 100 }, check: { perIp: 5, all: 40 } } as const
+export type LiveKind = 'auto' | 'check'
+/** public.intel_rwa_lookup_live_take's reason_code, as the lookup's reason. */
+export function dailyTakeReason(kind: LiveKind, code: unknown): string {
+  if (code === 'daily_cap_reached') return kind === 'check' ? 'lookup_check_daily_limit' : 'lookup_live_daily_limit'
+  if (code === 'all_daily_cap_reached') return kind === 'check' ? 'lookup_check_all_daily_limit' : 'lookup_live_all_daily_limit'
+  return 'lookup_allowance_unavailable'
+}
 const ALTERNATIVES = 4
 const WRAPPER_ROWS = 40
 const RAW_CHARS = 2400
@@ -300,8 +313,10 @@ async function remember(db: Db, rwaId: string, payload: unknown, fetchedAt: stri
 export interface LookupDeps {
   db: Db
   now?: () => number
-  /** The free lane transport read, one pass per plan. */
-  readQuote: (rwaId: string) => QuoteReader
+  /** The free lane transport read, one pass per plan. `refreshBefore` (live
+   * pass only): a shared copy fetched before it counts as past its window, so
+   * the pass refreshes it (MarketAssetsContext.refreshBefore). */
+  readQuote: (rwaId: string, opts?: { refreshBefore?: string | null }) => QuoteReader
   /** Claim one live read from the daily free budget. */
   claim: (rwaId: string) => Promise<FreeRwaClaim>
   /** The warm lane's newest finished run (loadWarmState). Optional: without it
@@ -336,21 +351,220 @@ const quoteFigure = (q: Record<string, unknown> | null) => q ? {
 } : null
 
 /** Whether a live read may be attempted: false, or a gate asked only at the
- * moment of a shared-cache miss (the per-IP hourly allowance). */
-export type LiveGate = boolean | (() => Promise<boolean>)
+ * moment a live read would be made (the per-IP allowances). A gate may say why
+ * it is closed; a bare false is the hourly per-IP allowance. */
+export type GateVerdict = boolean | { ok: boolean; reason?: string | null }
+export type LiveGate = boolean | (() => Promise<GateVerdict>)
 export const IP_LIVE_LIMIT_REASON = 'free_rwa_ip_hourly_limit'
 
 /** The daily budget claim behind the per-IP gate: the gate first, so an
- * address over its hourly allowance never touches the shared budget. */
-function gatedClaim(gate: LiveGate, claim: () => Promise<FreeRwaClaim>): () => Promise<FreeRwaClaim> {
+ * address over its allowance never touches the shared budget. */
+function gatedClaim(gate: LiveGate, claim: () => Promise<FreeRwaClaim>, closedReason = IP_LIVE_LIMIT_REASON): () => Promise<FreeRwaClaim> {
   return async () => {
-    const open = typeof gate === 'function' ? await gate().catch(() => false) : gate
-    return open ? claim() : { allowed: false, reason: IP_LIVE_LIMIT_REASON, cap: null, used: null }
+    const verdict: GateVerdict = typeof gate === 'function' ? await gate().catch(() => false) : gate
+    const open = typeof verdict === 'object' && verdict ? verdict.ok === true : verdict === true
+    const reason = typeof verdict === 'object' && verdict && verdict.reason ? verdict.reason : closedReason
+    return open ? claim() : { allowed: false, reason, cap: null, used: null }
   }
 }
 
-/** Answer one parsed query. */
-export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate, timer: PhaseTimer = NO_TIMER) {
+// ─── Live or stored: the one rule, stated with every answer ─────────────────
+//
+// Reviewers of the demo read "Live lookup" and saw a shared-cache answer every
+// time. The lookup now makes ONE real /v5 quotes call whenever the copy it holds
+// might be older than CoinMarketCap's newest data, and otherwise answers from
+// the store and says so, with CoinMarketCap's own last_updated beside it.
+//
+// HOW OFTEN COINMARKETCAP UPDATES AN RWA QUOTE. Measured, not assumed: every
+// live /v5/real-world-assets/quotes/latest call in the shared cache on 23 and 24
+// Sep 2026 carried a quotes[].last_updated one to two minutes before the call
+// (fetched 01:14:01 → 01:11:59, 23:15:03 → 23:13:59, 20:47:02 → 20:45:01,
+// 16:23:25 → 16:21:59, 14:46:20 → 14:44:59, 02:47:01 → 02:45:59 UTC). The
+// "twice a day, 08:45:59 and 20:45:59" pattern on the wrapper board is our own:
+// the six-hourly wrapper lane reads a shared copy whose stale_until is exactly
+// six hours after its fetch, so every other run is served the previous run's
+// copy while the transport refreshes it in the background (the 14:00 capture
+// stored 08:45:59 prices, while the call its run triggered at 14:47:01 got
+// fresh ones). So no RWA quote here has a known slower cadence, and the rule
+// is the short age limit: a copy retrieved more than LOOKUP_LIVE_AFTER_MS ago
+// is refreshed by one call. A cadence of fixed daily slots is still supported
+// (decideQuoteRead, `slotsUtc`), so a measured slot schedule is a one-line
+// change, but none is claimed without evidence.
+
+/** A stored quote retrieved longer ago than this is refreshed by one live call. */
+export const LOOKUP_LIVE_AFTER_MS = 10 * 60_000
+export interface QuoteCadence {
+  /** Daily UTC times ('HH:MM' or 'HH:MM:SS') at which the provider publishes, or
+   *  null when it updates continuously as far as we have measured. */
+  slotsUtc: readonly string[] | null
+  liveAfterMs: number
+}
+export const RWA_QUOTE_CADENCE: QuoteCadence = { slotsUtc: null, liveAfterMs: LOOKUP_LIVE_AFTER_MS }
+export const CHECK_LIMIT_REASON = 'lookup_check_daily_limit'
+/** A live pass that found a copy another request had just fetched. */
+export const CONCURRENT_REASON = 'refreshed_concurrently'
+
+export type QuoteReadWhy = 'asked' | 'no_copy' | 'copy_older_than_limit' | 'cmc_update_due' | 'copy_recent' | 'cmc_not_updated_since'
+export interface QuoteDecision { mode: 'live' | 'stored'; why: QuoteReadWhy; expectedUpdateAt: string | null }
+
+/** The newest daily slot at or before `now`, as epoch ms, or null. */
+export function newestSlotBefore(slotsUtc: readonly string[], now: number): number | null {
+  const day = Math.floor(now / 86_400_000) * 86_400_000
+  let best: number | null = null
+  for (const slot of slotsUtc) {
+    const m = /^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/.exec(slot)
+    if (!m) continue
+    const offset = ((Number(m[1]) * 60 + Number(m[2])) * 60 + Number(m[3] ?? 0)) * 1000
+    for (const at of [day + offset, day - 86_400_000 + offset]) if (at <= now && (best == null || at > best)) best = at
+  }
+  return best
+}
+
+/** Live or stored, for the copy in hand. Pure.
+ *   asked                  the visitor pressed "Check CoinMarketCap now"
+ *   no_copy                nothing usable is held
+ *   cmc_update_due         (slot cadence) the copy's last_updated is before the
+ *                          newest slot, so the provider has newer prices
+ *   cmc_not_updated_since  (slot cadence) it is not: a call would return the same
+ *   copy_older_than_limit  retrieved more than liveAfterMs ago
+ *   copy_recent            retrieved inside liveAfterMs */
+export function decideQuoteRead(input: { retrievedAt: string | null; sourceUpdatedAt: string | null; now: number; asked?: boolean; cadence?: QuoteCadence }): QuoteDecision {
+  const cadence = input.cadence ?? RWA_QUOTE_CADENCE
+  const retrieved = Date.parse(String(input.retrievedAt ?? ''))
+  const updated = Date.parse(String(input.sourceUpdatedAt ?? ''))
+  const slot = cadence.slotsUtc?.length ? newestSlotBefore(cadence.slotsUtc, input.now) : null
+  const expectedUpdateAt = slot == null ? null : new Date(slot).toISOString()
+  if (input.asked) return { mode: 'live', why: 'asked', expectedUpdateAt }
+  if (!Number.isFinite(retrieved)) return { mode: 'live', why: 'no_copy', expectedUpdateAt }
+  if (slot != null && Number.isFinite(updated)) {
+    return updated >= slot ? { mode: 'stored', why: 'cmc_not_updated_since', expectedUpdateAt } : { mode: 'live', why: 'cmc_update_due', expectedUpdateAt }
+  }
+  return input.now - retrieved > cadence.liveAfterMs
+    ? { mode: 'live', why: 'copy_older_than_limit', expectedUpdateAt }
+    : { mode: 'stored', why: 'copy_recent', expectedUpdateAt }
+}
+
+const snapFetchedAt = (s: ResearchSnapshot | null): string | null => iso(s?.provenance?.fetchedAt ?? s?.receipt?.fetchedAt)
+const snapUpdatedAt = (s: ResearchSnapshot | null, rwaId: string): string | null => {
+  if (!s || !freeRwaSnapshotUsable(s)) return null
+  const q = quoteAsset(s.payload, rwaId)?.quote
+  return iso(q?.last_updated)
+}
+
+export interface QuoteReadOutcome { snap: ResearchSnapshot; decision: QuoteDecision; refusal: string | null }
+
+/** This asset's quote for one lookup: the newest shared copy (this asset's own,
+ * or the warm lane's batched one), then the rule above, then, when it says
+ * live, ONE call through every gate (the per-IP allowance, the daily
+ * allowance, a recorded plan refusal, the free RWA budget), made through the
+ * governed transport. Every refusal serves the newest copy with its reason. */
+export async function readLookupQuote(deps: LookupDeps, rwaId: string, live: LiveGate, now: number, opts: { asked?: boolean; warmP?: Promise<WarmState | null> } = {}): Promise<QuoteReadOutcome> {
+  const asked = opts.asked === true
+  const warmP = opts.warmP ?? warmState(deps)
+  const lane = (snapshot: ResearchSnapshot, extra: Record<string, unknown>) => ({
+    ...snapshot, freeShared: { lane: 'rwa_research', ...extra },
+    refreshPolicy: { enabled: false, cacheReadSeconds: null, providerRefreshSeconds: null },
+  })
+  const decide = (s: ResearchSnapshot | null) => decideQuoteRead({ retrievedAt: s && freeRwaSnapshotUsable(s) ? snapFetchedAt(s) : null, sourceUpdatedAt: snapUpdatedAt(s, rwaId), now, asked })
+  const shared = await deps.readQuote(rwaId)('shared-cache')
+  let best: ResearchSnapshot | null = freeRwaSnapshotUsable(shared) ? shared : null
+  let decision = decide(best)
+  // The warm lane's batched copy can be newer than this asset's own. It is only
+  // asked when this asset's copy would not answer on its own.
+  if (!(decision.mode === 'stored' && freeRwaInWindow(best)) && deps.readBatch) {
+    let alt: ResearchSnapshot | null = null
+    try {
+      const batchIds = batchFor(await warmP, rwaId)
+      if (batchIds) {
+        const r = await deps.readBatch(batchIds)
+        alt = r && quoteAsset(r.payload, rwaId) ? { ...r, warmBatch: { ids: batchIds, size: batchIds.split(',').length } } : null
+      }
+    } catch { alt = null }
+    best = newestUsable(shared, alt)
+    decision = decide(best)
+  }
+  const keep = (reason: string | null): QuoteReadOutcome => ({
+    snap: best ? lane(best, { served: 'shared-cache', reason }) : lane(shared, { served: 'retained', reason }), decision, refusal: reason,
+  })
+  if (decision.mode === 'stored') return { snap: lane(best!, { served: 'shared-cache' }), decision, refusal: null }
+  if (live === false) return keep('free_rwa_background_read')
+  if (shared.state === 'unsupported') return { snap: lane(shared, { served: 'retained', reason: shared.reason ?? 'unsupported_capability' }), decision, refusal: shared.reason ?? 'unsupported_capability' }
+  let blocked: string | null = null
+  try { blocked = warmPlanRefusal(await warmP, now) } catch { blocked = null }
+  if (blocked) return keep(blocked)
+  const granted = await gatedClaim(live, () => deps.claim(rwaId), asked ? CHECK_LIMIT_REASON : IP_LIVE_LIMIT_REASON)()
+  if (!granted.allowed) return keep(granted.reason ?? 'live_read_unavailable')
+  // The rule's own age limit lets a copy another visitor fetched a moment ago
+  // answer without a second call; a visitor's check always asks the provider.
+  const refreshBefore = new Date(decision.why === 'copy_older_than_limit' ? now - RWA_QUOTE_CADENCE.liveAfterMs : now).toISOString()
+  const read = await deps.readQuote(rwaId, { refreshBefore })('shared-live')
+  if (read.state === 'fresh') return { snap: lane(read, { served: 'shared-live' }), decision, refusal: null }
+  if (freeRwaInWindow(read)) return { snap: lane(read, { served: 'shared-cache' }), decision, refusal: CONCURRENT_REASON }
+  const reason = read.reason ?? 'live_read_unavailable'
+  const after = newestUsable(read, best)
+  return { snap: after ? lane(after, { served: 'shared-cache', reason }) : lane(read, { served: 'retained', reason }), decision, refusal: reason }
+}
+
+/** What answered the quote for THIS request, in the words the page states
+ * beside it. Recomputed every time an answer is served. */
+export function quoteReadOf(outcome: QuoteReadOutcome | null, quote: { value: ReturnType<typeof quoteFigure>; receipt: FigureReceipt } | null, asked: boolean) {
+  const live = quote?.receipt?.served === 'live'
+  return {
+    mode: live ? 'live' as const : 'stored' as const,
+    why: outcome?.decision.why ?? null,
+    asked,
+    refusal: live ? null : (outcome?.refusal ?? null),
+    retrievedAt: quote?.receipt?.capturedAt ?? null,
+    sourceUpdatedAt: quote?.value?.lastUpdated ?? null,
+    served: quote?.receipt?.served ?? null,
+    liveAfterSeconds: Math.round(RWA_QUOTE_CADENCE.liveAfterMs / 1000),
+    expectedUpdateAt: outcome?.decision.expectedUpdateAt ?? null,
+  }
+}
+
+/** The quote figure (and the wrapper tokens it carries) from a usable snapshot. */
+function quoteFromSnapshot(snap: ResearchSnapshot, rwaId: string, now: number): { quote: { value: ReturnType<typeof quoteFigure>; receipt: FigureReceipt }; tokens: Record<string, unknown>[]; payload: unknown } | null {
+  if (!freeRwaSnapshotUsable(snap) || !quoteAsset(snap.payload, rwaId)) return null
+  const laneReason: string | null = snap?.freeShared?.reason ?? snap?.reason ?? null
+  const r = snap.receipt || {}
+  const served: Served = r.origin === 'live' ? 'live' : 'cache'
+  const found = quoteAsset(snap.payload, rwaId)!
+  const batch = snap.warmBatch && typeof snap.warmBatch === 'object' && typeof snap.warmBatch.ids === 'string' ? snap.warmBatch as { ids: string; size: number } : null
+  const stale = served === 'cache' && snap.state === 'stale'
+  // The provider's own status block leads the raw excerpt (timestamp,
+  // error_code, credit_count), and a cache hit names the original call's charge.
+  const status = snap.payload && typeof snap.payload === 'object' ? (snap.payload as { status?: unknown }).status : undefined
+  const rc = receipt({ capability: 'rwaQuotes', params: batch ? { rwa_id: batch.ids } : { rwa_id: rwaId }, served, capturedAt: r.fetchedAt ?? snap.provenance?.fetchedAt, now, httpStatus: r.httpStatus, creditCount: r.creditCount,
+    raw: { ...(status && typeof status === 'object' ? { status } : {}), ...quoteKeep(snap.payload, rwaId) },
+    // Past its window still says so, and says why this lookup did not refresh it.
+    reason: stale ? 'shared_cache_past_refresh' : null, refreshReason: stale ? laneReason : null, batchSize: batch?.size ?? null,
+    ...(served === 'cache' ? { originCreditCount: r.proof?.creditCount ?? null } : {}) })
+  return { quote: { value: quoteFigure(found.quote), receipt: rc }, tokens: Array.isArray(found.asset.tokens) ? found.asset.tokens : [], payload: snap.payload }
+}
+
+/** The wrapper rows: the quote's (or the capture's) tokens, with the capture
+ * hour's premium per token. Derivative prices are listed after the wrappers. */
+function wrapperRows(tokens: Record<string, unknown>[], premiumByToken: Map<string, Record<string, unknown>>) {
+  return tokens.slice(0, WRAPPER_ROWS).map((t) => {
+    const id = String(t.crypto_id ?? '')
+    const cap = premiumByToken.get(id)
+    return {
+      cryptoId: /^[1-9][0-9]{0,11}$/.test(id) ? id : null, symbol: str(t.symbol, 40), name: str(t.name), issuerName: str(t.issuer_name),
+      price: num(t.price), marketCap: num(t.market_cap), volume24h: num(t.volume_24h),
+      // The premium is the capture hour's measurement, never recomputed here
+      // against a price from another clock.
+      premiumBps: cap ? num(cap.premium_bps) : null, wrapperState: cap ? str(cap.wrapper_state, 40) : null,
+      // A derivative price (issuer "NA (Derivatives)") is not a wrapper anyone
+      // holds: flagged here and listed after the wrappers, never dropped.
+      derivative: isDerivativeReference({ issuerId: t.issuer_id, issuerName: t.issuer_name, name: t.name }) || cap?.wrapper_state === 'derivative_reference',
+    }
+  }).sort((x, y) => Number(x.derivative) - Number(y.derivative))
+}
+
+/** Answer one parsed query. `asked`: the visitor pressed "Check CoinMarketCap
+ * now", so the quote is read live whatever its age (still through every gate). */
+export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate, timer: PhaseTimer = NO_TIMER, opts: { asked?: boolean } = {}) {
+  const asked = opts.asked === true
   const now = (deps.now ?? Date.now)()
   const db = deps.db
   const servedAt = new Date(now).toISOString()
@@ -390,28 +604,22 @@ export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate
     ])
     return { tokens, call }
   })
-  // The quote: this asset's shared copy inside its window, then the warm lane's
-  // batched copy inside its window, then one bounded live refresh, then the
-  // newest copy with the reason; then our last good copy, then the stored
-  // captures. Each step says which it was. The warm state is awaited only by
-  // the steps that need it, so the shared copy is read without waiting for it.
-  const snapP = timer.time('quote', () => {
-    const alternate = deps.readBatch ? async () => {
-      const batchIds = batchFor(await warmP, rwaId)
-      if (!batchIds) return null
-      const r = await deps.readBatch!(batchIds)
-      return r && quoteAsset(r.payload, rwaId) ? { ...r, warmBatch: { ids: batchIds, size: batchIds.split(',').length } } : null
-    } : null
-    return freeRwaReadFresh(deps.readQuote(rwaId), gatedClaim(live, () => deps.claim(rwaId)), live !== false, { alternate, liveBlocked: async () => warmPlanRefusal(await warmP, now) })
-  })
-  const [identityCall, wrapperAsset, coverage, snap, wrapperHour] = await Promise.all([
+  // The quote: the newest shared copy (this asset's own, or the warm lane's
+  // batched one), and ONE live call when the rule above says the copy may be
+  // older than CoinMarketCap's newest data; then the newest copy with the
+  // reason; then our last good copy, then the stored captures. Each step says
+  // which it was. The warm state is awaited only by the steps that need it, so
+  // the shared copy is read without waiting for it.
+  const outcomeP = timer.time('quote', () => readLookupQuote(deps, rwaId, live, now, { asked, warmP }))
+  const [identityCall, wrapperAsset, coverage, outcome, wrapperHour] = await Promise.all([
     timer.time('identity_log', () => captureCall(db, 'intel-capture-rwa-asset-profiles', CMC_CAPABILITIES[identityCapability].path, identityClock)),
     wrapperAssetP,
     timer.time('coverage', () => rows(() => db.from('intel_rwa_coverage_assets').select('rwa_id,snapshot_date,token_count,priced_count,traded_count,coverage_state,tokenized_market_cap,tokenized_volume_24h,source_observed_at,captured_at,fetched_at')
       .eq('rwa_id', rwaId).order('captured_at', { ascending: false }).limit(1))),
-    snapP,
+    outcomeP,
     wrapperHourP,
   ])
+  const snap = outcome.snap
   const identity = {
     value: { rwaId, symbol: str(p.symbol, 40), name: str(p.name), slug: str(p.slug, 120), assetType: str(p.asset_type, 40), rank: num(p.rwa_rank), hasTokens: typeof p.has_tokens === 'boolean' ? p.has_tokens : null, website: str(p.website, 300), primaryExchange: str(p.primary_exchange, 80), industry: str(p.industry, 120), logoUrl: /^https:\/\//.test(String(p.logo_url || '')) ? String(p.logo_url) : null },
     receipt: receipt({ capability: identityCapability, params, served: 'capture', capturedAt: identityClock, now, httpStatus: identityCall?.status, creditCount: identityCall?.credits, raw: { ...p, logo_url: undefined }, caller: 'intel-capture-rwa-asset-profiles', reason: identityCall ? null : 'call_log_not_retained' }),
@@ -420,25 +628,13 @@ export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate
   const laneReason: string | null = snap?.freeShared?.reason ?? snap?.reason ?? null
   let quote: { value: ReturnType<typeof quoteFigure>; receipt: FigureReceipt } | null = null
   let tokensSource: { tokens: Record<string, unknown>[]; receipt: FigureReceipt } | null = null
-  const usable = freeRwaSnapshotUsable(snap) && quoteAsset(snap.payload, rwaId)
-  if (usable) {
-    const r = snap.receipt || {}
-    const served: Served = r.origin === 'live' ? 'live' : 'cache'
-    const found = quoteAsset(snap.payload, rwaId)!
-    const batch = snap.warmBatch && typeof snap.warmBatch === 'object' && typeof snap.warmBatch.ids === 'string' ? snap.warmBatch as { ids: string; size: number } : null
-    const stale = served === 'cache' && snap.state === 'stale'
-    // The provider's own status block leads the raw excerpt (timestamp,
-    // error_code, credit_count), and a cache hit names the original call's charge.
-    const status = snap.payload && typeof snap.payload === 'object' ? (snap.payload as { status?: unknown }).status : undefined
-    const rc = receipt({ capability: 'rwaQuotes', params: batch ? { rwa_id: batch.ids } : params, served, capturedAt: r.fetchedAt ?? snap.provenance?.fetchedAt, now, httpStatus: r.httpStatus, creditCount: r.creditCount,
-      raw: { ...(status && typeof status === 'object' ? { status } : {}), ...quoteKeep(snap.payload, rwaId) },
-      // Past its window still says so, and says why this lookup did not refresh it.
-      reason: stale ? 'shared_cache_past_refresh' : null, refreshReason: stale ? laneReason : null, batchSize: batch?.size ?? null,
-      ...(served === 'cache' ? { originCreditCount: r.proof?.creditCount ?? null } : {}) })
-    quote = { value: quoteFigure(found.quote), receipt: rc }
-    tokensSource = { tokens: Array.isArray(found.asset.tokens) ? found.asset.tokens : [], receipt: rc }
+  const fromSnap = quoteFromSnapshot(snap, rwaId, now)
+  if (fromSnap) {
+    const rc = fromSnap.quote.receipt
+    quote = fromSnap.quote
+    tokensSource = { tokens: fromSnap.tokens, receipt: rc }
     // Keeping the last good copy is bookkeeping: it happens after the answer.
-    await later(deps, () => remember(db, rwaId, snap.payload, rc.capturedAt, rc.httpStatus, rc.creditCount ?? rc.originCreditCount ?? null, served))
+    await later(deps, () => remember(db, rwaId, fromSnap.payload, rc.capturedAt, rc.httpStatus, rc.creditCount ?? rc.originCreditCount ?? null, rc.served))
   } else {
     const kept = await lastGood(db, rwaId)
     const found = kept ? quoteAsset(kept.payload) : null
@@ -482,23 +678,7 @@ export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate
     }
     if (!tokensSource && tokens.rows.length) tokensSource = { tokens: tokens.rows, receipt: pr }
   }
-  const wrappers = tokensSource ? {
-    value: tokensSource.tokens.slice(0, WRAPPER_ROWS).map((t) => {
-      const id = String(t.crypto_id ?? '')
-      const cap = premiumByToken.get(id)
-      return {
-        cryptoId: /^[1-9][0-9]{0,11}$/.test(id) ? id : null, symbol: str(t.symbol, 40), name: str(t.name), issuerName: str(t.issuer_name),
-        price: num(t.price), marketCap: num(t.market_cap), volume24h: num(t.volume_24h),
-        // The premium is the capture hour's measurement, never recomputed here
-        // against a price from another clock.
-        premiumBps: cap ? num(cap.premium_bps) : null, wrapperState: cap ? str(cap.wrapper_state, 40) : null,
-        // A derivative price (issuer "NA (Derivatives)") is not a wrapper anyone
-        // holds: flagged here and listed after the wrappers, never dropped.
-        derivative: isDerivativeReference({ issuerId: t.issuer_id, issuerName: t.issuer_name, name: t.name }) || cap?.wrapper_state === 'derivative_reference',
-      }
-    }).sort((x, y) => Number(x.derivative) - Number(y.derivative)),
-    receipt: tokensSource.receipt,
-  } : null
+  const wrappers = tokensSource ? { value: wrapperRows(tokensSource.tokens, premiumByToken), receipt: tokensSource.receipt } : null
 
   const state = quote ? 'found' : 'found_without_quote'
   return {
@@ -506,7 +686,28 @@ export async function lookupRwa(deps: LookupDeps, q: LookupQuery, live: LiveGate
     asset: identity.value, alternatives: resolved.alternatives, catalogue: null,
     coverage: c ? { tokenCount: num(c.token_count), pricedCount: num(c.priced_count), tradedCount: num(c.traded_count), coverageState: str(c.coverage_state, 40), capturedAt: iso(c.captured_at) } : null,
     figures: { identity, quote, wrappers, premium },
+    // What answered the quote for THIS request, stated beside it on the page.
+    quoteRead: quoteReadOf(outcome, quote, asked),
   }
+}
+
+/** A kept answer with the quote this request read put in: the quote figure, and
+ * the wrapper rows its tokens carry, with the capture hour's premium per token
+ * taken from the kept rows (premiums are never recomputed against a new price).
+ * Nothing usable read: the kept quote stays, and the request's reason is said. */
+export function spliceQuote(body: Record<string, unknown>, outcome: QuoteReadOutcome, rwaId: string, now: number, asked: boolean): { body: Record<string, unknown>; changed: boolean; payload: unknown } {
+  // deno-lint-ignore no-explicit-any
+  const figures = { ...((body.figures && typeof body.figures === 'object' ? body.figures : {}) as Record<string, any>) }
+  const built = quoteFromSnapshot(outcome.snap, rwaId, now)
+  if (!built) return { body: { ...body, quoteRead: quoteReadOf(outcome, figures.quote ?? null, asked) }, changed: false, payload: null }
+  const premiumByToken = new Map<string, Record<string, unknown>>()
+  for (const w of Array.isArray(figures.wrappers?.value) ? figures.wrappers.value : []) {
+    if (w?.cryptoId) premiumByToken.set(String(w.cryptoId), { premium_bps: w.premiumBps, wrapper_state: w.wrapperState })
+  }
+  figures.quote = built.quote
+  if (built.tokens.length) figures.wrappers = { value: wrapperRows(built.tokens, premiumByToken), receipt: built.quote.receipt }
+  const changed = built.quote.receipt.served === 'live' || built.quote.receipt.capturedAt !== (body.figures as { quote?: { receipt?: { capturedAt?: unknown } } } | null)?.quote?.receipt?.capturedAt
+  return { body: { ...body, state: 'found', reason: null, figures, quoteRead: quoteReadOf(outcome, built.quote, asked) }, changed, payload: built.payload }
 }
 
 // ─── The stored answer: serve the finished answer first, refresh behind it ───
@@ -565,10 +766,20 @@ export function reserveAnswer(body: Record<string, unknown>, builtAt: string, no
   }
 }
 
-/** A lookup, served from the kept answer when there is a young enough one. */
-export async function answerLookup(deps: LookupDeps & { answers?: AnswerStore | null }, q: LookupQuery, live: LiveGate, timer: PhaseTimer = NO_TIMER) {
+/** A lookup, served from the kept answer when there is a young enough one.
+ *
+ * The kept answer is re-judged on every request by the live rule
+ * (decideQuoteRead on its quote's retrieval time and CoinMarketCap's
+ * last_updated). While the rule says stored, the answer is served at once, as
+ * before, and says so. When it says live (or the visitor asked), this request
+ * reads the quote through readLookupQuote (one call, every gate) and the result
+ * is put into the kept answer; the rest of the answer is stored capture rows
+ * that no call would change. A rebuild behind the answer never calls the
+ * provider: a live call is only ever made for a request that shows its receipt. */
+export async function answerLookup(deps: LookupDeps & { answers?: AnswerStore | null }, q: LookupQuery, live: LiveGate, timer: PhaseTimer = NO_TIMER, opts: { asked?: boolean } = {}) {
+  const asked = opts.asked === true
   const store = deps.answers
-  if (!store) return lookupRwa(deps, q, live, timer)
+  if (!store) return lookupRwa(deps, q, live, timer, { asked })
   const key = answerKey(q)
   const keep = (body: Record<string, unknown>) => STORABLE.has(String(body.state)) && typeof body.servedAt === 'string'
     ? store.keep(key, (body.asset as { rwaId?: string } | null)?.rwaId ?? null, body, body.servedAt)
@@ -579,10 +790,29 @@ export async function answerLookup(deps: LookupDeps & { answers?: AnswerStore | 
   const ageMs = Number.isFinite(built) ? now - built : Infinity
   if (kept && kept.body && STORABLE.has(String(kept.body.state)) && ageMs >= -60_000 && ageMs <= ANSWER_SERVE_MAX_MS) {
     const refreshing = ageMs >= ANSWER_REFRESH_MS
-    if (refreshing) await later(deps, async () => keep(await lookupRwa(deps, q, live)))
-    return reserveAnswer(kept.body, kept.builtAt, now, refreshing)
+    const rebuild = () => later(deps, async () => keep(await lookupRwa(deps, q, false)))
+    const served = reserveAnswer(kept.body, kept.builtAt, now, refreshing)
+    // deno-lint-ignore no-explicit-any
+    const keptQuote = (kept.body.figures as Record<string, any> | null)?.quote ?? null
+    const rwaId = (kept.body.asset as { rwaId?: unknown } | null)?.rwaId
+    const decision = decideQuoteRead({ retrievedAt: keptQuote?.receipt?.capturedAt ?? null, sourceUpdatedAt: keptQuote?.value?.lastUpdated ?? null, now, asked })
+    if (decision.mode === 'stored' || typeof rwaId !== 'string' || !/^[1-9][0-9]{0,11}$/.test(rwaId)) {
+      if (refreshing) await rebuild()
+      // deno-lint-ignore no-explicit-any
+      return { ...served, quoteRead: quoteReadOf({ snap: {}, decision, refusal: null }, (served.figures as Record<string, any>)?.quote ?? null, asked) }
+    }
+    const outcome = await timer.time('live_quote', () => readLookupQuote(deps, rwaId, live, now, { asked }))
+    const spliced = spliceQuote(served, outcome, rwaId, now, asked)
+    if (spliced.changed) {
+      // deno-lint-ignore no-explicit-any
+      const rc = (spliced.body.figures as Record<string, any>).quote.receipt as FigureReceipt
+      await later(deps, () => remember(deps.db, rwaId, spliced.payload, rc.capturedAt, rc.httpStatus, rc.creditCount ?? rc.originCreditCount ?? null, rc.served))
+    }
+    // A newer quote is a newer answer: assembled behind this one and kept.
+    if (spliced.changed || refreshing) await rebuild()
+    return spliced.body
   }
-  const body = await lookupRwa(deps, q, live, timer) as Record<string, unknown>
+  const body = await lookupRwa(deps, q, live, timer, { asked }) as Record<string, unknown>
   await later(deps, () => keep(body))
   return body
 }

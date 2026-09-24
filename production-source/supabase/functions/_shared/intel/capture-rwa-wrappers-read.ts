@@ -537,10 +537,12 @@ export async function readRwaWrappers(db: any, params: { limit?: unknown } = {},
       { capability: 'rwaList', path: '/v5/real-world-assets/assets/list', supplies: 'asset_level_value' },
     ],
     asOf,
-    // CoinMarketCap's own last_updated on the quotes this capture read. The RWA
-    // quotes refresh less often than the lane runs (twice a day in the 22 and 23
-    // Sep 2026 captures, at 08:45:59 and 20:45:59 UTC), so the 14:00 capture can
-    // hold prices observed at 08:45. The surface states both times.
+    // CoinMarketCap's own last_updated on the quotes this capture read. Every live
+    // read carries a last_updated one to two minutes old: the provider updates RWA
+    // quotes continuously. Captures from 2026-09-20 to 2026-09-23 that show a time
+    // six hours older (the 02:00 and 14:00 hours) were handed the shared cache's
+    // stale copy of the previous run; the lane now waits for its own live read
+    // (capture-rwa-wrappers.ts, `waitForFresh`). The surface states both times.
     pricesObservedAt: rows.map((row) => row.observedAt).filter((v): v is string => !!v).sort().at(-1) ?? null,
     coverage: { from: stamps[0] ?? null, to: asOf, count: rows.length, truncated: assetRead.rows.length >= ASSET_CAP || tokenRead.rows.length >= TOKEN_CAP || all.length > rows.length },
     reason: assetRead.reason || tokenRead.reason,

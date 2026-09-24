@@ -1010,3 +1010,48 @@ Deno.test('accrual: the one-off op recomputes the newest capture, re-reads the r
   const excluded = row.picks.excluded.find((e: any) => e.cryptoId === '37006')
   eq(excluded.reason, 'reinvested_dividends_not_adjusted')
 })
+
+// ─── A capture stores the provider's answer NOW, never the cache's stale copy ──
+
+Deno.test('every provider read of a capture asks the transport to wait for a fresh copy', async () => {
+  // deno-lint-ignore no-explicit-any
+  const seen: any[] = []
+  const inner = handler()
+  // deno-lint-ignore no-explicit-any
+  const request = (name: string, params: Record<string, unknown> = {}, ctx?: any) => { seen.push({ name, ctx }); return Promise.resolve(inner(name, params)) }
+  const result = await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }), ctxFor, NOW, { request })
+  assert(!result.error, String(result.error))
+  assert(seen.length >= 2)
+  // The transport serves a key past its window but inside its stale window from
+  // the OLD copy unless told to wait; the six-hourly cron lands on that boundary.
+  for (const call of seen) eq(call.ctx?.waitForFresh, true, call.name)
+  eq(seen.filter((c) => c.name === 'rwaQuotes').length, 1)
+})
+
+Deno.test('a stale quotes copy returned by a failed refresh is refused, not stored under a new hour', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const inner = handler()
+  const request = (name: string, params: Record<string, unknown> = {}) => {
+    const answer = inner(name, params)
+    // What cmc-transport returns when the live refresh fails but a stale copy is
+    // kept: the old payload, state 'stale', and the reason the refresh failed.
+    return Promise.resolve(name === 'rwaQuotes' ? { ...answer, state: 'stale', reason: 'provider_unavailable' } : answer)
+  }
+  const result = await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, writes), ctxFor, NOW, { request })
+  eq(result.rows, 0)
+  eq(result.error, 'quotes_not_refreshed:provider_unavailable')
+  eq(writes[ASSET_TABLE], undefined)
+  eq(writes[TOKEN_TABLE], undefined)
+  // The call was made and is still counted: the list pages and the quotes read.
+  assert(Number(result.credits) >= 1)
+})
+
+Deno.test('a quotes copy served fresh from the shared cache inside its window is stored as before', async () => {
+  const writes: Record<string, unknown[]> = {}
+  const inner = handler()
+  const request = (name: string, params: Record<string, unknown> = {}) =>
+    Promise.resolve(name === 'rwaQuotes' ? { ...inner(name, params), state: 'cached', reason: null } : inner(name, params))
+  const result = await captureRwaWrappers(fakeDb({ [UNIVERSE_TABLE]: universeRows(HOUR) }, writes), ctxFor, NOW, { request })
+  assert(!result.error, String(result.error))
+  assert((writes[ASSET_TABLE] || []).length >= 1)
+})

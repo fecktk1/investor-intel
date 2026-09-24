@@ -558,7 +558,16 @@ export async function captureRwaWrappers(
       .map((row) => rwaId(row?.rwa_id)).filter((v): v is string => !!v)
 
     const ceiling = RWA_WRAPPER_MAX_TYPES + 2
-    const ctx = ctxFor('rwa-wrappers', ceiling)
+    // `waitForFresh`: a capture stores what the provider says NOW, never the shared
+    // cache's stale copy. Without it the transport answers a key past its one-hour
+    // window but inside its six-hour stale window with the OLD copy and refreshes in
+    // the background, and this lane's six-hour cron lands within a second of that
+    // boundary: from 2026-09-20 to 2026-09-23 the 02:47 and 14:47 runs (and some
+    // 08:47 runs) stored the previous run's prices under a new capture hour, while
+    // the live call they paid for went only to the cache. Every live read in that
+    // span carried a CoinMarketCap last_updated one to two minutes old. Same calls,
+    // same credits: the refresh the lane already paid for is awaited, not dropped.
+    const ctx: MarketAssetsContext = { ...ctxFor('rwa-wrappers', ceiling), waitForFresh: true }
     const budget = callBudget(ctx, ceiling)
     if (budget < 2) return { job, rows: 0, credits: 0, skipped: 'call_budget' }
 
@@ -618,6 +627,15 @@ export async function captureRwaWrappers(
     credits += 1
     if (!quotes?.payload) {
       return { job, rows: 0, credits, capturedAt, calls, candidates: candidates.length, error: text(quotes?.reason, 120) || 'provider_unavailable' }
+    }
+    // A refresh that failed hands back the stale copy it kept. Those prices are
+    // already stored under the capture that read them; writing them again under
+    // THIS hour would date old prices as a new capture, which is the defect above.
+    if (quotes.state === 'stale') {
+      return {
+        job, rows: 0, credits, capturedAt, calls, candidates: candidates.length,
+        error: `quotes_not_refreshed:${text(quotes.reason, 80) || 'stale_copy'}`,
+      }
     }
 
     // ── The NAV anchor, where one is mapped. The register is empty today, so

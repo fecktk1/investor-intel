@@ -232,8 +232,10 @@ production-source/supabase/functions/_shared/market-assets/cmc-price.test.ts
 production-source/supabase/functions/_shared/market-assets/cmc-quote-groups.test.ts
 production-source/supabase/functions/_shared/market-assets/cmc-receipt.test.ts
 production-source/supabase/functions/_shared/market-assets/cmc-recording-policy.test.ts
+production-source/supabase/functions/_shared/market-assets/cmc-refresh-before.test.ts
 production-source/supabase/functions/_shared/market-assets/cmc-refresh-planner.test.ts
 production-source/supabase/functions/_shared/market-assets/cmc-reproduce.test.ts
+production-source/supabase/functions/_shared/market-assets/cmc-stale-capture.test.ts
 production-source/supabase/functions/_shared/market-assets/logo-cache.test.ts
 production-source/supabase/functions/_shared/market-assets/market-macro-policy.test.ts
 production-source/supabase/functions/intel-data-budget/index.test.ts

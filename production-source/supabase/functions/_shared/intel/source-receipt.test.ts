@@ -65,6 +65,12 @@ Deno.test('a capture receipt carries the proof its own call kept, dated against 
  // Another caller's or endpoint's proof never attaches, and none is none.
  assert.equal(captureRunReceipts('rwa',spec,logs,ago(590),3600,NOW,[{...row,caller:'intel-capture-rwa-depth'}])[0].proof,null)
  assert.equal(captureRunReceipts('rwa',spec,logs,ago(590),3600,NOW)[0].proof,null)
+ // The receipt's parameters are the ones this run's call sent (its recorded
+ // request), never an empty set beside a command that carries them. An earlier
+ // run's request does not stand in for this run's.
+ assert.deepEqual(receipt.parameters,{limit:'250',start:'1'})
+ assert.deepEqual(older.parameters,{})
+ assert.deepEqual(captureRunReceipts('rwa',spec,logs,ago(590),3600,NOW)[0].parameters,{})
  const missing=captureProof({...row,excerpt:null,excerpt_missing:'failure_body_not_kept'},ago(600))
  assert.equal(missing?.excerpt,null);assert.equal(missing?.excerptMissing,'failure_body_not_kept')
  assert.equal(captureProof({...row,excerpt:null,excerpt_missing:'anything else'},ago(600))?.excerptMissing,'not_recorded')

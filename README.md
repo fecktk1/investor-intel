@@ -40,13 +40,13 @@ The other endpoints the product calls (markets, derivatives, DEX lanes) are list
 
 ## One real call, with the code that made it
 
-A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-premium lane asks for quotes on the assets it is pricing, in `production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts` line 616:
+A production `rwaQuotes` call on 2026-09-22 (HTTP 200, 1 credit). The wrapper-premium lane asks for quotes on the assets it is pricing, in `production-source/supabase/functions/_shared/intel/capture-rwa-wrappers.ts` line 625:
 
 ```ts
 const quotes = await deps.request('rwaQuotes', { rwa_id: candidates.join(',') }, ctx).catch(() => null)
 ```
 
-`deps.request` is `requestCmc`. After the registry, plan, cache and credit-reservation checks, the request goes out in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts` lines 275 to 276:
+`deps.request` is `requestCmc`. After the registry, plan, cache and credit-reservation checks, the request goes out in `production-source/supabase/functions/_shared/market-assets/cmc-transport.ts` lines 288 to 289:
 
 ```ts
 const res=await fetch(`${BASE}${spec.path}${post?'':`?${query}`}`,{method:post?'POST':'GET',headers:{'X-CMC_PRO_API_KEY':key,Accept:'application/json',...(post?{'Content-Type':'application/json'}:{})},
@@ -89,10 +89,10 @@ One call returns every wrapper of the asset with its issuer. Against CMC's own `
 
 Every push runs the [test workflow](.github/workflows/test.yml) offline, with no secrets and no CoinMarketCap call:
 - `npm ci`, then `npm test` (26 demo tests in fixture mode), then `npm run build`;
-- **2,280 Deno tests from 244 of the 286 Deno test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission;
+- **2,299 Deno tests from 246 of the 288 Deno test files in `production-source/`**, listed in `production-source/runnable-tests.txt`, without network permission;
 - **32 Vitest tests from 5 of the 6 Vitest test files in `production-source/`**, the React frontend's, listed in `production-source/runnable-vitest-tests.txt`, with the network globals replaced by ones that fail the test.
 
-The other 42 Deno test files (421 tests) and 1 Vitest test file (31 tests) are listed with the reason each can't run here in `production-source/excluded-tests.md`. Most import a module of the private parent platform. For the ones that only need such a module to load, `test-support/deno.json` maps it to a TEST STAND-IN in `test-support/stand-ins/`, and the Vitest run applies the same map. A stand-in has no behaviour: every export throws, and any use fails the run.
+The other 42 Deno test files (421 tests) and 1 Vitest test file (32 tests) are listed with the reason each can't run here in `production-source/excluded-tests.md`. Most import a module of the private parent platform. For the ones that only need such a module to load, `test-support/deno.json` maps it to a TEST STAND-IN in `test-support/stand-ins/`, and the Vitest run applies the same map. A stand-in has no behaviour: every export throws, and any use fails the run.
 
 The packaging test (`production-source/scripts/test-intel-extraction-package.mjs`) builds this repository, runs these tests, and checks every count of tests, test files and MCP tools stated in this README and in `docs/` against what it built. The only counts it leaves alone are the ones recorded for a named earlier run.
 
@@ -175,7 +175,7 @@ The server's source is `production-source/supabase/functions/intel-mcp-demo/`. I
 
 | Folder | What it is | How to check it |
 |---|---|---|
-| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,280 tests from `production-source/runnable-tests.txt`, no key, no network permission. `npm run test:vitest`: 32 tests from `production-source/runnable-vitest-tests.txt`. `test-support/` holds the configs and the stand-ins those commands use. |
+| `production-source/` | The Investor Intel source under its original paths, with its real development history (`git log -- production-source`). Its tests cover the production modules behind the live RWA lane and the CMC transport (wrapper premiums, best-wrapper picks, premium history, on-chain depth and exit capacity, daily universe coverage and issuer concentration, issuers and underlying SEC registrants, yield against NAV, the capability registry, credit reservation and receipts) and most of the rest of Investor Intel. | The Deno commands above: 2,299 tests from `production-source/runnable-tests.txt`, no key, no network permission. `npm run test:vitest`: 32 tests from `production-source/runnable-vitest-tests.txt`. `test-support/` holds the configs and the stand-ins those commands use. |
 | everything else | A runnable local demo: three investigations (asset notebook, RWA and issuers, market structure) that run on fixtures with no key, on CoinMarketCap's keyless API, or on your own key. | `npm ci`, `npm test`, `npm run dev` (see Quick start) |
 | `docs/real-api-call.md` | One real production call to `/v5/real-world-assets/quotes/latest`: the code that made it and the response. | |
 | `evidence/recorded-cmc-calls/` | Recorded keyless probes, with provider status objects kept verbatim, refusals included. | |
@@ -186,7 +186,7 @@ The server's source is `production-source/supabase/functions/intel-mcp-demo/`. I
 Some Investor Intel modules import the private parent platform (authentication, the Supabase client and shared provider helpers), which is not in this repository.
 - **Tests that still run.** Where a test only needs such a module to load, it runs here against a stand-in that has no behaviour.
 - **Tests that don't.** Where it needs the module to work, it is listed in `production-source/excluded-tests.md` with the reason.
-- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 525 tests behind the RWA lane and the CMC transport.
+- **The import-closed subset.** `production-source/standalone-tests.txt` still lists the subset that runs with no config at all: 528 tests behind the RWA lane and the CMC transport.
 
 The product itself runs on Supabase (Postgres and Deno Edge Functions), with React on Netlify.
 
@@ -204,14 +204,16 @@ The product itself runs on Supabase (Postgres and Deno Edge Functions), with Rea
 - The RWA `cik` belongs to the underlying listed company, not the token issuer. The docs don't say which it is, and treating it as the issuer would be a serious mistake. Issuer identity comes from separate, dated evidence (GLEIF, EDGAR, OFAC).
 - Gold wrappers under the same asset are priced per gram and per troy ounce. We added a unit guard that converts them to one unit before comparing them.
 - None of the tokenised treasury funds we track carry a NAV from CMC, so NAV comes from each fund's Chainlink feed.
-- RWA quotes carry `tradfi_markets` with the listed share's ticker but no stock price, so the stock comparison reads a Chainlink feed instead. The quotes also refresh less often than our six-hourly lane: in the 22 and 23 September captures, `last_updated` moved only at 08:45:59 and 20:45:59 UTC. The board therefore shows both the capture time and the time CoinMarketCap last updated the prices, and the stock price is read as it stood at that second time.
+- RWA quotes carry `tradfi_markets` with the listed share's ticker but no stock price, so the stock comparison reads a Chainlink feed instead. The board shows both our capture time and the `last_updated` time CoinMarketCap gives the wrapper prices, and the stock price is read as it stood at that `last_updated` instant, so a wrapper and its share are always compared at the same moment.
 - `/v1/dex/token/pools` returns no `data` field at all for a token with zero pools. Our generic guard read that as malformed, and three permissioned funds were charged for refused reads before we special-cased it.
 - Some refusals are not JSON: `/v1/dex/meme/list` without `platformIds` answers with an HTML 403 from a gateway, which hid the real reason until the transport started trusting the HTTP status over the body. With `platformIds`, it returns empty lists for every documented request body on Startup.
 - The keyless public API answers a small burst and then returns 429 with error 1022, so it can't be relied on for a replayable demo.
 
 ## Pre-existing work and what is new
 
-Investor Intel has been part of TheContentForge since June 2026 (narrative radar and signals). Before the event, the product had a narrow v1 listing and global-metrics adapter (`coinmarketcap-provider.ts`) and v2 quote and map price helpers; both are in `production-source/` and in its history. **The hackathon CMC integration was built during the event: its first commit was 2026-09-14, after submissions opened on 2026-09-09.** That covers the capability registry, credit reservation and receipts, the v3 and v5 consumers, the whole RWA lane (universe, wrappers, depth, issuers, underlyings, yield) and the DEX lanes. The history shows it: `git log --since=2026-09-09 -- production-source/supabase/functions/_shared/market-assets`. The runnable demo was also written for the event. The shared chart code it reuses contains both older and changed code, so including it is not a claim that every line is new. [`docs/build-timeline.md`](docs/build-timeline.md) records the build by day.
+Investor Intel has been part of TheContentForge since June 2026 (narrative radar and signals). Before the event, its only CoinMarketCap client was a narrow v1 listing and global-metrics adapter (`coinmarketcap-provider.ts`), which is in `production-source/` with its history. The parent platform's content tools also had v2 quote and v1 map price helpers (`supabase/functions/_shared/price-snapshot.ts`); they are not part of Investor Intel and are not in this repository. **The hackathon CMC integration was built during the event: its first commit was 2026-09-14, after submissions opened on 2026-09-09.** That covers the capability registry, credit reservation and receipts, the v3 and v5 consumers, the whole RWA lane (universe, wrappers, depth, issuers, underlyings, yield) and the DEX lanes. The history shows it: `git log --since=2026-09-09 -- production-source/supabase/functions/_shared/market-assets`. The runnable demo was also written for the event. The shared chart code it reuses contains both older and changed code, so including it is not a claim that every line is new. [`docs/build-timeline.md`](docs/build-timeline.md) records the build by day.
+
+**You can recount this yourself, file by file.** [`docs/built-for-the-hackathon.md`](docs/built-for-the-hackathon.md) lists every file of the CoinMarketCap integration and the RWA and DEX lanes in `production-source/`, chosen by a mechanical scope rule rather than by hand. For each file it gives the first commit date, whether the file existed before the event, and the lines and commits since. Of the 660 files in scope, 612 were first committed during the event, 45 existed before it and were changed, and 3 existed before it and are unchanged. The record is generated from git on every package, and the package test recomputes it and fails on any difference. To recompute it from this repository's history, run `node production-source/scripts/intel-built-list.mjs --check`. The document also gives the git command behind each column. [`docs/built-for-the-hackathon.json`](docs/built-for-the-hackathon.json) is the same record as data.
 
 ## Licence
 
@@ -244,7 +246,7 @@ Open http://127.0.0.1:5187. The demo has three modes, set in a local `.env` (cop
 | **Live, with your own key** | `CMC_MODE=live`, `CMC_API_KEY=<your key>` and, for a hackathon Startup key, `CMC_VERIFIED_PLAN=startup` | **Real RWA listings, profiles, quotes and issuers** from `/v5/real-world-assets/*`, plus live quotes, OHLCV (Startup) and derivatives. The server spends at most 20 credits a month by default (`CMC_DEMO_CREDIT_LIMIT`) and never sends the key to the browser. |
 | Keyless | `CMC_MODE=keyless` | CoinMarketCap's anonymous public API, no key at all. It does not cover the RWA family, and the shared pool refuses bursts (HTTP 429). Caveat, verbatim: keyless commercial terms are unstated; keep it to the demo until reviewed. |
 
-The production modules have their own tests (Deno 2, and Vitest for the React frontend). This runs the same 2,280 Deno tests and 32 Vitest tests as CI:
+The production modules have their own tests (Deno 2, and Vitest for the React frontend). This runs the same 2,299 Deno tests and 32 Vitest tests as CI:
 
 ```bash
 npm run test:vitest
@@ -256,6 +258,7 @@ deno test --config test-support/deno.json --cached-only --allow-read --allow-env
 
 - [`docs/real-api-call.md`](docs/real-api-call.md): a real production call, the code that made it and the response
 - [`docs/build-timeline.md`](docs/build-timeline.md): when the CoinMarketCap work was built, by day
+- [`docs/built-for-the-hackathon.md`](docs/built-for-the-hackathon.md): every file of the CoinMarketCap integration and the RWA and DEX lanes, new or pre-existing, with the git commands that recompute it
 - [`docs/demo-guide.md`](docs/demo-guide.md): modes, credit guard, tests, what the demo leaves out, and how this repository is packaged
 - [`docs/keyless-demo-mode.md`](docs/keyless-demo-mode.md): keyless probe logs
 

@@ -1,5 +1,5 @@
 import { assert, assertEquals, assertFalse, assertThrows } from 'jsr:@std/assert@1'
-import { ANSWER_REFRESH_MS, ANSWER_SERVE_MAX_MS, answerKey, answerLookup, lookupRwa, parseLookupQuery, parseResearchRequest, reproduceLine, researchRwa, reserveAnswer, scrubSecrets, trimRaw, IP_LIVE_LIMIT_REASON, LOOKUP_LIVE_RATE, LOOKUP_RATE, type AnswerStore, type StoredAnswer } from './rwa-lookup.ts'
+import { ANSWER_REFRESH_MS, ANSWER_SERVE_MAX_MS, answerKey, answerLookup, CHECK_LIMIT_REASON, CONCURRENT_REASON, dailyTakeReason, decideQuoteRead, lookupRwa, LOOKUP_LIVE_AFTER_MS, newestSlotBefore, parseLookupQuery, parseResearchRequest, reproduceLine, researchRwa, reserveAnswer, RWA_QUOTE_CADENCE, scrubSecrets, trimRaw, IP_LIVE_LIMIT_REASON, LOOKUP_LIVE_RATE, LOOKUP_RATE, type AnswerStore, type StoredAnswer } from './rwa-lookup.ts'
 import { phaseTimer } from './server-timing.ts'
 import { researchParams } from './research-service.ts'
 import { handleLookup, type HandlerDeps } from '../../intel-rwa-lookup/handler.ts'
@@ -706,4 +706,178 @@ Deno.test('handler: every answer says where its time went (Server-Timing), reada
   assert(res.headers.get('access-control-expose-headers')!.includes('Server-Timing'))
   const research = await handleLookup(post({ capability: 'rwaList', params: { start: 1, limit: 25 } }, '3.3.3.3'), h)
   assert(research.headers.get('server-timing')!.includes('research;dur='))
+})
+
+// ─── Live or stored: the rule, the one call, the allowances, what is said ───
+
+const quoteDeps = (db: ReturnType<typeof fakeDb>, reads: Partial<Record<FreeRwaPlan, () => Row>>, claim = true) => {
+  const passes: { plan: FreeRwaPlan; refreshBefore: string | null }[] = []
+  let claims = 0
+  const d = {
+    db, now: () => NOW,
+    readQuote: (_id: string, opts?: { refreshBefore?: string | null }) => async (plan: FreeRwaPlan) => { passes.push({ plan, refreshBefore: opts?.refreshBefore ?? null }); return (reads[plan] ?? cacheMiss)() },
+    claim: async () => { claims++; return { allowed: claim, reason: claim ? null : 'free_rwa_budget_exhausted', cap: 200, used: 1 } },
+  }
+  return { d, passes, claims: () => claims }
+}
+const at = (iso: string) => Date.parse(iso)
+
+Deno.test('live rule: a copy retrieved more than ten minutes ago is live, a younger one is stored, none is live, asked is live', () => {
+  const now = at('2026-10-05T12:00:00.000Z')
+  assertEquals(LOOKUP_LIVE_AFTER_MS, 600_000)
+  assertEquals(decideQuoteRead({ retrievedAt: '2026-10-05T11:55:00.000Z', sourceUpdatedAt: '2026-10-05T11:54:00.000Z', now }).mode, 'stored')
+  assertEquals(decideQuoteRead({ retrievedAt: '2026-10-05T11:55:00.000Z', sourceUpdatedAt: null, now }).why, 'copy_recent')
+  assertEquals(decideQuoteRead({ retrievedAt: '2026-10-05T11:49:59.000Z', sourceUpdatedAt: '2026-10-05T11:49:00.000Z', now }), { mode: 'live', why: 'copy_older_than_limit', expectedUpdateAt: null })
+  assertEquals(decideQuoteRead({ retrievedAt: null, sourceUpdatedAt: null, now }).why, 'no_copy')
+  assertEquals(decideQuoteRead({ retrievedAt: '2026-10-05T11:59:59.000Z', sourceUpdatedAt: null, now, asked: true }).why, 'asked')
+  // Production claims no slot cadence: the measured last_updated trails every call by a minute or two.
+  assertEquals(RWA_QUOTE_CADENCE.slotsUtc, null)
+})
+
+Deno.test('live rule: with a slot cadence, a copy carrying the newest slot is stored (a call would return the same prices), an older one is live', () => {
+  const cadence = { slotsUtc: ['08:45:59', '20:45:59'], liveAfterMs: LOOKUP_LIVE_AFTER_MS }
+  const same = decideQuoteRead({ retrievedAt: '2026-10-05T09:10:00.000Z', sourceUpdatedAt: '2026-10-05T08:45:59.000Z', now: at('2026-10-05T14:00:00.000Z'), cadence })
+  assertEquals(same, { mode: 'stored', why: 'cmc_not_updated_since', expectedUpdateAt: '2026-10-05T08:45:59.000Z' })
+  const due = decideQuoteRead({ retrievedAt: '2026-10-05T20:40:00.000Z', sourceUpdatedAt: '2026-10-05T08:45:59.000Z', now: at('2026-10-05T21:00:00.000Z'), cadence })
+  assertEquals(due, { mode: 'live', why: 'cmc_update_due', expectedUpdateAt: '2026-10-05T20:45:59.000Z' })
+  // Just after midnight the newest slot is yesterday's evening one.
+  assertEquals(newestSlotBefore(cadence.slotsUtc, at('2026-10-06T02:00:00.000Z')), at('2026-10-05T20:45:59.000Z'))
+  // No last_updated to compare: the age limit decides.
+  assertEquals(decideQuoteRead({ retrievedAt: '2026-10-05T13:55:00.000Z', sourceUpdatedAt: null, now: at('2026-10-05T14:00:00.000Z'), cadence }).why, 'copy_recent')
+})
+
+Deno.test('lookup: a copy inside its window but older than the limit gets ONE live call, and the answer says live', async () => {
+  const { d, passes, claims } = quoteDeps(fakeDb(tables()), { 'shared-cache': () => cacheHit('2026-10-05T11:40:00.000Z'), 'shared-live': liveOk })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), true) as Row
+  assertEquals(passes.map((p) => p.plan), ['shared-cache', 'shared-live']); assertEquals(claims(), 1)
+  // The live pass declares copies older than the limit past their window, no more.
+  assertEquals(passes[1].refreshBefore, new Date(NOW - LOOKUP_LIVE_AFTER_MS).toISOString())
+  const r = out.figures.quote.receipt
+  assertEquals([r.served, r.creditCount, r.curlMeaning], ['live', 1, 'this_call'])
+  assertEquals([out.quoteRead.mode, out.quoteRead.why, out.quoteRead.refusal], ['live', 'copy_older_than_limit', null])
+  assertEquals(out.quoteRead.retrievedAt, '2026-10-05T12:00:00.000Z')
+  assertEquals(out.quoteRead.sourceUpdatedAt, '2026-10-05T11:50:00.000Z')
+})
+
+Deno.test('lookup: a recent copy is stored, with no gate, no claim and no call, and says so', async () => {
+  let gates = 0
+  const { d, passes, claims } = quoteDeps(fakeDb(tables()), { 'shared-cache': cacheHit, 'shared-live': liveOk })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), async () => { gates++; return true }) as Row
+  assertEquals(passes.map((p) => p.plan), ['shared-cache']); assertEquals(claims(), 0); assertEquals(gates, 0)
+  assertEquals(out.quoteRead, { mode: 'stored', why: 'copy_recent', asked: false, refusal: null, retrievedAt: '2026-10-05T11:55:00.000Z', sourceUpdatedAt: '2026-10-05T11:50:00.000Z', served: 'cache', liveAfterSeconds: 600, expectedUpdateAt: null })
+})
+
+Deno.test('check now: asked, a one-minute-old copy is still read live, and the live pass refreshes whatever it holds', async () => {
+  const { d, passes, claims } = quoteDeps(fakeDb(tables()), { 'shared-cache': () => cacheHit('2026-10-05T11:59:00.000Z'), 'shared-live': liveOk })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), true, undefined, { asked: true }) as Row
+  assertEquals(passes.map((p) => p.plan), ['shared-cache', 'shared-live']); assertEquals(claims(), 1)
+  assertEquals(passes[1].refreshBefore, new Date(NOW).toISOString())
+  assertEquals([out.quoteRead.mode, out.quoteRead.why, out.quoteRead.asked], ['live', 'asked', true])
+})
+
+Deno.test('check now: an allowance that is used up refuses before the budget, and the stored copy says why', async () => {
+  const { d, passes, claims } = quoteDeps(fakeDb(tables()), { 'shared-cache': cacheHit, 'shared-live': liveOk })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), async () => ({ ok: false, reason: 'lookup_check_daily_limit' }), undefined, { asked: true }) as Row
+  assertEquals(passes.map((p) => p.plan), ['shared-cache']); assertEquals(claims(), 0)
+  assertEquals([out.quoteRead.mode, out.quoteRead.refusal, out.figures.quote.receipt.served], ['stored', 'lookup_check_daily_limit', 'cache'])
+  // A bare false from the check gate is the check allowance, not the hourly one.
+  const bare = await lookupRwa(quoteDeps(fakeDb(tables()), { 'shared-cache': cacheHit }).d, parseLookupQuery('NVDA'), async () => false, undefined, { asked: true }) as Row
+  assertEquals(bare.quoteRead.refusal, CHECK_LIMIT_REASON)
+  // A spent free budget is the same honest refusal, after the allowance.
+  const spent = await lookupRwa(quoteDeps(fakeDb(tables()), { 'shared-cache': cacheHit }, false).d, parseLookupQuery('NVDA'), true, undefined, { asked: true }) as Row
+  assertEquals(spent.quoteRead.refusal, 'free_rwa_budget_exhausted')
+})
+
+Deno.test('live pass: a copy another request fetched at the same moment answers, and says it was not this call', async () => {
+  const { d } = quoteDeps(fakeDb(tables()), { 'shared-cache': () => cacheHit('2026-10-05T11:30:00.000Z'), 'shared-live': () => cacheHit('2026-10-05T11:59:58.000Z') })
+  const out = await lookupRwa(d, parseLookupQuery('NVDA'), true) as Row
+  assertEquals([out.figures.quote.receipt.served, out.quoteRead.mode, out.quoteRead.refusal, out.quoteRead.retrievedAt], ['cache', 'stored', CONCURRENT_REASON, '2026-10-05T11:59:58.000Z'])
+})
+
+Deno.test('stored answer: a kept quote past the limit is read live for this request, put into the kept answer, and rebuilt behind without a call', async () => {
+  const oldQuote = await lookupRwa(quoteDeps(fakeDb(tables()), { 'shared-cache': () => cacheHit('2026-10-05T11:45:00.000Z') }).d, parseLookupQuery('NVDA'), false)
+  const answers = memoryAnswers({ 'q:nvda': { body: oldQuote as Row, builtAt: new Date(NOW - 30_000).toISOString() } })
+  let cacheCopy = () => cacheHit('2026-10-05T11:45:00.000Z')
+  const { d, passes, claims } = quoteDeps(fakeDb(tables()), { 'shared-cache': () => cacheCopy(), 'shared-live': () => { cacheCopy = () => cacheHit('2026-10-05T12:00:00.000Z'); return liveOk() } })
+  const deferred: Promise<unknown>[] = []
+  const out = await answerLookup({ ...d, answers: answers.store, defer: (w) => { deferred.push(w) } }, parseLookupQuery('NVDA'), true) as Row
+  assertEquals(passes.map((p) => p.plan), ['shared-cache', 'shared-live']); assertEquals(claims(), 1)
+  assertEquals([out.figures.quote.receipt.served, out.figures.quote.receipt.creditCount, out.quoteRead.mode], ['live', 1, 'live'])
+  assert(out.stored, 'still says it is a kept answer')
+  // The wrapper rows carry the new prices and keep the capture hour's premium.
+  assertEquals(out.figures.wrappers.receipt.served, 'live')
+  assertEquals(out.figures.wrappers.value.find((w: Row) => w.symbol === 'NVDAX').premiumBps, 7.7)
+  await Promise.all(deferred)
+  // The rebuild behind read the copy the call just filled: no second call.
+  assertEquals(passes.map((p) => p.plan), ['shared-cache', 'shared-live', 'shared-cache'])
+  assertEquals(answers.kept, ['q:nvda'])
+})
+
+Deno.test('stored answer: a kept quote inside the limit is served with no read at all, and says stored', async () => {
+  const young = await lookupRwa(quoteDeps(fakeDb(tables()), { 'shared-cache': cacheHit }).d, parseLookupQuery('NVDA'), false)
+  const answers = memoryAnswers({ 'q:nvda': { body: young as Row, builtAt: new Date(NOW - 20_000).toISOString() } })
+  const { d, passes } = quoteDeps(fakeDb(tables()), { 'shared-cache': cacheHit, 'shared-live': liveOk })
+  const out = await answerLookup({ ...d, answers: answers.store }, parseLookupQuery('NVDA'), true) as Row
+  assertEquals(passes, [])
+  assertEquals([out.quoteRead.mode, out.quoteRead.why, out.quoteRead.retrievedAt], ['stored', 'copy_recent', '2026-10-05T11:55:00.000Z'])
+  // Asked, the same kept answer is read live.
+  const asked = await answerLookup({ ...d, answers: answers.store }, parseLookupQuery('NVDA'), true, undefined, { asked: true }) as Row
+  assertEquals([asked.quoteRead.mode, asked.quoteRead.asked], ['live', true])
+})
+
+const hexIp = (ip: string) => Array.from(ip).map((c) => c.charCodeAt(0).toString(16)).join('').padEnd(32, '0').slice(0, 32)
+function dailyFake(failing = false) {
+  const counts = new Map<string, number>()
+  const takes: { caller: string; kind: string }[] = []
+  const daily = async (caller: string, kind: 'auto' | 'check', limit: number, globalLimit: number) => {
+    if (failing) throw new Error('down')
+    takes.push({ caller, kind })
+    const mine = (counts.get(`${caller}|${kind}`) ?? 0) + 1
+    counts.set(`${caller}|${kind}`, mine)
+    if (mine > limit) return { allowed: false, reason: dailyTakeReason(kind, 'daily_cap_reached') }
+    const all = (counts.get(`all|${kind}`) ?? 0) + 1
+    counts.set(`all|${kind}`, all)
+    if (all > globalLimit) return { allowed: false, reason: dailyTakeReason(kind, 'all_daily_cap_reached') }
+    return { allowed: true, reason: null }
+  }
+  return { daily, takes }
+}
+
+Deno.test('handler: "check now" takes the check allowance; with the cap lowered to 1 the second check is refused and says why', async () => {
+  let live = 0
+  const fake = dailyFake()
+  const h: HandlerDeps = { ...handlerDeps(fakeDb(tables()), { 'shared-cache': cacheHit, 'shared-live': () => { live++; return liveOk() } }),
+    ipKey: async (req, bucket) => `ip:${hexIp(req.headers.get('x-forwarded-for') || 'x')}:${bucket}`,
+    daily: fake.daily, allowance: { auto: { perIp: 5, all: 50 }, check: { perIp: 1, all: 50 } } }
+  const first = await (await handleLookup(post({ q: 'NVDA', check: true }, '5.5.5.5'), h)).json()
+  assertEquals([first.quoteRead.mode, first.quoteRead.asked, live], ['live', true, 1])
+  const second = await (await handleLookup(post({ q: 'NVDA', check: true }, '5.5.5.5'), h)).json()
+  assertEquals([second.quoteRead.mode, second.quoteRead.refusal, live], ['stored', 'lookup_check_daily_limit', 1])
+  // Another address has its own allowance.
+  const other = await (await handleLookup(post({ q: 'NVDA', check: true }, '4.4.4.4'), h)).json()
+  assertEquals([other.quoteRead.mode, live], ['live', 2])
+  assertEquals(fake.takes.map((t) => t.kind), ['check', 'check', 'check'])
+  assert(fake.takes.every((t) => /^ip:[0-9a-f]{32}$/.test(t.caller)), 'only the salted hash prefix is counted')
+  // A plain lookup of a recent copy takes nothing.
+  await handleLookup(post({ q: 'NVDA' }, '5.5.5.5'), h)
+  assertEquals(fake.takes.length, 3)
+  // Only a boolean check is accepted.
+  assertEquals((await handleLookup(post({ q: 'NVDA', check: 'yes' }, '5.5.5.5'), h)).status, 400)
+})
+
+Deno.test('handler: the live rule takes the auto allowance; everybody\'s cap and an unreadable counter both refuse, never call', async () => {
+  let live = 0
+  const fake = dailyFake()
+  const old = () => cacheHit('2026-10-05T11:30:00.000Z')
+  const base = { ...handlerDeps(fakeDb(tables()), { 'shared-cache': old, 'shared-live': () => { live++; return liveOk() } }),
+    ipKey: async (req: Request, bucket: string) => `ip:${hexIp(req.headers.get('x-forwarded-for') || 'x')}:${bucket}` }
+  const h: HandlerDeps = { ...base, daily: fake.daily, allowance: { auto: { perIp: 5, all: 1 }, check: { perIp: 5, all: 5 } } }
+  assertEquals((await (await handleLookup(post({ q: 'NVDA' }, '3.1.1.1'), h)).json()).quoteRead.mode, 'live')
+  const all = await (await handleLookup(post({ q: 'NVDA' }, '3.2.2.2'), h)).json()
+  assertEquals([all.quoteRead.mode, all.quoteRead.refusal, live], ['stored', 'lookup_live_all_daily_limit', 1])
+  const broken: HandlerDeps = { ...base, daily: dailyFake(true).daily }
+  const refused = await (await handleLookup(post({ q: 'NVDA' }, '3.3.3.3'), broken)).json()
+  assertEquals([refused.quoteRead.refusal, live], ['lookup_allowance_unavailable', 1])
+  assertEquals(dailyTakeReason('auto', 'daily_cap_reached'), 'lookup_live_daily_limit')
+  assertEquals(dailyTakeReason('check', 'nonsense'), 'lookup_allowance_unavailable')
 })

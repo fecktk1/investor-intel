@@ -190,7 +190,14 @@ export function captureRunReceipts(lane:string,spec:CaptureLane,logs:any[],captu
    // and a run with none reports null rather than a zero nobody measured.
    creditCount:credits.length?credits.reduce((s,v)=>s+v,0):null},now)
   const kept=(Array.isArray(proofs)?proofs:[]).find(p=>p&&p.caller===newest.caller&&String(p.endpoint||'')===String(newest.endpoint||''))
-  return {...receipt,captureCall:CACHE_STATUS[String(newest.cache_status)]??null,callCount:calls.length,calledAt:iso(newest.ts),proof:captureProof(kept,iso(newest.ts))}
+  const proof=captureProof(kept,iso(newest.ts))
+  // The parameters this run's call SENT, from its own recorded request. Before
+  // this, a capture receipt said `parameters: {}` while its reproduce command
+  // (built from the same proof.request) carried every id: the drawer showed
+  // "None" beside a curl with 60 rwa_ids. A proof kept from an earlier run
+  // describes that run's call, so it does not stand in for this run's.
+  const parameters=proof?.inRun&&proof.request?proof.request.parameters:receipt.parameters
+  return {...receipt,parameters,captureCall:CACHE_STATUS[String(newest.cache_status)]??null,callCount:calls.length,calledAt:iso(newest.ts),proof}
  }).sort((a,b)=>String(a.endpoint).localeCompare(String(b.endpoint)))
 }
 

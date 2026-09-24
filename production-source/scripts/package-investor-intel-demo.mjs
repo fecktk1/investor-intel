@@ -7,6 +7,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import { PUBLIC_DOCS, assertPublishable, deniedPackagePaths } from './intel-extraction-package-guards.mjs'
 import { planPublishedTestRun, RUNNABLE_TESTS, RUNNABLE_VITEST_TESTS, EXCLUDED_TESTS } from './intel-extraction-test-run.mjs'
+import { computeBuiltList, writeBuiltList, HISTORY_CUT } from './intel-built-list.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..'),example=path.join(root,'examples/investor-intel-hackathon')
 // Explicit fail-closed boundaries keep private app providers out of the standalone package.
 const adapters={
@@ -38,8 +39,8 @@ const adapters={
 }
 // Discovery validates this explicit list; it never authorizes new copies.
 const chartSources=[...Object.keys(adapters),
-  ...['TokenChart','TokenChartFallback','JournalMarkerReceipt','ChartReplayControls','ResponsiveChartTools','EvidenceMarkerContext','PriceWorkstation','ChartDrawings','ChartLayoutLibrary','ChartAssetNavigator','TokenAvatar','ChartSnapshotSave','ChartAlertEditor','ChartStructurePanel','ChartOutcomePanel','InvestigationTable','ChartReadPanel','ChartPatternPanel','ChartTimeframePanel','deferred-panel','deferred-tool','ChartDrawingEditor','ChartDrawingSurface','ChartDrawingToolbar','ChartDrawingOptions','ChartDrawingMorePanel','ChartIndicatorDialog','ChartIndicatorMenu','ChartIndicatorPanel','ChartLayoutLaunch','ChartWatermark','ChartCandleProvenance','FigureProvenance','SourceCallReceipt','ReceiptCostLine'].map(name=>`src/intel/components/${name}.jsx`),
-  ...['chart-history','chart-event-changes','useChartAlertHistory','chart-workspace-api','chart-replay','chart-renderer-data','useChartStudies','chart-study.worker','chart-drawings','chains','useChartStructure','chart-structure.worker','chart-drawing-snap','chart-drawing-tools','chart-size','chart-watermark','chart-indicators','source-receipt','stored-series-caption','chart-source-label','as-of'].map(name=>`src/intel/lib/${name}.js`),
+  ...['TokenChart','TokenChartFallback','JournalMarkerReceipt','ChartReplayControls','ResponsiveChartTools','EvidenceMarkerContext','PriceWorkstation','ChartDrawings','ChartLayoutLibrary','ChartAssetNavigator','TokenAvatar','ChartSnapshotSave','ChartAlertEditor','ChartStructurePanel','ChartOutcomePanel','InvestigationTable','ChartReadPanel','ChartPatternPanel','ChartTimeframePanel','deferred-panel','deferred-tool','ChartDrawingEditor','ChartDrawingSurface','ChartDrawingToolbar','ChartDrawingOptions','ChartDrawingMorePanel','ChartIndicatorDialog','ChartIndicatorMenu','ChartIndicatorPanel','ChartLayoutLaunch','ChartWatermark','ChartCandleProvenance','FigureProvenance','SourceCallReceipt','ReceiptCostLine','ReceiptParameters'].map(name=>`src/intel/components/${name}.jsx`),
+  ...['chart-history','chart-event-changes','useChartAlertHistory','chart-workspace-api','chart-replay','chart-renderer-data','useChartStudies','chart-study.worker','chart-drawings','chains','useChartStructure','chart-structure.worker','chart-drawing-snap','chart-drawing-tools','chart-size','chart-watermark','chart-indicators','source-receipt','stored-series-caption','chart-source-label','as-of','receipt-parameters'].map(name=>`src/intel/lib/${name}.js`),
   ...['chart-workspace-contract','chart-analysis','chart-outcome-contract','chart-drawing-geometry','chart-outcome','chart-read','chart-levels','chart-structure','chart-patterns','chart-timeframes'].map(name=>`supabase/functions/_shared/intel/${name}.ts`),
   'src/intel/vendor/lightweight-charts-5.2.0/renderer.mjs',
   // The receipt's reproduce line builds its curl from the capability registry.
@@ -106,7 +107,7 @@ for(const file of chartSources){
 // below. Tracked files only; the private
 // working documents and environment files never enter, and every file passes
 // the full-source secret scan before anything is written.
-const FULL_SOURCE_SCRIPTS=['scripts/package-investor-intel-demo.mjs','scripts/intel-extraction-package-guards.mjs','scripts/intel-extraction-test-run.mjs','scripts/test-intel-extraction-package.mjs']
+const FULL_SOURCE_SCRIPTS=['scripts/package-investor-intel-demo.mjs','scripts/intel-extraction-package-guards.mjs','scripts/intel-extraction-test-run.mjs','scripts/test-intel-extraction-package.mjs','scripts/intel-built-list.mjs']
 const isFullSource=file=>file.startsWith('src/intel/')||file.startsWith('supabase/functions/_shared/intel/')||file.startsWith('supabase/functions/_shared/market-assets/')||/^supabase\/functions\/intel-[^/]+\//.test(file)||/^supabase\/migrations\/([^/]*_)?intel[_.][^/]*$/.test(file)||/^supabase\/migrations\/[^/]*investor[^/]*$/.test(file)||/^src\/i18n\/locales\/[^/]+\/intel\.json$/.test(file)||FULL_SOURCE_SCRIPTS.includes(file)
 const tracked=spawnSync('git',['ls-files','-z'],{cwd:root,encoding:'utf8',maxBuffer:256*1024*1024,windowsHide:true})
 if(tracked.status!==0)throw Error(`git ls-files failed: ${tracked.stderr}`)
@@ -152,6 +153,10 @@ writeFileSync(path.join(example,'production-source/standalone-tests.txt'),standa
 writeFileSync(path.join(example,RUNNABLE_TESTS),testRun.runnable.join('\n')+'\n')
 writeFileSync(path.join(example,RUNNABLE_VITEST_TESTS),testRun.vitestRunnable.join('\n')+'\n')
 writeFileSync(path.join(example,EXCLUDED_TESTS),testRun.markdown)
+// What was built during the event, file by file, from git history: the CMC
+// integration and the RWA and DEX lanes as they ship in production-source/.
+// Rewritten on every package; the package test recomputes it and compares.
+writeBuiltList(example,await computeBuiltList({repo:root,published:[...productionSources,...fullSources],standalone:productionSources,cut:HISTORY_CUT.private}))
 const fullSourceFiles=new Set(fullSources.map(file=>`production-source/${file}`))
 const files=['package.json','package-lock.json','.gitignore','.github/workflows/test.yml','.env.example','README.md','LICENSE.md','product/LICENSE.md','production-source/LICENSE.md','index.html','vite.config.mjs','dev.mjs','src/main.jsx','src/style.css','src/fixtures.mjs','src/notebook.mjs','src/chart-data.mjs','server/index.mjs','server/governance.mjs','server/keyless.mjs','scripts/capture-keyless-evidence.mjs','tests/governance.test.mjs','tests/keyless.test.mjs','tests/notebook.test.mjs','tests/chart-data.test.mjs','tests/capture-keyless-evidence.test.mjs',...PUBLIC_DOCS,...localCaptures(),...shared.map(([,dest])=>dest),'production-source/standalone-tests.txt',RUNNABLE_TESTS,RUNNABLE_VITEST_TESTS,EXCLUDED_TESTS,...testRun.testSupportFiles]
 // Fail closed before anything is written: the private-document denylist and the

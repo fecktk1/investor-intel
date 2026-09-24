@@ -1,4 +1,4 @@
-// Investor Intel: public "Look up any tokenised asset, now".
+// Investor Intel: the public "Look up any tokenised asset".
 //
 // verify_jwt IS FALSE FOR THIS FUNCTION, on purpose (supabase/config.toml,
 // [functions.intel-rwa-lookup]). It is an anonymous, read-only endpoint: the
@@ -10,12 +10,15 @@
 //
 //   1. Input validation (parseLookupQuery): one short ticker, name or rwa_id,
 //      in a character set that cannot become a wildcard or a filter.
-//   2. A per-IP request limit (30 a minute), and a separate per-IP hourly
-//      allowance (20, counted only at a cache miss) for the only path that can reach the provider: a
-//      shared-cache miss inside the daily free RWA budget.
-//   3. The free RWA lane itself (_shared/intel/rwa-free-read.ts): cache first,
-//      never a demand stamp, a live call only when intel_free_rwa_read_claim
-//      grants it from cmc_free_rwa_policy.
+//   2. A per-IP request limit (30 a minute), and separate allowances for the
+//      only path that can reach the provider, each counted only at the moment
+//      a live call would be made: per IP per hour (20), and per IP and for
+//      everybody per UTC day, separately for the lookup's own live rule and for
+//      "Check CoinMarketCap now" (LOOKUP_DAILY_ALLOWANCE,
+//      public.intel_rwa_lookup_live_take).
+//   3. The free RWA lane itself (_shared/intel/rwa-free-read.ts): never a
+//      demand stamp, a live call only when intel_free_rwa_read_claim grants it
+//      from cmc_free_rwa_policy.
 //
 // The same endpoint answers the six real-world asset research reads of the
 // /intel/rwa workspace (rwaList, rwaInfo, rwaQuotes, rwaPairs, issuers, issuer)
@@ -25,7 +28,7 @@
 //
 // See _shared/intel/rwa-lookup.ts for the answers and their receipts.
 
-import { answerLookup, LOOKUP_LIVE_RATE, LOOKUP_RATE, parseLookupQuery, parseResearchRequest, researchRwa, ResearchRequestError, scrubSecrets, type AnswerStore, type LookupDeps, type ResearchDeps } from '../_shared/intel/rwa-lookup.ts'
+import { answerLookup, LOOKUP_DAILY_ALLOWANCE, LOOKUP_LIVE_RATE, LOOKUP_RATE, parseLookupQuery, parseResearchRequest, researchRwa, ResearchRequestError, scrubSecrets, type AnswerStore, type GateVerdict, type LiveKind, type LookupDeps, type ResearchDeps } from '../_shared/intel/rwa-lookup.ts'
 import { phaseTimer, TIMING_HEADERS, type PhaseTimer } from '../_shared/intel/server-timing.ts'
 
 const cors = {
@@ -37,9 +40,18 @@ const cors = {
 // deno-lint-ignore no-explicit-any
 type Limiter = (key: string, limit: number, windowSeconds: number, opts?: { failClosed?: boolean }) => Promise<{ ok: boolean; retryAfter: number }>
 
+/** One live call taken from today's allowance (public.intel_rwa_lookup_live_take). */
+export interface DailyTake { allowed: boolean; reason: string | null }
+
 export interface HandlerDeps extends LookupDeps, ResearchDeps {
   /** The kept finished answers (answerLookup). Absent: every lookup is assembled. */
   answers?: AnswerStore | null
+  /** Take one live call of a kind from the caller's and everybody's UTC-day
+   * allowance. `callerKey` is `ip:<32 hex>`. Absent: no daily allowance (tests
+   * of other properties only; production always wires it). A throw refuses. */
+  daily?: (callerKey: string, kind: LiveKind, limit: number, globalLimit: number) => Promise<DailyTake>
+  /** The daily allowances (LOOKUP_DAILY_ALLOWANCE). Tests lower them. */
+  allowance?: { auto: { perIp: number; all: number }; check: { perIp: number; all: number } }
   /** The phase timer for one request (tests pass their own clock). */
   timer?: () => PhaseTimer
   limit: Limiter
@@ -98,21 +110,39 @@ export async function handleLookup(req: Request, deps: HandlerDeps): Promise<Res
       return send({ error: code, reason: code }, 400, secrets, { 'Cache-Control': 'no-store' })
     }
   } else {
-    if (Object.keys(body).some((k) => k !== 'q')) return send({ error: 'invalid_query', reason: 'invalid_query' }, 400, secrets, { 'Cache-Control': 'no-store' })
+    // { q } or { q, check: true }: "Check CoinMarketCap now". Nothing else.
+    if (Object.keys(body).some((k) => k !== 'q' && k !== 'check') || (body.check !== undefined && typeof body.check !== 'boolean')) return send({ error: 'invalid_query', reason: 'invalid_query' }, 400, secrets, { 'Cache-Control': 'no-store' })
     try { q = parseLookupQuery(body.q) } catch { return send({ error: 'invalid_query', reason: 'invalid_query', hint: "One ticker, name or rwa_id: letters, digits, spaces and . & ' ( ) -, up to 60 characters." }, 400, secrets, { 'Cache-Control': 'no-store' }) }
   }
+  const asked = !rr && body.check === true
 
-  // The live allowance is asked only at the moment a live read would be made:
-  // after a shared-cache miss, before the daily budget claim. So cache hits
-  // never use it up. It fails CLOSED: a limiter we cannot read (or no salt to
-  // key it with) never becomes an unlimited one; the caller still gets the
-  // cached or kept answer with the reason.
-  const liveGate = async () => {
-    if (!key) return false
-    try { return (await deps.limit(`${key}:live`, LOOKUP_LIVE_RATE.limit, LOOKUP_LIVE_RATE.windowSeconds, { failClosed: true })).ok } catch { return false }
+  // The allowances are asked only at the moment a live read would be made:
+  // after the rule says the copy may be out of date (or the visitor asked),
+  // before the daily budget claim. So a stored answer never uses them up. They
+  // fail CLOSED: a limiter or counter we cannot read (or no salt to key it
+  // with) never becomes an unlimited one; the caller still gets the stored or
+  // kept answer with the reason.
+  const allowance = deps.allowance ?? LOOKUP_DAILY_ALLOWANCE
+  const dailyGate = async (kind: LiveKind): Promise<GateVerdict> => {
+    if (!deps.daily) return true
+    const caller = /^ip:([0-9a-f]{32}):/.exec(key ?? '')
+    if (!caller) return { ok: false, reason: 'lookup_allowance_unavailable' }
+    try {
+      const take = await deps.daily(`ip:${caller[1]}`, kind, allowance[kind].perIp, allowance[kind].all)
+      return take.allowed ? true : { ok: false, reason: take.reason ?? 'lookup_allowance_unavailable' }
+    } catch { return { ok: false, reason: 'lookup_allowance_unavailable' } }
   }
+  const liveGate = async (): Promise<GateVerdict> => {
+    if (!key) return false
+    let hourly = false
+    try { hourly = (await deps.limit(`${key}:live`, LOOKUP_LIVE_RATE.limit, LOOKUP_LIVE_RATE.windowSeconds, { failClosed: true })).ok } catch { hourly = false }
+    // The research reads keep exactly the gate they had; only the lookup's own
+    // live rule also draws on the daily allowance.
+    return hourly ? (rr ? true : dailyGate('auto')) : false
+  }
+  const checkGate = async (): Promise<GateVerdict> => key ? dailyGate('check') : { ok: false, reason: 'lookup_allowance_unavailable' }
   try {
-    const body = rr ? await timer.time('research', () => researchRwa(deps, rr!, liveGate)) : await answerLookup(deps, q!, liveGate, timer)
+    const body = rr ? await timer.time('research', () => researchRwa(deps, rr!, liveGate)) : await answerLookup(deps, q!, asked ? checkGate : liveGate, timer, { asked })
     return send(body, 200, secrets, { 'Server-Timing': timer.header() })
   } catch {
     return send(rr ? { error: 'research_unavailable' } : { error: 'lookup_unavailable', reason: 'lookup_unavailable' }, 503, secrets, { 'Cache-Control': 'no-store' })

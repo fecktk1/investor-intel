@@ -6,7 +6,8 @@ import SortableHeader, { StaticHeader } from './SortableHeader'
 import TokenAvatar from './TokenAvatar'
 import FigureProvenance from './FigureProvenance'
 import AsOfTime from './AsOfTime'
-import { formatUtcTime } from '../lib/as-of'
+import { formatUtcTime, useMinuteClock } from '../lib/as-of'
+import { wrapperReadCadence, durationText, timesText } from '../lib/rwa-wrapper-read-cadence'
 import { Scatter } from '../charts'
 import { useProfile } from '../../lib/profile-context'
 import { useSupabase } from '../../lib/useSupabase'
@@ -544,6 +545,13 @@ export default function RwaWrapperSpread({ showHeading = true }) {
   const summary = payload.summary && typeof payload.summary === 'object' ? payload.summary : {}
   const settings = payload.settings && typeof payload.settings === 'object' ? payload.settings : {}
   const captureTime = payload.schedule?.rwa_wrappers?.utc || '02:47, 08:47, 14:47, 20:47'
+  // Why the prices are the age they are: when we read them, how far the
+  // provider's own update time sat behind that read, and when we read next.
+  // Every part comes from the read itself (rwa-wrapper-read-cadence.js).
+  const clock = useMinuteClock(read.status === 'ready')
+  const cadence = wrapperReadCadence(payload, clock)
+  const readLag = durationText(cadence.lagMs, i18n?.language)
+  const readTimes = timesText(cadence.runTimes, i18n?.language)
   const bps = t('rwa_wrappers.bps_unit', { defaultValue: 'bps' })
   const floor = num(settings.volumeFloorUsd) ?? 250000
   const bandLow = num(settings.reconcileBandLow) ?? 0.85
@@ -671,16 +679,32 @@ export default function RwaWrapperSpread({ showHeading = true }) {
       {read.status === 'ready' && (
         <>
           {/* The board's own data time, stated like every section's: the capture
-              every row below was read from, in UTC with its age. */}
+              every row below was read from, in UTC with its age, and right under it
+              why the prices are that age. */}
           {payload.asOf && (
-            <p className="text-[12px] text-[var(--fg-3)]" data-testid="rwa-wrappers-as-of">
-              CoinMarketCap · {t('rwa_wrappers.as_of_label', { defaultValue: 'Wrapper capture' })} · <AsOfTime value={payload.asOf} />
-              {/* The quotes' own last_updated. CoinMarketCap refreshes RWA quotes
-                  less often than the lane runs, so a capture can hold older prices. */}
-              {payload.pricesObservedAt && payload.pricesObservedAt !== payload.asOf && (
-                <> · {t('rwa_wrappers.prices_observed_label', { defaultValue: 'Prices last updated by CoinMarketCap' })} · <AsOfTime value={payload.pricesObservedAt} /></>
+            <div className="space-y-1">
+              <p className="text-[12px] text-[var(--fg-3)]" data-testid="rwa-wrappers-as-of">
+                CoinMarketCap · {t('rwa_wrappers.as_of_label', { defaultValue: 'Wrapper capture' })} · <AsOfTime value={payload.asOf} />
+                {/* The quotes' own last_updated, beside the capture hour it is filed
+                    under. The sentence below says how the two relate. */}
+                {payload.pricesObservedAt && payload.pricesObservedAt !== payload.asOf && (
+                  <> · {t('rwa_wrappers.prices_observed_label', { defaultValue: 'Prices last updated by CoinMarketCap' })} · <AsOfTime value={payload.pricesObservedAt} /></>
+                )}
+              </p>
+              {((cadence.readAt && readLag) || (readTimes && cadence.nextRunAt)) && (
+                <p className="text-[12px] text-[var(--fg-3)] max-w-[80ch]" data-testid="rwa-wrappers-read-cadence">
+                  {cadence.readAt && readLag && t('rwa_wrappers.read_lag', {
+                    lag: readLag, readAt: formatUtcTime(cadence.readAt, i18n?.language),
+                    defaultValue: "When we read these prices at {{readAt}}, CoinMarketCap's own update time on them was {{lag}} earlier.",
+                  })}
+                  {cadence.readAt && readLag && readTimes && cadence.nextRunAt && ' '}
+                  {readTimes && cadence.nextRunAt && t('rwa_wrappers.read_schedule', {
+                    times: readTimes, next: formatUtcTime(cadence.nextRunAt, i18n?.language),
+                    defaultValue: 'We read them every day at {{times}} UTC, and between reads the board keeps the last one. The next read is due at {{next}}.',
+                  })}
+                </p>
               )}
-            </p>
+            </div>
           )}
 
           {payload.reason && (

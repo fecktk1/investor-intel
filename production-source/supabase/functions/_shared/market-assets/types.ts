@@ -86,6 +86,12 @@ export interface MarketAssetsContext {
   // inside its own daily cap and must leave no standing instruction behind it.
   // This flag only ever REMOVES an effect; it can never authorise a call.
   noDemand?: boolean
+  // A shared copy fetched BEFORE this instant counts as past its window for THIS
+  // read, so a read that may call (kind other than 'render') refreshes it. The
+  // public RWA lookup sets it when the stored copy is older than its live rule
+  // allows or a visitor asked to check the provider now. It only ever makes a
+  // copy older: the call still needs maxCalls, a reservation and every budget.
+  refreshBefore?: string | null
   maxCalls?: number                  // explicit per-run budget override
   _calls?: number                    // internal counter
 }

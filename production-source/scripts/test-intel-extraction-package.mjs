@@ -9,6 +9,7 @@ import path from 'node:path'
 import assert from 'node:assert/strict'
 import { PUBLIC_DOCS, PRIVATE_DOCS, DRAFT_MARKER, deniedPackagePaths, isBinaryPackagePath, findSecretShapes, findFullSourceSecretShapes } from './intel-extraction-package-guards.mjs'
 import { STAND_IN_HEADER, TEST_CONFIG, RUNNABLE_TESTS, RUNNABLE_VITEST_TESTS, VITEST_CONFIG, EXCLUDED_TESTS, testRunner } from './intel-extraction-test-run.mjs'
+import { computeBuiltList, builtListJson, builtListMarkdown, publishedFromManifest, HISTORY_CUT, EVENT_START, BUILT_LIST_DOC, BUILT_LIST_JSON, NAME_RULE_EXCEPTIONS, PUBLIC_HISTORY_EXCEPTIONS } from './intel-built-list.mjs'
 const root=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..')
 const require=createRequire(import.meta.url)
 function run(args,cwd=root){const result=spawnSync(process.execPath,args,{cwd,windowsHide:true,encoding:'utf8',timeout:120000});if(result.error||result.status!==0)throw Error(result.error?.message||result.stderr||result.stdout);return result.stdout}
@@ -194,6 +195,56 @@ const nodeRun=run(['--test',...nodeTestFiles],target)
 console.log(nodeRun)
 console.log(run([vite,'build',target,'--config',path.join(target,'vite.config.mjs')],target))
 
+// Built for the hackathon (docs/built-for-the-hackathon.md and .json). The
+// published record is recomputed from git, from the package's own manifest
+// rather than the packager's lists, and must match to the byte.
+const builtRecordText=readFileSync(path.join(target,BUILT_LIST_JSON),'utf8')
+const builtRecord=JSON.parse(builtRecordText)
+const builtNow=await computeBuiltList({repo:root,...publishedFromManifest(manifest),cut:HISTORY_CUT.private})
+assert.equal(builtRecordText,builtListJson(builtNow),`${BUILT_LIST_JSON} differs from a recomputation from git`)
+assert.equal(readFileSync(path.join(target,BUILT_LIST_DOC),'utf8'),builtListMarkdown(builtNow),`${BUILT_LIST_DOC} differs from a recomputation from git`)
+const builtTotals=builtRecord.totals
+assert.ok(builtTotals.files>0&&builtTotals.files===builtTotals.new+builtTotals.changed+builtTotals.unchanged,'the built-for-the-hackathon totals do not add up')
+// A second, independent recomputation for a sample of rows (every file that
+// existed before the event, every exception, and every 20th new file), using
+// the git commands the document prints, one file at a time.
+{
+  const git=args=>{const result=spawnSync('git',args,{cwd:root,encoding:'utf8',windowsHide:true,maxBuffer:256*1024*1024,env:{...process.env,TZ:'UTC'}});if(result.error||result.status!==0)throw Error(`git ${args[0]} failed: ${result.error?.message||result.stderr}`);return result.stdout}
+  const lines=text=>text.split(/\r?\n/).filter(Boolean)
+  const base=git(['rev-list','-1','--first-parent',`--before=${EVENT_START}`,HISTORY_CUT.private]).trim()
+  const stamp='--date=format-local:%Y-%m-%d %H:%M'
+  const byRow=new Map(builtRecord.files.map(row=>[row.path,row]))
+  for(const file of [...Object.keys(NAME_RULE_EXCEPTIONS),...Object.keys(PUBLIC_HISTORY_EXCEPTIONS)])assert.ok(builtNow.rows.some(row=>row.path===file)||packaged.includes(`production-source/${file}`),`${file} is named as an exception but is no longer published: remove it`)
+  // A name-rule exception may only ever lower the count of new files.
+  for(const file of Object.keys(NAME_RULE_EXCEPTIONS)){
+    assert.ok(!git(['ls-tree','--name-only',base,'--',file]).trim(),`${file} existed before the event, so it cannot be a name-rule exception`)
+    assert.ok(lines(git(['log','--full-history','--diff-filter=A',stamp,'--format=%ad','HEAD','--',file])).every(date=>date>='2026-09-09'),`${file} was first committed before the event, so it cannot be a name-rule exception`)
+  }
+  for(const file of Object.keys(PUBLIC_HISTORY_EXCEPTIONS))assert.ok(byRow.has(file),`${file} has a public-history exception but is not in scope: remove it`)
+  const sample=builtRecord.files.filter((row,index)=>row.status!=='new'||index%20===0||NAME_RULE_EXCEPTIONS[row.path]||PUBLIC_HISTORY_EXCEPTIONS[row.path])
+  for(const row of sample){
+    const file=row.path
+    const inCut=lines(git(['log','--full-history','--diff-filter=A',stamp,'--format=%ad',HISTORY_CUT.private,'--',file])).sort()
+    const anywhere=lines(git(['log','--full-history','--diff-filter=A',stamp,'--format=%ad','HEAD','--',file])).sort()
+    assert.equal(row.firstCommitted.replace('T',' ').slice(0,16),(inCut[0]||anywhere[0]),`${file}: first commit differs from git log`)
+    const existed=Boolean(git(['ls-tree','--name-only',base,'--',file]).trim())
+    const [added=0,removed=0]=(lines(git(['diff','--numstat',base,'--',file]))[0]||'').split('\t').filter((_,i)=>i<2).map(Number)
+    assert.equal(row.status,existed?(added||removed?'changed':'unchanged'):'new',`${file}: status differs from git`)
+    assert.deepEqual([row.linesAdded,row.linesRemoved],[added,removed],`${file}: lines differ from git diff --numstat`)
+    const since=range=>lines(git(['log','--no-merges','--full-history',stamp,'--format=%ad',range,'--',file])).filter(date=>date>='2026-09-09').length
+    assert.equal(row.commitsSinceEvent,since('HEAD'),`${file}: commits since the event differ from git log`)
+    if(row.historyPublished)assert.equal(row.commitsSinceEventInPublishedHistory,since(HISTORY_CUT.private),`${file}: published-history commits differ from git log`)
+  }
+  // The README's claim that the integration's first commit came after the event
+  // opened is the record's earliest new file.
+  const earliestNew=builtRecord.files.filter(row=>row.status==='new').map(row=>row.firstCommitted).sort()[0]
+  assert.ok(earliestNew>=EVENT_START,'a new file in the record was committed before the event')
+  assert.ok(readmeText.includes(`its first commit was ${earliestNew.slice(0,10)}, after submissions opened on 2026-09-09`),`the README's first-commit date no longer matches the record (${earliestNew.slice(0,10)})`)
+  const adapter=byRow.get('supabase/functions/_shared/market-assets/coinmarketcap-provider.ts')
+  assert.ok(adapter&&adapter.status!=='new'&&adapter.mentionedCmcBeforeEvent,'the README names coinmarketcap-provider.ts as the pre-existing CMC adapter; the record must agree')
+  console.log(`built for the hackathon: ${builtTotals.files} files (${builtTotals.new} new, ${builtTotals.changed} changed, ${builtTotals.unchanged} unchanged), ${sample.length} rows rechecked file by file`)
+}
+
 // Every count the README and the public docs state about this package is checked
 // against the package itself, so no repackage can publish a stale number. A claim
 // that is reworded fails here until its pattern is updated, and any other
@@ -241,6 +292,10 @@ const CLAIMS=[
   claim('docs/demo-guide.md',String.raw`{n} cover the keyless evidence capture \(\`capture-keyless-evidence\.test\.mjs\`\)`,()=>[nodeTestsIn['capture-keyless-evidence.test.mjs']]),
   claim('docs/demo-guide.md',String.raw`{n} production-source Deno tests \(listed in \`production-source/runnable-tests\.txt\`\) and {n} production-source Vitest tests`,()=>[publishedDeno.passed,vitestPassed]),
   claim('docs/build-timeline.md',String.raw`{n} more MCP tools`,()=>[mcpToolsAdded]),
+  // The totals of docs/built-for-the-hackathon.json, wherever they are cited.
+  claim('README.md',String.raw`Of the {n} files in scope, {n} were first committed during the event, {n} existed before it and were changed, and {n} existed before it and are unchanged\.`,()=>[builtTotals.files,builtTotals.new,builtTotals.changed,builtTotals.unchanged]),
+  claim('docs/build-timeline.md',String.raw`{n} of its {n} files were first committed during the event\. Of the {n} that existed before, only {n} mentioned CoinMarketCap at all\.`,()=>[builtTotals.new,builtTotals.files,builtTotals.changed+builtTotals.unchanged,builtTotals.preExistingThatMentionedCmc]),
+  claim(BUILT_LIST_DOC,String.raw`\*\*{n} files are in scope: {n} were first committed during the event, {n} existed before it and were changed during it, and {n} existed before it and are unchanged\.\*\*`,()=>[builtTotals.files,builtTotals.new,builtTotals.changed,builtTotals.unchanged]),
 ]
 // Counts dated to an earlier run, kept as the record of that run.
 const HISTORICAL_COUNTS={
@@ -270,4 +325,4 @@ for(const file of countDocs){
   }
 }
 console.log(`published counts checked: ${CLAIMS.length} claims across ${countDocs.length} documents (Deno ${publishedDeno.passed} run + ${excludedDenoCount} excluded, Vitest ${vitestPassed} run + ${excludedVitestCount} excluded, standalone ${standalone.passed}, demo ${nodeTests}, MCP ${mcpTools.length}/${demoTools.length})`)
-console.log(JSON.stringify({target,sourceFiles:manifest.files.length,sourceBytes:manifest.files.reduce((sum,f)=>sum+f.bytes,0),verified:'manifest hashes, excluded private paths, worker/license inclusion, emitted server tests, Deno and Vitest runs, published counts and package build',dependencyInstall:'This regression uses existing workspace dependencies. Fresh standalone dependency installation is a separately recorded check.'}))
+console.log(JSON.stringify({target,sourceFiles:manifest.files.length,sourceBytes:manifest.files.reduce((sum,f)=>sum+f.bytes,0),verified:'manifest hashes, excluded private paths, worker/license inclusion, emitted server tests, Deno and Vitest runs, published counts, the built-for-the-hackathon record recomputed from git and package build',dependencyInstall:'This regression uses existing workspace dependencies. Fresh standalone dependency installation is a separately recorded check.'}))

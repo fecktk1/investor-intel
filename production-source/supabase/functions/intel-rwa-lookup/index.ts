@@ -1,4 +1,4 @@
-// Investor Intel: public "Look up any tokenised asset, now". Wiring only; the
+// Investor Intel: the public tokenised asset lookup. Wiring only; the
 // handler and its reasoning are in ./handler.ts (kept free of the Supabase
 // client so its tests run without it).
 
@@ -8,7 +8,7 @@ import { claimFreeRwaRead } from '../_shared/intel/rwa-free-read.ts'
 import { checkAndIncrement, hashedIpKey } from '../_shared/rate-limit.ts'
 import { researchParams, researchSnapshot } from '../_shared/intel/research-service.ts'
 import { loadWarmState, type WarmState } from '../_shared/intel/capture-rwa-quote-warm.ts'
-import type { AnswerStore } from '../_shared/intel/rwa-lookup.ts'
+import { dailyTakeReason, type AnswerStore } from '../_shared/intel/rwa-lookup.ts'
 import { handleLookup, type HandlerDeps } from './handler.ts'
 
 /** The warm lane's run log changes about once an hour, so one isolate reads it
@@ -26,10 +26,13 @@ function defer(work: Promise<unknown>) {
 
 function productionDeps(): HandlerDeps {
   const db = createClient(Deno.env.get('SUPABASE_URL')!, Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')!, { auth: { persistSession: false } })
-  const ctx = (plan: 'shared-cache' | 'shared-live') => ({
+  // `refreshBefore` rides only on the live pass: the lookup's live rule, or a
+  // visitor's check, declares an older shared copy past its window for it.
+  const ctx = (plan: 'shared-cache' | 'shared-live', refreshBefore: string | null = null) => ({
     supabase: db, kind: (plan === 'shared-live' ? 'request' : 'render') as 'request' | 'render', selectedDemand: false, noDemand: true,
     maxCalls: plan === 'shared-live' ? 1 : 0, waitForFresh: plan === 'shared-live',
     caller: plan === 'shared-live' ? 'intel-rwa-lookup-live' : 'intel-rwa-lookup-cache', requestId: null, orgId: null, userId: null,
+    ...(plan === 'shared-live' && refreshBefore ? { refreshBefore } : {}),
   })
   let warmMemo: { at: number; value: Promise<WarmState | null> } | null = null
   const warm = () => {
@@ -53,7 +56,7 @@ function productionDeps(): HandlerDeps {
     db,
     defer,
     answers,
-    readQuote: (rwaId) => (plan) => requestCmc('rwaQuotes', { rwa_id: rwaId }, ctx(plan)),
+    readQuote: (rwaId, opts) => (plan) => requestCmc('rwaQuotes', { rwa_id: rwaId }, ctx(plan, opts?.refreshBefore ?? null)),
     claim: (rwaId) => claimFreeRwaRead(db, 'rwaQuotes', { rwa_id: rwaId }),
     // The warm lane's batched entry is read from the shared cache only: this
     // endpoint never refreshes it (the lane does, on its own budget claim).
@@ -68,6 +71,13 @@ function productionDeps(): HandlerDeps {
     claimResearch: (capability, params) => claimFreeRwaRead(db, capability, params),
     researchParams,
     limit: (key, limit, windowSeconds, opts) => checkAndIncrement(db, key, limit, windowSeconds, opts),
+    // The UTC-day allowance of live calls (migration 20260924020000). Any
+    // failure throws, and the handler refuses the call.
+    async daily(callerKey, kind, limit, globalLimit) {
+      const { data, error } = await db.rpc('intel_rwa_lookup_live_take', { p_caller_key: callerKey, p_kind: kind, p_limit: limit, p_global_limit: globalLimit })
+      if (error || !data || typeof data !== 'object') throw new Error('allowance_unavailable')
+      return data.allowed === true ? { allowed: true, reason: null } : { allowed: false, reason: dailyTakeReason(kind, data.reason_code) }
+    },
     ipKey: hashedIpKey,
     secrets: () => [Deno.env.get('COINMARKETCAP_API_KEY'), Deno.env.get('CMC_API_KEY'), Deno.env.get('SUPABASE_SERVICE_ROLE_KEY')],
   }

@@ -7,7 +7,9 @@ Submissions opened on 2026-09-09. The first commit of the hackathon CoinMarketCa
 **Why that first commit is large (299 files).** It records work done during the event, but committed afterwards:
 - **When the work was done.** The Investor Intel overhaul began on 2026-09-09 at 14:06 UTC, after submissions opened at 00:00 UTC, and ran to 2026-09-12. During it, the new backend was built and deployed to production from working copies.
 - **What the commit is.** The 2026-09-14 commit puts that deployed backend into version control in one go. Its message says so: "Source of the 46 Edge Functions deployed during the overhaul".
-- **What existed before the event.** The 106 commits before 2026-09-09 are Investor Intel as it was before the event. Their only CoinMarketCap code is the narrow v1 listings and global-metrics adapter (`coinmarketcap-provider.ts`, June 2026) and the v2 price helpers.
+- **What existed before the event.** The 106 commits before 2026-09-09 are Investor Intel as it was before the event. Their only CoinMarketCap client is the narrow v1 listings and global-metrics adapter (`coinmarketcap-provider.ts`, June 2026), with the modules that registered and called it. The v2 quote and v1 map price helpers belong to the parent platform's content tools, outside Investor Intel, and are not in this repository.
+
+**File by file.** [`built-for-the-hackathon.md`](built-for-the-hackathon.md) is the per-file record behind this timeline. It lists every file of the CoinMarketCap integration and the RWA and DEX lanes, chosen by a mechanical scope rule, with its first commit and what changed since the event. 612 of its 660 files were first committed during the event. Of the 48 that existed before, only 10 mentioned CoinMarketCap at all. The record is generated from git, and `node production-source/scripts/intel-built-list.mjs --check` recomputes it from this repository's history.
 
 | Date | Commits | What landed |
 |---|---|---|

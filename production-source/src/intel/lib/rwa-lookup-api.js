@@ -30,7 +30,11 @@ export function normaliseLookupQuery(value) {
   return String(value ?? '').normalize('NFC').replace(/\s+/g, ' ').trim()
 }
 
+/** One lookup. `check: true` is "Check CoinMarketCap now": the endpoint makes
+ * one live call for it when the visitor's daily allowance permits, and says
+ * why not when it does not. */
 export async function lookupRwaAsset(query, {
+  check = false,
   supabaseUrl = import.meta.env?.VITE_SUPABASE_URL,
   anonKey = import.meta.env?.VITE_SUPABASE_ANON_KEY,
   fetchImpl = (...args) => globalThis.fetch(...args),
@@ -44,7 +48,7 @@ export async function lookupRwaAsset(query, {
   if (anonKey) { headers.apikey = anonKey; headers.Authorization = `Bearer ${anonKey}` }
   let res
   try {
-    res = await fetchImpl(`${base}/functions/v1/${RWA_LOOKUP_FUNCTION}`, { method: 'POST', headers, body: JSON.stringify({ q }), credentials: 'omit', signal })
+    res = await fetchImpl(`${base}/functions/v1/${RWA_LOOKUP_FUNCTION}`, { method: 'POST', headers, body: JSON.stringify(check === true ? { q, check: true } : { q }), credentials: 'omit', signal })
   } catch (error) {
     if (error?.name === 'AbortError') throw error
     throw new RwaLookupError('lookup_unreachable')

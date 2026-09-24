@@ -5,6 +5,7 @@ import { formatDataTime } from '../lib/as-of'
 import {receiptFreshness,providerLabel,receiptCost,receiptProof} from '../lib/source-receipt'
 import {cmcReproduceCommand,cmcReproduceRequest} from '../../../supabase/functions/_shared/market-assets/cmc-reproduce.ts'
 import ReceiptCostLine from './ReceiptCostLine'
+import ReceiptParameters from './ReceiptParameters'
 // Every time in a receipt in the one format (../lib/as-of.js): UTC and its age.
 const time=v=>formatDataTime(v,{language:i18next.language})
 const FRESHNESS_DEFAULTS={fresh:'Fresh: a provider call answered this read',cached:'Cached: inside its refresh limit',stale:'Stale: past its refresh limit',unavailable:'Unavailable: nothing usable answered this read'}
@@ -104,7 +105,6 @@ export default function SourceCallReceipt({receipt,scope,scopeKey,observedAt}){
   :receipt.creditCount!=null?String(receipt.creditCount)
   :receipt.origin==='live'?absent
   :originCredits??unknown
- const params=Object.entries(receipt.parameters||{})
  const freshness=receiptFreshness(receipt)
  const freshnessText=t(`receipt_state.${freshness}`,{defaultValue:FRESHNESS_DEFAULTS[freshness]})
  const origin=receipt.origin==='live'?t('receipt.origin_live',{defaultValue:'Live provider call'})
@@ -136,7 +136,8 @@ export default function SourceCallReceipt({receipt,scope,scopeKey,observedAt}){
   <dl className="intel-event-facts">
    {receipt.provider&&<><dt>{t('receipt_state.provider',{defaultValue:'Provider'})}</dt><dd>{providerLabel(receipt.provider,t)}</dd></>}
    <dt>{t('receipt.capability',{defaultValue:'Capability'})}</dt><dd className="break-all">{receipt.endpoint?`${receipt.capability} · ${receipt.endpoint}`:receipt.capability}</dd>
-   <dt>{t('receipt.parameters',{defaultValue:'Parameters'})}</dt><dd className="break-all">{params.length?params.map(([k,v])=>`${k}=${v}`).join(' · '):t('common.none',{defaultValue:'None'})}</dd>
+   {/* What the call SENT, from the same request as the command below (never "None" beside a command with parameters). */}
+   <dt>{t('receipt.parameters',{defaultValue:'Parameters'})}</dt><dd className="break-all"><ReceiptParameters receipt={receipt}/></dd>
    <dt>{t('receipt.origin',{defaultValue:'Answered by'})}</dt><dd>{origin}</dd>
    <dt>{t('receipt_state.freshness',{defaultValue:'Freshness'})}</dt><dd>{freshnessText}</dd>
    <dt>{t('receipt_state.key_mode',{defaultValue:'Provider key'})}</dt><dd>{keyMode}</dd>

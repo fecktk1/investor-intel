@@ -72,7 +72,7 @@ function empty(name:string,reason:string,state:CmcResult['state']='unavailable',
 }
 async function hash(value:string):Promise<string> { return Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(value)))).map(v=>v.toString(16).padStart(2,'0')).join('') }
 const inflight=new Map<string,Promise<CmcResult>>()
-async function readCache(db:any,key:string,name:string,params:Record<string,string>={},ttlSeconds:number|null=null):Promise<CmcResult|null> {
+async function readCache(db:any,key:string,name:string,params:Record<string,string>={},ttlSeconds:number|null=null,refreshBefore:string|null=null):Promise<CmcResult|null> {
   try {
     const {data,error}=await db.from('market_data_response_cache').select('response_json,expires_at,stale_until,observed_at,fetched_at,status_code,error_kind,negative_cache').eq('provider','coinmarketcap').eq('cache_key',key).maybeSingle()
     if(error) return empty(name,'cache_unavailable')
@@ -105,6 +105,18 @@ async function readCache(db:any,key:string,name:string,params:Record<string,stri
         if(policyError)return {...empty(name,'accounting_unavailable'),state:'unavailable'}
         data.expires_at=expires;data.stale_until=stale
       }
+    }
+    // ctx.refreshBefore: the caller knows this copy is older than it may serve
+    // (the public RWA lookup's live rule, or a visitor's "check now"), so for
+    // this read it is past its window. The same shorten-only compare-and-set as
+    // above moves expires_at to now, which is what lets cmc_request_reserve grant
+    // the one refresh; a concurrent refresh is never overwritten, and a failed
+    // update leaves the copy as it was (served as it is, no call).
+    const before=refreshBefore?Date.parse(refreshBefore):NaN
+    if(data.response_json!=null&&Number.isFinite(before)&&Number.isFinite(fetched)&&fetched<before&&Date.parse(data.expires_at)>Date.now()){
+      const expires=new Date().toISOString()
+      const {error:expireError}=await db.from('market_data_response_cache').update({expires_at:expires}).eq('provider','coinmarketcap').eq('cache_key',key).eq('fetched_at',data.fetched_at).eq('expires_at',data.expires_at)
+      if(!expireError)data.expires_at=expires
     }
     if(data.response_json==null || Date.parse(data.stale_until||data.expires_at)<=Date.now()) return null
     // Inside its TTL this is 'cached', never 'fresh': nothing was asked of the
@@ -222,7 +234,8 @@ async function requestCmcExact<T=any>(name:string,input:Record<string,unknown>={
       await db.from('market_data_response_cache').update({capability:name,request_params:params,access_profile:plan,demanded_at:cmcDemandPolicy(name,params,plan,connected)?new Date().toISOString():null,demand_org_id:ctx.orgId,demand_user_id:ctx.userId}).eq('provider','coinmarketcap').eq('cache_key',cacheKey)
     } catch { /* reserve still fails closed if its durable records are unavailable */ }
   }
-  const cached=await readCache(db,cacheKey,name,params,ttl)
+  // Only a read that may call can declare a copy past its window (types.ts).
+  const cached=await readCache(db,cacheKey,name,params,ttl,ctx?.kind!=='render'&&ctx?.refreshBefore?ctx.refreshBefore:null)
   if(cached && cached.state!=='stale') {
     await logProviderCall(db,{provider:'coinmarketcap',dataType:spec.feature,endpoint:spec.path,cacheStatus:cached.payload?'hit':'negative_hit',calls:0,caller:ctx?.caller})
     return cached as CmcResult<T>

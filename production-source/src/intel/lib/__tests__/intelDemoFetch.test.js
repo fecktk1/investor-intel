@@ -252,6 +252,13 @@ describe('demoFetch and the public RWA endpoint', () => {
     const { client: plain } = demoClient({})
     expect((await plain.functions.invoke('intel-rwa-lookup', { body: { q: 'NVDA' } })).data.code).toBe(DEMO_MISS_CODE)
   })
+
+  it('"Check CoinMarketCap now" crosses as check: true, and only when it is exactly true', async () => {
+    const { client, forwarded } = forwardingClient({})
+    await client.functions.invoke('intel-rwa-lookup', { body: { q: 'NVDA', check: true, orgId: DEMO_ORG_ID } })
+    await client.functions.invoke('intel-rwa-lookup', { body: { q: 'NVDA', check: 'yes' } })
+    expect(forwarded).toEqual([{ q: 'NVDA', check: true }, { q: 'NVDA' }])
+  })
 })
 
 describe('demoFetch and a snapshot copy past its refresh window', () => {

@@ -504,12 +504,14 @@ export function createDemoFetch({ supabaseUrl, reader, store, onMiss = null, now
   async function functions(name, input, init) {
     const text = await readBody(input, init)
     const body = parseJson(text)
-    // The public lookup is genuinely live. Only the query crosses: whatever else
-    // the page put in the body or the headers stays here.
+    // The public lookup is genuinely live. Only the query crosses, and the
+    // visitor's "Check CoinMarketCap now" flag when it is exactly true: whatever
+    // else the page put in the body or the headers stays here.
     if (name === DEMO_LIVE_FUNCTION) {
       if (typeof forwardPublic !== 'function') return respond(missBody())
       const q = typeof body?.q === 'string' ? body.q : (() => { try { return new URL(readUrl(input), 'http://demo.invalid').searchParams.get('q') } catch { return null } })()
-      try { return await forwardPublic({ q: String(q ?? '') }, DEMO_LIVE_FUNCTION) } catch { return respond({ error: 'lookup_unreachable', reason: 'lookup_unreachable' }, 503) }
+      const forwarded = body?.check === true ? { q: String(q ?? ''), check: true } : { q: String(q ?? '') }
+      try { return await forwardPublic(forwarded, DEMO_LIVE_FUNCTION) } catch { return respond({ error: 'lookup_unreachable', reason: 'lookup_unreachable' }, 503) }
     }
     const key = demoSnapshotKey(name, body)
     let entry = null
